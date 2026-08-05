@@ -1895,8 +1895,25 @@
     // LAST chapter — closing credits, nearly always — there is nowhere left to
     // seek, so the offer becomes the next entry in the queue. Without one there
     // is nothing to propose and no button.
+    //
+    // **And the next entry has to be a different file.** `neighbour` answers
+    // "what plays next", which under repeat is legitimately *this* file again:
+    // with one entry and repeat-all it wraps straight back to index 0, and it
+    // does the same from a stale `playlist-pos` of -1 (mirrors go stale, see
+    // gotcha 3). Either way the credits of a lone episode grew a "Следующая
+    // серия" button that restarted what was already playing. The two questions
+    // are genuinely different — repeating one file is what "repeat all" on a
+    // one-entry queue means, so the fix belongs here and not in `neighbour` —
+    // and it is settled two ways because they fail differently: the index is
+    // the thing that is stale in the second case, and `filePath` is mpv's own
+    // answer to "what is open". Either of them calling it the same file is
+    // enough to withdraw the offer — a queue holding one file twice is the only
+    // thing that costs, and suppressing a button that would reopen an identical
+    // file is not a loss.
     const chapter = player.chapters[here.index + 1] ?? null;
-    const entry = chapter ? null : neighbour(1);
+    const next = chapter ? null : neighbour(1);
+    const sameFile = next && (next.path === player.filePath || next.index === player.playlistPos);
+    const entry = next && !sameFile ? next : null;
     if (!chapter && !entry) return null;
     // The last chapter ends where the file does.
     const ends = chapter ? chapter.time : player.duration;

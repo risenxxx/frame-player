@@ -540,6 +540,17 @@ export async function resyncState() {
     player.audioDelay =
       (await getProperty('audio-delay', 'double').catch(() => null)) ?? player.audioDelay;
     player.chapterIndex = (await getProperty('chapter', 'int64').catch(() => null)) ?? -1;
+    // Where we are in the queue was the one mirror left out of this sweep, and
+    // it is the one everything about *neighbours* is computed from — the end
+    // screen's two cards, the auto-advance, and the skip button's "next
+    // episode" offer. A dropped `playlist-pos` event therefore does not heal on
+    // the next tick like the others: it stays wrong until something else moves
+    // the playhead, and while it is wrong "the next entry" resolves to the file
+    // already playing.
+    player.playlistPos =
+      (await getProperty('playlist-pos', 'int64').catch(() => null)) ?? player.playlistPos;
+    player.playlistCount =
+      (await getProperty('playlist-count', 'int64').catch(() => null)) ?? player.playlistCount;
   } catch {
     // between files some properties are unavailable — no harm done
   }
