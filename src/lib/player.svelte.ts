@@ -28,6 +28,7 @@ import {
 
 import { baseName, displayName, extensionOf, formatTime } from './format';
 import { t } from './i18n.svelte';
+import { LANG_ALIASES } from './languages';
 import { showOsd } from './osd.svelte';
 import { IS_MAC } from './platform';
 
@@ -297,6 +298,10 @@ export type PlayerHooks = {
   filesOpened?: (videos: string[]) => void;
   /// mpv gave up on the file it was opening.
   loadFailed?: () => void;
+  /// A `.torrent` file was opened. mpv never sees it — the torrent client does —
+  /// so this module classifies it and hands it over, exactly as `filesOpened`
+  /// hands the queue-the-folder decision to someone who knows what a playlist is.
+  openTorrentFile?: (path: string) => void;
 };
 
 let hooks: PlayerHooks = {};
@@ -752,17 +757,13 @@ export async function loadTracks() {
  * MKV stores three-letter codes, plenty of files use two — and comparing by
  * prefix is not enough, because `jpn` and `ja` share only one letter. Anything
  * unlisted falls through lower-cased, which still matches like against like.
+ *
+ * The table now comes from `languages.ts`, so the codes the track scoring
+ * compares and the codes the settings picker writes into `alang`/`slang` are
+ * one list rather than two that drift. That is a data import with no state and
+ * no imports of its own, so it does not bend the "player depends on nothing"
+ * rule the *stateful* modules follow.
  */
-const LANG_ALIASES: Record<string, string> = {
-  rus: 'ru', eng: 'en', jpn: 'ja', ukr: 'uk', deu: 'de', ger: 'de', fra: 'fr',
-  fre: 'fr', spa: 'es', ita: 'it', kor: 'ko', zho: 'zh', chi: 'zh', pol: 'pl',
-  tur: 'tr', por: 'pt', nld: 'nl', dut: 'nl', swe: 'sv', dan: 'da', fin: 'fi',
-  nor: 'no', ces: 'cs', cze: 'cs', hun: 'hu', ell: 'el', gre: 'el', heb: 'he',
-  ara: 'ar', hin: 'hi', tha: 'th', vie: 'vi', ind: 'id', ron: 'ro', rum: 'ro',
-  bul: 'bg', srp: 'sr', hrv: 'hr', slk: 'sk', slo: 'sk', slv: 'sl', kaz: 'kk',
-  bel: 'be',
-};
-
 function normLang(lang: string | null): string | null {
   if (!lang) return null;
   const code = lang.trim().toLowerCase().split(/[-_]/)[0];
@@ -862,11 +863,24 @@ export async function loadFiles(paths: string[]) {
   const videos: string[] = [];
   const subs: string[] = [];
   const audios: string[] = [];
+  const torrents: string[] = [];
   for (const path of paths) {
     const ext = extensionOf(path);
     if (SUBTITLE_EXTENSIONS.includes(ext)) subs.push(path);
     else if (AUDIO_EXTENSIONS.includes(ext)) audios.push(path);
+    else if (ext === 'torrent') torrents.push(path);
     else videos.push(path);
+  }
+
+  // A `.torrent` is a whole session rather than a file to play, so it is
+  // handled here — where a drop is already sorted by extension — instead of at
+  // each of the four entry points (drop, picker, argv, the Apple Event). Only
+  // when nothing else in the drop is playable: a folder holding both a film and
+  // the torrent it came from should play the film, which is the more certain
+  // intent, and only one torrent can be opened at a time anyway.
+  if (torrents.length && !videos.length) {
+    hooks.openTorrentFile?.(torrents[0]);
+    return;
   }
 
   // Audio with nothing to attach it to is a file to play, not a track to add —
@@ -902,7 +916,11 @@ export async function pickAndLoadFiles() {
   const sel = await open({
     multiple: true,
     filters: [
-      { name: t('dialog.video'), extensions: VIDEO_EXTENSIONS },
+      // `.torrent` rides in the first filter rather than getting one of its own:
+      // it is another way to arrive at a video, and a picker that makes you
+      // choose "видео" or "торренты" before you can see your file is asking you
+      // to classify what you are looking for before you have found it.
+      { name: t('dialog.video'), extensions: [...VIDEO_EXTENSIONS, 'torrent'] },
       { name: t('dialog.all_files'), extensions: ['*'] },
     ],
   });

@@ -60,6 +60,25 @@ export function isMagnet(src: string): boolean {
 }
 
 /**
+ * How to find this torrent again, once it has been opened once.
+ *
+ * A magnet built from what came back, and it exists because the two *other*
+ * ways in do not survive: a `.torrent` file is a path that can be moved or
+ * deleted, and a `.torrent` URL is a page that can go down — while the info
+ * hash names the torrent for as long as BitTorrent exists, and the metadata
+ * cache beside it (torrent.rs) means reopening one costs no lookup at all.
+ * So everything remembered about a torrent is keyed by this rather than by
+ * whatever the viewer happened to hand over.
+ *
+ * The `dn` is a display name and nothing more — it is what keeps a recents row
+ * readable, and it is exactly what a tracker's own magnet carries.
+ */
+export function magnetFor(infoHash: string, name?: string | null): string {
+  const dn = name ? `&dn=${encodeURIComponent(name)}` : '';
+  return `magnet:?xt=urn:btih:${infoHash}${dn}`;
+}
+
+/**
  * A torrent stream served by our own local server, taken apart.
  *
  * The route is `http://127.0.0.1:<port>/t/<infohash>/<index>/<name>` (torrent.rs

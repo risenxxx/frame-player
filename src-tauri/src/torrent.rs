@@ -144,9 +144,6 @@ pub struct TorrentOnDisk {
     /// Set when `folder` is a well-formed info hash.
     pub info_hash: Option<String>,
     pub size: u64,
-    /// Currently loaded in the session — deleting it would pull the file out
-    /// from under mpv, so the row offering to is disabled rather than clever.
-    pub active: bool,
 }
 
 /// What the player shows while a torrent is feeding it.
@@ -375,20 +372,44 @@ impl TorrentService {
     ) -> Result<TorrentInfo, String> {
         let (session, port) = self.ensure_started(dir.clone(), seeding).await?;
 
+        let source = source.trim().to_string();
+
+        // **A `.torrent` file on disk is the metadata itself**, so it is read
+        // here rather than handed over as a source string: `AddTorrent::Url`
+        // understands `http:`, `https:` and `magnet:` and nothing else, and a
+        // local path reaches it as "provided path is not a valid magnet URL".
+        // Reading it also means the hash below is *known* rather than hinted,
+        // which is what makes a dropped file as first-class as a magnet — same
+        // hash-named folder, same metadata cache, same history.
+        let local_file = !source.starts_with("magnet:") && !source.contains("://");
+        let file_bytes = if local_file {
+            Some(std::fs::read(&source).map_err(|e| format!("{e}"))?)
+        } else {
+            None
+        };
+
         // The folder has to be decided *before* the torrent is added, and it is
         // named after the info hash — which a magnet already carries in its
         // `xt=urn:btih:`. Parsing it costs nothing; asking librqbit would mean
         // resolving the magnet twice, and a resolve is a ten-second DHT lookup.
         //
-        // A `.torrent` link has no hash to read, so there the folder falls back
-        // to librqbit's own default (the torrent's name). Such an entry simply
-        // shows up in `torrent_list` as one that cannot be resumed, which is the
-        // same treatment folders from the older layout get.
-        let source = source.trim().to_string();
-        let hinted_hash = librqbit::Magnet::parse(&source)
-            .ok()
-            .and_then(|m| m.as_id20())
-            .map(|id| id.as_string());
+        // A `.torrent` **URL** is the one source left with no hash to read, so
+        // there the folder falls back to librqbit's own default (the torrent's
+        // name). Such an entry simply shows up in `torrent_list` as one that
+        // cannot be resumed, which is the same treatment folders from the older
+        // layout get.
+        let hinted_hash = match file_bytes.as_deref() {
+            Some(bytes) => Some(
+                librqbit::torrent_from_bytes::<librqbit::ByteBuf>(bytes)
+                    .map_err(|e| format!("not a torrent file: {e:#}"))?
+                    .info_hash
+                    .as_string(),
+            ),
+            None => librqbit::Magnet::parse(&source)
+                .ok()
+                .and_then(|m| m.as_id20())
+                .map(|id| id.as_string()),
+        };
 
         let opts = || AddTorrentOptions {
             paused: true,
@@ -420,9 +441,14 @@ impl TorrentService {
         // and it was being paid even to reopen a season already sitting on disk.
         // Caching the bytes ourselves keeps the session stateless and makes a
         // reopen instant.
-        let cached = hinted_hash
-            .as_ref()
-            .and_then(|h| std::fs::read(meta_path(&dir, h)).ok());
+        // Skipped when the source *is* a torrent file: the bytes are already in
+        // hand, and reading a second copy of them off disk could only differ.
+        let cached = file_bytes.is_none().then(|| {
+            hinted_hash
+                .as_ref()
+                .and_then(|h| std::fs::read(meta_path(&dir, h)).ok())
+        });
+        let cached = cached.flatten();
 
         let mut added = None;
         if let Some(bytes) = cached {
@@ -442,13 +468,16 @@ impl TorrentService {
 
         let added = match added {
             Some(r) => r,
-            None => tokio::time::timeout(
-                RESOLVE_TIMEOUT,
-                session.add_torrent(AddTorrent::from_url(source.as_str()), Some(opts())),
-            )
-            .await
-            .map_err(|_| "resolve_timeout".to_string())?
-            .map_err(|e| format!("{e:#}"))?,
+            None => {
+                let what = match file_bytes {
+                    Some(bytes) => AddTorrent::from_bytes(bytes),
+                    None => AddTorrent::from_url(source.as_str()),
+                };
+                tokio::time::timeout(RESOLVE_TIMEOUT, session.add_torrent(what, Some(opts())))
+                    .await
+                    .map_err(|_| "resolve_timeout".to_string())?
+                    .map_err(|e| format!("{e:#}"))?
+            }
         };
 
         let handle = match added {
@@ -761,11 +790,16 @@ impl TorrentService {
     /// left by a previous run, or by the older name-based layout, still has to
     /// be visible and deletable. That is what keeps storage management working
     /// when history is switched off and there is nothing remembered at all.
-    pub async fn list(&self, dir: &std::path::Path) -> Vec<TorrentOnDisk> {
-        let live: HashSet<String> = {
-            let inner = self.inner.lock().await;
-            inner.torrents.keys().cloned().collect()
-        };
+    ///
+    /// It does not report session membership either, and that is the correction
+    /// rather than an omission: a torrent stays in the session, paused, after
+    /// the viewer closes the film, so "the session holds it" answered "playing
+    /// right now" with yes for the rest of the run and the delete button was
+    /// dead from the moment anything had been watched. Deleting one that is
+    /// merely loaded is perfectly safe — `forget` takes it out of the session
+    /// before removing the directory — so the only row that must refuse is the
+    /// one mpv is streaming from, and that is the frontend's own fact.
+    pub fn list(&self, dir: &std::path::Path) -> Vec<TorrentOnDisk> {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return Vec::new();
         };
@@ -779,7 +813,6 @@ impl TorrentService {
             }
             let info_hash = is_info_hash(&folder).then(|| folder.to_ascii_lowercase());
             out.push(TorrentOnDisk {
-                active: info_hash.as_ref().is_some_and(|h| live.contains(h)),
                 size: dir_size(&entry.path()),
                 info_hash,
                 folder,
@@ -1238,7 +1271,7 @@ pub async fn torrent_list(
     service: tauri::State<'_, Arc<TorrentService>>,
 ) -> Result<Vec<TorrentOnDisk>, String> {
     let dir = TorrentService::download_dir(&app)?;
-    Ok(service.list(&dir).await)
+    Ok(service.list(&dir))
 }
 
 #[tauri::command]
@@ -1471,18 +1504,15 @@ mod tests {
             // The folder is the info hash, and `list` is what the start screen
             // reads. Checking both here is what proves the storage UI is looking
             // at the same thing the streaming code wrote.
-            let listed = service.list(&dir_for_list).await;
+            let listed = service.list(&dir_for_list);
             println!("\n--- torrent_list ---");
             for row in &listed {
-                println!(
-                    "  {} hash={:?} size={} active={}",
-                    row.folder, row.info_hash, row.size, row.active
-                );
+                println!("  {} hash={:?} size={}", row.folder, row.info_hash, row.size);
             }
             assert!(
                 listed
                     .iter()
-                    .any(|r| r.info_hash.as_deref() == Some(info.info_hash.as_str()) && r.active),
+                    .any(|r| r.info_hash.as_deref() == Some(info.info_hash.as_str())),
                 "the streaming torrent is missing from torrent_list"
             );
 

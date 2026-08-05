@@ -45,8 +45,15 @@
     fileStem,
     formatTime,
     formatTimeMs,
+    readableLink,
     shotStamp,
   } from '$lib/format';
+  import {
+    languageName,
+    mpvLangValue,
+    parseLangList,
+    searchLanguages,
+  } from '$lib/languages';
   import { osd, osdSeq, showOsd } from '$lib/osd.svelte';
   import {
     RESUME_OFFSET,
@@ -166,6 +173,7 @@
     rememberedTorrent,
     forgetTorrent,
     listTorrents,
+    torrentIsPlaying,
     rememberTorrent,
     resolveTorrentFile,
     positionBuffered,
@@ -188,7 +196,7 @@
     type MediaInfo,
   } from '$lib/mediainfo';
   import { copyScreenshot, saveScreenshot } from '$lib/screenshot';
-  import { isTorrentLink, parseTorrentUrl, sourceId } from '$lib/source';
+  import { isMagnet, isTorrentLink, magnetFor, parseTorrentUrl, sourceId } from '$lib/source';
   import { maybeStartThumbs, requestThumb, thumbs } from '$lib/thumbs.svelte';
   import { isZoomed, markZoomLuaLoaded, panBy, reclampPan, resetZoom, zoomAt } from '$lib/zoom.svelte';
 
@@ -223,6 +231,15 @@
   interface DeviceDef extends SettingBase {
     kind: 'devices';
   }
+  /// An **ordered** list of content languages (`alang`, `slang`).
+  ///
+  /// Not a pill row, and that is the whole reason this kind exists: `.segmented`
+  /// picks one of a few *named* values, and there are sixty-odd languages. It is
+  /// also not one value — mpv takes a priority list, and "Japanese, else
+  /// English" is the ordinary case for anyone watching anime, not an exotic one.
+  interface LangsDef extends SettingBase {
+    kind: 'langs';
+  }
   interface SliderDef extends SettingBase {
     kind: 'slider';
     min: number;
@@ -234,7 +251,7 @@
     decimals: number;
     suffix?: string;
   }
-  type SettingDef = SegmentedDef | DeviceDef | SliderDef;
+  type SettingDef = SegmentedDef | DeviceDef | LangsDef | SliderDef;
 
   // $derived, so switching the language re-renders the labels; the option
   // values that are not words (spline, AC3/EAC3) stay literal.
@@ -326,30 +343,39 @@
       hint: t('vset.device_hint'),
     },
     {
-      kind: 'segmented',
+      kind: 'langs',
       tab: 'audio',
       key: 'alang',
       label: t('vset.alang'),
       liveDefault: '',
-      options: [
-        { v: null, label: t('vset.lang_auto') },
-        { v: 'rus,ru', label: t('vset.lang_ru') },
-        { v: 'eng,en', label: t('vset.lang_en') },
-      ],
       hint: t('vset.lang_hint'),
     },
     {
-      kind: 'segmented',
+      kind: 'langs',
       tab: 'subs',
       key: 'slang',
       label: t('vset.slang'),
       liveDefault: '',
-      options: [
-        { v: null, label: t('vset.lang_auto') },
-        { v: 'rus,ru', label: t('vset.lang_ru') },
-        { v: 'eng,en', label: t('vset.lang_en') },
-      ],
       hint: t('vset.lang_hint'),
+    },
+    {
+      kind: 'segmented',
+      // Sits directly under `slang` because it modifies it, and it is mpv's
+      // own option rather than selection logic of ours — reimplementing track
+      // selection would fight `select_default_track` and the remembered-track
+      // restore at once. Read from mpv 0.41's source rather than assumed: the
+      // choices are `no`/`forced`/`yes` and the default is **yes**, so `null`
+      // is the "показывать" pill and clearing the line restores it.
+      tab: 'subs',
+      key: 'subs-with-matching-audio',
+      label: t('vset.subs_matching'),
+      liveDefault: 'yes',
+      options: [
+        { v: null, label: t('vset.subs_matching_yes') },
+        { v: 'forced', label: t('vset.subs_matching_forced') },
+        { v: 'no', label: t('vset.subs_matching_no') },
+      ],
+      hint: t('vset.subs_matching_hint'),
     },
     {
       kind: 'segmented',
@@ -751,15 +777,27 @@
     uploader: string;
   };
 
-  /// The language filter. A short list on purpose: these are the two languages
-  /// this player is localised into, and "any" covers everything else in one
-  /// click — a full language picker is a list of 80 entries answering a
-  /// question nobody asked twice.
-  const SUBS_LANGS = [
-    { value: 'ru', label: 'subs.lang_ru' },
-    { value: 'en', label: 'subs.lang_en' },
-    { value: '', label: 'subs.lang_any' },
-  ] as const;
+  /// The subtitle languages this viewer has asked for, read from mpv when the
+  /// panel opens (see `openSubsDialog`).
+  let subsLangPrefs = $state<string[]>([]);
+
+  /// The language filter, which is those preferences plus "any".
+  ///
+  /// It was a hardcoded Russian/English/any, which is the same leak ROADMAP 25
+  /// is about: those are the two languages the *interface* is translated into,
+  /// and they had become the only ones a search could filter by. Deriving it
+  /// costs no second picker and no second preference — someone who has said
+  /// "subtitles in Polish, else English" has already answered this question —
+  /// and it degrades to the interface language, which is what the old list gave
+  /// that person anyway. "Любые" stays last and always, or the panel would
+  /// become unable to find a subtitle in a language nobody thought to configure.
+  const SUBS_LANGS: { value: string; label: string }[] = $derived([
+    ...(subsLangPrefs.length ? subsLangPrefs : [locale()]).map((code) => ({
+      value: code,
+      label: languageName(code),
+    })),
+    { value: '', label: t('subs.lang_any') },
+  ]);
 
   let subsOpen = $state(false);
   let subsQuery = $state('');
@@ -943,9 +981,16 @@
     subsError = null;
     subsHits = null;
     subsBusyId = null;
-    // The language the UI is in is the language subtitles are wanted in far
-    // more often than not; "any" stays one click away.
-    subsLang = locale() === 'ru' ? 'ru' : 'en';
+    // **Asked of mpv, not of `settingsValues`** — that map is filled when the
+    // settings dialog opens and is empty until then, so reading it here would
+    // make the filter depend on whether the viewer had been into settings this
+    // session. mpv always knows: it has merged mpv.conf over `initialOptions`,
+    // and every change in that dialog is applied to it live.
+    subsLangPrefs = parseLangList(await getProperty('slang', 'string').catch(() => null));
+    // The first preferred subtitle language, which is where a search should
+    // start; with none set, the language the UI is in. "Any" stays one click
+    // away either way.
+    subsLang = subsLangPrefs[0] ?? locale();
     // Prefilled with the title the player is showing, which for a file mpv
     // named is already the right query — and is what the viewer would type.
     // A release name carries the show and the episode in one string, and both
@@ -1127,15 +1172,23 @@
     lastLink = source;
     try {
       const info = await addTorrent(source);
-      rememberLink(source);
+      // **What is remembered is a magnet, whatever was handed over.** A dropped
+      // `.torrent` file is a path that can be moved or deleted and a `.torrent`
+      // URL is a page that can go down, while the info hash names the torrent
+      // for good — and the metadata cache beside it (torrent.rs) makes
+      // reopening from a bare magnet cost no lookup at all. So a file opened
+      // once keeps working after it is thrown away, which is what people do
+      // with `.torrent` files.
+      const key = isMagnet(source) ? source : magnetFor(info.info_hash, info.name);
+      rememberLink(key);
       // The torrent's own name against the magnet, so the recents list reads as
       // a film rather than a hash. `displayName` would fall back to the `dn`
       // parameter, but that is the name whoever made the link chose to put in
       // it; this is the one in the torrent.
-      if (info.name) rememberTitle(source, info.name);
+      if (info.name) rememberTitle(key, info.name);
       // How to reopen this torrent later, which is what makes the start-screen
       // list and the history cards work after a restart.
-      rememberTorrent(info, source);
+      rememberTorrent(info, key);
       links = recentLinks();
       const videos = torrentVideos(info);
       if (videos.length === 0) {
@@ -1152,6 +1205,26 @@
       // about the torrent, and "try a different magnet" is the actual advice.
       torrentError =
         String(e) === 'resolve_timeout' ? t('torrent.timeout') : t('torrent.failed', { reason: String(e) });
+      // A torrent does not only arrive from the box that shows this message: a
+      // dropped `.torrent` reaches here with no dialog open, and a corrupt file
+      // would then fail in complete silence. Raising it is the same answer the
+      // start-screen rows give, and it is a no-op when the box is already up.
+      linkOpen = true;
+    }
+  }
+
+  /// Pick a `.torrent` from disk. The same dimming flag as the other pickers:
+  /// the system dialog dims the window while it is up.
+  async function pickTorrentFile() {
+    fileDialogOpen = true;
+    try {
+      const sel = await open({
+        multiple: false,
+        filters: [{ name: t('dialog.torrent'), extensions: ['torrent'] }],
+      });
+      if (typeof sel === 'string') await openTorrent(sel);
+    } finally {
+      fileDialogOpen = false;
     }
   }
 
@@ -1302,7 +1375,7 @@
   /// half-deleted torrent is the confusing state: files gone but the season
   /// still listed, or the reverse.
   async function deleteTorrent(row: TorrentRow) {
-    if (row.active || torrentBusy) return;
+    if (torrentIsPlaying(row) || torrentBusy) return;
     torrentBusy = row.folder;
     try {
       const freed = await forgetTorrent(row);
@@ -1422,6 +1495,16 @@
     }
   }
 
+  /// Drop one row of the recent-links list.
+  ///
+  /// The list is the *only* thing touched: a magnet in it may name a torrent
+  /// whose episodes are on disk, and "I do not want this link offered again" is
+  /// not "delete the season" — that is what the torrent list's own cross is for.
+  function dropLink(url: string) {
+    forgetLink(url);
+    links = recentLinks();
+  }
+
   /// The name of the video being played, when mpv has none.
   ///
   /// mpv normally supplies it (yt-dlp resolves the page), so this is the
@@ -1493,6 +1576,7 @@
 
   let settingsOpen = $state(false);
   let settingsValues = $state<Record<string, string | null>>({});
+
   // HDR state of the display under the window: while it is in SDR, HDR output
   // is impossible (target-colorspace-hint is a no-op, mpv always tone-maps) —
   // which the settings dialog spells out.
@@ -1975,7 +2059,7 @@
   /// someone looking for "subtitle size", which is what a settings dialog is
   /// searched by. What the boundary still owns is the footer: it now names mpv's
   /// settings rather than claiming everything on the page is one of them.
-  type SettingsTab = 'general' | 'video' | 'playback' | 'audio' | 'subs' | 'keys';
+  type SettingsTab = 'general' | 'video' | 'playback' | 'audio' | 'subs' | 'torrents' | 'keys';
   let settingsTab = $state<SettingsTab>('general');
   const SETTINGS_TABS: { id: SettingsTab; label: string }[] = $derived([
     { id: 'general', label: t('set.tab_general') },
@@ -1983,6 +2067,7 @@
     { id: 'playback', label: t('set.tab_playback') },
     { id: 'audio', label: t('set.tab_audio') },
     { id: 'subs', label: t('set.tab_subs') },
+    { id: 'torrents', label: t('set.tab_torrents') },
     { id: 'keys', label: t('set.tab_keys') },
   ]);
   // Popup elements: measured after render (before paint) to clamp to the window
@@ -2057,6 +2142,66 @@
     };
     if (debounce) confWrites.set(def.key, setTimeout(write, CONF_WRITE_MS));
     else write();
+  }
+
+  // ---- Content languages (ROADMAP 25) --------------------------------------
+  //
+  // `alang`/`slang` are ordered priority lists, and what is stored is a plain
+  // mpv.conf line — so the list is *derived* from the line rather than kept
+  // beside it. That is what makes a value someone typed into their own mpv.conf
+  // show up here correctly, and it is why nothing needs migrating: the two
+  // values this dialog used to write, `rus,ru` and `eng,en`, parse back to
+  // exactly [ru] and [en].
+
+  /// Which setting's language list is open for adding, and what has been typed.
+  /// One at a time: two open search panels in a dialog this size is noise.
+  let langPickerFor = $state<string | null>(null);
+  let langQuery = $state('');
+  let langQueryEl = $state<HTMLInputElement | undefined>();
+
+  function langsOf(def: SettingDef): string[] {
+    return parseLangList(settingsValues[def.key] ?? null);
+  }
+
+  /// Write a language list back. An empty list clears the mpv.conf line rather
+  /// than writing an empty one — "авто" is the absence of the setting, the same
+  /// meaning "по умолчанию" has in every pill in this dialog.
+  function setLangs(def: SettingDef, codes: string[]) {
+    setSetting(def, codes.length ? mpvLangValue(codes) : null);
+  }
+
+  async function openLangPicker(def: SettingDef) {
+    langPickerFor = langPickerFor === def.key ? null : def.key;
+    langQuery = '';
+    if (!langPickerFor) return;
+    await tick();
+    langQueryEl?.focus();
+  }
+
+  function addLang(def: SettingDef, code: string) {
+    setLangs(def, [...langsOf(def), code]);
+    langPickerFor = null;
+    langQuery = '';
+  }
+
+  function removeLang(def: SettingDef, code: string) {
+    setLangs(
+      def,
+      langsOf(def).filter((c) => c !== code),
+    );
+  }
+
+  /// Clicking a chip makes it the preferred language.
+  ///
+  /// Order is priority, and without this the only way to change it is to remove
+  /// every language above the one you want and add them back — which also
+  /// appends them, so it does not even work. One click on the thing you want
+  /// beats a pair of arrows on every chip, in a row that is usually two items
+  /// long.
+  function promoteLang(def: SettingDef, code: string) {
+    const codes = langsOf(def);
+    if (codes[0] === code) return;
+    setLangs(def, [code, ...codes.filter((c) => c !== code)]);
   }
 
   /// Current value of a slider: what mpv.conf says, or mpv's own default.
@@ -2213,6 +2358,7 @@
           else void loadPlaylist();
         },
         loadFailed: reportLoadFailure,
+        openTorrentFile: (path) => void openTorrent(path),
         playbackRestart: () => {
           armVideoReady();
           for (const w of playbackRestartWaiters) w();
@@ -4172,6 +4318,18 @@
     return stopRecording;
   });
 
+  /// Same rule for the language search, and for the same reason: a panel left
+  /// open belongs to the tab that opened it. Reopening the dialog onto a
+  /// half-typed query would also be a state nobody asked for.
+  $effect(() => {
+    void settingsTab;
+    void settingsOpen;
+    return () => {
+      langPickerFor = null;
+      langQuery = '';
+    };
+  });
+
   /// A label with its current hotkey after it, for tooltips. An unbound action
   /// yields the bare label: "Полный экран ()" is worse than a tooltip that
   /// simply says what the button does, and every action here can be unbound now.
@@ -4562,8 +4720,10 @@
                 {/if}
                 <button
                   class="card-forget torrow-forget"
-                  disabled={row.active}
-                  data-tip={row.active ? t('start.torrent_playing') : t('start.torrent_delete')}
+                  disabled={torrentIsPlaying(row)}
+                  data-tip={torrentIsPlaying(row)
+                    ? t('start.torrent_playing')
+                    : t('start.torrent_delete')}
                   aria-label={t('start.torrent_delete')}
                   onclick={() => void deleteTorrent(row)}
                 >
@@ -4611,6 +4771,7 @@
   {#snippet endCard(entry: PlaylistEntry, side: 'prev' | 'next')}
     <button
       class="endcard"
+      class:prev={side === 'prev'}
       onclick={(e) => {
         e.stopPropagation();
         cancelAdvance();
@@ -4917,13 +5078,52 @@
           {#if links.length && !linkValue.trim()}
             <div class="link-recent">
               {#each links as url (url)}
-                <button class="link-recent-item" data-tip={url} onclick={() => submitLink(url)}>
-                  {linkTitles[url] ?? displayName(url)}
-                </button>
+                <!-- Two controls, so the row is a flex container: opening the
+                     link is the row, forgetting it is the cross. Every ancestor
+                     between the ellipsised name and the dialog's fixed width
+                     needs `min-width: 0`, or the row grows to the name instead. -->
+                <div class="link-recent-row">
+                  <button
+                    class="link-recent-item"
+                    data-tip={readableLink(url)}
+                    onclick={() => submitLink(url)}
+                  >
+                    {linkTitles[url] ?? displayName(url)}
+                  </button>
+                  <button
+                    class="link-recent-forget"
+                    data-tip={t('link.forget')}
+                    aria-label={t('link.forget')}
+                    onclick={() => dropLink(url)}
+                  >
+                    <svg viewBox="0 0 10 10" aria-hidden="true">
+                      <path
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                        d="M1.2 1.2l7.6 7.6M8.8 1.2l-7.6 7.6"
+                      />
+                    </svg>
+                  </button>
+                </div>
               {/each}
             </div>
           {/if}
           <div class="link-actions">
+            <!-- The one thing this dialog could not do, and the reason torrent
+                 support was invisible in it: a magnet is pasted, but a
+                 `.torrent` is a *file* — there is nothing to type, so a box that
+                 only takes text silently excluded half of how torrents arrive.
+                 Sits at the left, away from the primary action, because it is
+                 the other route rather than a variant of this one; the tooltip
+                 names dropping, which is the cheaper gesture of the two and
+                 which nothing on screen would otherwise reveal. -->
+            <button
+              class="btn-outline link-torrent"
+              data-tip={t('link.torrent_file_tip')}
+              disabled={torrent.resolving}
+              onclick={pickTorrentFile}
+            >{t('link.torrent_file')}</button>
             <!-- Offered only for the copy we installed: someone else's yt-dlp is
                  their package manager's to update, and pressing -U on it would
                  either fail or start a fight. -->
@@ -5171,7 +5371,7 @@
                 class:sel={subsLang === option.value}
                 onclick={() => { subsLang = option.value; void runSubsSearch(); }}
               >
-                {t(option.label)}
+                {option.label}
               </button>
             {/each}
           </div>
@@ -5798,10 +5998,16 @@
             <button class="btn-danger" onclick={() => void clearHistory()}>{t('set.clear_btn')}</button>
           </div>
 
-          <!-- Seeding sits with the privacy controls, not with playback: it is
-               the same kind of decision as the excluded folders — what leaves
-               this machine — and it is the only setting here with legal weight
-               attached to it. A switch, because it is on/off. -->
+        {:else if settingsTab === 'torrents'}
+          <!-- Seeding was under the privacy controls, on the argument that it is
+               the same kind of decision as an excluded folder — what leaves this
+               machine. That argument still holds and is not why it moved: a
+               viewer looking for anything about torrents had no section to look
+               in, and found the switch and the cache button by reading a tab
+               named "Основные" to the bottom. The two are here together because
+               they are the whole of what this player decides about a torrent —
+               what goes out, and what stays on the disk. A switch, because it is
+               on/off; the hint carries the legal weight. -->
           <div class="setting">
             <div class="row-toggle">
               <div class="row-text">
@@ -5816,15 +6022,17 @@
                 aria-label={t('torrent.seed')}
                 onclick={toggleSeeding}
               >
-                <span class="knob"></span>
+                <!-- `.switch-knob`, like every other switch in this dialog. A
+                     bare `.knob` has no rule anywhere, so this one rendered as a
+                     track with nothing in it — on/off told apart only by the
+                     background. -->
+                <span class="switch-knob"></span>
               </button>
             </div>
           </div>
 
           <!-- Streaming a torrent writes the pieces to disk, so a few films fill
-               a directory the viewer never chose to fill. Next to the history
-               controls because it is the same question — what this player has
-               left lying around. -->
+               a directory the viewer never chose to fill. -->
           <div class="setting">
             <div class="setting-label">{t('torrent.cache_clear')}</div>
             <div class="setting-hint">{t('torrent.cache_hint')}</div>
@@ -5953,6 +6161,91 @@
                   </button>
                 {/each}
               </div>
+            {:else if s.kind === 'langs'}
+              {@const codes = langsOf(s)}
+              <!-- Chips in priority order, then the way to add one. The empty
+                   state says "авто" as a word rather than showing an empty
+                   strip, which reads as a control that failed to render. -->
+              <div class="langs">
+                {#if !codes.length}
+                  <span class="langs-auto">{t('vset.lang_auto')}</span>
+                {/if}
+                {#each codes as code, i (code)}
+                  <!-- Two buttons in a chip, never nested: a button inside a
+                       button is invalid and the inner one stops being clicked.
+                       The first chip is the preferred language and says so by
+                       being filled, which is also why clicking it does nothing
+                       — it is already what it would become. -->
+                  <span class="lang-chip" class:first={i === 0}>
+                    <button
+                      class="lang-name"
+                      data-tip={i === 0 ? t('vset.lang_primary') : t('vset.lang_promote')}
+                      disabled={i === 0}
+                      onclick={() => promoteLang(s, code)}
+                    >{languageName(code)}</button>
+                    <button
+                      class="lang-drop"
+                      aria-label={t('vset.lang_remove')}
+                      data-tip={t('vset.lang_remove')}
+                      onclick={() => removeLang(s, code)}
+                    >
+                      <svg viewBox="0 0 10 10" aria-hidden="true">
+                        <path stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M1.2 1.2l7.6 7.6M8.8 1.2l-7.6 7.6" />
+                      </svg>
+                    </button>
+                  </span>
+                {/each}
+                <button
+                  class="lang-add"
+                  class:open={langPickerFor === s.key}
+                  data-tip={t('vset.lang_add')}
+                  aria-label={t('vset.lang_add')}
+                  onclick={() => void openLangPicker(s)}
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 3.5v9M3.5 8h9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                  </svg>
+                </button>
+              </div>
+              {#if langPickerFor === s.key}
+                <!-- Sixty languages behind a search field, which is the whole
+                     shape of this control: the common case is two clicks and the
+                     long tail is one word of typing away, without either being
+                     in the other's way. -->
+                <div class="lang-picker">
+                  <input
+                    class="lang-search"
+                    type="text"
+                    spellcheck="false"
+                    autocapitalize="off"
+                    autocorrect="off"
+                    placeholder={t('vset.lang_search')}
+                    bind:this={langQueryEl}
+                    bind:value={langQuery}
+                    onkeydown={(e) => {
+                      // Enter takes the first hit — with a filtered list of one,
+                      // reaching for the mouse is the whole cost of the feature.
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const hit = searchLanguages(langQuery, codes)[0];
+                        if (hit) addLang(s, hit.code);
+                      }
+                      if (e.key === 'Escape') { e.preventDefault(); langPickerFor = null; }
+                      e.stopPropagation();
+                    }}
+                  />
+                  <div class="lang-list">
+                    {#each searchLanguages(langQuery, codes) as lang (lang.code)}
+                      <button class="lang-option" onclick={() => addLang(s, lang.code)}>
+                        <span class="lang-option-name">{lang.name}</span>
+                        <span class="lang-option-code">{lang.code}</span>
+                      </button>
+                    {:else}
+                      <div class="folders-empty">{t('vset.lang_none')}</div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
             {:else if s.kind === 'slider'}
               {@const value = sliderValue(s)}
               <div class="slider-row">
@@ -7330,8 +7623,20 @@
     z-index: 70;
   }
 
+  /* The tab row is what sets this number, and the Russian labels are the
+     binding case. Measured against the built stylesheet rather than a
+     hand-written copy of it (see the queue-row note): the seven of them render
+     to **510px** at the real 13px font and 13px gap, English to 408. This is a
+     content-box width — there is no global `box-sizing` reset here, so the
+     36px of padding sit outside it — which leaves 50px of slack, or 40 once
+     this sheet is tall enough to grow its 10px scrollbar.
+
+     The old 428 was already 13px short of *six* tabs, so "Клавиши" was being
+     clipped by a row whose overflow scroll is invisible by design
+     (`scrollbar-width: none`). The seventh tab did not create that; it made it
+     impossible to miss. */
   .settings {
-    width: min(428px, 100%);
+    width: min(560px, 100%);
     max-height: 100%;
     overflow-y: auto;
     background: rgba(16, 16, 22, 0.97);
@@ -7380,9 +7685,30 @@
     margin-top: 8px;
     max-height: 168px;
     overflow-y: auto;
+    /* Part of scrolling vertically, not an extra: setting one axis computes the
+       other from `visible` to `auto`, and a row a fraction of a pixel too wide
+       would otherwise raise a horizontal bar and eat a row's height. */
+    overflow-x: hidden;
+  }
+
+  .link-recent-row {
+    display: flex;
+    align-items: center;
+    /* The dialog is a fixed width and the name is arbitrary. Without this the
+       row grows to the name instead of letting it ellipsise — `min-width: auto`
+       is the default on a flex item, and it has to be cleared on every ancestor
+       between the label and the fixed box, not only on the label. */
+    min-width: 0;
+    border-radius: 6px;
+  }
+
+  .link-recent-row:hover {
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .link-recent-item {
+    flex: 1;
+    min-width: 0;
     text-align: left;
     padding: 7px 8px;
     border: none;
@@ -7396,9 +7722,45 @@
     white-space: nowrap;
   }
 
-  .link-recent-item:hover {
-    background: rgba(255, 255, 255, 0.08);
+  .link-recent-row:hover .link-recent-item {
     color: #e8e8ec;
+  }
+
+  /* Always on screen, never faded in: taking a 1.4px stroke off full opacity
+     makes the engine re-rasterise it and the glyph visibly twitches in
+     WKWebView. The three strengths are colour, exactly as on `.torrow-forget`. */
+  .link-recent-forget {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    margin-right: 4px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.22);
+    cursor: pointer;
+    transition: color 0.12s ease;
+  }
+
+  .link-recent-row:hover .link-recent-forget {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  /* Written to win rather than left to source order: the rule above is a
+     descendant selector and would otherwise out-weigh a bare
+     `.link-recent-forget:hover`, so the cross would never reach full strength
+     under the pointer — and it is only ever hovered while the row is. */
+  .link-recent-row:hover .link-recent-forget:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #f0f0f4;
+  }
+
+  .link-recent-forget svg {
+    width: 10px;
+    height: 10px;
   }
 
   .link-actions {
@@ -7407,6 +7769,14 @@
     justify-content: flex-end;
     gap: 14px;
     margin-top: 12px;
+  }
+
+  /* Pushed to the far left, so the row reads as "the other way in" on one side
+     and "do the thing" on the other. `margin-right: auto` rather than
+     `space-between` on the parent, which would also spread the yt-dlp button
+     away from the primary one it belongs beside. */
+  .link-torrent {
+    margin-right: auto;
   }
 
   .link-error {
@@ -7749,10 +8119,13 @@
      the same look reads as the same control. */
   .tabs {
     display: flex;
-    /* Five sections rather than two: the Russian labels need every pixel here,
+    /* Seven sections rather than two: the Russian labels need every pixel here,
        and the row must not wrap — a second line of tabs reads as two rows of
-       something else. `nowrap` plus a scroll as the last resort, which no real
-       label length has reached. */
+       something else. The scroll is a last resort and, with no scrollbar to
+       show for it, an *invisible* one: a tab past the edge is simply gone. So
+       adding a section means re-measuring `.settings`' width, which is sized
+       from this row for exactly that reason — the six-tab row had quietly been
+       overflowing it. */
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
@@ -7859,6 +8232,189 @@
      but dimmed */
   .setting.muted {
     opacity: 0.45;
+  }
+
+  /* ---- Content languages (ROADMAP 25) ---- */
+
+  .langs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .langs-auto {
+    padding: 4px 2px;
+    color: #6a6a74;
+    font-size: 12.5px;
+  }
+
+  /* The chip is the container and both controls sit inside it, because a button
+     inside a button is invalid markup and the inner one stops receiving clicks.
+     Its own background carries the state; neither child paints one. */
+  .lang-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    transition: background 0.12s ease;
+  }
+
+  /* Indigo means one thing here as everywhere else — this is the selected one,
+     the language mpv reaches for first. */
+  .lang-chip.first {
+    background: #6366f1;
+  }
+
+  .lang-name {
+    padding: 5px 4px 5px 11px;
+    border: none;
+    background: transparent;
+    color: #e0e0e6;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+
+  .lang-chip.first .lang-name {
+    color: #fff;
+  }
+
+  /* The first chip is already what clicking it would make it, so it is inert —
+     and says so by not changing under the pointer rather than by being dimmed,
+     which would read as unavailable. */
+  .lang-name:disabled {
+    cursor: default;
+  }
+
+  .lang-drop {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    margin-right: 4px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    /* Colour, never opacity: this is a 1.4px stroke that is always on screen,
+       and taking it off full opacity makes WKWebView re-rasterise and wobble it
+       (the same finding as the torrent list's delete cross). */
+    color: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+  }
+
+  .lang-chip.first .lang-drop {
+    color: rgba(255, 255, 255, 0.62);
+  }
+
+  /* Written to win, not left to source order — measured in the built bundle,
+     `.lang-chip.first .lang-drop` weighs (0,4,0) against a bare
+     `.lang-drop:hover`'s (0,3,0), so on the preferred chip the cross would have
+     stayed at its resting colour under the pointer. The same arithmetic the
+     link-history cross ran into. */
+  .lang-chip .lang-drop:hover {
+    background: rgba(0, 0, 0, 0.25);
+    color: #fff;
+  }
+
+  .lang-drop svg {
+    width: 9px;
+    height: 9px;
+  }
+
+  .lang-add {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px dashed rgba(255, 255, 255, 0.18);
+    border-radius: 50%;
+    background: transparent;
+    color: #b9b9c3;
+    cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+  }
+
+  .lang-add:hover,
+  .lang-add.open {
+    border-color: #818cf8;
+    background: rgba(129, 140, 248, 0.1);
+    color: #e8e8ec;
+  }
+
+  .lang-add svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .lang-picker {
+    margin-top: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    overflow: hidden;
+  }
+
+  .lang-search {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    background: transparent;
+    color: #e8e8ec;
+    font-size: 12.5px;
+  }
+
+  .lang-search:focus {
+    outline: none;
+  }
+
+  .lang-list {
+    max-height: 176px;
+    overflow-y: auto;
+    /* Part of scrolling vertically rather than an extra: setting one axis
+       computes the other from `visible` to `auto`. */
+    overflow-x: hidden;
+  }
+
+  .lang-option {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 6px 10px;
+    border: none;
+    background: transparent;
+    color: #d0d0d8;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .lang-option:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+  }
+
+  .lang-option-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The code is here for the person who knows their file is tagged `jpn` and
+     cannot read 日本語 — the same reason the search matches on codes. */
+  .lang-option-code {
+    flex: none;
+    color: #6a6a74;
+    font-size: 11px;
   }
 
   /* ---- Excluded folder list ---- */
@@ -8571,8 +9127,31 @@
     height: 30px;
   }
 
+  /* The pair reads outwards from the replay button: "next" under the card on
+     the left, "previous" under the card on the right, each aligned to the edge
+     it sits against. Both labels were left-aligned before, which put them at
+     the same side of the screen and made the row look like one thing pushed
+     off-centre rather than two choices either side of a middle. */
+  .endcard.prev {
+    text-align: right;
+  }
+
+  /* These sit directly on the final frame of the film — a 0.35 scrim is not a
+     background — so both lines carry the shadow every other caption over the
+     video does. And the label is the start screen's grey lifted to something
+     that survives a bright frame: at #8f8f9c on a snow scene it was invisible,
+     which is exactly where the viewer is looking for "what is next". A rule
+     that has to beat `.card-name`/`.card-left` is written to win rather than
+     left to source order (see the queue rows and the torrent list). */
   .endcard .card-name {
     margin-top: 2px;
+    color: #f2f2f6;
+    text-shadow: var(--ui-shadow);
+  }
+
+  .endcard .card-left {
+    color: #d2d2dc;
+    text-shadow: var(--ui-shadow);
   }
 
   /* The countdown drains rather than fills: what it reports is the time left,

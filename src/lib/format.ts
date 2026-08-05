@@ -79,6 +79,31 @@ export function displayName(path: string): string {
   return name.replace(/(?<=\S)\.(?=\S)/g, ' ').trim() || base;
 }
 
+/**
+ * A link written out for a human to read, for the tooltip on a recents row.
+ *
+ * Two different problems, one per shape. A URL is percent-encoded, so a
+ * Cyrillic or accented path arrives as a run of `%D0%B1` and the tooltip — whose
+ * whole job is "which link is this" — became the least readable thing in the
+ * dialog. And a magnet is not long because it says a lot: it is a hash plus a
+ * name plus a *tracker list*, and trackers are how a client finds peers, not how
+ * a person tells two magnets apart. So the trackers go, and what is left is the
+ * name and the hash — the name because it is what the film is called, the hash
+ * because it is the identity, and two rips of the same film differ by nothing
+ * else. Deliberately not the same string as the row's own label, which is the
+ * name alone: a tooltip that repeats its label is noise.
+ */
+export function readableLink(src: string): string {
+  const s = src.trim();
+  if (/^magnet:/i.test(s)) {
+    const hash = /xt=urn:btih:([0-9a-z]+)/i.exec(s)?.[1];
+    const dn = /[?&]dn=([^&]*)/i.exec(s)?.[1];
+    const name = dn ? decodeMaybe(dn.replace(/\+/g, ' ')).trim() : '';
+    return [name, hash && `btih:${hash.toLowerCase()}`].filter(Boolean).join(' · ') || s;
+  }
+  return decodeMaybe(s);
+}
+
 export type EpisodeRef = { title: string; season: number; episode: number };
 
 /**

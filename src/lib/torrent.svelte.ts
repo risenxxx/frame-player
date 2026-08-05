@@ -445,7 +445,6 @@ export interface TorrentOnDisk {
   folder: string;
   info_hash: string | null;
   size: number;
-  active: boolean;
 }
 
 /// One row of the start screen's torrent list: what disk says, plus what we
@@ -463,6 +462,33 @@ export async function listTorrents(): Promise<TorrentRow[]> {
     const known = d.info_hash ? rememberedTorrent(d.info_hash) : null;
     return { ...d, known, name: known?.name ?? (d.info_hash ? null : d.folder) };
   });
+}
+
+/**
+ * Is mpv streaming from this torrent right now?
+ *
+ * The one reason a row must refuse to be deleted, and it used to be answered by
+ * `torrent_list` as *session membership* — which is a different question: a
+ * torrent stays in the session, paused, after the film is closed, so the flag
+ * stayed true for the rest of the run and the delete button was dead from the
+ * moment anything had been watched. Deleting a merely-loaded torrent is safe
+ * anyway, since `forget` takes it out of the session before removing the
+ * directory.
+ *
+ * Two things about how it is answered. The source is **what mpv has open**, not
+ * `torrent.info` — that one is set when a magnet *resolves*, so a season whose
+ * file picker was cancelled would go on claiming to be playing with nothing
+ * loaded at all. And it is a function rather than a field of the row, so it is
+ * re-read whenever `filePath` changes: a value baked in when the list was
+ * fetched would be a snapshot taken ~300 ms after the file was unloaded, and a
+ * button stuck disabled is exactly the bug being fixed.
+ */
+export function torrentIsPlaying(row: TorrentOnDisk): boolean {
+  const ref = player.filePath ? parseTorrentUrl(player.filePath) : null;
+  if (!ref || !row.info_hash) return false;
+  // Lower-cased on both sides: a folder from the older layout may be upper-case
+  // hex, and `torrent_list` reports it as it found it.
+  return ref.infoHash.toLowerCase() === row.info_hash.toLowerCase();
 }
 
 /**

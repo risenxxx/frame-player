@@ -1,6 +1,6 @@
 {
   "name": "frameplayer",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "A video player for Windows and macOS built on Tauri 2 and libmpv: local files, links and live torrent streaming in one window, frame-accurate seeking, and an unusual amount of attention to detail",
   "type": "module",
   "private": true,
@@ -11,6 +11,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
+    "set-version": "node scripts/set-version.mjs",
     "tauri:macos": "env FFMPEG_DIR=\"$PWD/src-tauri/ffmpeg-macos\" LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib tauri dev",
     "tauri:macos:build": "env FFMPEG_DIR=\"$PWD/src-tauri/ffmpeg-macos\" LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib tauri build",
     "tauri:macos:dmg": "scripts/build-dmg.sh",
