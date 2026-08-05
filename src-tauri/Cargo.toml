@@ -1,6 +1,6 @@
 [package]
 name = "frameplayer"
-version = "0.21.4"
+version = "0.21.5"
 description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
 authors = ["Evgenii Zakharov"]
 edition = "2021"
@@ -95,4 +95,16 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_Graphics_Gdi",
     "Win32_Foundation",
 ] }
+
+# Two librqbit crates, vendored with one small fix each — see vendor/README.md.
+# The short version: upstream's DHT dies permanently on the first UDP recv
+# error, and Windows produces those routinely (ICMP "port unreachable" from a
+# dead node surfaces as WSAECONNRESET on recv_from), which left the player with
+# no peer source at all on Windows; and the HTTP tracker announce replaces the
+# URL's own query string, so rutracker-style announce URLs (`/ann?magnet`,
+# `/ann?ak=<passkey>`) get their marker stripped and answer 403. Neither fix
+# exists in any release compatible with the 8.x line.
+[patch.crates-io]
+librqbit-dht = { path = "vendor/librqbit-dht" }
+librqbit-tracker-comms = { path = "vendor/librqbit-tracker-comms" }
 

@@ -360,6 +360,18 @@ impl TorrentService {
                 // which pieces it has (no bitfield, no `have`), refuses piece
                 // requests outright, and drops peers once the file is complete.
                 disable_upload: !seeding,
+                // Without a listener the session announces `port=0`, and
+                // trackers refuse that outright (opentrackr answers "Port
+                // can't be 0", rutracker 403s) — so every tracker announce was
+                // silently worthless and the DHT was the *only* peer source,
+                // which is exactly the redundancy failure that made its
+                // Windows death (see vendor/README.md) a total outage. A real
+                // port also lets NAT-ed seeds connect to us, which is how a
+                // home-seeded swarm often reaches a leecher at all. A range,
+                // not one port: the seeding switch rebuilds the session and
+                // librqbit takes the first port that binds. No UPnP — a video
+                // player does not open router ports behind the user's back.
+                listen_port_range: Some(42800..42900),
                 ..Default::default()
             },
         )

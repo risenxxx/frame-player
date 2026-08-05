@@ -1440,7 +1440,7 @@ dependencies = [
 
 [[package]]
 name = "frameplayer"
-version = "0.21.4"
+version = "0.21.5"
 dependencies = [
  "arboard",
  "block2",
@@ -2731,8 +2731,6 @@ dependencies = [
 [[package]]
 name = "librqbit-dht"
 version = "5.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7cc129194337771a86b0399956c4d9bf1cd97c5f24d14a50be38e170f76a54b"
 dependencies = [
  "anyhow",
  "backoff",
@@ -2789,8 +2787,6 @@ dependencies = [
 [[package]]
 name = "librqbit-tracker-comms"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08204944c5be677a5de8e1230e0249fce5c14abef23048e26452c6fb03f1b260"
 dependencies = [
  "anyhow",
  "async-stream",
