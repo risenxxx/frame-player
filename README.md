@@ -3,6 +3,16 @@
 Local files, links and magnet torrents in one window, on **Tauri 2 + libmpv** —
 frame-accurate, instant, and unusually careful about the details.
 
+<p align="center">
+  <img src="docs/intro.jpg" width="900"
+       alt="Frame Player playing a file: a hover preview of a distant scene above the seekbar, chapter marks along it, and a skip-intro button over the video">
+</p>
+
+<p align="center">
+  <sub>Hovering the seekbar previews the frame you would land on; the chapter is
+  an opening, so the player offers to skip it.</sub>
+</p>
+
 Decoding is libmpv, the same engine as mpv and IINA, so format coverage,
 hardware acceleration and HDR are not compromises. mpv renders into a native
 child view *behind* a transparent webview and the entire interface is HTML
