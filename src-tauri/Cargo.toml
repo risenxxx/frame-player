@@ -1,6 +1,6 @@
 [package]
 name = "frameplayer"
-version = "0.21.1"
+version = "0.21.2"
 description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
 authors = ["Evgenii Zakharov"]
 edition = "2021"

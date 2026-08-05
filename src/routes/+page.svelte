@@ -2486,13 +2486,19 @@
         const r = el.getBoundingClientRect();
         const w = tipEl.offsetWidth;
         const h = tipEl.offsetHeight;
+        // Above by default, which is right for anything in a bar: the tip
+        // appears over the picture rather than over the next control. An
+        // element opts out with `data-tip-below` when the thing it names is
+        // *above* it and would be covered — a recents card, where the tip
+        // belongs to the poster it would otherwise hide. Only the preference
+        // moves; flipAxis still puts the tip on whichever side has the room.
         const v = flipAxis({
           near: r.top,
           far: r.bottom,
           size: h,
           limit: window.innerHeight,
           gap: 7,
-          preferBefore: true,
+          preferBefore: !el.hasAttribute('data-tip-below'),
         });
         tooltip = {
           text,
@@ -4553,7 +4559,6 @@
               <div class="card">
                 <button
                   class="card-open"
-                  data-tip={recentTip(item)}
                   aria-label={item.name}
                   onclick={() => void openRecent(item)}
                 >
@@ -4581,11 +4586,19 @@
                         : 0}%"
                     ></span>
                   </span>
-                  <span class="card-name">{item.name}</span>
-                  <span class="card-left">
-                    {item.dur > 0
-                      ? t('start.remaining', { time: formatTime(item.dur - item.pos) })
-                      : formatTime(item.pos)}
+                  <!-- The tip is on the caption, not on the whole card. It
+                       names what the card already shows in short — the full
+                       path, or the torrent this episode came out of — so it is
+                       an answer to "which one is this", asked by reading the
+                       truncated name. Hung on the poster it was answering a
+                       question nobody had, and covering the frame to do it. -->
+                  <span class="card-meta" data-tip={recentTip(item)} data-tip-below>
+                    <span class="card-name">{item.name}</span>
+                    <span class="card-left">
+                      {item.dur > 0
+                        ? t('start.remaining', { time: formatTime(item.dur - item.pos) })
+                        : formatTime(item.pos)}
+                    </span>
                   </span>
                 </button>
                 <button
@@ -6883,9 +6896,11 @@
     color: #e8e8ec;
   }
 
+  /* 484 = the 420 this was written as plus its own 64px of padding. An outer
+     figure now that boxes are border boxes, and the same width on screen. */
   .panel {
     text-align: center;
-    max-width: 420px;
+    max-width: 484px;
     padding: 32px;
   }
 
@@ -7111,7 +7126,10 @@
     display: flex;
     flex-direction: column;
     gap: 5px;
-    min-width: 148px;
+    /* Outer, like every size here: 148 of content plus 22 of padding and 2 of
+       border. Wide enough that the rate and the peer count changing width does
+       not make the chip breathe. */
+    min-width: 172px;
     padding: 7px 11px 8px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 9px;
@@ -7144,8 +7162,9 @@
   }
 
   .torchip-icon {
-    /* No box-sizing reset here, and an SVG has no border — but `flex: none`
-       still matters, or a long label squashes the arrow into an oval. */
+    /* An SVG has no border, so the box-sizing reset is a no-op here — but
+       `flex: none` still matters, or a long label squashes the arrow into an
+       oval. */
     flex: none;
     width: 12px;
     height: 12px;
@@ -7372,7 +7391,9 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    min-width: 168px;
+    /* Outer: 168 of content plus 32 of padding and 2 of border. Wide enough
+       that "70%" and "1.25×" raise a popup of the same size. */
+    min-width: 202px;
     /* The same surface as the context menu, settings and tooltips — floating
        layers should come from one scale, not one each. */
     background: rgba(16, 16, 22, 0.96);
@@ -7440,14 +7461,13 @@
        Wide enough for the five-option speed row, which at 230px gave each
        option 37px and let "1.25×" fill it edge to edge. */
     min-width: 256px;
-    /* There is no global box-sizing reset in this project, so without this the
-       `max-height` from the placement applies to the CONTENT box: the menu
-       rendered 14px taller than it was told (6+6 padding, 1+1 border) and ate
-       the 8px margin it was supposed to keep from the window edge, ending up
-       6px past it. */
-    box-sizing: border-box;
     /* Taller than the window in the mini player, and on a short screen with a
-       long chapter list. The cap comes from the placement (floating.ts).
+       long chapter list. The cap comes from the placement (floating.ts), which
+       computes it from the room on screen and therefore means the whole box —
+       the global border-box reset is what makes the `max-height` it hands over
+       mean the same thing. Before the reset this menu rendered 14px taller than
+       it was told (6+6 padding, 1+1 border) and ate the 8px margin it was
+       meant to keep from the window edge.
        `overflow-x` must be set too: leaving it `visible` next to a scrolling
        axis computes it to `auto`, and a row a fraction of a pixel too wide then
        raises a horizontal bar that eats a row's worth of height. Nothing here
@@ -7643,17 +7663,24 @@
   /* The tab row is what sets this number, and the Russian labels are the
      binding case. Measured against the built stylesheet rather than a
      hand-written copy of it (see the queue-row note): the seven of them render
-     to **510px** at the real 13px font and 13px gap, English to 408. This is a
-     content-box width — there is no global `box-sizing` reset here, so the
-     36px of padding sit outside it — which leaves 50px of slack, or 40 once
-     this sheet is tall enough to grow its 10px scrollbar.
+     to **510px** at the real 13px font and 13px gap, English to 408.
+
+     598 is that 560 plus the sheet's own 36px of padding and 2px of border,
+     because this is an outer width now — the number changed, the sheet did
+     not. Content is still 560, so the tab row still has 50px of slack, or 40
+     once this sheet is tall enough to grow its 10px scrollbar.
 
      The old 428 was already 13px short of *six* tabs, so "Клавиши" was being
      clipped by a row whose overflow scroll is invisible by design
      (`scrollbar-width: none`). The seventh tab did not create that; it made it
      impossible to miss. */
   .settings {
-    width: min(560px, 100%);
+    width: min(598px, 100%);
+    /* Against the backdrop's padded grid area, and now honestly: as a
+       content-box height this let the sheet stand 32px taller than the area it
+       was centred in, so at full height it reached 39px from the top of the
+       window and did not in fact clear the 48px title bar the backdrop's 56px
+       of padding was chosen to clear. */
     max-height: 100%;
     overflow-y: auto;
     background: rgba(16, 16, 22, 0.97);
@@ -7663,14 +7690,15 @@
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   }
 
-  /* Narrower than the settings sheet: it holds one field. */
+  /* Narrower than the settings sheet: it holds one field. Outer, like the
+     sheet's own width — 520 of content plus the same 38 of padding and
+     border. */
   .link-dialog {
-    width: min(520px, 100%);
+    width: min(558px, 100%);
   }
 
   .link-input {
     width: 100%;
-    box-sizing: border-box;
     margin: 4px 0 8px;
     padding: 10px 12px;
     border: 1px solid rgba(255, 255, 255, 0.14);
@@ -8341,6 +8369,8 @@
     height: 9px;
   }
 
+  /* 26 outer, border included — and it always was, because a <button> is
+     border-box in both engines' own stylesheets, reset or no reset. */
   .lang-add {
     display: grid;
     place-items: center;
@@ -8378,7 +8408,6 @@
   .lang-search {
     display: block;
     width: 100%;
-    box-sizing: border-box;
     padding: 8px 10px;
     border: none;
     border-bottom: 1px solid rgba(255, 255, 255, 0.07);
@@ -8399,6 +8428,11 @@
     overflow-x: hidden;
   }
 
+  /* `width: 100%` is the row filling the list rather than overhanging it by its
+     own 20px of padding, and that held before the global reset as well: this is
+     a <button>, and both engines' stylesheets already make one border-box. The
+     reset changes nothing here — worth knowing before "fixing" a row that was
+     never broken. */
   .lang-option {
     display: flex;
     align-items: baseline;
@@ -8620,11 +8654,6 @@
     width: 100%;
     /* 900px for .recent plus the horizontal padding */
     max-width: 948px;
-    /* Local, because the project has no global reset: without it `width: 100%`
-       and the padding add up, the element becomes 48px wider than its container
-       and horizontal scrolling appears. A global reset cannot be added now —
-       the rest of the layout was built against content-box and would break. */
-    box-sizing: border-box;
   }
 
   /* The content does not shrink when height runs short — the container scrolls
@@ -8775,7 +8804,6 @@
 
   .torrow-spin {
     flex: none;
-    box-sizing: border-box;
     width: 11px;
     height: 11px;
     border-radius: 50%;
@@ -8955,6 +8983,7 @@
   /* And on the ancestors between the flex item and the ellipsis, or the label
      never gets the chance to truncate. */
   .recent-rail .card-open,
+  .recent-rail .card-meta,
   .recent-rail .card-name,
   .recent-rail .card-left {
     min-width: 0;
@@ -9012,13 +9041,12 @@
     right: -21px;
   }
 
+  /* 32 flat, border included — the circle has to be the button it sits in, or
+     the glyph lands a pixel off centre and the chevron visibly leans. That is
+     the border-box reset doing it rather than a line here. */
   .rail-arrow span {
     display: grid;
     place-items: center;
-    /* No global reset here, so without this the 1px border makes the circle
-       34px inside a 32px button and the glyph lands a pixel off centre —
-       measured, and visible as the chevron leaning toward one side. */
-    box-sizing: border-box;
     width: 32px;
     height: 32px;
     border-radius: 50%;
@@ -9213,6 +9241,16 @@
     bottom: 0;
     height: 3px;
     background: #6366f1;
+  }
+
+  /* The card's caption, and with it the tooltip's hit area: the name and the
+     remaining time, never the poster above them. It gets no box of its own —
+     `.card-name`'s 6px top margin collapses straight through it, so the wrapper
+     covers the two line boxes and not the gap between the caption and the
+     frame, and the card is exactly as tall as before. Measured in both engines:
+     the card and both lines land on the same pixel with and without it. */
+  .card-meta {
+    display: block;
   }
 
   .card-name {
@@ -9559,8 +9597,12 @@
        line that read as a paragraph rather than a label. `anywhere` rather than
        `break-word` because a path or a release name is frequently a single
        unbroken token with no space to break at — `break-word` would leave it
-       overflowing the box it was given. */
-    max-width: min(360px, calc(100vw - 32px));
+       overflowing the box it was given.
+       380 is that 360 plus the tip's own 18px of padding and 2px of border:
+       the same box on screen, written as its outer size. The viewport term
+       becomes honest at the same time — it was meant to keep 16px clear of
+       each edge and, as a content width, kept 6px. */
+    max-width: min(380px, calc(100vw - 32px));
     overflow-wrap: anywhere;
     background: rgba(14, 14, 20, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.09);
@@ -9668,8 +9710,6 @@
 
   .menu {
     position: absolute;
-    /* Same reason as .ctxmenu: max-height must mean the whole box. */
-    box-sizing: border-box;
     bottom: 100px;
     right: 24px;
     min-width: 256px;
@@ -9895,6 +9935,12 @@
     padding: 6px 10px;
   }
 
+  /* `width: 100%` is the row filling the menu, not overhanging it by its own
+     20px of padding — and it always was: a <button> is border-box in both
+     engines' own stylesheets, which is why every one of the nine local
+     `box-sizing` declarations this project accumulated sat on something that
+     was NOT a button. Measured before and after the reset, this row and the
+     `.hint` at its right edge do not move by a pixel. */
   .menu-item {
     display: block;
     width: 100%;
@@ -10209,9 +10255,19 @@
     font-size: 12px;
   }
 
+  /* 184, border included — the outer width of the popup, which is the figure
+     everything around it is written against: `.hover-chapter` caps itself at
+     the same number, and `onSeekHover` clamps hoverX by half of it (92). Those
+     agreed with the rendered box while this said 180 and grew by its outline;
+     with the border-box reset they agree with the declaration too.
+     One consequence of the box changing meaning: `aspect-ratio` follows
+     box-sizing, so the video's shape is now the shape of the outlined frame
+     rather than of the picture inside it. That is a 2px inset on each side —
+     under 2% of the ratio, taken by `object-fit: cover` — and the frame is the
+     part anyone sees. */
   .hovertip .thumb {
     display: block;
-    width: 180px;
+    width: 184px;
     /* Set inline from the video's own dimensions; this is the fallback for the
        moment before mpv has reported them. */
     aspect-ratio: 16 / 9;
@@ -10261,11 +10317,9 @@
     /* 100%, not `auto`: an <img> is a REPLACED element, so `width: auto` takes
        its intrinsic size rather than resolving from the insets — measured, that
        made the layer 484px tall. Percentages against the positioned wrapper are
-       what actually make it cover exactly, and `border-box` is needed with them
-       because there is no global box-sizing reset here: `.thumb`'s own 2px
-       border would otherwise be added on top of the 100% and leave it 4px
-       taller, which is the same overflow in miniature. */
-    box-sizing: border-box;
+       what actually make it cover exactly, and they only do so because boxes
+       are border boxes: `.thumb`'s own 2px border used to be added on top of
+       the 100% and left this 4px bigger, the same overflow in miniature. */
     width: 100%;
     height: 100%;
     aspect-ratio: auto;
@@ -10347,11 +10401,10 @@
     line-height: 1.35;
   }
 
+  /* 20 including the 2.5px ring — a spinner written as its content is a circle
+     5px bigger than the number beside it, which is what threw the old two-line
+     alignment off. The border-box reset is what holds this now. */
   .loading-spin {
-    /* There is no global box-sizing reset in this project, so without this the
-       2.5px border makes a "18px" circle lay out 22px wide — which is exactly
-       what threw the old two-line alignment off. */
-    box-sizing: border-box;
     width: 20px;
     height: 20px;
     border-radius: 50%;
@@ -10376,10 +10429,12 @@
     transition: opacity 0.12s ease 0.18s;
   }
 
+  /* 27, which is the 22 this was written as plus its 2.5px ring on each side:
+     the same circle over the preview as before, now as an outer size. */
   .spinner::after {
     content: '';
-    width: 22px;
-    height: 22px;
+    width: 27px;
+    height: 27px;
     border-radius: 50%;
     border: 2.5px solid rgba(255, 255, 255, 0.35);
     border-top-color: #fff;

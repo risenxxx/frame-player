@@ -19,6 +19,18 @@ child view *behind* a transparent webview and the entire interface is HTML
 composited on top, which is what lets it be a real interface rather than
 whatever an OSC script can draw.
 
+## Contents
+
+- [Highlights](#highlights)
+- [Install](#install) — [Windows](#windows) · [macOS](#macos)
+- [Features](#features)
+- [Configuration](#configuration)
+- [Hotkeys](#hotkeys)
+- [Building](#building) — [Windows](#windows-1) · [macOS](#macos-1) · [Tests](#tests)
+- [Project structure](#project-structure)
+- [Releases](#releases)
+- [License](#license)
+
 ## Highlights
 
 Most of what follows exists somewhere else. What is unusual is how much of it is
@@ -63,6 +75,62 @@ spaces — the one thing an ordinary always-on-top window cannot do.
 
 The interface is localised **Russian / English**, and every hotkey can be
 rebound.
+
+## Install
+
+Both platforms are built and published by CI on every version bump — take the
+files from
+[the latest release](https://github.com/risenxxx/frame-player/releases/latest):
+
+| Platform | File | Requirements |
+|---|---|---|
+| Windows | `FramePlayer_<version>_x64-setup.exe` | Windows 10/11, x64 |
+| macOS | `FramePlayer_<version>_aarch64.dmg` | Apple Silicon |
+
+**Neither build is signed with a certificate the operating system trusts yet**,
+so both stop the first launch with a warning. That is a fact about a
+certificate — an Apple Developer ID costs $99 a year and a Windows one more —
+rather than about the binaries, which are built in the open from this repository
+by [the release workflow](.github/workflows/release.yml). Updates are a separate
+mechanism and *are* verified: every package is signed with the project's own key
+and the player refuses one whose signature does not match.
+
+Once installed, the player updates itself — it checks for a new version at
+startup and every six hours, and the update reopens the current video where it
+was.
+
+### Windows
+
+1. Run `FramePlayer_<version>_x64-setup.exe`. SmartScreen shows a blue
+   **"Windows protected your PC"** dialog with only a *Don't run* button.
+2. Click **More info** — the publisher line appears, and with it a **Run
+   anyway** button.
+3. Click it; the installer proceeds normally.
+
+SmartScreen is judging the file's *reputation* as much as its signature, and a
+new version is a new file, so expect the warning again after an update installed
+by hand. Updates applied from inside the player do not go through it.
+
+### macOS
+
+1. Open the disk image and drag **Frame Player** to *Applications*.
+2. Launch it once. macOS refuses, saying it cannot verify the app is free of
+   malware — dismiss the dialog.
+3. Open **System Settings → Privacy & Security** and scroll to the *Security*
+   section: the blocked app is listed there with an **Open Anyway** button.
+   Click it and confirm with Touch ID or your password.
+4. Launch the app again and confirm once more. Every launch after that is
+   ordinary.
+
+**Right-click → Open no longer works on macOS 15 (Sequoia) and later** — Apple
+removed that shortcut, so System Settings is the only route left. From a
+terminal, `xattr -d com.apple.quarantine "/Applications/Frame Player.app"`
+does the same thing in one step.
+
+The app bundle carries an *ad-hoc* signature, and that is deliberate rather than
+cosmetic: it seals the bundle, which keeps Gatekeeper's refusal on the path that
+offers an **Open Anyway** button. Unsealed, the same unsigned app is reported as
+damaged, with no button and no way past it except the terminal.
 
 ## Features
 
@@ -266,8 +334,8 @@ Installed players pick the update up automatically.
 
 Neither platform is code-signed with a real certificate yet — the Windows
 installer is unsigned and the macOS bundle carries an ad-hoc signature, so both
-will show an OS warning on first run. The updater signature is a separate thing
-and is always verified.
+show an OS warning on first run; [Install](#install) has the way past each. The
+updater signature is a separate thing and is always verified.
 
 ## License
 

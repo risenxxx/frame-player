@@ -3,14 +3,46 @@
  *
  * Everything here is deliberately outside a component's <style> block, because
  * Svelte scopes those: a rule written in the page would stop applying the
- * moment the markup it targets moves into a child component. These four groups
- * are the ones that have to survive that move — font faces, focus rings, the
- * form-control font reset and the scrollbar skin.
+ * moment the markup it targets moves into a child component. These five groups
+ * are the ones that have to survive that move — the box-sizing reset, font
+ * faces, focus rings, the form-control font reset and the scrollbar skin.
  *
  * html/body deliberately stay in the page component: `background: transparent`
  * is what lets mpv show through, and the veil window needs the opposite. Two
  * routes, two answers, so it does not belong in a shared sheet.
  */
+
+/* Every box is its border box. This project went without the reset for a long
+   time and paid for it in a way that never looked like a box-sizing problem:
+   the symptom is always "something is a pixel or two off", and the cause is
+   always a border or a padding sitting outside the number that was written
+   down. Four found in a single session — the mini player's exit button, whose
+   1px border broke the concentric-corner arithmetic; the preview's crossfade
+   layer, 4px too big over a `height: 100%` because of its own 2px outline; the
+   context menu, rendering 14px taller than the `max-height` the placement gave
+   it and walking off the window edge; and the carousel arrow, a 34px circle in
+   a 32px button with the chevron a pixel off centre. Each cost a measurement
+   in a headless browser to find, and each was then fixed with a local
+   `box-sizing: border-box` — nine of those had accumulated, which is the reset
+   written out one element at a time and only where somebody had already been
+   bitten.
+   `*::before, *::after` are included: a decorative box is exactly the kind
+   that gets a border and is never measured.
+   What this does NOT touch is `<button>` and `<select>`, which both engines
+   already make border-box in their own stylesheets — measured in headless
+   Chrome and in a WKWebView harness, and it is why all nine of those local
+   declarations sat on a div, a span, an img or an input. Buttons are most of
+   the small controls here, so most of the app was already border-box and the
+   reset is what makes the rest agree with it.
+   Sizes elsewhere were adjusted to keep what is on screen unchanged — the
+   figures in this project are outer sizes (a hover preview is 184px because
+   the seekbar's clamp says 92), so what moved was the declaration, not the
+   pixel. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 @font-face {
   font-family: 'Rubik';
