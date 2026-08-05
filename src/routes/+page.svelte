@@ -2466,13 +2466,38 @@
     unlisteners.push(() => window.removeEventListener('pointerup', blurOnPointerUp));
 
     // Custom tooltips instead of native title: delegated via [data-tip]
+    //
+    // **A tooltip is cleared by the pointer not being over an anchor, never by
+    // being told it left one.** `pointerout` is not delivered when the hovered
+    // node is *removed* (measured, both engines), and the transition from the
+    // start screen into playback removes anchors under a stationary cursor by
+    // the handful — the torrent file picker being the one that gets noticed.
+    // Relying on that event alone left a tooltip nothing could dismiss: moving
+    // the mouse over the video hit the early return below, so only a click
+    // (which clears it in the pointerdown capture handler) or landing on
+    // another anchor would take it away.
     const onTipOver = (e: PointerEvent) => {
       const el = (e.target as HTMLElement | null)?.closest('[data-tip]') as HTMLElement | null;
-      if (!el) return;
-      const text = el.getAttribute('data-tip');
-      if (!text) return;
+      const text = el?.getAttribute('data-tip');
+      if (!el || !text) {
+        // The pointer is over something that has no tooltip, which is the
+        // authoritative "nothing to show" — including the pointerover the
+        // browser re-dispatches for whatever is revealed when an element under
+        // the cursor disappears.
+        clearTimeout(tipTimer);
+        tooltip = null;
+        return;
+      }
       clearTimeout(tipTimer);
       tipTimer = setTimeout(async () => {
+        // The anchor may have been removed during the wait, and a detached
+        // element's rect is **all zeros** (measured) — which `flipAxis` and
+        // `shiftAxis` then faithfully place in the top-left corner of the
+        // window, where it sat with no anchor left to send a pointerout.
+        if (!el.isConnected) {
+          tooltip = null;
+          return;
+        }
         // Rendered unplaced first, then measured, then moved — all before
         // paint. Measuring has to happen at the window's origin, because a box
         // positioned with `left` has only the space to its right to lay out
@@ -2482,7 +2507,16 @@
         // moves the box after layout instead of deciding it.
         tooltip = { text, pos: null };
         await tick();
+        // `tooltip` already null means something else cleared it — a click, or
+        // the pointer leaving — and this pass has simply been overtaken.
         if (!tipEl || !tooltip) return;
+        // Checked again on this side of the await, because `tick()` is exactly
+        // when a pending unmount flushes: the anchor can be connected when the
+        // timer fires and gone one line later.
+        if (!el.isConnected) {
+          tooltip = null;
+          return;
+        }
         const r = el.getBoundingClientRect();
         const w = tipEl.offsetWidth;
         const h = tipEl.offsetHeight;
