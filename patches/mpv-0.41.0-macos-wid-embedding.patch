@@ -1,0 +1,295 @@
+diff --git a/DOCS/man/options.rst b/DOCS/man/options.rst
+index fa71dc0..8460af2 100644
+--- a/DOCS/man/options.rst
++++ b/DOCS/man/options.rst
+@@ -3768,6 +3768,16 @@ Window
+     ``--hwdec=mediacodec`` for direct rendering using MediaCodec, or with
+     ``--vo=gpu --gpu-context=android`` (with or without ``--hwdec=mediacodec``).
+ 
++    On macOS, the ID is interpreted as a pointer to an ``NSView``. Pass it as a
++    value cast to ``intptr_t``. mpv does not create a window of its own; instead
++    it inserts its render view as the bottom-most subview of the given view and
++    resizes it to track that view, so anything the host already placed there
++    composites on top of the video. Because the host owns the window,
++    ``--geometry``, ``--autofit*``, ``--fullscreen`` and the window state options
++    (``--ontop``, ``--window-maximized``, ``--window-minimized``, ``--border``)
++    have no effect, and mpv leaves the application activation policy, Dock icon
++    and menu bar alone.
++
+     .. note::
+ 
+         On win32, if desktop wallpaper transition occurs (e.g. setting desktop
+diff --git a/video/out/mac/common.swift b/video/out/mac/common.swift
+index 77557bb..0196c23 100644
+--- a/video/out/mac/common.swift
++++ b/video/out/mac/common.swift
+@@ -28,6 +28,42 @@ class Common: NSObject {
+     var view: View?
+     var titleBar: TitleBar?
+ 
++    // --wid embedding: the host NSView we render into instead of creating our
++    // own Window. `window` stays nil for the whole lifetime in this mode, so
++    // every window-dependent path below needs an embedded fallback.
++    var embedView: NSView?
++    var embedObservers: [NSObjectProtocol] = []
++    var didInitWindow: Bool = false
++
++    var isEmbedded: Bool { return embedView != nil }
++
++    /// The NSView passed via --wid, or nil when we own our window.
++    var embedParent: NSView? {
++        let wid = Int(option.vo.WinID)
++        guard wid != -1, wid != 0, let ptr = UnsafeRawPointer(bitPattern: wid) else { return nil }
++        let object = Unmanaged<AnyObject>.fromOpaque(ptr).takeUnretainedValue()
++        guard let view = object as? NSView else {
++            log.error("--wid does not point at an NSView, not embedding")
++            return nil
++        }
++        return view
++    }
++
++    /// Size of the render surface in pixels. Drives the swapchain, so it must be
++    /// backing-store (Retina) pixels, not points.
++    @objc var surfaceSizePixel: CGSize {
++        if let window = window { return window.framePixel.size }
++        guard let view = view else { return CGSize(width: 0, height: 0) }
++        let size = view.convertToBacking(view.bounds).size
++        return CGSize(width: abs(size.width), height: abs(size.height))
++    }
++
++    var backingScaleFactor: CGFloat {
++        return window?.backingScaleFactor ??
++               embedView?.window?.backingScaleFactor ??
++               getCurrentScreen()?.backingScaleFactor ?? 1.0
++    }
++
+     var link: CVDisplayLink?
+ 
+     let eventsLock = NSLock()
+@@ -63,6 +99,10 @@ class Common: NSObject {
+     }
+ 
+     func initApp() {
++        // When embedded the host application owns the activation policy, the
++        // Dock icon and the menu bar — touching them would fight with it.
++        if embedParent != nil { return }
++
+         var policy: NSApplication.ActivationPolicy = .regular
+         switch option.mac.macos_app_activation_policy {
+         case 0: policy = .regular
+@@ -83,6 +123,11 @@ class Common: NSObject {
+             exit(1)
+         }
+ 
++        if let parent = embedParent {
++            embed(into: parent, view)
++            return
++        }
++
+         window = Window(contentRect: wr, screen: targetScreen, view: view, common: self)
+         guard let window = self.window else {
+             log.error("Something went wrong, no Window was initialized")
+@@ -120,6 +165,78 @@ class Common: NSObject {
+         }
+     }
+ 
++    /// Install our render view into a host-provided NSView (--wid) as the
++    /// bottom-most subview, so anything the host already put there (e.g. a
++    /// transparent WKWebView) composites on top of the video.
++    func embed(into parent: NSView, _ view: View) {
++        embedView = parent
++
++        view.frame = parent.bounds
++        view.autoresizingMask = [.width, .height]
++        parent.addSubview(view, positioned: .below, relativeTo: nil)
++        view.layer?.contentsScale = parent.window?.backingScaleFactor ?? 1
++
++        addEmbedObservers(parent)
++
++        log.verbose("Embedded into host NSView via --wid: " +
++                    "\(Int(parent.bounds.width))x\(Int(parent.bounds.height)) " +
++                    "@\(view.layer?.contentsScale ?? 1)x")
++    }
++
++    /// Without an NSWindow of our own there are no window-delegate callbacks, so
++    /// resize / DPI / screen changes have to come from notifications instead.
++    func addEmbedObservers(_ parent: NSView) {
++        parent.postsFrameChangedNotifications = true
++        embedObservers.append(NotificationCenter.default.addObserver(
++            forName: NSView.frameDidChangeNotification,
++            object: parent,
++            queue: .main,
++            using: { [weak self] (_) in self?.embedDidResize() }
++        ))
++
++        guard let hostWindow = parent.window else {
++            log.warning("Host view has no window yet, DPI and screen changes won't be tracked")
++            return
++        }
++
++        embedObservers.append(NotificationCenter.default.addObserver(
++            forName: NSWindow.didChangeBackingPropertiesNotification,
++            object: hostWindow,
++            queue: .main,
++            using: { [weak self] (_) in self?.windowDidChangeBackingProperties() }
++        ))
++        embedObservers.append(NotificationCenter.default.addObserver(
++            forName: NSWindow.didChangeScreenNotification,
++            object: hostWindow,
++            queue: .main,
++            using: { [weak self] (_) in
++                self?.windowDidChangeScreen()
++                self?.updateDisplaylink()
++            }
++        ))
++        embedObservers.append(NotificationCenter.default.addObserver(
++            forName: NSWindow.didChangeScreenProfileNotification,
++            object: hostWindow,
++            queue: .main,
++            using: { [weak self] (_) in self?.windowDidChangeScreenProfile() }
++        ))
++    }
++
++    func removeEmbedObservers() {
++        embedObservers.forEach { NotificationCenter.default.removeObserver($0) }
++        embedObservers.removeAll()
++    }
++
++    func embedDidResize() {
++        guard let parent = embedView, let view = view else { return }
++        // autoresizingMask already tracks the parent, but the host may swap the
++        // frame wholesale; keep them in lockstep and tell the VO either way.
++        if view.frame != parent.bounds {
++            view.frame = parent.bounds
++        }
++        windowDidResize()
++    }
++
+     func initView(_ vo: UnsafeMutablePointer<vo>, _ layer: CALayer) {
+         let (_, wr, _) = getInitProperties(vo)
+ 
+@@ -152,6 +269,7 @@ class Common: NSObject {
+         removeAppNotifications()
+         enableDisplaySleep()
+         window?.orderOut(nil)
++        removeEmbedObservers()
+ 
+         titleBar?.removeFromSuperview()
+         view?.removeFromSuperview()
+@@ -188,7 +306,7 @@ class Common: NSObject {
+     }
+ 
+     func updateDisplaylink() {
+-        guard let screen = window?.screen, let link = self.link else {
++        guard let screen = getCurrentScreen(), let link = self.link else {
+             log.warning("Couldn't update DisplayLink, no Screen or DisplayLink available")
+             return
+         }
+@@ -404,13 +522,21 @@ class Common: NSObject {
+     }
+ 
+     func getCurrentScreen() -> NSScreen? {
+-         return window != nil ? window?.screen :
+-                                    getTargetScreen(forFullscreen: false) ??
+-                                    NSScreen.main
++         if window != nil { return window?.screen }
++         if let hostWindow = embedView?.window { return hostWindow.screen }
++         return getTargetScreen(forFullscreen: false) ?? NSScreen.main
+     }
+ 
+     func getWindowGeometry(forScreen screen: NSScreen,
+                            videoOut vo: UnsafeMutablePointer<vo>) -> (NSRect, Bool) {
++        // Embedded: the host owns size and position, so --geometry/--autofit
++        // don't apply. Running the normal path would also push a screen-derived
++        // size into vo->dwidth/dheight on every reconfig, rendering one frame at
++        // the wrong scale before the view-derived resize corrects it.
++        if let parent = embedParent {
++            return (parent.bounds, false)
++        }
++
+         let r = screen.convertRectToBacking(screen.frame)
+         let targetFrame = option.mac.macos_geometry_calculation == FRAME_VISIBLE
+             ? screen.visibleFrame : screen.frame
+@@ -563,10 +689,7 @@ class Common: NSObject {
+             return VO_TRUE
+         case VOCTRL_GET_HIDPI_SCALE:
+             let scaleFactor = data!.assumingMemoryBound(to: CDouble.self)
+-            let screen = getCurrentScreen()
+-            let factor = window?.backingScaleFactor ??
+-                         screen?.backingScaleFactor ?? 1.0
+-            scaleFactor.pointee = Double(factor)
++            scaleFactor.pointee = Double(backingScaleFactor)
+             return VO_TRUE
+         case VOCTRL_RESTORE_SCREENSAVER:
+             enableDisplaySleep()
+@@ -605,7 +728,12 @@ class Common: NSObject {
+         case VOCTRL_GET_UNFS_WINDOW_SIZE:
+             let sizeData = data!.assumingMemoryBound(to: Int32.self)
+             let size = UnsafeMutableBufferPointer(start: sizeData, count: 2)
+-            let rect = (Bool(option.vo.hidpi_window_scale) ? window?.unfsContentFrame
++            var embedRect: NSRect?
++            if isEmbedded, let view = view {
++                embedRect = Bool(option.vo.hidpi_window_scale)
++                    ? view.bounds : NSRect(origin: .zero, size: surfaceSizePixel)
++            }
++            let rect = embedRect ?? (Bool(option.vo.hidpi_window_scale) ? window?.unfsContentFrame
+                 : window?.unfsContentFramePixel) ?? NSRect(x: 0, y: 0, width: 1280, height: 720)
+ 
+             size[0] = Int32(rect.size.width)
+diff --git a/video/out/mac_common.swift b/video/out/mac_common.swift
+index 45f922d..96efc8c 100644
+--- a/video/out/mac_common.swift
++++ b/video/out/mac_common.swift
+@@ -53,7 +53,11 @@ class MacCommon: Common {
+                 exit(1)
+             }
+ 
+-            if window == nil {
++            // Not `window == nil`: when embedded via --wid no Window is ever
++            // created, so that test would re-run init on every reconfig and
++            // stack up views.
++            if !didInitWindow {
++                didInitWindow = true
+                 initView(vo, layer)
+                 initWindow(vo, previousActiveApp)
+                 initWindowState()
+@@ -110,6 +114,11 @@ class MacCommon: Common {
+     }
+ 
+     @objc func isVisible() -> Bool {
++        if isEmbedded {
++            return embedView?.window?.occlusionState.contains(.visible) ?? false ||
++                   option.vo.force_render ||
++                   needsInitialDraw
++        }
+         return window?.occlusionState.contains(.visible) ?? false ||
+                option.vo.force_render ||
+                needsInitialDraw
+@@ -167,7 +176,7 @@ class MacCommon: Common {
+     }
+ 
+     override func windowDidChangeBackingProperties() {
+-        layer?.contentsScale = window?.backingScaleFactor ?? 1
++        layer?.contentsScale = backingScaleFactor
+         windowDidResize()
+     }
+ 
+diff --git a/video/out/vulkan/context_mac.m b/video/out/vulkan/context_mac.m
+index 281a4bd..c8c0100 100644
+--- a/video/out/vulkan/context_mac.m
++++ b/video/out/vulkan/context_mac.m
+@@ -114,10 +114,11 @@ static bool resize(struct ra_ctx *ctx)
+ {
+     struct priv *p = ctx->priv;
+ 
+-    if (!p->vo_mac.window) {
++    // Not window.framePixel: with --wid embedding there is no window of our
++    // own, and the surface has to follow the host view instead.
++    CGSize size = p->vo_mac.surfaceSizePixel;
++    if (size.width < 1 || size.height < 1)
+         return false;
+-    }
+-    CGSize size = p->vo_mac.window.framePixel.size;
+ 
+     return ra_vk_ctx_resize(ctx, (int)size.width, (int)size.height);
+ }

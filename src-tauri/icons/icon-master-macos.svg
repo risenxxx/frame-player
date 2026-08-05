@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Frame Player, мастер иконки под macOS.
+       Отличается от icon-master-tile.svg только полями: в macOS плитка не
+       занимает весь холст — по сетке Apple (Big Sur и новее) видимый скруглённый
+       квадрат это 824x824 в холсте 1024x1024, то есть ~100px прозрачного поля с
+       каждой стороны, радиус скругления 185. Без этих полей иконка в Dock
+       выглядит крупнее соседних.
+       Глиф занимает те же 60% плитки, что и в оконной версии:
+       824*0.6 = 494.4 -> scale 20.6, центрирование (1024-494.4)/2 = 264.8.
+       Рендер: см. scripts/make-macos-icns.sh -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#191a2e"/>
+      <stop offset="1" stop-color="#0d0d18"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+  <g transform="translate(264.8,264.8) scale(20.6)">
+    <path fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"
+      d="M3.2 7.6V5.9c0-1.5 1.2-2.7 2.7-2.7h1.7M16.4 3.2h1.7c1.5 0 2.7 1.2 2.7 2.7v1.7M20.8 16.4v1.7c0 1.5-1.2 2.7-2.7 2.7h-1.7M7.6 20.8H5.9c-1.5 0-2.7-1.2-2.7-2.7v-1.7"/>
+    <path fill="#ffffff" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"
+      d="M10 9v6l5.4-3z"/>
+  </g>
+</svg>

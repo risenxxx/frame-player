@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 440" width="660" height="440">
+  <!-- DMG installer background. Master for src-tauri/dmg/background.tiff —
+       regenerate with scripts/make-dmg-background.sh (resvg + tiffutil), same
+       pipeline as the app icons.
+
+       HEIGHT IS NOT THE WINDOW HEIGHT. `window_rect` in scripts/dmg-settings.py
+       becomes Finder's WindowBounds, which is the window *frame*: the title bar
+       and any bottom bar come out of it, and Finder then draws this image from
+       the top-left of what is left. Measured on macOS 26 by screenshotting the
+       real window — title bar 32 pt, path bar 28 pt — so a 400 pt frame leaves
+       340 pt of content and clipped 60 pt off the bottom of a 400 pt image,
+       which reads as the icons being jammed against the window's edge.
+       window_rect is therefore 432 (400 + title bar) and this image is 440 tall:
+       taller than any content height it can face, because running *out* of
+       image paints a strip of Finder's default background — white in Light
+       mode — while running past it costs nothing. Everything must fit the top
+       372 pt, which is what a viewer with the path bar on actually sees.
+
+       The icon centres are `icon_locations` in that same file; moving the frames
+       means moving the icons by the same amount. Finder puts the label's centre
+       85.2 pt below the icon centre (measured, not assumed: icon centre 205 ->
+       text 283.0..297.5), and the chips are placed from that figure, not from
+       the icon's bottom edge.
+
+       The arrow is painted here because there is no such thing as an arrow
+       element in a DMG — a disk image is a folder window, and everything that
+       looks like installer chrome is this image. Two things it needs. Its
+       gradient takes gradientUnits="userSpaceOnUse": a horizontal line has a
+       zero-height bounding box, and the default objectBoundingBox units
+       degenerate against it, which renders the trail invisible and leaves a
+       floating arrowhead. And the shaft ends exactly on the head's vertex
+       (370,205) in one path — drawn as two figures, the round cap stops short
+       of the vertex and a few pixels of background show through the join.
+
+       The two grey chips are load-bearing, not decoration: Finder draws icon
+       labels in the *system* appearance (black in Light, white in Dark) and
+       never samples the background, so a dark backdrop leaves the names
+       unreadable for everyone not in Dark Mode. #5f5f70 is the mid tone that
+       clears ~4.5:1 against both. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#13131b"/>
+      <stop offset="0.85" stop-color="#0b0b10"/>
+      <stop offset="1" stop-color="#0b0b10"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#6366f1" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#6366f1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="trail" gradientUnits="userSpaceOnUse" x1="285" y1="0" x2="370" y2="0">
+      <stop offset="0" stop-color="#6366f1" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#6366f1" stop-opacity="0.6"/>
+      <stop offset="0.82" stop-color="#818cf8" stop-opacity="1"/>
+      <stop offset="1" stop-color="#818cf8" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="660" height="440" fill="url(#bg)"/>
+  <ellipse cx="170" cy="215" rx="300" ry="240" fill="url(#glow)"/>
+
+  <!-- title block -->
+  <text x="330" y="56" text-anchor="middle" font-size="23" font-weight="600"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        fill="#ffffff" letter-spacing="0.3">Frame Player</text>
+  <text x="330" y="80" text-anchor="middle" font-size="13"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        fill="#ffffff" fill-opacity="0.42">Drag the app into Applications</text>
+
+  <!-- viewfinder brackets around the app icon (the product's own glyph motif) -->
+  <g fill="none" stroke="#6366f1" stroke-opacity="0.72" stroke-width="3" stroke-linecap="round">
+    <path d="M75 154V140a20 20 0 0 1 20-20h14"/>
+    <path d="M231 120h14a20 20 0 0 1 20 20v14"/>
+    <path d="M265 296v14a20 20 0 0 1-20 20h-14"/>
+    <path d="M109 330H95a20 20 0 0 1-20-20v-14"/>
+  </g>
+
+  <!-- drop target -->
+  <rect x="395" y="120" width="190" height="210" rx="24" fill="#ffffff" fill-opacity="0.02"
+        stroke="#ffffff" stroke-opacity="0.13" stroke-width="2" stroke-dasharray="7 9"/>
+
+  <!-- arrow: one path, shaft ending on the head's vertex — see the note above -->
+  <path d="M285 205h85M358 194l12 11-12 11" fill="none" stroke="url(#trail)"
+        stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- label chips, centred on the measured text position (icon centre + 85.2) -->
+  <rect x="100" y="276" width="140" height="28" rx="14" fill="#5f5f70" fill-opacity="0.9"/>
+  <rect x="420" y="276" width="140" height="28" rx="14" fill="#5f5f70" fill-opacity="0.9"/>
+</svg>

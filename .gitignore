@@ -1,0 +1,32 @@
+.DS_Store
+node_modules
+/build
+/.svelte-kit
+/package
+.env
+.env.*
+!.env.example
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Private working notes: design records, research and spike reports. Not
+# published — see private-docs/README.md for what lives there.
+private-docs/
+
+# OpenSubtitles application key used during development. Release builds bake one
+# in at compile time and can override it through the same signed channel as
+# latest.json.
+src-tauri/.opensubtitles-key
+
+# Binary SDKs — large, downloaded by scripts/fetch-libs.ps1
+src-tauri/lib/*.dll
+src-tauri/lib/*.so
+src-tauri/lib/*.dylib
+src-tauri/ffmpeg/
+src-tauri/tools/
+
+# Generated linking directory for ffmpeg on macOS (scripts/bundle-macos-libs.sh)
+src-tauri/ffmpeg-macos/
+
+# Fixture for the sidecar smoke tests (see README, "Building")
+/test.mp4

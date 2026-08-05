@@ -1,0 +1,102 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Frame Player",
+  "version": "0.20.0",
+  "identifier": "app.frameplayer",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "title": "Frame Player",
+        "width": 1100,
+        "height": 660,
+        "minWidth": 480,
+        "minHeight": 320,
+        "center": true,
+        "transparent": true,
+        "decorations": false,
+        "visible": false
+      },
+      {
+        "label": "veil",
+        "title": "",
+        "url": "veil",
+        "width": 320,
+        "height": 200,
+        "visible": false,
+        "decorations": false,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "focusable": false,
+        "resizable": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://updates.frameplayer.app/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY4MEU1NDc4NUJDOTY1ODgKUldTSVpjbGJlRlFPYUh2L3cveS9qNW1oeTJMb0wvVmdGb1d5RkVPOG9kOFQ2Q2VZRnFXYm4rM1EK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "publisher": "Evgenii Zakharov",
+    "copyright": "Copyright © 2026 Evgenii Zakharov",
+    "category": "Video",
+    "shortDescription": "Frame-accurate video player",
+    "longDescription": "A video player for Windows and macOS built on libmpv. Plays local files, links and magnet torrents in one window — a torrent can be watched while it is still downloading, with piece priority following the playhead and buffered ranges drawn on the seekbar. Frame stepping and seeking that land where you aim, previews that show the frame you land on, resume for every file, link and episode, subtitle search matched to your exact release, chapters with a skip-intro button, a mini player and frame export. Russian and English.",
+    "createUpdaterArtifacts": true,
+    "targets": ["nsis"],
+    "resources": {
+      "lib/**/*": "lib/",
+      "ffmpeg/bin/*.dll": "./",
+      "lua/*.lua": "lua/"
+    },
+    "fileAssociations": [
+      {
+        "ext": ["mp4", "m4v", "mkv", "webm", "avi", "mov", "wmv", "flv", "ts", "m2ts", "mts", "mpg", "mpeg", "vob", "ogv", "3gp"],
+        "name": "Video",
+        "description": "Video file",
+        "role": "Viewer",
+        "contentTypes": [
+          "public.movie",
+          "public.mpeg-4",
+          "com.apple.m4v-video",
+          "org.matroska.mkv",
+          "org.webmproject.webm",
+          "public.avi",
+          "com.apple.quicktime-movie",
+          "com.microsoft.windows-media-wmv",
+          "com.adobe.flash.video",
+          "public.mpeg-2-transport-stream",
+          "public.avchd-mpeg-2-transport-stream",
+          "public.mpeg",
+          "org.videolan.vob",
+          "org.xiph.ogv",
+          "public.3gpp"
+        ]
+      }
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

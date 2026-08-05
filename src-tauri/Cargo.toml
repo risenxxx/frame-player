@@ -1,0 +1,98 @@
+[package]
+name = "frameplayer"
+version = "0.20.0"
+description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
+authors = ["Evgenii Zakharov"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "frameplayer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-libmpv = "0.3.2"
+tauri-plugin-dialog = "2.7.2"
+ffmpeg-the-third = "5.0.0"
+tauri-plugin-single-instance = "2.4.3"
+# png: decoding the frame mpv wrote, on its way to the clipboard (screenshot.rs).
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+arboard = "3"
+tauri-plugin-updater = "2.10.1"
+tauri-plugin-process = "2.3.1"
+# Downloading yt-dlp into our own data directory (see ytdlp_install). Already in
+# the tree via tauri-plugin-updater; rustls rather than the system TLS stack so
+# the two agree on one backend.
+# Only for StreamExt::next over the download body.
+futures-util = { version = "0.3", default-features = false }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "charset", "stream", "json"] }
+# OpenSubtitles credentials in the OS keychain (macOS Keychain, Windows
+# Credential Manager) rather than in a file of ours: a reused password is the
+# most sensitive thing this app will ever hold. Native backends only — the
+# secret-service one would drag in D-Bus for a platform we do not ship.
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+
+# Torrent streaming (ROADMAP 21). The stable 8.x line rather than 9.0.0-rc: this
+# ships in an installer, and a pre-release BitTorrent stack is not what a video
+# player wants underneath it. `rust-tls` rather than the default `default-tls`,
+# so trackers use the same rustls backend reqwest already pulls in instead of
+# adding a second TLS stack to the bundle.
+# `disable-upload` is a compile-time feature that unlocks a RUNTIME flag
+# (`SessionOptions.disable_upload`) — without it the field does not exist and
+# there is no way to stop seeding at all: `LimitsConfig.upload_bps` is a
+# `NonZeroU32`, so even "zero" cannot be expressed. With the feature on and the
+# flag false, behaviour is identical to the feature being off.
+librqbit = { version = "8.1.1", default-features = false, features = ["rust-tls", "disable-upload"] }
+# The local HTTP server mpv opens (torrent.rs). hyper/tokio are already in the
+# tree via reqwest and tauri, so this is a handful of lines of framing rather
+# than a new dependency — and it is why librqbit's own `http-api` feature (axum
+# + tower-http, a whole web framework for one route) stays off.
+hyper = { version = "1", default-features = false, features = ["http1", "server"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+http-body-util = "0.1"
+tokio = { version = "1", features = ["net", "rt", "io-util", "macros"] }
+tokio-util = { version = "0.7", features = ["io"] }
+bytes = "1"
+
+# macOS: native window chrome (rounded corners, transparent title bar, the
+# system traffic-light buttons) — see macos_chrome in lib.rs.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", features = [
+    "NSWindow",
+    "NSView",
+    "NSResponder",
+    "NSEvent",
+    "NSScreen",
+    "NSAppearance",
+    "NSColor",
+    "NSToolbar",
+    "block2",
+] }
+block2 = "0.6"
+objc2-foundation = "0.3.2"
+# QoS of the thumbnail storyboard's background thread (thumb_service::background_qos).
+libc = "0.2"
+
+# Windows only: hdr_status / double_click_time / sync_drag_resize_borders
+# (in lib.rs under #[cfg(windows)]).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Devices_Display",
+    "Win32_Graphics_Gdi",
+    "Win32_Foundation",
+] }
+

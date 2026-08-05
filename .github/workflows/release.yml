@@ -1,0 +1,313 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/tauri.conf.json'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from tauri.conf.json
+        id: check
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Check if tag already exists
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "Tag v$VERSION does not exist, will create release"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    strategy:
+      # Both artifacts are needed for a complete latest.json, so let each
+      # platform report its own failure instead of cancelling its sibling.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            runner: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+          # Apple Silicon only. Intel would be a second entry here (macos-26-intel
+          # + darwin-x86_64); see FINDINGS-macos.md for why it is not worth it yet.
+          #
+          # The runner must be NO OLDER than the macOS users run: macOS gates
+          # behaviour changes on the SDK version a binary is linked against. A
+          # build made on macos-15 (SDK 15.5) got the old window chrome on
+          # macOS 26 — different traffic-light spacing, and our padding offset
+          # reset — even though the code in the binary was correct.
+          - platform: darwin-aarch64
+            runner: macos-26
+            rust_target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.platform }}
+
+      # --- Windows native SDKs -------------------------------------------------
+      # libmpv (LGPL), libmpv-wrapper, the FFmpeg SDK (LGPL) and libclang for
+      # bindgen. The Actions cache is free (it does not count against storage
+      # billing; 10 GB per repository with LRU eviction), so the download only
+      # runs when the script itself changed.
+      - name: Cache native SDKs (Windows)
+        if: runner.os == 'Windows'
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/lib
+            src-tauri/ffmpeg
+            src-tauri/tools
+          key: native-sdks-${{ runner.os }}-${{ hashFiles('scripts/fetch-libs.ps1') }}
+
+      - name: Fetch native SDKs (Windows)
+        if: runner.os == 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true'
+        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1
+
+      # --- macOS native libs ---------------------------------------------------
+      # Builds the patched libmpv (--wid embedding, see FINDINGS-macos.md), then
+      # moves the whole transitive closure into src-tauri/lib with @rpath paths.
+      # Those directories are self-contained, so a cache hit needs no Homebrew at
+      # all — the meson build of mpv only runs when the patch or scripts changed.
+      - name: Cache native libs (macOS)
+        if: runner.os == 'macOS'
+        id: mac-lib-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/lib
+            src-tauri/ffmpeg-macos
+          key: mac-libs-${{ matrix.platform }}-${{ hashFiles('patches/mpv-*.patch', 'scripts/build-libmpv-macos.sh', 'scripts/bundle-macos-libs.sh') }}
+
+      - name: Build patched libmpv (macOS)
+        if: runner.os == 'macOS' && steps.mac-lib-cache.outputs.cache-hit != 'true'
+        run: scripts/build-libmpv-macos.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      # --- Build ---------------------------------------------------------------
+      # FP_OPENSUBTITLES_KEY is the application key for subtitle search. It
+      # identifies the program rather than the user (OpenSubtitles bans apps that
+      # make their users register keys of their own), so it is baked into the
+      # binary with option_env! and is not really a secret: a leak costs
+      # availability rather than privacy — the key gets revoked and the feature
+      # breaks for everyone at once. That is also the reason for the lookup order
+      # in opensubtitles.rs: a file in app_data overrides the compiled-in value,
+      # so a revoked key can be replaced without cutting a release. With the
+      # secret unset the build still succeeds; subtitle search is simply
+      # disabled in it and says so.
+      - name: Build Tauri app (Windows)
+        if: runner.os == 'Windows'
+        run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          FP_OPENSUBTITLES_KEY: ${{ secrets.FP_OPENSUBTITLES_KEY }}
+
+      # There is no Apple Developer ID here, hence bundle.macOS.signingIdentity =
+      # "-", an ad-hoc signature. It certifies nothing, but it does seal the
+      # bundle (Contents/_CodeSignature). Without it the binary carried only the
+      # linker's signature (adhoc, linker-signed, Sealed Resources=none) and
+      # Gatekeeper refused it down the "signature is invalid" path — the user saw
+      # "the file is damaged" with no Open Anyway button, and the only way past it
+      # was xattr from a terminal. Sealed, the refusal goes down the policy path,
+      # which does have the button. hardenedRuntime is off deliberately (Tauri
+      # defaults it to true): it is only needed for notarisation, and without
+      # entitlements it would break LuaJIT (zoompan.lua). TAURI_SIGNING_* is the
+      # updater signature and has nothing to do with Apple code signing.
+      - name: Build Tauri app (macOS)
+        if: runner.os == 'macOS'
+        run: npm run tauri:macos:build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          FP_OPENSUBTITLES_KEY: ${{ secrets.FP_OPENSUBTITLES_KEY }}
+
+      # Tauri lays out its dmg with bundle_dmg.sh, which places the icons by
+      # driving Finder over AppleScript. A headless runner has no Finder session:
+      # the step passes silently and without error, but no .DS_Store reaches the
+      # image — and the user's Finder then shows that dmg as an ordinary folder
+      # with default icons. Measured on release 0.16.1: a locally built image has
+      # a .DS_Store (iconSize 128, a 660x400 window with no toolbar), the release
+      # one has none at all. dmgbuild writes .DS_Store directly, so the dmg is a
+      # step of its own and bundle.targets on macOS stays ["app"].
+      - name: Build DMG (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # The runner's python is externally managed; a plain pip install refuses.
+          python3 -m venv "$RUNNER_TEMP/dmgvenv"
+          "$RUNNER_TEMP/dmgvenv/bin/pip" install --quiet dmgbuild
+          DMGBUILD="$RUNNER_TEMP/dmgvenv/bin/dmgbuild" scripts/build-dmg.sh
+
+      # --- Stage -------------------------------------------------------------
+      # Each platform stages its own files plus a manifest fragment,
+      # platform-<key>.json, into dist/. The publish job merges them into one
+      # latest.json — otherwise the platforms would overwrite each other's
+      # manifest in R2.
+      - name: Stage artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $version = "${{ needs.check-version.outputs.version }}"
+          $exe = Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          # space-free name -> clean URLs in the update manifest
+          $name = "FramePlayer_${version}_x64-setup.exe"
+          Copy-Item $exe.FullName "dist/$name"
+          $sig = (Get-Content "$($exe.FullName).sig" -Raw).Trim()
+          $base = "${{ secrets.R2_PUBLIC_URL }}".TrimEnd('/')
+          @{ "windows-x86_64" = @{ signature = $sig; url = "$base/$name" } } |
+            ConvertTo-Json -Depth 4 |
+            Set-Content "dist/platform-windows-x86_64.json" -Encoding utf8
+
+      - name: Stage artifacts (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          version="${{ needs.check-version.outputs.version }}"
+          # The names Tauri generates contain a space ("Frame Player_..."), so
+          # collect them into an array with a glob rather than parsing ls.
+          shopt -s nullglob
+          dmgs=(src-tauri/target/release/bundle/dmg/*.dmg)
+          # The macOS updater installs the .app.tar.gz, not the .dmg — the dmg
+          # is only for the first, manual install.
+          tgzs=(src-tauri/target/release/bundle/macos/*.app.tar.gz)
+          dmg="${dmgs[0]}"
+          tgz="${tgzs[0]}"
+          dmg_name="FramePlayer_${version}_aarch64.dmg"
+          tgz_name="FramePlayer_${version}_aarch64.app.tar.gz"
+          cp "$dmg" "dist/$dmg_name"
+          cp "$tgz" "dist/$tgz_name"
+          sig=$(tr -d '\n' < "$tgz.sig")
+          base="${{ secrets.R2_PUBLIC_URL }}"
+          base="${base%/}"
+          jq -n --arg s "$sig" --arg u "$base/$tgz_name" \
+            '{"darwin-aarch64": {signature: $s, url: $u}}' \
+            > "dist/platform-darwin-aarch64.json"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.platform }}
+          path: dist
+          retention-days: 1
+
+  publish:
+    # Both platforms are required: publish must not start if one of them failed,
+    # or latest.json gets half a manifest and the other half of the users are
+    # left without updates.
+    needs: [check-version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: dist-*
+          merge-multiple: true
+
+      - name: Build update manifest
+        run: |
+          set -euo pipefail
+          ls -la dist
+          version="${{ needs.check-version.outputs.version }}"
+          # The per-platform fragments merge into a single platforms object.
+          jq -s 'add' dist/platform-*.json > platforms.json
+          jq -n \
+            --arg v "$version" \
+            --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --slurpfile p platforms.json \
+            '{version: $v, pub_date: $d, platforms: $p[0]}' > dist/latest.json
+          rm dist/platform-*.json
+          cat dist/latest.json
+
+      - name: Upload to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # R2 and newer AWS CLI checksum defaults disagree — relax both
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          set -euo pipefail
+          endpoint="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          bucket="${{ secrets.R2_BUCKET }}"
+          # Binaries first, latest.json last: until it is updated, no client
+          # learns about a version whose files are not uploaded yet.
+          for f in dist/*; do
+            [ "$(basename "$f")" = "latest.json" ] && continue
+            aws s3 cp "$f" "s3://$bucket/$(basename "$f")" --endpoint-url "$endpoint"
+          done
+          aws s3 cp dist/latest.json "s3://$bucket/latest.json" \
+            --content-type application/json --cache-control no-cache --endpoint-url "$endpoint"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.check-version.outputs.version }}
+          name: Frame Player v${{ needs.check-version.outputs.version }}
+          generate_release_notes: true
+          body: |
+            ### Installation
+
+            | File | Description |
+            |------|-------------|
+            | `FramePlayer_*_x64-setup.exe` | Installer (Windows 10/11 x64) |
+            | `FramePlayer_*_aarch64.dmg` | Disk image (macOS, Apple Silicon) |
+
+            The player updates automatically: when a new version is released,
+            an update button appears in the app.
+
+            **macOS**: the build is not signed with an Apple Developer ID, so
+            Gatekeeper stops the first launch. Try to open the app once, then go
+            to **System Settings → Privacy & Security** — the blocked app is
+            listed there with an **Open Anyway** button. Every launch after that
+            is normal. (Right-click → Open no longer works on macOS 15 and up.)
+          files: |
+            dist/*.exe
+            dist/*.dmg
+            dist/latest.json

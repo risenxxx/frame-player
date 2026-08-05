@@ -1,0 +1,1063 @@
+//! ThumbService: thumbnails for the seekbar preview.
+//!
+//! A separate FFmpeg session (so it does not disturb StepEngine's GOP ring):
+//! a frame is decoded at the requested position into a ~320px JPEG. A
+//! background storyboard warms up thumbnails across the whole file and stores
+//! them in a disk cache (keyed by path + size + mtime), so reopening is instant.
+//!
+//! A single keyframe is not enough: on a file whose GOP is longer than the grid
+//! step (a 17-second camera clip has keyframes every 5.3 s against a 0.25 s
+//! step), seeking to the nearest keyframe returns the same frame for a couple
+//! of dozen neighbouring cells and the preview appears stuck. So after the seek
+//! the frame is refined by decoding forward to the exact position — but only
+//! when it would otherwise duplicate the neighbouring cell (see `frame_at`),
+//! since on a long film that would mean decoding the entire file for a
+//! difference the eye cannot see.
+
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::io::{Read, Write};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use ffmpeg::media;
+use ffmpeg::software::scaling;
+use ffmpeg::util::frame::video::Video;
+use ffmpeg_the_third as ffmpeg;
+use tauri::Manager;
+
+const THUMB_WIDTH: u32 = 320;
+const JPEG_QUALITY: u8 = 78;
+const MAX_BUCKETS: usize = 1000;
+/// How many grid cells we would like per file (the step is clamped to
+/// [MIN_INTERVAL, MAX_INTERVAL] regardless).
+const TARGET_BUCKETS: f64 = 240.0;
+const MIN_INTERVAL: f64 = 0.25;
+const MAX_INTERVAL: f64 = 10.0;
+/// Safety valve for files with a pathologically long GOP: the maximum number
+/// of frames decoded forward while refining a thumbnail to the exact position.
+const MAX_FORWARD_FRAMES: u32 = 900;
+/// Thread ceiling for the thumbnail decoder. Scaling by core count took three
+/// cores on 4K60 and stole them from playback — the storyboard is in no hurry,
+/// the player is.
+const DECODE_THREADS: usize = 3;
+/// Duty cycle of the background storyboard: after each cell it rests for
+/// 1/YIELD_RATIO of the time that cell took, but never longer than
+/// MAX_YIELD_MS. Needed even with lowered QoS — Windows and Linux have no QoS
+/// classes at all.
+///
+/// The ratio was tuned twice: 1:1 (rest equals work) together with
+/// QOS_BACKGROUND was too much, and a three-minute 4K60 storyboard crawled for
+/// minutes.
+const YIELD_RATIO: u32 = 3;
+const MAX_YIELD_MS: u64 = 120;
+/// Past this distance, decoding forward is certainly costlier than a new seek.
+const MAX_CONTINUE_SECS: f64 = 6.0;
+/// The same, for the exact hover preview. Much tighter than MAX_CONTINUE_SECS:
+/// there the bound is the grid step, here a keyframe seek puts us at most one
+/// GOP behind the target, so continuing forward only pays off over distances
+/// shorter than a typical GOP.
+const MAX_EXACT_CONTINUE_SECS: f64 = 1.0;
+const PTS_EPS: f64 = 1e-4;
+/// "KTB4". v3 was the bump for keyframe-only caches (v2 held duplicates instead
+/// of frames at the requested positions on long-GOP files). v4 is when the
+/// source path joined the header: the file
+/// name is a hash of path + size + mtime, so without the path inside there was
+/// no way to answer "which cached storyboards belong to this folder" — and that
+/// is exactly what excluding a folder has to be able to do. Old caches are
+/// simply not read and get regenerated in the background.
+const CACHE_MAGIC: u32 = 0x4B54_4234;
+
+struct ThumbSession {
+    ictx: ffmpeg::format::context::Input,
+    decoder: ffmpeg::decoder::Video,
+    /// The last successfully decoded frame and its position in seconds.
+    frame: Video,
+    /// Receiver for `avcodec_receive_frame`: it calls `av_frame_unref` before
+    /// any check, so decoding straight into `frame` is not an option — a failed
+    /// call (EOF while decoding forward) would wipe the frame already obtained.
+    scratch: Video,
+    has_frame: bool,
+    cur_pts: Option<f64>,
+    /// `send_eof` has been sent — no new packets may follow (reset by a seek).
+    eof_sent: bool,
+    /// The file's GOP is longer than the grid step, so thumbnails have to be
+    /// refined by decoding. Knowing this lets the storyboard run linearly
+    /// instead of re-seeking the same GOP for every cell.
+    refine_mode: bool,
+    scaler: Option<(ffmpeg::format::Pixel, u32, u32, scaling::Context)>,
+    stream_index: usize,
+    time_base: f64,
+    start_offset: f64,
+    out_w: u32,
+    out_h: u32,
+}
+
+unsafe impl Send for ThumbSession {}
+
+impl ThumbSession {
+    fn open(path: &str) -> Result<Self, String> {
+        let ictx = ffmpeg::format::input(&path).map_err(|e| format!("open: {e}"))?;
+        let stream = ictx
+            .streams()
+            .best(media::Type::Video)
+            .ok_or("no video stream")?;
+        let stream_index = stream.index();
+        let tb = stream.time_base();
+        let time_base = tb.numerator() as f64 / tb.denominator() as f64;
+        let start_offset = {
+            let st = stream.start_time();
+            if st == i64::MIN {
+                0.0
+            } else {
+                st as f64 * time_base
+            }
+        };
+        let mut dec_ctx = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+            .map_err(|e| format!("codec ctx: {e}"))?;
+        // Refining a thumbnail to the exact position can decode a whole GOP,
+        // so threads pay off here — but strictly bounded ones: this is
+        // background work and must not claim the whole machine.
+        dec_ctx.set_threading(ffmpeg::codec::threading::Config {
+            kind: ffmpeg::codec::threading::Type::Frame,
+            count: DECODE_THREADS,
+            ..Default::default()
+        });
+        let decoder = dec_ctx
+            .decoder()
+            .video()
+            .map_err(|e| format!("decoder: {e}"))?;
+        let (vw, vh) = (decoder.width().max(1), decoder.height().max(1));
+        // Anamorphic streams (SAR != 1:1) would otherwise be stretched
+        // horizontally: measure from the display width, not the pixel width.
+        let sar = decoder.aspect_ratio();
+        let disp_w = if sar.numerator() > 0 && sar.denominator() > 0 {
+            vw as f64 * sar.numerator() as f64 / sar.denominator() as f64
+        } else {
+            vw as f64
+        };
+        let out_w = (THUMB_WIDTH.min(disp_w.round().max(2.0) as u32)).max(2) & !1;
+        let out_h = (((out_w as f64 * vh as f64 / disp_w).round().max(2.0)) as u32).max(2) & !1;
+        Ok(ThumbSession {
+            ictx,
+            decoder,
+            frame: Video::empty(),
+            scratch: Video::empty(),
+            has_frame: false,
+            cur_pts: None,
+            eof_sent: false,
+            refine_mode: false,
+            scaler: None,
+            stream_index,
+            time_base,
+            start_offset,
+            out_w,
+            out_h,
+        })
+    }
+
+    fn next_video_packet(&mut self) -> Option<ffmpeg::Packet> {
+        for res in self.ictx.packets() {
+            let Ok((stream, packet)) = res else {
+                return None;
+            };
+            if stream.index() == self.stream_index {
+                return Some(packet);
+            }
+        }
+        None
+    }
+
+    fn seek_to_keyframe(&mut self, pos: f64) -> Result<(), String> {
+        let ts = ((pos + self.start_offset).max(0.0) * ffmpeg::ffi::AV_TIME_BASE as f64) as i64;
+        // ..=ts (inclusive!): with an exclusive bound max_ts = ts-1 < ts, and
+        // avformat_seek_file rejects the call with EPERM.
+        self.ictx
+            .seek(ts, ..=ts)
+            .map_err(|e| format!("seek: {e}"))?;
+        self.decoder.flush();
+        self.eof_sent = false;
+        self.cur_pts = None;
+        Ok(())
+    }
+
+    /// Decodes the next frame into `self.frame` (false means the stream ended).
+    fn decode_next(&mut self) -> Result<bool, String> {
+        loop {
+            if self.decoder.receive_frame(&mut self.scratch).is_ok() {
+                std::mem::swap(&mut self.frame, &mut self.scratch);
+                self.has_frame = true;
+                // Without PTS (broken or raw streams) time-based refinement is
+                // impossible — cur_pts stays None and the thumbnail degrades to
+                // a keyframe.
+                self.cur_pts = self
+                    .frame
+                    .timestamp()
+                    .or(self.frame.pts())
+                    .map(|ts| ts as f64 * self.time_base - self.start_offset);
+                return Ok(true);
+            }
+            if self.eof_sent {
+                return Ok(false);
+            }
+            match self.next_video_packet() {
+                Some(packet) => self
+                    .decoder
+                    .send_packet(&packet)
+                    .map_err(|e| format!("send_packet: {e}"))?,
+                None => {
+                    // Threaded decoding lags by thread_count frames — after EOF
+                    // they still have to be drained.
+                    let _ = self.decoder.send_eof();
+                    self.eof_sent = true;
+                }
+            }
+        }
+    }
+
+    /// The frame at `target` (`interval` is the thumbnail grid step): (pts, JPEG).
+    fn frame_at(&mut self, target: f64, interval: f64) -> Result<(f64, Vec<u8>), String> {
+        // The storyboard runs forward: if the file is already known to have a
+        // long GOP and the session sits a little behind the target, decoding
+        // forward is cheaper than a seek that re-decodes the same GOP from its
+        // start.
+        let continue_forward = self.refine_mode
+            && self.cur_pts.is_some_and(|cur| {
+                target >= cur - PTS_EPS && target - cur <= interval.min(MAX_CONTINUE_SECS) + PTS_EPS
+            });
+
+        let mut refine = true;
+        if !continue_forward {
+            self.seek_to_keyframe(target)?;
+            if !self.decode_next()? {
+                return Err("no frame decoded".into());
+            }
+            // Refine only if the keyframe landed further away than the grid
+            // step: otherwise it is already unique for this cell, and decoding
+            // a GOP is expensive (on a long film the 10 s step is usually
+            // longer than the GOP, so no refinement happens).
+            refine = target - self.cur_pts.unwrap_or(0.0) >= interval - PTS_EPS;
+            self.refine_mode = refine;
+        }
+        if refine {
+            let mut budget = MAX_FORWARD_FRAMES;
+            while budget > 0 && self.cur_pts.is_some_and(|p| p < target - PTS_EPS) {
+                budget -= 1;
+                // A frame is already in hand, so an error or EOF while
+                // decoding forward means stop, not lose the thumbnail.
+                if !self.decode_next().unwrap_or(false) {
+                    break;
+                }
+            }
+        }
+        let jpeg = self.encode_current()?;
+        Ok((self.cur_pts.unwrap_or(0.0), jpeg))
+    }
+
+    /// The frame at exactly `pos`, ignoring the grid: (pts, JPEG).
+    ///
+    /// Used when the cursor comes to rest over the seekbar — that position is
+    /// the moment being aimed at, and the grid cell containing it is up to half
+    /// a step away. Measured on a 24-minute file (6 s step): the cell's frame
+    /// belongs to a different scene than the one playback lands on in 37 % of
+    /// hover positions even after rounding, 60 % before it.
+    ///
+    /// Deliberately does NOT touch `refine_mode`: that flag says what the
+    /// background storyboard has to do for this file, and a hover request must
+    /// not push the whole background pass into linear decoding.
+    fn frame_exact_at(&mut self, pos: f64) -> Result<(f64, Vec<u8>), String> {
+        let pos = pos.max(0.0);
+        let can_continue = self
+            .cur_pts
+            .is_some_and(|cur| pos >= cur - PTS_EPS && pos - cur <= MAX_EXACT_CONTINUE_SECS);
+        if !can_continue {
+            self.seek_to_keyframe(pos)?;
+            if !self.decode_next()? {
+                return Err("no frame decoded".into());
+            }
+        }
+        let mut budget = MAX_FORWARD_FRAMES;
+        while budget > 0 && self.cur_pts.is_some_and(|p| p < pos - PTS_EPS) {
+            budget -= 1;
+            // A frame is already in hand, so an error or EOF while decoding
+            // forward means stop, not lose the thumbnail.
+            if !self.decode_next().unwrap_or(false) {
+                break;
+            }
+        }
+        let jpeg = self.encode_current()?;
+        Ok((self.cur_pts.unwrap_or(0.0), jpeg))
+    }
+
+    /// Scales `self.frame` down to thumbnail size and encodes it as JPEG.
+    fn encode_current(&mut self) -> Result<Vec<u8>, String> {
+        if !self.has_frame {
+            return Err("no frame decoded".into());
+        }
+        let fmt = self.frame.format();
+        let (fw, fh) = (self.frame.width(), self.frame.height());
+        let rebuild = match &self.scaler {
+            Some((sf, sw, sh, _)) => *sf != fmt || *sw != fw || *sh != fh,
+            None => true,
+        };
+        if rebuild {
+            let ctx = scaling::Context::get(
+                fmt,
+                fw,
+                fh,
+                ffmpeg::format::Pixel::RGB24,
+                self.out_w,
+                self.out_h,
+                // heavy downscale (4K -> 320px): FAST_BILINEAR is far cheaper
+                scaling::Flags::FAST_BILINEAR,
+            )
+            .map_err(|e| format!("scaler: {e}"))?;
+            self.scaler = Some((fmt, fw, fh, ctx));
+        }
+        let mut rgb = Video::empty();
+        self.scaler
+            .as_mut()
+            .unwrap()
+            .3
+            .run(&self.frame, &mut rgb)
+            .map_err(|e| format!("scale: {e}"))?;
+
+        let stride = rgb.stride(0);
+        let row = self.out_w as usize * 3;
+        let data = rgb.data(0);
+        let mut tight = Vec::with_capacity(row * self.out_h as usize);
+        for y in 0..self.out_h as usize {
+            tight.extend_from_slice(&data[y * stride..y * stride + row]);
+        }
+
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY)
+            .encode(
+                &tight,
+                self.out_w,
+                self.out_h,
+                image::ExtendedColorType::Rgb8,
+            )
+            .map_err(|e| format!("jpeg: {e}"))?;
+        Ok(jpeg)
+    }
+}
+
+struct ThumbInner {
+    path: String,
+    session: Option<ThumbSession>,
+    interval: f64,
+    /// Known only once `thumb_start` has run; 0 until then. Needed to keep
+    /// rounding from addressing a cell past the end of the file.
+    duration: f64,
+    /// bucket -> (pts, jpeg)
+    thumbs: HashMap<u32, (f64, Vec<u8>)>,
+    cache_file: Option<PathBuf>,
+    dirty: bool,
+}
+
+impl Default for ThumbInner {
+    fn default() -> Self {
+        ThumbInner {
+            path: String::new(),
+            session: None,
+            interval: 5.0,
+            duration: 0.0,
+            thumbs: HashMap::new(),
+            cache_file: None,
+            dirty: false,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct ThumbState {
+    inner: Arc<Mutex<ThumbInner>>,
+    generation: Arc<AtomicU64>,
+    /// Number of pending hover requests: background generation yields to them.
+    pending: Arc<AtomicU64>,
+}
+
+fn lock(arc: &Arc<Mutex<ThumbInner>>) -> MutexGuard<'_, ThumbInner> {
+    arc.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+// ---- Private paths --------------------------------------------------------
+// Folders inside which the player leaves no traces on disk. Kept in a static
+// rather than in Tauri state, because the check is needed deep in the cache
+// layer, where no AppHandle reaches.
+
+#[derive(Default)]
+struct PrivacyState {
+    /// History is off entirely — everything is private, folders are not consulted.
+    all: bool,
+    roots: Vec<String>,
+}
+
+static PRIVACY: std::sync::OnceLock<Mutex<PrivacyState>> = std::sync::OnceLock::new();
+
+fn privacy() -> &'static Mutex<PrivacyState> {
+    PRIVACY.get_or_init(|| Mutex::new(PrivacyState::default()))
+}
+
+/// Whether the file lives inside a private folder. Matching is on a path
+/// component boundary — otherwise "/Movies" would swallow "/Movies2" — and
+/// case-insensitive: macOS and Windows file systems are so by default.
+pub fn is_private(path: &str) -> bool {
+    let state = privacy().lock().unwrap_or_else(|e| e.into_inner());
+    if state.all {
+        return true;
+    }
+    state.roots.iter().any(|root| path_under(path, root))
+}
+
+/// Is `path` inside `root`? Matching is on a component boundary — otherwise
+/// "/Movies" would swallow "/Movies2" — and case-insensitive, because macOS and
+/// Windows file systems are so by default. Mirrored in JS (`isPrivatePath`);
+/// change one, change the other.
+fn path_under(path: &str, root: &str) -> bool {
+    let root = root.trim_end_matches(['/', '\\']).to_lowercase();
+    if root.is_empty() {
+        return false;
+    }
+    let p = path.to_lowercase();
+    p == root || p.starts_with(&format!("{root}/")) || p.starts_with(&format!("{root}\\"))
+}
+
+/// Delete every cached storyboard for files inside a folder.
+///
+/// Called when a folder is added to the exclusions: hiding those videos from
+/// the start screen while their frames stay on disk is the wrong half of a
+/// privacy control. This is what the source path in the cache header is for —
+/// the file name is a hash, so before v4 an entry could not be attributed to a
+/// folder at all.
+///
+/// Entries in an older format carry no path and cannot be attributed either, so
+/// they are removed as well: they are unreadable to the current build anyway
+/// and would otherwise be the one place an excluded video could still be found.
+#[tauri::command]
+pub fn forget_thumbs_under(app: tauri::AppHandle, folder: String) -> usize {
+    let Some(dir) = thumbs_dir(&app) else {
+        return 0;
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let file = entry.path();
+        if file.extension().and_then(|s| s.to_str()) != Some("ktb") {
+            continue;
+        }
+        let doomed = match load_cache(&file) {
+            Some((source, _, _)) => path_under(&source, &folder),
+            None => true,
+        };
+        if doomed && std::fs::remove_file(&file).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
+/// `all` means history is off entirely. A separate flag rather than a `/`
+/// root: such a root gets trimmed to an empty string and would match nothing.
+#[tauri::command]
+pub fn set_private_paths(paths: Vec<String>, all: bool) {
+    let mut state = privacy().lock().unwrap_or_else(|e| e.into_inner());
+    state.all = all;
+    state.roots = paths;
+}
+
+fn thumbs_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let dir = app.path().app_cache_dir().ok()?.join("thumbs");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+/// Forget one file: delete its storyboard from disk.
+#[tauri::command]
+pub fn forget_thumbs(app: tauri::AppHandle, path: String) {
+    if let Some(file) = cache_path_for(&app, &path) {
+        let _ = std::fs::remove_file(file);
+    }
+}
+
+/// Delete the whole thumbnail disk cache (the "clear history" action).
+#[tauri::command]
+pub fn clear_thumb_cache(app: tauri::AppHandle) {
+    let Some(dir) = thumbs_dir(&app) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.extension().and_then(|s| s.to_str()) == Some("ktb") {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
+
+fn cache_path_for(app: &tauri::AppHandle, path: &str) -> Option<PathBuf> {
+    // A private file gets no cache file at all: without one, load/save_cache
+    // become no-ops and thumbnails live only in session memory.
+    if is_private(path) {
+        return None;
+    }
+    let meta = std::fs::metadata(path).ok()?;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut h);
+    meta.len().hash(&mut h);
+    if let Ok(m) = meta.modified() {
+        if let Ok(d) = m.duration_since(std::time::UNIX_EPOCH) {
+            d.as_secs().hash(&mut h);
+        }
+    }
+    Some(thumbs_dir(app)?.join(format!("{:016x}.ktb", h.finish())))
+}
+
+/// Poster frame for the start screen: [f64 pts LE][JPEG].
+///
+/// A throwaway session rather than the shared ThumbState: the start screen
+/// shows several posters at once, and running them through the shared session
+/// would reset it for every file. A ready frame from the storyboard is tried
+/// first (then there is no decoding at all), and only failing that is a single
+/// keyframe decoded: a poster needs speed, not precision.
+#[tauri::command]
+pub async fn poster_frame(
+    app: tauri::AppHandle,
+    path: String,
+    pos: f64,
+) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !std::path::Path::new(&path).exists() {
+            return Err("file is gone".to_string());
+        }
+        if let Some(cf) = cache_path_for(&app, &path) {
+            if let Some((_, interval, map)) = load_cache(&cf) {
+                // No duration here, and none needed: a miss simply falls
+                // through to decoding a keyframe below.
+                let bucket = bucket_for(pos, interval, 0.0);
+                if let Some((pts, jpeg)) = map.get(&bucket) {
+                    return Ok(respond(*pts, jpeg));
+                }
+            }
+        }
+        let mut session = ThumbSession::open(&path)?;
+        let (pts, jpeg) = session.frame_at(pos.max(0.0), MAX_INTERVAL)?;
+        Ok(respond(pts, &jpeg))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn respond(pts: f64, jpeg: &[u8]) -> tauri::ipc::Response {
+    let mut out = Vec::with_capacity(8 + jpeg.len());
+    out.extend_from_slice(&pts.to_le_bytes());
+    out.extend_from_slice(jpeg);
+    tauri::ipc::Response::new(out)
+}
+
+/// Returns the source path alongside the frames — the path is what makes a
+/// cache entry attributable to a folder.
+fn load_cache(file: &PathBuf) -> Option<(String, f64, HashMap<u32, (f64, Vec<u8>)>)> {
+    let mut f = std::fs::File::open(file).ok()?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).ok()?;
+    let mut off = 0usize;
+    let take = |off: &mut usize, n: usize| -> Option<&[u8]> {
+        let s = buf.get(*off..*off + n)?;
+        *off += n;
+        Some(s)
+    };
+    let magic = u32::from_le_bytes(take(&mut off, 4)?.try_into().ok()?);
+    if magic != CACHE_MAGIC {
+        return None;
+    }
+    let source_len = u32::from_le_bytes(take(&mut off, 4)?.try_into().ok()?) as usize;
+    let source = String::from_utf8(take(&mut off, source_len)?.to_vec()).ok()?;
+    let count = u32::from_le_bytes(take(&mut off, 4)?.try_into().ok()?);
+    let interval = f64::from_le_bytes(take(&mut off, 8)?.try_into().ok()?);
+    let mut map = HashMap::new();
+    for _ in 0..count {
+        let bucket = u32::from_le_bytes(take(&mut off, 4)?.try_into().ok()?);
+        let pts = f64::from_le_bytes(take(&mut off, 8)?.try_into().ok()?);
+        let len = u32::from_le_bytes(take(&mut off, 4)?.try_into().ok()?) as usize;
+        let data = take(&mut off, len)?.to_vec();
+        map.insert(bucket, (pts, data));
+    }
+    Some((source, interval, map))
+}
+
+/// Disk cache ceiling for thumbnails. One film is a few megabytes, so this is
+/// one or two hundred watched files; the oldest are evicted first.
+const CACHE_BUDGET_BYTES: u64 = 256 * 1024 * 1024;
+
+/// The cache is keyed by path + size + mtime, so a file that was overwritten
+/// or renamed leaves an orphan behind — the directory never shrinks on its own.
+/// Pruning is by budget: sort by mtime and delete the oldest until it fits.
+fn prune_cache(dir: &std::path::Path, keep: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<(std::time::SystemTime, u64, PathBuf)> = entries
+        .filter_map(|e| {
+            let e = e.ok()?;
+            let path = e.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("ktb") {
+                return None;
+            }
+            let meta = e.metadata().ok()?;
+            Some((
+                meta.modified().unwrap_or(std::time::UNIX_EPOCH),
+                meta.len(),
+                path,
+            ))
+        })
+        .collect();
+
+    let mut total: u64 = files.iter().map(|(_, len, _)| *len).sum();
+    if total <= CACHE_BUDGET_BYTES {
+        return;
+    }
+    // Oldest first.
+    files.sort_by_key(|(mtime, _, _)| *mtime);
+    for (_, len, path) in files {
+        if total <= CACHE_BUDGET_BYTES {
+            break;
+        }
+        // Never touch the current file's cache, even if it is the oldest:
+        // the storyboard is writing to it right now.
+        if path == keep {
+            continue;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            total = total.saturating_sub(len);
+        }
+    }
+}
+
+fn save_cache(file: &PathBuf, source: &str, interval: f64, thumbs: &HashMap<u32, (f64, Vec<u8>)>) {
+    let mut out = Vec::new();
+    out.extend_from_slice(&CACHE_MAGIC.to_le_bytes());
+    // The video this belongs to. Only ever read to decide whether the entry is
+    // inside a folder the viewer has excluded — the cache is still addressed by
+    // the hashed name.
+    let source = source.as_bytes();
+    out.extend_from_slice(&(source.len() as u32).to_le_bytes());
+    out.extend_from_slice(source);
+    out.extend_from_slice(&(thumbs.len() as u32).to_le_bytes());
+    out.extend_from_slice(&interval.to_le_bytes());
+    for (bucket, (pts, jpeg)) in thumbs {
+        out.extend_from_slice(&bucket.to_le_bytes());
+        out.extend_from_slice(&pts.to_le_bytes());
+        out.extend_from_slice(&(jpeg.len() as u32).to_le_bytes());
+        out.extend_from_slice(jpeg);
+    }
+    if let Ok(mut f) = std::fs::File::create(file) {
+        let _ = f.write_all(&out);
+    }
+    if let Some(dir) = file.parent() {
+        prune_cache(dir, file);
+    }
+}
+
+/// Resets the state for a new file (if it changed).
+fn ensure_path(inner: &mut ThumbInner, path: &str) {
+    if inner.path != path {
+        inner.path = path.to_string();
+        inner.session = None;
+        inner.duration = 0.0;
+        inner.thumbs.clear();
+        inner.cache_file = None;
+        inner.dirty = false;
+    }
+}
+
+/// Number of grid cells the storyboard generates for a file.
+fn bucket_count(duration: f64, interval: f64) -> usize {
+    ((duration / interval).ceil() as usize).clamp(1, MAX_BUCKETS)
+}
+
+/// The grid cell for a position: the NEAREST one, not the one containing it.
+///
+/// Truncation made the preview systematically earlier than the position being
+/// aimed at — by up to a full step, which is 10 s on anything longer than
+/// 40 minutes — while the seek that follows a click is exact. The two errors
+/// therefore added instead of cancelling, and the previewed frame was reliably
+/// behind the frame playback started from. Measured on a 24-minute file (6 s
+/// step, 30 hover positions): the preview showed a different scene in 60 % of
+/// them with truncation, 37 % with rounding.
+///
+/// Cell N still holds the frame at `N*interval`, so this changes only the
+/// lookup — caches written before it stay valid.
+fn bucket_for(pos: f64, interval: f64, duration: f64) -> u32 {
+    let bucket = (pos.max(0.0) / interval + 0.5) as u32;
+    if duration > 0.0 {
+        // Rounding up near the end of the file would otherwise address a cell
+        // the storyboard never makes, at a position the decoder cannot reach.
+        bucket.min(bucket_count(duration, interval).saturating_sub(1) as u32)
+    } else {
+        bucket
+    }
+}
+
+fn thumb_at(inner: &mut ThumbInner, pos: f64) -> Result<(u32, Vec<u8>), String> {
+    let interval = inner.interval;
+    let bucket = bucket_for(pos, interval, inner.duration);
+    if let Some((_pts, jpeg)) = inner.thumbs.get(&bucket) {
+        return Ok((bucket, jpeg.clone()));
+    }
+    if inner.session.is_none() {
+        inner.session = Some(ThumbSession::open(&inner.path)?);
+    }
+    let target = bucket as f64 * interval;
+    let (pts, jpeg) = inner.session.as_mut().unwrap().frame_at(target, interval)?;
+    inner.thumbs.insert(bucket, (pts, jpeg.clone()));
+    inner.dirty = true;
+    Ok((bucket, jpeg))
+}
+
+/// Thumbnail grid step: ~TARGET_BUCKETS per file, but no finer than
+/// MIN_INTERVAL, no coarser than MAX_INTERVAL and no more than MAX_BUCKETS.
+fn interval_for(duration: f64) -> f64 {
+    (duration / TARGET_BUCKETS)
+        .clamp(MIN_INTERVAL, MAX_INTERVAL)
+        .max(duration / MAX_BUCKETS as f64)
+}
+
+/// Lowers the service class of the current thread.
+///
+/// The worker threads ffmpeg creates for frame-threaded decoding inherit their
+/// creator's QoS, so one call at thread start is enough. A no-op elsewhere
+/// (there the YIELD_RATIO duty cycle does the job).
+///
+/// UTILITY, not BACKGROUND: on Apple Silicon, BACKGROUND pins the thread to
+/// efficiency cores entirely, and a three-minute 4K60 storyboard stretched to
+/// minutes — thumbnails were not ready by the time they were reached for.
+/// UTILITY means "long work with a user-visible result": performance cores stay
+/// available, but the player preempts the storyboard rather than the reverse.
+fn background_qos() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
+    }
+}
+
+/// Starts background storyboard generation for a file.
+#[tauri::command]
+pub fn thumb_start(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ThumbState>,
+    path: String,
+    duration: f64,
+) {
+    let gen = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let inner_arc = state.inner.clone();
+    let gen_arc = state.generation.clone();
+    let pending_arc = state.pending.clone();
+
+    {
+        let mut inner = lock(&inner_arc);
+        ensure_path(&mut inner, &path);
+        let new_interval = interval_for(duration);
+        // Early hover thumbnails may have been stored at the default interval —
+        // with a new interval their bucket numbers mean different positions.
+        if (inner.interval - new_interval).abs() > 1e-9 && !inner.thumbs.is_empty() {
+            inner.thumbs.clear();
+        }
+        inner.interval = new_interval;
+        inner.duration = duration;
+        inner.cache_file = cache_path_for(&app, &path);
+        if let Some(cf) = inner.cache_file.clone() {
+            if let Some((_, interval, map)) = load_cache(&cf) {
+                inner.interval = interval;
+                inner.thumbs = map;
+                inner.dirty = false;
+            }
+        }
+    }
+
+    std::thread::spawn(move || {
+        background_qos();
+        let (interval, buckets) = {
+            let inner = lock(&inner_arc);
+            (inner.interval, bucket_count(duration, inner.interval))
+        };
+        // A storyboard on a long file runs for minutes: without intermediate
+        // saves, closing the player halfway threw all the work away.
+        let mut last_save = std::time::Instant::now();
+        for b in 0..buckets as u32 {
+            if gen_arc.load(Ordering::SeqCst) != gen {
+                return;
+            }
+            // hover requests outrank background generation — yield to them
+            let mut waited = 0u32;
+            while pending_arc.load(Ordering::SeqCst) > 0 && waited < 1000 {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                waited += 5;
+            }
+            let started = std::time::Instant::now();
+            {
+                let mut inner = lock(&inner_arc);
+                if inner.path != path {
+                    return;
+                }
+                if !inner.thumbs.contains_key(&b) {
+                    let _ = thumb_at(&mut inner, b as f64 * interval);
+                }
+                if inner.dirty && last_save.elapsed() >= std::time::Duration::from_secs(10) {
+                    if let Some(cf) = inner.cache_file.clone() {
+                        save_cache(&cf, &inner.path, inner.interval, &inner.thumbs);
+                        inner.dirty = false;
+                    }
+                    last_save = std::time::Instant::now();
+                }
+            }
+            // Duty cycle: rest for a fraction of what was spent. On cheap
+            // cells (cache hit, keyframe) that is the same ~5 ms as before; on
+            // expensive ones (refining a whole 4K GOP) it is tens of
+            // milliseconds during which the machine belongs to the player. The
+            // mutex is released meanwhile, so hover requests skip the queue.
+            let spent = started.elapsed() / YIELD_RATIO;
+            std::thread::sleep(
+                spent
+                    .max(std::time::Duration::from_millis(5))
+                    .min(std::time::Duration::from_millis(MAX_YIELD_MS)),
+            );
+        }
+        let mut inner = lock(&inner_arc);
+        if inner.path == path && inner.dirty {
+            if let Some(cf) = inner.cache_file.clone() {
+                save_cache(&cf, &inner.path, inner.interval, &inner.thumbs);
+                inner.dirty = false;
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// FP_TEST_VIDEO=<path> cargo test container_title_smoke -- --nocapture
+    ///
+    /// Prints rather than asserts a value: most files carry no title tag at
+    /// all (measured on an ordinary MKV rip: the container held only `encoder`
+    /// and `creation_time`), so the thing under test is that the read is fast
+    /// and does not leak the context — not that any given file has a name.
+    #[test]
+    fn container_title_smoke() {
+        let Ok(path) = std::env::var("FP_TEST_VIDEO") else {
+            return;
+        };
+        let _ = ffmpeg::init();
+        for _ in 0..3 {
+            let t = std::time::Instant::now();
+            let title = container_title(&path);
+            println!("container_title {:?} -> {title:?}", t.elapsed());
+        }
+    }
+
+    /// Smoke test: FP_TEST_VIDEO=<path> cargo test thumb_smoke -- --nocapture
+    #[test]
+    fn thumb_smoke() {
+        let Ok(path) = std::env::var("FP_TEST_VIDEO") else {
+            return;
+        };
+        let _ = ffmpeg::init();
+        let mut s = ThumbSession::open(&path).expect("open session");
+        for pos in [0.0, 5.0, 30.0, 59.0] {
+            let (pts, jpeg) = s.frame_at(pos, 10.0).expect("frame_at");
+            println!("pos={pos} -> pts={pts:.3} jpeg={} bytes", jpeg.len());
+            assert!(jpeg.len() > 500);
+        }
+    }
+
+    /// Rounding, and the clamp that keeps it from running off the end.
+    #[test]
+    fn bucket_rounding() {
+        // Nearest cell, not the containing one: 7 s on a 10 s grid belongs to
+        // cell 1 (10 s), which is 3 s away, not cell 0, which is 7 s away.
+        assert_eq!(bucket_for(7.0, 10.0, 0.0), 1);
+        assert_eq!(bucket_for(4.9, 10.0, 0.0), 0);
+        assert_eq!(bucket_for(0.0, 10.0, 0.0), 0);
+        // Worst case is now half a step instead of a whole one.
+        for pos in [0.3, 12.7, 99.9, 355.5] {
+            let cell = bucket_for(pos, 10.0, 0.0) as f64 * 10.0;
+            assert!(
+                (cell - pos).abs() <= 5.0 + 1e-9,
+                "pos {pos} -> cell {cell}: further than half a step"
+            );
+        }
+        // The far right of the seekbar must not address a cell the storyboard
+        // never generates, at a position past the end of the file.
+        let last = bucket_count(100.0, 10.0) as u32 - 1;
+        assert_eq!(bucket_for(100.0, 10.0, 100.0), last);
+        assert!((last as f64 * 10.0) <= 100.0);
+        assert_eq!(
+            bucket_for(105.0, 10.0, 105.0),
+            bucket_count(105.0, 10.0) as u32 - 1
+        );
+    }
+
+    /// The exact preview has to land on the position asked for, not on the
+    /// keyframe before it — that difference is the whole point of it.
+    /// FP_TEST_VIDEO=<path> cargo test thumb_exact_lands -- --nocapture
+    #[test]
+    fn thumb_exact_lands() {
+        let Ok(path) = std::env::var("FP_TEST_VIDEO") else {
+            return;
+        };
+        let _ = ffmpeg::init();
+        let mut s = ThumbSession::open(&path).expect("open session");
+        for pos in [3.7, 17.3, 41.9, 52.4] {
+            let (pts, jpeg) = s.frame_exact_at(pos).expect("frame_exact_at");
+            println!("pos={pos} -> pts={pts:.3} jpeg={} bytes", jpeg.len());
+            assert!(jpeg.len() > 500);
+            // One frame of slack: the decoder stops at the first frame at or
+            // past the target, exactly as mpv's hr-seek does.
+            assert!(
+                pts >= pos - 0.1 && pts - pos < 0.5,
+                "pos {pos}: landed on {pts:.3}, not the frame asked for"
+            );
+        }
+        // The storyboard's verdict for the file must survive a hover request.
+        assert!(!s.refine_mode, "frame_exact_at must not set refine_mode");
+    }
+
+    /// The grid's key property: neighbouring cells are different frames, even
+    /// when the GOP is longer than the step (otherwise the preview appears
+    /// stuck for seconds of seekbar).
+    /// FP_TEST_VIDEO=<path> cargo test thumb_grid_distinct -- --nocapture
+    #[test]
+    fn thumb_grid_distinct() {
+        let Ok(path) = std::env::var("FP_TEST_VIDEO") else {
+            return;
+        };
+        let _ = ffmpeg::init();
+        let mut s = ThumbSession::open(&path).expect("open session");
+        let interval = interval_for(60.0);
+        let mut prev: Option<(f64, Vec<u8>)> = None;
+        for b in 0..40u32 {
+            let target = b as f64 * interval;
+            let (pts, jpeg) = s.frame_at(target, interval).expect("frame_at");
+            assert!(
+                (pts - target).abs() <= interval,
+                "bucket {b}: target={target:.3} -> pts={pts:.3}, missed by more than one step"
+            );
+            if let Some((ppts, pjpeg)) = &prev {
+                assert!(
+                    pts > *ppts,
+                    "bucket {b}: pts is not increasing ({ppts:.3} -> {pts:.3})"
+                );
+                assert!(
+                    *pjpeg != jpeg,
+                    "bucket {b}: same image as the previous cell"
+                );
+            }
+            prev = Some((pts, jpeg));
+        }
+        println!("step {interval:.3} s, 40 cells — every frame distinct");
+    }
+}
+
+/// Thumbnail for a position: [f64 key LE][JPEG].
+///
+/// `exact = false` (the cursor is moving) answers from the grid, which is what
+/// the storyboard fills and the disk cache holds; the key is the cell index —
+/// deterministic, unlike PTS, which some containers do not carry at all and
+/// which would collapse different positions into one key.
+///
+/// `exact = true` (the cursor has come to rest) decodes the frame at that exact
+/// position instead, and the key is its PTS. Such a frame is deliberately NOT
+/// stored in `thumbs`: the map is the grid, one cell per index, and it is what
+/// gets written to disk. The two key spaces overlap numerically, so the caller
+/// keeps them in separate maps.
+#[tauri::command]
+pub async fn thumb_get(
+    state: tauri::State<'_, ThumbState>,
+    path: String,
+    pos: f64,
+    exact: bool,
+) -> Result<tauri::ipc::Response, String> {
+    let arc = state.inner.clone();
+    let pending = state.pending.clone();
+    pending.fetch_add(1, Ordering::SeqCst);
+    let res = tauri::async_runtime::spawn_blocking(move || {
+        let mut inner = lock(&arc);
+        ensure_path(&mut inner, &path);
+        let (key, jpeg) = if exact {
+            if inner.session.is_none() {
+                inner.session = Some(ThumbSession::open(&inner.path)?);
+            }
+            inner.session.as_mut().unwrap().frame_exact_at(pos)?
+        } else {
+            let (bucket, jpeg) = thumb_at(&mut inner, pos)?;
+            (bucket as f64, jpeg)
+        };
+        let mut out = Vec::with_capacity(8 + jpeg.len());
+        out.extend_from_slice(&key.to_le_bytes());
+        out.extend_from_slice(&jpeg);
+        Ok(tauri::ipc::Response::new(out))
+    })
+    .await
+    .map_err(|e| e.to_string());
+    pending.fetch_sub(1, Ordering::SeqCst);
+    res?
+}
+
+/// Container titles for a list of local files, in the order given.
+///
+/// Reads the header and nothing else: `avformat_open_input` *without*
+/// `avformat_find_stream_info`, because a title lives in the container header
+/// while the probe exists to identify streams — which this does not need.
+/// Measured on an MKV (warm): 0.10 ms per file this way against 0.27 ms with
+/// the probe, and the first read of a cold file is dominated by the disk in
+/// either case. That is what makes it affordable to name a whole folder at
+/// once; it is also why the caller still does it off the opening path.
+///
+/// A file with no title tag answers `None` rather than a guess — the caller
+/// already has a better fallback (the file name, tidied) than anything that
+/// could be invented here.
+#[tauri::command]
+pub async fn container_titles(paths: Vec<String>) -> Vec<Option<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = ffmpeg::init();
+        paths.iter().map(|p| container_title(p)).collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+fn container_title(path: &str) -> Option<String> {
+    let c_path = std::ffi::CString::new(path).ok()?;
+    let key = std::ffi::CString::new("title").ok()?;
+    unsafe {
+        let mut ctx: *mut ffmpeg::sys::AVFormatContext = std::ptr::null_mut();
+        if ffmpeg::sys::avformat_open_input(
+            &mut ctx,
+            c_path.as_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        ) < 0
+        {
+            return None;
+        }
+        let entry =
+            ffmpeg::sys::av_dict_get((*ctx).metadata, key.as_ptr(), std::ptr::null(), 0);
+        let title = if entry.is_null() {
+            None
+        } else {
+            let value = std::ffi::CStr::from_ptr((*entry).value)
+                .to_string_lossy()
+                .trim()
+                .to_string();
+            (!value.is_empty()).then_some(value)
+        };
+        // Always closed, on every path out of the block above.
+        ffmpeg::sys::avformat_close_input(&mut ctx);
+        title
+    }
+}

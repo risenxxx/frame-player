@@ -1,0 +1,4 @@
+# Build paths for ffmpeg-sys-the-third (see scripts/fetch-libs.ps1)
+[env]
+FFMPEG_DIR = { value = "src-tauri/ffmpeg", relative = true }
+LIBCLANG_PATH = { value = "src-tauri/tools", relative = true }

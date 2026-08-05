@@ -1,0 +1,38 @@
+{
+  "name": "frameplayer",
+  "version": "0.20.0",
+  "description": "A video player for Windows and macOS built on Tauri 2 and libmpv: local files, links and live torrent streaming in one window, frame-accurate seeking, and an unusual amount of attention to detail",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "tauri": "tauri",
+    "tauri:macos": "env FFMPEG_DIR=\"$PWD/src-tauri/ffmpeg-macos\" LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib tauri dev",
+    "tauri:macos:build": "env FFMPEG_DIR=\"$PWD/src-tauri/ffmpeg-macos\" LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib tauri build",
+    "tauri:macos:dmg": "scripts/build-dmg.sh",
+    "fetch-libs": "powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
+    "tauri-plugin-libmpv-api": "^0.3.2"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.6",
+    "@sveltejs/kit": "^2.9.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@tauri-apps/cli": "^2",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3"
+  }
+}
