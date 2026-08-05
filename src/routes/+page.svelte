@@ -7699,10 +7699,10 @@
      hand-written copy of it (see the queue-row note): the seven of them render
      to **510px** at the real 13px font and 13px gap, English to 408.
 
-     598 is that 560 plus the sheet's own 36px of padding and 2px of border,
-     because this is an outer width now — the number changed, the sheet did
-     not. Content is still 560, so the tab row still has 50px of slack, or 40
-     once this sheet is tall enough to grow its 10px scrollbar.
+     598 is that 560 plus the sheet's own 36px of horizontal room and 2px of
+     border, because this is an outer width now — the number changed, the sheet
+     did not. Content is 560 whether or not the sheet scrolls (see the gutter
+     note below), so the tab row always has exactly 50px of slack.
 
      The old 428 was already 13px short of *six* tabs, so "Клавиши" was being
      clipped by a row whose overflow scroll is invisible by design
@@ -7720,12 +7720,26 @@
     background: rgba(16, 16, 22, 0.97);
     border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: 14px;
-    padding: 16px 18px 14px;
+    /* The right side is 8px of padding plus a permanently reserved 10px of
+       gutter, which is the same 18px as the left — asymmetric in the
+       declaration so that it is symmetric on screen. A scrollbar takes its
+       width out of the *content* box and leaves `padding-right` inside it, so
+       without the gutter everything right-aligned in this sheet moves by the
+       bar's 10px the moment the content outgrows the window: measured, the ×
+       sits 19px from the sheet's edge on a short tab and 29px on a tall one,
+       and the tab row loses 10px of its 50px of slack with it. Nothing about
+       the sheet says which state it is in, so switching tabs simply made the
+       close button jump. Reserving the space costs 10px that are only visible
+       as a slightly inset scrollbar; the start overlay does the same for the
+       same reason (`stable both-edges` there, because its content is
+       centred). */
+    padding: 16px 8px 14px 18px;
+    scrollbar-gutter: stable;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   }
 
   /* Narrower than the settings sheet: it holds one field. Outer, like the
-     sheet's own width — 520 of content plus the same 38 of padding and
+     sheet's own width — 520 of content plus the same 38 of padding, gutter and
      border. */
   .link-dialog {
     width: min(558px, 100%);
