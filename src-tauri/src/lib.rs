@@ -7,6 +7,7 @@ use tauri::{Emitter, Manager};
 mod macos_chrome;
 #[cfg(target_os = "macos")]
 mod macos_menu;
+mod cast;
 mod opensubtitles;
 mod screenshot;
 mod step_engine;
@@ -890,6 +891,9 @@ pub fn run() {
         // An Arc rather than the value: the HTTP server's connection tasks
         // outlive any one command call and need a handle of their own.
         .manage(std::sync::Arc::new(torrent::TorrentService::default()))
+        // Same shape for the same reason: the cast session task and the LAN
+        // file server's connections outlive any one command call.
+        .manage(std::sync::Arc::new(cast::CastService::default()))
         .invoke_handler(tauri::generate_handler![
             take_pending_files,
             open_file_ready,
@@ -930,6 +934,21 @@ pub fn run() {
             torrent::torrent_forget,
             torrent::torrent_relocate,
             torrent::torrent_clear_cache,
+            cast::cast_discover_start,
+            cast::cast_discover_stop,
+            cast::cast_devices,
+            cast::cast_connect,
+            cast::cast_load,
+            cast::cast_prepare,
+            cast::cast_prepare_cached,
+            cast::cast_prepare_cancel,
+            cast::cast_hls_prepare,
+            cast::cast_cache_size,
+            cast::cast_clear_cache,
+            cast::cast_forget_prepared,
+            cast::cast_control,
+            cast::cast_status,
+            cast::cast_disconnect,
             opensubtitles::subs_search,
             opensubtitles::subs_download,
             opensubtitles::subs_login,

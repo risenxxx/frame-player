@@ -92,6 +92,11 @@ export interface Track {
   external: boolean;
   /// The external file behind it, when there is one.
   path: string | null;
+  /// Channel count from the demuxer, audio tracks only. The cast prepare rung
+  /// reads it to decide whether an E-AC-3 transcode needs a 5.1 fold-down
+  /// (above 6 channels) — and, crucially, that a stereo source must not get
+  /// one, which would be an upmix.
+  channels: number | null;
 }
 
 /**
@@ -740,6 +745,10 @@ export async function loadTracks() {
       const path = external
         ? await getProperty(`${base}/external-filename`, 'string').catch(() => null)
         : null;
+      const channels =
+        type === 'audio'
+          ? await getProperty(`${base}/demux-channel-count`, 'int64').catch(() => null)
+          : null;
       (type === 'audio' ? audio : subs).push({
         id,
         selected,
@@ -750,6 +759,7 @@ export async function loadTracks() {
         forced,
         external,
         path,
+        channels,
       });
     }
     if (seq !== tracksSeq) return;

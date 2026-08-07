@@ -196,6 +196,25 @@
     type MediaInfo,
   } from '$lib/mediainfo';
   import { copyScreenshot, saveScreenshot } from '$lib/screenshot';
+  import {
+    cast,
+    castCacheCapGb,
+    castCurrentFile,
+    castMode,
+    castNudgeVolume,
+    castSeek,
+    castSeekBy,
+    castSetVolume,
+    castSwitchAudio,
+    castToggleMute,
+    castTogglePause,
+    disconnectCast,
+    endCast,
+    setCastCacheCapGb,
+    setCastMode,
+    startCastDiscovery,
+    stopCastDiscovery,
+  } from '$lib/cast.svelte';
   import { isMagnet, isTorrentLink, magnetFor, parseTorrentUrl, sourceId } from '$lib/source';
   import { maybeStartThumbs, requestThumb, thumbs } from '$lib/thumbs.svelte';
   import { isZoomed, markZoomLuaLoaded, panBy, reclampPan, resetZoom, zoomAt } from '$lib/zoom.svelte';
@@ -508,7 +527,7 @@
   let hoverX = $state(0);
   let seekWrapEl = $state<HTMLElement | null>(null);
   let fsTransition = $state(false);
-  let openMenu = $state<'audio' | 'sub' | 'chapter' | 'queue' | null>(null);
+  let openMenu = $state<'audio' | 'sub' | 'chapter' | 'queue' | 'cast' | null>(null);
   let stepMode = $state(false);
   let stepPts = $state(0);
   let stepCanvas = $state<HTMLCanvasElement | null>(null);
@@ -1942,7 +1961,11 @@
     player.mediaTitle ? player.displayTitle : (resolvedTitle ?? player.displayTitle),
   );
   const idle = $derived(
-    hasFile && !dragging && !oscHover && !barHover && !uiVisible && openMenu === null && !settingsOpen,
+    hasFile && !dragging && !oscHover && !barHover && !uiVisible && openMenu === null && !settingsOpen
+      // While casting the window is a remote control and a status display —
+      // there is no picture being watched under the chrome, so hiding it
+      // buys nothing and hiding the controls of a remote is actively wrong.
+      && !cast.active,
   );
 
   // macOS: the system window buttons live outside the DOM, so they have to be
@@ -2076,8 +2099,12 @@
   /// someone looking for "subtitle size", which is what a settings dialog is
   /// searched by. What the boundary still owns is the footer: it now names mpv's
   /// settings rather than claiming everything on the page is one of them.
-  type SettingsTab = 'general' | 'video' | 'playback' | 'audio' | 'subs' | 'torrents' | 'keys';
+  type SettingsTab = 'general' | 'video' | 'playback' | 'audio' | 'subs' | 'torrents' | 'tv' | 'keys';
   let settingsTab = $state<SettingsTab>('general');
+  // The tab row is nowrap with hidden overflow, and the sheet's width is sized
+  // from it (598px fits seven Russian labels with ~50px slack) — which is why
+  // this tab is «ТВ», not «Трансляция»: two characters ride in the slack, a
+  // ten-character label overflows and the eighth tab is silently gone.
   const SETTINGS_TABS: { id: SettingsTab; label: string }[] = $derived([
     { id: 'general', label: t('set.tab_general') },
     { id: 'video', label: t('set.tab_video') },
@@ -2085,8 +2112,39 @@
     { id: 'audio', label: t('set.tab_audio') },
     { id: 'subs', label: t('set.tab_subs') },
     { id: 'torrents', label: t('set.tab_torrents') },
+    { id: 'tv', label: t('set.tab_tv') },
     { id: 'keys', label: t('set.tab_keys') },
   ]);
+
+  // ---- The TV (casting) tab ----
+  let castModeVal = $state(castMode());
+  let castCapVal = $state(castCacheCapGb());
+  let castCacheBytes = $state<number | null>(null);
+  const CAST_CAP_CHOICES = [0, 5, 20, 50];
+
+  function setCastModeHere(mode: 'prepare' | 'hls') {
+    castModeVal = mode;
+    setCastMode(mode);
+  }
+
+  function setCastCapHere(gb: number) {
+    castCapVal = gb;
+    setCastCacheCapGb(gb);
+  }
+
+  async function refreshCastCacheSize() {
+    castCacheBytes = await invoke<number>('cast_cache_size').catch(() => null);
+  }
+
+  $effect(() => {
+    if (settingsOpen && settingsTab === 'tv') void refreshCastCacheSize();
+  });
+
+  async function clearCastCacheHere() {
+    const freed = await invoke<number>('cast_clear_cache').catch(() => 0);
+    showOsd(t('cast.cache_cleared', { size: fmtSize(freed) }));
+    void refreshCastCacheSize();
+  }
   // Popup elements: measured after render (before paint) to clamp to the window
   let ctxEl = $state<HTMLDivElement | undefined>();
   let tipEl = $state<HTMLDivElement | undefined>();
@@ -2353,6 +2411,11 @@
     unlisteners.push(
       ...(await initPlayer({
         beforeLoad: async (path) => {
+          // Opening another file while casting ends the session first: mpv is
+          // about to start playing locally, and two playbacks at once — one
+          // here, one on the TV — is never what a viewer meant. (Casting the
+          // new file instead is phase 2; see casting.md.)
+          if (cast.active) await endCast({ osd: t('cast.stopped'), resumeLocal: false });
           cancelStep();
           attempting = path;
           clearTimeout(loadFailTimer);
@@ -3073,6 +3136,12 @@
       rememberTrack(player.filePath, kind, track ? describeTrack(track, list) : 'no');
     }
     void mpvSelectTrack(kind, track);
+    // While the TV owns playback, an audio choice must reach it too: the
+    // prepared file carries exactly one track, so the switch is a re-prepare
+    // (cached per track — switching back is instant) plus a reload at the
+    // TV's position. The local switch above still runs, so the handback and
+    // the menu's check mark stay in agreement with what the TV plays.
+    if (cast.remote && kind === 'audio' && track) void castSwitchAudio(track);
   }
 
   // The system file dialog dims the window while it is up, so both pickers go
@@ -3261,6 +3330,9 @@
   /// not pause — that gesture self-terminates after 180 ms, and continuing
   /// playback is exactly what adds motion between seek landings.
   function beginDragPause() {
+    // While casting, local playback is already parked; the drag drives the TV
+    // and there is nothing here to pause.
+    if (cast.remote) return;
     // A fresh value, not the mirror: paused may have gone stale after an mpv
     // event queue overflow.
     void getProperty('pause', 'flag')
@@ -3290,6 +3362,9 @@
   const SAME_POS = 1e-6;
 
   function pumpDragSeek(exact: boolean) {
+    // No previews on a cast drag: every preview would be a seek on the TV,
+    // seconds of buffering each. The remote gesture is release-only.
+    if (cast.remote) return;
     if (dragInFlight) {
       dragPending = true;
       return;
@@ -3336,6 +3411,17 @@
     if (!dragging) return;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     seekValue = seekFrac(e) * player.duration;
+    // The remote path: one SEEK to the TV on release, none of the local
+    // machinery — the probe, the exact/keyframe split and the settle are all
+    // about local decode cost. cast.time is set optimistically on send, so the
+    // knob holds without a seekSettling equivalent.
+    if (cast.remote) {
+      dragging = false;
+      clearTimeout(dragSettleTimer);
+      castSeek(seekValue);
+      if (seekWrapEl && !seekWrapEl.matches(':hover')) hoverTime = null;
+      return;
+    }
     // Releasing means "I want this timestamp", so the final seek is always
     // exact — same as a single click. On a fast file the previews were exact
     // too, so the frame is already there and nothing jumps; on a slow one this
@@ -3522,12 +3608,25 @@
       // preventDefault regardless of where the pointer is: without it the
       // webview zooms the whole UI, which there is no way back from.
       e.preventDefault();
-      if (hasFile && !onSurface) zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 0.1 : -0.1);
+      if (hasFile && !onSurface && !cast.remote) zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 0.1 : -0.1);
       return;
     }
     if (onSurface) return;
     // deltaMode: 0 — pixels, 1 — lines, 2 — pages.
     const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+
+    // While casting the wheel drives the TV: vertical is its volume (the
+    // receiver's own 0..1), and there is no scrub — keyframe previews are a
+    // local concept and every landing would cost the TV seconds of buffering.
+    if (cast.remote) {
+      const px = e.deltaY * scale;
+      wheelAccum += IS_MAC ? px : -px;
+      const steps = Math.trunc(wheelAccum / PX_PER_VOLUME_UNIT);
+      if (!steps) return;
+      wheelAccum -= steps * PX_PER_VOLUME_UNIT;
+      castNudgeVolume(steps * 0.02);
+      return;
+    }
 
     // The axis is picked once at the start of the gesture and held to its end.
     clearTimeout(wheelAxisTimer);
@@ -4008,12 +4107,52 @@
   // an mpv_node into a pointer variable -> stack corruption ->
   // STATUS_ACCESS_VIOLATION), so track-list and chapter-list are only read
   // through sub-properties of simple formats (see readList in player.svelte.ts).
-  function toggleMenu(kind: 'audio' | 'sub' | 'chapter' | 'queue') {
+  function toggleMenu(kind: 'audio' | 'sub' | 'chapter' | 'queue' | 'cast') {
     openMenu = openMenu === kind ? null : kind;
     if (openMenu === 'chapter') void openChapterMenu();
     else if (openMenu === 'queue') void openQueueMenu();
-    else if (openMenu) void loadTracks();
+    else if (openMenu === 'cast') {
+      // Discovery is handled by the $effect below — it must also stop when
+      // the panel closes by any route (Escape, outside click), not only here.
+    } else if (openMenu) void loadTracks();
   }
+
+  /// Discovery runs exactly while the picker is open. mDNS browse is
+  /// on-demand, like the torrent session and the yt-dlp probe: nothing opens
+  /// sockets at startup, and the effect's cleanup covers every way the panel
+  /// closes (Escape, outside click, casting starting).
+  let castSearchLong = $state(false);
+  $effect(() => {
+    if (openMenu === 'cast' && !cast.active) {
+      startCastDiscovery();
+      castSearchLong = false;
+      const timer = setTimeout(() => (castSearchLong = true), 6000);
+      return () => {
+        clearTimeout(timer);
+        stopCastDiscovery();
+      };
+    }
+  });
+
+  const castStateLabel = $derived(
+    cast.state === 'connecting' ? t('cast.state_connecting')
+    : cast.state === 'preparing' ? t('cast.state_preparing')
+    : cast.state === 'loading' || cast.state === 'buffering' ? t('cast.state_loading')
+    : cast.state === 'paused' ? t('cast.state_paused')
+    : t('cast.state_playing'),
+  );
+
+  /// The seekbar follows the TV while casting. Guarded on `dragging` so the
+  /// gesture owns the knob, exactly like the time-pos observer's guard — and
+  /// safe as an $effect (which the observer guard is not) because on a drag
+  /// release `cast.time` is already the optimistic release position, so the
+  /// re-run cannot yank the knob backwards. `remote`, not `active`: while the
+  /// prepare rung runs, local playback continues and time-pos owns the knob —
+  /// two writers on one seekbar is the jitter bug in a new costume.
+  $effect(() => {
+    const time = cast.time;
+    if (cast.remote && !dragging) seekValue = time;
+  });
 
   /// Drop an entry. mpv renumbers what follows, so the list is re-read rather
   /// than patched — and removing the entry that is playing is allowed, because
@@ -4401,7 +4540,68 @@
   /// would have to mean rebinding a key *and* a modifier convention. So the old
   /// overloads (Shift+S, Shift+Z, Shift+A, the three things the arrows did) are
   /// rows of their own, and this switch has no branches in it.
+  /// While casting the window is a remote: playback keys drive the TV, and
+  /// the local-only concepts — the frame, the zoom, the loop, the speed, the
+  /// delays — say so instead of silently acting on a player nobody is
+  /// watching. Returns true when the action was consumed.
+  function runCastAction(id: ActionId): boolean {
+    switch (id) {
+      case 'pause': castTogglePause(); return true;
+      case 'seek_back': castSeekBy(-5); return true;
+      case 'seek_fwd': castSeekBy(5); return true;
+      case 'seek_back_precise': castSeekBy(-1); return true;
+      case 'seek_fwd_precise': castSeekBy(1); return true;
+      case 'seek_back_10': castSeekBy(-10); return true;
+      case 'seek_fwd_10': castSeekBy(10); return true;
+      case 'seek_start': castSeek(0); return true;
+      case 'seek_end': castSeek(Math.max(0, cast.duration - 5)); return true;
+      case 'volume_up': castNudgeVolume(0.05); return true;
+      case 'volume_down': castNudgeVolume(-0.05); return true;
+      case 'mute': castToggleMute(); return true;
+      case 'chapter_prev':
+      case 'chapter_next': {
+        // The chapter list is local knowledge about the same file; the jump is
+        // a remote seek, never mpv's `chapter` property — that would move the
+        // paused local player out from under the session.
+        const list = player.chapters;
+        if (!list.length) return true;
+        const current = list.filter((c) => c.time <= cast.time + 0.5).length - 1;
+        const target = id === 'chapter_next' ? current + 1 : current - 1;
+        if (target >= list.length) return true;
+        const chapter = list[Math.max(0, target)];
+        castSeek(chapter.time);
+        showOsd(chapterTitle(chapter), { sub: formatTime(chapter.time) });
+        return true;
+      }
+      case 'frame_prev':
+      case 'frame_next':
+      case 'speed_down':
+      case 'speed_up':
+      case 'loop':
+      case 'ab_loop':
+      case 'ab_clear':
+      case 'playlist_prev':
+      case 'playlist_next':
+      case 'screenshot':
+      case 'screenshot_subs':
+      case 'copy_frame':
+      case 'mini':
+      case 'audio_delay_down':
+      case 'audio_delay_up':
+      case 'sub_delay_down':
+      case 'sub_delay_up':
+      case 'reset_zoom':
+        showOsd(t('cast.not_while_casting'));
+        return true;
+      default:
+        return false;
+    }
+  }
+
   function runAction(id: ActionId) {
+    // `remote`, not `active`: while the prepare rung runs, local playback is
+    // still what the viewer sees, and the keys must keep driving it.
+    if (cast.remote && runCastAction(id)) return;
     switch (id) {
       case 'pause': void togglePause(); break;
       case 'seek_back': seekRelative(-5); break;
@@ -4888,6 +5088,26 @@
             <span class="loading-sub">{torrentLabel}</span>
           {/if}
         </span>
+      </div>
+    </div>
+  {/if}
+
+  <!-- The casting screen: while the TV plays, this window is a remote, and
+       what it shows must never be the stale paused frame pretending to be
+       playback — nor a hole to the desktop (gotcha 10), hence the opaque
+       fill in its CSS rather than a bare overlay. Gated on `remote`, not
+       `active`: during the prepare rung local playback deliberately keeps
+       running, and covering a playing picture with a status card would read
+       as the player dying for the length of the remux. -->
+  {#if cast.remote}
+    <div class="overlay castscreen">
+      <div class="castscreen-box">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"/></svg>
+        <span class="castscreen-title">{t('cast.casting_on', { name: cast.deviceName ?? '' })}</span>
+        <span class="castscreen-sub">{displayTitle}</span>
+        {#if cast.busy}
+          <span class="castscreen-state">{castStateLabel}</span>
+        {/if}
       </div>
     </div>
   {/if}
@@ -6102,6 +6322,55 @@
             <div class="setting-hint">{t('torrent.cache_hint')}</div>
             <button class="btn-danger" onclick={clearTorrentCache}>{t('torrent.cache_clear')}</button>
           </div>
+        {:else if settingsTab === 'tv'}
+          <!-- The mode is the transport, and the hint switches with the pill:
+               each value explains its own consequences in one breath, because
+               "prepare vs HLS" means nothing to a viewer until it is said in
+               terms of start-up wait, seeking, sound and disk. -->
+          <div class="setting">
+            <div class="setting-label">{t('cast.set_mode')}</div>
+            <div class="segmented">
+              <button
+                class="segopt"
+                class:sel={castModeVal === 'prepare'}
+                onclick={() => setCastModeHere('prepare')}
+              >
+                {t('cast.mode_prepare')}
+              </button>
+              <button
+                class="segopt"
+                class:sel={castModeVal === 'hls'}
+                onclick={() => setCastModeHere('hls')}
+              >
+                {t('cast.mode_hls')}
+              </button>
+            </div>
+            <div class="setting-hint">
+              {castModeVal === 'hls' ? t('cast.mode_hls_hint') : t('cast.mode_prepare_hint')}
+            </div>
+            <div class="setting-hint">{t('cast.mode_torrent_note')}</div>
+          </div>
+          <div class="setting">
+            <div class="setting-label">{t('cast.set_cache')}</div>
+            <div class="segmented">
+              {#each CAST_CAP_CHOICES as cap (cap)}
+                <button
+                  class="segopt"
+                  class:sel={castCapVal === cap}
+                  onclick={() => setCastCapHere(cap)}
+                >
+                  {cap === 0 ? t('cast.cache_none') : t('cast.cap_gb', { n: cap })}
+                </button>
+              {/each}
+            </div>
+            <div class="setting-hint">{t('cast.cache_hint')}</div>
+            {#if castCacheBytes !== null}
+              <div class="setting-hint">{t('cast.cache_size', { size: fmtSize(castCacheBytes) })}</div>
+            {/if}
+            <button class="btn-danger" onclick={() => void clearCastCacheHere()}>
+              {t('cast.cache_clear')}
+            </button>
+          </div>
         {:else if settingsTab === 'playback'}
           <div class="setting">
             <div class="row-toggle">
@@ -6556,6 +6825,53 @@
           </button>
         {/each}
       </div>
+    {:else if openMenu === 'cast'}
+      <div class="menu castmenu scrollable">
+        <div class="menu-title">{t('cast.title')}</div>
+        {#if cast.active}
+          <div class="cast-current">
+            <span class="cast-name">{cast.deviceName}</span>
+            <span class="cast-state">{castStateLabel}</span>
+          </div>
+          <button
+            class="menu-item"
+            onclick={() => {
+              openMenu = null;
+              void disconnectCast();
+            }}
+          >
+            {t('cast.disconnect')}
+          </button>
+        {:else}
+          {#each cast.devices as device (device.id)}
+            <button
+              class="menu-item cast-device"
+              onclick={() => {
+                openMenu = null;
+                void castCurrentFile(device);
+              }}
+            >
+              <span class="cast-name">{device.name}</span>
+              {#if device.model && device.model !== device.name}
+                <span class="cast-model">{device.model}</span>
+              {/if}
+            </button>
+          {:else}
+            <div class="cast-empty">
+              {castSearchLong ? t('cast.empty') : t('cast.searching')}
+            </div>
+          {/each}
+          <!-- The number-one cause of "casting doesn't work" is the network,
+               not the code, so the panel says so up front: the Defender prompt
+               before the first cast, and the usual reasons a TV is invisible
+               once the search has clearly come up dry. -->
+          <div class="cast-hint">
+            {castSearchLong && cast.devices.length === 0
+              ? t('cast.empty_hint')
+              : t('cast.firewall_warn')}
+          </div>
+        {/if}
+      </div>
     {:else if trackMenu}
       <div class="menu scrollable">
         <div class="menu-title">{t(trackMenu === 'audio' ? 'osc.audio' : 'osc.subs')}</div>
@@ -6724,42 +7040,49 @@
     </div>
     <div class="controls">
       <div class="cluster cl-left">
-      <button data-tip={withKey(t('osc.sound'), 'mute')} aria-label={t('osc.sound')} onclick={toggleMute}>
-        {#if player.muted || player.volume === 0}
+      <button data-tip={withKey(t('osc.sound'), 'mute')} aria-label={t('osc.sound')} onclick={() => (cast.remote ? castToggleMute() : toggleMute())}>
+        {#if cast.remote ? cast.muted : player.muted || player.volume === 0}
           <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16.5 12A4.5 4.5 0 0 0 14 8v2.2l2.5 2.5v-.7zM19 12a7 7 0 0 1-1.2 3.9l1.5 1.5A9 9 0 0 0 21 12a9 9 0 0 0-7-8.8v2.1A7 7 0 0 1 19 12zM4.3 3L3 4.3 7.7 9H3v6h4l5 5v-6.7l4.3 4.2a6.9 6.9 0 0 1-2.3 1.2v2.1a9 9 0 0 0 3.7-1.8L20 21.7 21.3 20 4.3 3zM12 4L9.9 6.1 12 8.2V4z"/></svg>
         {:else}
           <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
         {/if}
       </button>
+      <!-- While casting the bar is the TV's volume — the receiver's own 0..1
+           shown as percent, with no amplification range: 100 is the device's
+           ceiling, not a point on the way to 150. -->
       <input
         class="volumebar"
         type="range"
         min="0"
-        max={VOLUME_MAX}
+        max={cast.remote ? 100 : VOLUME_MAX}
         step="1"
-        value={player.volume}
-        oninput={(e) => setVolume(Number(e.currentTarget.value))}
+        disabled={cast.remote && !cast.volumeAdjustable}
+        value={cast.remote ? Math.round(cast.volume * 100) : player.volume}
+        oninput={(e) =>
+          cast.remote
+            ? castSetVolume(Number(e.currentTarget.value) / 100)
+            : setVolume(Number(e.currentTarget.value))}
         onchange={(e) => e.currentTarget.blur()}
-        style="--progress: {(player.volume / VOLUME_MAX) * 100}%"
-        data-tip={t('osd.volume', { value: Math.round(player.volume) })}
-        aria-label={t('osd.volume', { value: Math.round(player.volume) })}
+        style="--progress: {cast.remote ? cast.volume * 100 : (player.volume / VOLUME_MAX) * 100}%"
+        data-tip={t('osd.volume', { value: Math.round(cast.remote ? cast.volume * 100 : player.volume) })}
+        aria-label={t('osd.volume', { value: Math.round(cast.remote ? cast.volume * 100 : player.volume) })}
       />
-      {#if player.speed !== 1}
+      {#if player.speed !== 1 && !cast.remote}
         <span class="speed" data-tip={t('osc.speed')} aria-label={t('osc.speed')}>{player.speed}×</span>
       {/if}
       </div>
       <div class="cluster cl-center">
-      <button data-tip={withKey(t('osc.prev'), 'playlist_prev')} aria-label={t('osc.prev')} disabled={player.playlistPos <= 0} onclick={() => void command('playlist-prev', [])}>
+      <button data-tip={withKey(t('osc.prev'), 'playlist_prev')} aria-label={t('osc.prev')} disabled={player.playlistPos <= 0 || cast.active} onclick={() => void command('playlist-prev', [])}>
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
       </button>
-      <button class="play" data-tip={withKey(t('osc.play'), 'pause')} aria-label={t('osc.play')} disabled={showEmpty} onclick={togglePause}>
-        {#if player.paused || player.eofReached}
+      <button class="play" data-tip={withKey(t('osc.play'), 'pause')} aria-label={t('osc.play')} disabled={showEmpty} onclick={() => (cast.remote ? castTogglePause() : void togglePause())}>
+        {#if cast.remote ? cast.paused : player.paused || player.eofReached}
           <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
         {:else}
           <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
         {/if}
       </button>
-      <button data-tip={withKey(t('osc.next'), 'playlist_next')} aria-label={t('osc.next')} disabled={player.playlistPos >= player.playlistCount - 1} onclick={() => void command('playlist-next', [])}>
+      <button data-tip={withKey(t('osc.next'), 'playlist_next')} aria-label={t('osc.next')} disabled={player.playlistPos >= player.playlistCount - 1 || cast.active} onclick={() => void command('playlist-next', [])}>
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
       </button>
       </div>
@@ -6852,6 +7175,24 @@
       {#if hasFile}
         <button class="menu-toggle" data-tip={t('osc.subs')} aria-label={t('osc.subs')} class:active={openMenu === 'sub'} onclick={() => toggleMenu('sub')}>
           <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM6 10h2v2H6v-2zm8 6H6v-2h8v2zm4 0h-2v-2h2v2zm0-4H10v-2h8v2z"/></svg>
+        </button>
+      {/if}
+      {#if (hasFile && (!isNetworkSource(player.filePath) || !!parseTorrentUrl(player.filePath ?? ''))) || cast.active}
+        <!-- Indigo while connected: the accent means on/selected, and a live
+             cast session is a boolean "on". Local files and torrents (whose
+             data may be a complete file on this disk — resolveCastSource
+             answers, and an incomplete one refuses with the reason); a plain
+             network stream cannot be served to the TV from a disk it is
+             not on. -->
+        <button
+          class="menu-toggle"
+          class:cast-on={cast.active}
+          data-tip={t('cast.tip')}
+          aria-label={t('cast.tip')}
+          class:active={openMenu === 'cast'}
+          onclick={() => toggleMenu('cast')}
+        >
+          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"/></svg>
         </button>
       {/if}
       <button
@@ -10614,5 +10955,116 @@
   .volumebar {
     width: 90px;
     margin: 0 6px 0 2px;
+  }
+  /* ---- Casting ------------------------------------------------------------ */
+
+  /* Indigo means on: a live cast session is a boolean "on", same rule as
+     .switch.on and the focus rings. */
+  .controls button.cast-on {
+    color: #818cf8;
+  }
+
+  .menu.castmenu {
+    min-width: 280px;
+  }
+
+  /* Written to win against .menu-item's display: block (the two-class lesson:
+     a lone modifier class of equal weight loses to source order). */
+  .menu-item.cast-device {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .cast-model {
+    font-size: 11px;
+    color: rgba(232, 232, 236, 0.45);
+  }
+
+  .cast-current {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 14px 8px;
+    /* Explicit: this is a bare div, not a .menu-item button, so it inherits
+       the document's default (black) rather than the menu's text colour —
+       which is exactly how the device name shipped unreadable. */
+    color: #e8e8ec;
+  }
+
+  .cast-current .cast-name {
+    font-weight: 600;
+  }
+
+  /* The TV declared its volume fixed (or never reported one): the slider is
+     disabled rather than silently inert, and keys/wheel raise the OSD saying
+     volume lives on the TV's own remote. */
+  .volumebar:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .cast-state {
+    font-size: 11px;
+    color: rgba(232, 232, 236, 0.55);
+  }
+
+  .cast-empty {
+    padding: 10px 14px;
+    font-size: 12.5px;
+    color: rgba(232, 232, 236, 0.55);
+  }
+
+  .cast-hint {
+    padding: 8px 14px 10px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: rgba(232, 232, 236, 0.4);
+    max-width: 300px;
+  }
+
+  /* Nearly opaque, deliberately not fully: mpv sits paused behind on the frame
+     the cast started from, and letting it ghost through says "this is what is
+     on the TV" — while the alpha is high enough that even if nothing painted
+     there would be a dark field, not the desktop (gotcha 10: mpv always paints
+     its field once the VO is configured, so this is belt and braces). */
+  .overlay.castscreen {
+    background: rgba(11, 11, 16, 0.88);
+  }
+
+  .castscreen-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 24px;
+    color: #e8e8ec;
+    text-align: center;
+  }
+
+  .castscreen-box > svg {
+    width: 56px;
+    height: 56px;
+    opacity: 0.85;
+  }
+
+  .castscreen-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .castscreen-sub {
+    font-size: 13px;
+    color: rgba(232, 232, 236, 0.6);
+    max-width: min(440px, 80vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .castscreen-state {
+    font-size: 12px;
+    color: rgba(232, 232, 236, 0.5);
   }
 </style>

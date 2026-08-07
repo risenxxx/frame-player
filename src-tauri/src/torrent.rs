@@ -1229,8 +1229,9 @@ fn stream_url(port: u16, info_hash: &str, index: usize, path: &str) -> String {
 }
 
 /// Percent-encode everything that is not unreserved. Small and local rather than
-/// a dependency: this escapes one file name for one loopback URL.
-fn urlencode(s: &str) -> String {
+/// a dependency: this escapes one file name for one loopback URL. `pub(crate)`
+/// because cast.rs builds its URLs the same way.
+pub(crate) fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.as_bytes() {
         match b {
@@ -1247,10 +1248,10 @@ fn urlencode(s: &str) -> String {
 /// that is present but unsatisfiable, `None` for a header we do not understand
 /// (which is served as the whole file, per RFC 9110).
 ///
-/// Only the single-range `bytes=` form: that is what ffmpeg sends, and a
-/// multipart response to a media player would be answering a question nobody
-/// asked.
-fn parse_range(value: &str, total: u64) -> Option<Option<(u64, u64)>> {
+/// Only the single-range `bytes=` form: that is what ffmpeg sends (and what a
+/// Cast receiver sends — cast.rs shares this parser), and a multipart response
+/// to a media player would be answering a question nobody asked.
+pub(crate) fn parse_range(value: &str, total: u64) -> Option<Option<(u64, u64)>> {
     let spec = value.trim().strip_prefix("bytes=")?;
     if spec.contains(',') {
         return None;
@@ -1458,7 +1459,7 @@ fn file_disk_size(meta: &std::fs::Metadata) -> u64 {
     meta.len()
 }
 
-fn dir_size(path: &std::path::Path) -> u64 {
+pub(crate) fn dir_size(path: &std::path::Path) -> u64 {
     // `symlink_metadata`: a symlink is measured as the link, never followed —
     // otherwise a link pointing out of the cache would be counted as ours, and
     // a cycle would not terminate.

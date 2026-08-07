@@ -61,9 +61,30 @@ librqbit = { version = "8.1.1", default-features = false, features = ["rust-tls"
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 http-body-util = "0.1"
-tokio = { version = "1", features = ["net", "rt", "io-util", "macros"] }
+tokio = { version = "1", features = ["net", "rt", "io-util", "macros", "sync", "time", "fs"] }
 tokio-util = { version = "0.7", features = ["io"] }
 bytes = "1"
+
+# Casting (Google Cast) — cast.rs. The CASTV2 sender protocol is spoken
+# directly: TLS to the device's 8009, 4-byte-BE-length-framed protobuf envelopes
+# whose payloads are JSON in four namespaces. `rust_cast` was tried first and
+# rejected after reading its source (see casting.md): its MessageManager holds
+# the stream mutex across a blocking `read_exact` with no timeout, so a command
+# sent while its receive loop waits for traffic stalls for up to seconds —
+# exactly wrong for a remote control — and it drags in protobuf + a codegen
+# build step + a second TLS provider (aws-lc-rs via rustls' default features)
+# for what is, for our subset, one ~60-line hand-encoded message type.
+# `tokio-rustls` pins the `ring` provider because the tree compiles both ring
+# and aws-lc-rs (reqwest vs. others), and rustls' plain builder() panics when
+# two providers are enabled. `mdns-sd` browses `_googlecast._tcp` with no
+# system service; `if-addrs` picks the LAN interface on the chosen device's
+# subnet, so the file server binds an address the TV can actually reach.
+# `rand` mints the per-cast URL token (the server serves exactly one registered
+# file, never a directory).
+mdns-sd = "0.20"
+if-addrs = "0.13"
+rand = "0.9"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 
 # macOS: native window chrome (rounded corners, transparent title bar, the
 # system traffic-light buttons) — see macos_chrome in lib.rs.
