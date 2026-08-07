@@ -83,6 +83,9 @@ bytes = "1"
 # file, never a directory).
 mdns-sd = "0.20"
 if-addrs = "0.13"
+# SSDP has to leave by a named interface, which needs IP_MULTICAST_IF — neither
+# std nor tokio exposes it. Already in the tree via hyper/tokio.
+socket2 = "0.6"
 rand = "0.9"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 

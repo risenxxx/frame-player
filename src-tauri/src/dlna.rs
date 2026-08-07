@@ -51,50 +51,115 @@ pub struct Renderer {
     pub avtransport_scpd: Option<String>,
 }
 
-/// One SSDP search round. Replies are ordinary unicast datagrams back to our
-/// source port (unlike mDNS, where the answers are multicast too), so only the
-/// send needs the multicast path to work.
+/// One SSDP search round, **sent from every LAN interface separately**.
+///
+/// The obvious version binds `0.0.0.0` and lets the stack pick, which is how
+/// this shipped and why it found nothing on Windows: the outgoing interface for
+/// a multicast datagram is chosen by the routing table, and a machine with
+/// Hyper-V, WSL or a VPN has virtual adapters that win it — the query leaves
+/// into a switch nobody is listening on. macOS with one real interface never
+/// showed it. `IP_MULTICAST_IF` is the control that actually decides, and
+/// neither std nor tokio exposes it, hence socket2.
+///
+/// Replies are ordinary unicast datagrams back to the sending socket (unlike
+/// mDNS, where answers are multicast too), so each interface collects its own.
 async fn ssdp_search(timeout: Duration) -> Vec<String> {
-    let Ok(sock) = tokio::net::UdpSocket::bind("0.0.0.0:0").await else {
-        eprintln!("[dlna] cannot bind a UDP socket");
+    let sockets = ssdp_sockets();
+    if sockets.is_empty() {
+        eprintln!("[dlna] no usable network interface for SSDP");
         return Vec::new();
-    };
-    let _ = sock.set_multicast_ttl_v4(4);
+    }
+    if crate::cast::cast_debug() {
+        let names: Vec<String> = sockets.iter().map(|(ip, _)| ip.to_string()).collect();
+        eprintln!("[dlna] searching from {}", names.join(", "));
+    }
 
-    for st in [
-        "urn:schemas-upnp-org:device:MediaRenderer:1",
-        "upnp:rootdevice",
-        "ssdp:all",
-    ] {
-        let msg = format!(
-            "M-SEARCH * HTTP/1.1\r\nHOST: {SSDP_ADDR}\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\nST: {st}\r\n\r\n"
-        );
-        if let Err(e) = sock.send_to(msg.as_bytes(), SSDP_ADDR).await {
-            eprintln!("[dlna] M-SEARCH send failed ({st}): {e}");
-        }
+    let mut tasks = Vec::new();
+    for (ip, sock) in sockets {
+        tasks.push(tauri::async_runtime::spawn(async move {
+            for st in [
+                "urn:schemas-upnp-org:device:MediaRenderer:1",
+                "upnp:rootdevice",
+                "ssdp:all",
+            ] {
+                let msg = format!(
+                    "M-SEARCH * HTTP/1.1\r\nHOST: {SSDP_ADDR}\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\nST: {st}\r\n\r\n"
+                );
+                if let Err(e) = sock.send_to(msg.as_bytes(), SSDP_ADDR).await {
+                    eprintln!("[dlna] M-SEARCH from {ip} failed: {e}");
+                    return Vec::new();
+                }
+            }
+            let mut found: Vec<String> = Vec::new();
+            let mut buf = vec![0u8; 8192];
+            let deadline = tokio::time::Instant::now() + timeout;
+            loop {
+                let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if left.is_zero() {
+                    break;
+                }
+                let Ok(Ok((n, from))) = tokio::time::timeout(left, sock.recv_from(&mut buf)).await
+                else {
+                    break;
+                };
+                let text = String::from_utf8_lossy(&buf[..n]);
+                if let Some(loc) = header(&text, "location") {
+                    if !found.contains(&loc) {
+                        if crate::cast::cast_debug() {
+                            eprintln!("[dlna] {from} -> {loc}");
+                        }
+                        found.push(loc);
+                    }
+                }
+            }
+            found
+        }));
     }
 
     let mut locations: Vec<String> = Vec::new();
-    let mut buf = vec![0u8; 8192];
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() {
-            break;
-        }
-        let Ok(Ok((n, from))) = tokio::time::timeout(remaining, sock.recv_from(&mut buf)).await
-        else {
-            break;
-        };
-        let text = String::from_utf8_lossy(&buf[..n]);
-        if let Some(loc) = header(&text, "location") {
+    for task in tasks {
+        for loc in task.await.unwrap_or_default() {
             if !locations.contains(&loc) {
-                eprintln!("[dlna] {from} -> {loc}");
                 locations.push(loc);
             }
         }
     }
     locations
+}
+
+/// One bound socket per usable IPv4 interface: loopback and link-local (APIPA,
+/// a Wi-Fi adapter with no lease) are skipped because nothing answers there and
+/// each costs the full search timeout.
+fn ssdp_sockets() -> Vec<(std::net::Ipv4Addr, tokio::net::UdpSocket)> {
+    let mut out = Vec::new();
+    for iface in if_addrs::get_if_addrs().unwrap_or_default() {
+        let std::net::IpAddr::V4(ip) = iface.ip() else {
+            continue;
+        };
+        if ip.is_loopback() || ip.is_link_local() {
+            continue;
+        }
+        let Ok(sock) = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        ) else {
+            continue;
+        };
+        let bound = sock
+            .set_reuse_address(true)
+            .and_then(|()| sock.bind(&std::net::SocketAddrV4::new(ip, 0).into()))
+            .and_then(|()| sock.set_multicast_if_v4(&ip))
+            .and_then(|()| sock.set_multicast_ttl_v4(4))
+            .and_then(|()| sock.set_nonblocking(true));
+        if bound.is_err() {
+            continue;
+        }
+        if let Ok(sock) = tokio::net::UdpSocket::from_std(sock.into()) {
+            out.push((ip, sock));
+        }
+    }
+    out
 }
 
 /// Case-insensitive HTTP-style header lookup, value trimmed.
