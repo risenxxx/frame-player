@@ -946,6 +946,7 @@ pub fn run() {
             dlna::dlna_control,
             dlna::dlna_disconnect,
             cast::cast_serve_torrent,
+            cast::cast_load_url,
             cast::cast_discover_start,
             cast::cast_discover_stop,
             cast::cast_devices,

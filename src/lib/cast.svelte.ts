@@ -20,6 +20,7 @@ import { isPrivatePath } from './history.svelte';
 import { t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
 import { isNetworkSource, player, type Track } from './player.svelte';
+import { neighbour, playEntry, playlist, type PlaylistEntry } from './playlist.svelte';
 import { parseTorrentUrl } from './source';
 
 export interface CastDevice {
@@ -92,7 +93,17 @@ class Cast {
   /// What the transport chosen for a device would mean for the file that is
   /// open — computed once when the picker opens, so each row can state its
   /// consequence without every row running an async probe.
-  plan = $state<{ container: string; verdict: CastVerdict; streaming: boolean } | null>(null);
+  plan = $state<{
+    /// **The resolved source, not `player.filePath`.** For a completed torrent
+    /// those differ: the player holds a loopback URL and the cast would be
+    /// pointed at the file on disk. Reasoning about the URL made
+    /// `isNetworkSource` true and auto answered "Chromecast" for a file that
+    /// actually goes over DLNA — the row contradicting what the click does.
+    src: string;
+    container: string;
+    verdict: CastVerdict;
+    streaming: boolean;
+  } | null>(null);
   /// Which transport the live session is using; the controls, the poll and the
   /// disconnect all route on it.
   transport = $state<Transport>('cast');
@@ -183,6 +194,21 @@ let sawPlayback = false;
 /// Whether local playback was running when the cast started — what the
 /// handback resumes to.
 let resumeUnpaused = false;
+/// Containers this device took the URI for and then failed to play, within
+/// this run. **Not persisted**: a renderer under-declaring its formats is a
+/// guess we are allowed to retry next time the app starts, while repeating a
+/// failure for every episode of a season is not. It also makes the picker's
+/// line tell the truth from the second attempt onwards.
+const dlnaRefused = new Set<string>();
+
+function refusedKey(device: TvDevice, container: string): string {
+  return `${device.key}|${container}`;
+}
+
+/// The device this session belongs to. **The session is to the device, not to
+/// one file** — the queue moves under it, so advancing an episode is a re-LOAD
+/// rather than a disconnect and a fresh connect.
+let currentDevice: TvDevice | null = null;
 
 // ---- Per-device profile ------------------------------------------------------
 
@@ -280,6 +306,7 @@ export function transportFor(device: TvDevice, path: string | null): Transport {
   if (pinned === 'cast' && device.cast) return 'cast';
   if (!device.cast) return 'dlna';
   if (!device.dlna) return 'cast';
+  if (dlnaRefused.has(refusedKey(device, extensionOf(path ?? '')))) return 'cast';
   return dlnaTakesFile(device, path) && !isNetworkSource(path ?? '') ? 'dlna' : 'cast';
 }
 
@@ -296,7 +323,12 @@ export function pinnedUnavailable(device: TvDevice): boolean {
  * sound, whether it plays at all) rather than protocol names, which live under
  * the gear for whoever went looking for them.
  */
-export function deviceSummary(device: TvDevice, path: string | null): string {
+export function plannedTransport(device: TvDevice): Transport {
+  return transportFor(device, cast.plan?.src ?? player.filePath);
+}
+
+export function deviceSummary(device: TvDevice): string {
+  const path = cast.plan?.src ?? player.filePath;
   if (!deviceIsVideoCapable(device)) return t('cast.sum_audio_only');
   // **A row must not pass judgement on what it does not know yet.** SSDP is
   // still sweeping for the first seconds, so a device whose DLNA half has not
@@ -316,8 +348,11 @@ export function deviceSummary(device: TvDevice, path: string | null): string {
   // row must not offer the prepare its verdict would otherwise claim.
   if (cast.plan?.streaming) {
     const ext = cast.plan.container;
-    const takes = device.dlna?.mimes.some((m) => (DLNA_MIME[ext] ?? []).includes(m)) ?? false;
-    return takes ? t('cast.sum_stream') : t('cast.sum_stream_wait');
+    const dlnaTakes = device.dlna?.mimes.some((m) => (DLNA_MIME[ext] ?? []).includes(m)) ?? false;
+    // A Chromecast can stream one too, but only a file that needs no repacking
+    // — the verdict is already computed for this file, so no second probe.
+    const castTakes = !!device.cast && cast.plan.verdict.kind === 'direct';
+    return dlnaTakes || castTakes ? t('cast.sum_stream') : t('cast.sum_stream_wait');
   }
   const transport = transportFor(device, path);
   if (transport === 'dlna') {
@@ -340,6 +375,7 @@ export async function refreshCastPlan() {
   const resolved = await resolveCastSource(path);
   const src = 'src' in resolved ? resolved.src : path;
   cast.plan = {
+    src,
     container: extensionOf(src),
     verdict: await castVerdict(src),
     streaming: 'stream' in resolved,
@@ -653,7 +689,15 @@ async function selectedAudioParams(): Promise<{ audioIndex: number; channels: nu
  * starts, and every exit path below replaces it — success (the poll's first
  * "playing"), each distinct failure, and the firewall timeout.
  */
-export async function castCurrentFile(device: TvDevice): Promise<boolean> {
+export async function castCurrentFile(
+  device: TvDevice,
+  opts: { keepSession?: boolean; forceTransport?: Transport } = {},
+): Promise<boolean> {
+  const keep = opts.keepSession === true;
+  // A fresh session may fall back again; a re-load inside one may not, or a
+  // transport that keeps refusing would ping-pong.
+  if (!keep && !opts.forceTransport) fellBack = false;
+  currentDevice = device;
   const path = player.filePath;
   if (!path) return false;
   const resolved = await resolveCastSource(path);
@@ -665,10 +709,10 @@ export async function castCurrentFile(device: TvDevice): Promise<boolean> {
   // and it is not a choice: nothing can be prepared from bytes that have not
   // arrived, and the segmenter would cost the release its codecs even if it
   // could. So it is DLNA or an honest refusal.
-  if ('stream' in resolved) return castTorrentStream(device, resolved.stream);
+  if ('stream' in resolved) return castTorrentStream(device, resolved.stream, keep);
   const src = resolved.src;
-  const transport = transportFor(device, src);
-  if (transport === 'dlna') return castOverDlna(device, src);
+  const transport = opts.forceTransport ?? transportFor(device, src);
+  if (transport === 'dlna') return castOverDlna(device, src, keep);
 
   const verdict = await castVerdict(src);
   if (verdict.kind === 'refuse') {
@@ -676,23 +720,28 @@ export async function castCurrentFile(device: TvDevice): Promise<boolean> {
     return false;
   }
 
-  showOsd(t('cast.connecting', { name: device.name }), { sticky: true });
-  try {
-    await invoke('cast_connect', { device: device.cast });
-  } catch (e) {
-    console.warn('cast_connect failed:', e);
-    showOsd(t('cast.err_unreachable'));
-    return false;
+  if (!keep) {
+    showOsd(t('cast.connecting', { name: device.name }), { sticky: true });
+    try {
+      await invoke('cast_connect', { device: device.cast });
+    } catch (e) {
+      console.warn('cast_connect failed:', e);
+      showOsd(t('cast.err_unreachable'));
+      return false;
+    }
+    // Only on a fresh session: following the queue happens with the local
+    // player already paused, so reading it here would record "was paused" and
+    // the handback at the end would leave the film standing still.
+    resumeUnpaused = !player.paused;
   }
   cast.transport = 'cast';
 
   cast.active = true;
   cast.deviceName = device.name;
-  cast.state = 'connecting';
+  cast.state = keep ? 'loading' : 'connecting';
   cast.time = player.timePos;
   cast.duration = player.duration;
   sawPlayback = false;
-  resumeUnpaused = !player.paused;
 
   // The prepare rung runs while local playback continues — the wait is
   // seconds-to-half-a-minute and there is no reason to sit on a frozen frame
@@ -780,17 +829,22 @@ const STREAM_LEAD_TIMEOUT_MS = 45_000;
 async function castTorrentStream(
   device: TvDevice,
   stream: { infoHash: string; index: number; name: string; ext: string },
+  keep = false,
 ): Promise<boolean> {
+  // Two ways in, and neither is a preference. A renderer that lists the
+  // container takes the release untouched — the wide door, since torrents are
+  // MKV. A Chromecast takes it only if the file needs no repacking at all,
+  // because there is nothing to repack: half a film remuxed is half a film.
   const renderer = device.dlna;
-  if (!renderer) {
-    showOsd(t('cast.stream_needs_dlna'));
+  const dlnaTakes =
+    !!renderer && (DLNA_MIME[stream.ext] ?? []).some((m) => renderer.mimes.includes(m));
+  const castTakes =
+    !dlnaTakes && !!device.cast && (await castVerdict(stream.name)).kind === 'direct';
+  if (!dlnaTakes && !castTakes) {
+    showOsd(renderer ? t('cast.stream_format', { what: stream.ext || '?' }) : t('cast.stream_needs_dlna'));
     return false;
   }
-  const wanted = DLNA_MIME[stream.ext];
-  if (!wanted || !wanted.some((m) => renderer.mimes.includes(m))) {
-    showOsd(t('cast.stream_format', { what: stream.ext || '?' }));
-    return false;
-  }
+  const deviceIp = dlnaTakes ? renderer!.ip : device.cast!.ip;
 
   // The lead, announced: this is a wait the viewer is owed an explanation for,
   // and the figure moves, so it is a sticky popup replaced on every exit path.
@@ -812,13 +866,20 @@ async function castTorrentStream(
     await new Promise((r) => setTimeout(r, 500));
   }
 
-  showOsd(t('cast.connecting', { name: device.name }), { sticky: true });
-  try {
-    await invoke('dlna_connect', { device: renderer });
-  } catch (e) {
-    console.warn('dlna_connect failed:', e);
-    showOsd(t('cast.err_unreachable'));
-    return false;
+  if (!keep) {
+    showOsd(t('cast.connecting', { name: device.name }), { sticky: true });
+    try {
+      if (dlnaTakes) {
+        await invoke('dlna_connect', { device: renderer });
+      } else {
+        await invoke('cast_connect', { device: device.cast });
+      }
+    } catch (e) {
+      console.warn('stream connect failed:', e);
+      showOsd(t('cast.err_unreachable'));
+      return false;
+    }
+    resumeUnpaused = !player.paused;
   }
   const hidden = isPrivatePath(player.filePath ?? '');
   let url: string;
@@ -827,7 +888,7 @@ async function castTorrentStream(
       infoHash: stream.infoHash,
       index: stream.index,
       name: stream.name,
-      deviceIp: renderer.ip,
+      deviceIp,
       hidden,
     });
   } catch (e) {
@@ -836,32 +897,40 @@ async function castTorrentStream(
     return false;
   }
 
-  cast.transport = 'dlna';
+  cast.transport = dlnaTakes ? 'dlna' : 'cast';
   cast.active = true;
   cast.deviceName = device.name;
   cast.state = 'loading';
   cast.time = player.timePos;
   cast.duration = player.duration;
   sawPlayback = false;
-  resumeUnpaused = !player.paused;
   castSrcPath = null;
   sessionHls = null;
 
   await setProperty('pause', true).catch(() => {});
   loadStartedAt = Date.now();
   try {
-    await invoke('dlna_load_url', {
-      url,
-      position: player.timePos,
-      title: hidden ? null : player.displayTitle,
-      duration: player.duration,
-      mime: DLNA_MIME[stream.ext]?.[0] ?? 'video/mp4',
-      // The renderer decides seekability from the metadata before it fetches a
-      // byte, and size is one of the three things it reads.
-      size: fileSize,
-    });
+    if (dlnaTakes) {
+      await invoke('dlna_load_url', {
+        url,
+        position: player.timePos,
+        title: hidden ? null : player.displayTitle,
+        duration: player.duration,
+        mime: DLNA_MIME[stream.ext]?.[0] ?? 'video/mp4',
+        // The renderer decides seekability from the metadata before it fetches
+        // a byte, and size is one of the three things it reads.
+        size: fileSize,
+      });
+    } else {
+      await invoke('cast_load_url', {
+        url,
+        name: stream.name,
+        position: player.timePos,
+        title: hidden ? null : player.displayTitle,
+      });
+    }
   } catch (e) {
-    console.warn('dlna_load_url failed:', e);
+    console.warn('stream load failed:', e);
     await endCast({ osd: t('cast.err_load'), resumeLocal: true });
     return false;
   }
@@ -878,7 +947,7 @@ async function castTorrentStream(
  * Main-10 HDR10 MKV with E-AC-3 5.1 plays, seeks (the TV reads the MKV's own
  * cues and range-requests the offset itself) and keeps its surround.
  */
-async function castOverDlna(device: TvDevice, src: string): Promise<boolean> {
+async function castOverDlna(device: TvDevice, src: string, keep = false): Promise<boolean> {
   const renderer = device.dlna;
   if (!renderer) return false;
   if (isNetworkSource(src)) {
@@ -886,13 +955,16 @@ async function castOverDlna(device: TvDevice, src: string): Promise<boolean> {
     return false;
   }
 
-  showOsd(t('cast.connecting', { name: device.name }), { sticky: true });
-  try {
-    await invoke('dlna_connect', { device: renderer });
-  } catch (e) {
-    console.warn('dlna_connect failed:', e);
-    showOsd(t('cast.err_unreachable'));
-    return false;
+  if (!keep) {
+    showOsd(t('cast.connecting', { name: device.name }), { sticky: true });
+    try {
+      await invoke('dlna_connect', { device: renderer });
+    } catch (e) {
+      console.warn('dlna_connect failed:', e);
+      showOsd(t('cast.err_unreachable'));
+      return false;
+    }
+    resumeUnpaused = !player.paused;
   }
 
   cast.transport = 'dlna';
@@ -902,7 +974,6 @@ async function castOverDlna(device: TvDevice, src: string): Promise<boolean> {
   cast.time = player.timePos;
   cast.duration = player.duration;
   sawPlayback = false;
-  resumeUnpaused = !player.paused;
   castSrcPath = src;
   sessionHls = null;
 
@@ -959,7 +1030,10 @@ function stopPoll() {
 }
 
 async function poll() {
-  if (!cast.active) return;
+  // A handover takes a second or two, and the television keeps reporting the
+  // finished file as ended throughout — without this the queue would jump
+  // several episodes at once.
+  if (!cast.active || advancing) return;
   const status = await invoke<CastStatusMsg>(
     cast.transport === 'dlna' ? 'dlna_status' : 'cast_status',
   ).catch(() => null);
@@ -984,13 +1058,22 @@ async function poll() {
       }
       break;
     case 'ended':
+      // A DLNA renderer that stops before it ever played did not finish the
+      // film — it failed to start it, and "ended" is simply the only state it
+      // has for both.
+      if (cast.transport === 'dlna' && !sawPlayback && (await fallbackToCast('refused'))) return;
+      // The queue is the player's, not the television's: mpv sits paused on
+      // the file it handed over, so nothing advances unless we advance it.
+      if (await castAdvance(1, { auto: true })) return;
       await endCast({ osd: t('cast.ended'), resumeLocal: true, resumePaused: true });
       return;
     case 'stopped':
+      if (cast.transport === 'dlna' && !sawPlayback && (await fallbackToCast('refused'))) return;
       // Stopped from the TV side (or another sender took the device over).
       await endCast({ osd: t('cast.stopped'), resumeLocal: true, resumePaused: true });
       return;
     case 'error': {
+      if (cast.transport === 'dlna' && !sawPlayback && (await fallbackToCast('refused'))) return;
       const kind = status.error ?? 'closed';
       const key =
         kind === 'unreachable' ? 'cast.err_unreachable'
@@ -1006,9 +1089,21 @@ async function poll() {
 
   // The firewall verdict: the TV accepted the LOAD (or is still claiming to
   // buffer) but never opened a connection to our server. A TV that IS fetching
-  // and still buffering is a different situation and stays untouched.
+  // and still buffering is a different situation and stays untouched. Note the
+  // fallback is deliberately NOT taken here: nothing was fetched, so the file
+  // is not the problem and Chromecast would be served by the same blocked
+  // server.
   if (!sawPlayback && status.fetches === 0 && Date.now() - loadStartedAt > FETCH_TIMEOUT_MS) {
     await endCast({ osd: t('cast.err_firewall'), resumeLocal: true });
+    return;
+  }
+  // **Fetched and still not playing**: the device is reading the file and
+  // showing nothing, which is the failure that used to be perfectly silent —
+  // no error frame, no state change, a black screen and a player convinced all
+  // is well. Both transports can end up here, and neither reports it.
+  if (!sawPlayback && status.fetches > 0 && Date.now() - loadStartedAt > START_TIMEOUT_MS) {
+    if (cast.transport === 'dlna' && (await fallbackToCast('silent'))) return;
+    await endCast({ osd: t('cast.stuck'), resumeLocal: true });
   }
 }
 
@@ -1044,6 +1139,7 @@ export async function endCast(opts: {
   preparedHidden = false;
   castSrcPath = null;
   sessionHls = null;
+  currentDevice = null;
   cast.transport = 'cast';
   showOsd(opts.osd);
   if (!wasActive || !opts.resumeLocal || !player.hasFile) return;
@@ -1062,6 +1158,115 @@ export async function endCast(opts: {
 export async function disconnectCast(): Promise<void> {
   await endCast({ osd: t('cast.stopped'), resumeLocal: true });
 }
+
+/**
+ * Move the session to the neighbouring queue entry and keep casting.
+ *
+ * The local player opens the file first and stays paused on it — the same
+ * arrangement as the initial cast, and the reason the UI keeps working: tracks,
+ * chapters, duration, the storyboard and the handback all read mpv, which has
+ * to be on the file the television is playing. Only then is the new source
+ * resolved and handed over, on the **live** session: a disconnect and a fresh
+ * connect between episodes would blank the TV and re-launch the receiver.
+ *
+ * `auto` is the end-of-file caller, which respects the queue's auto-advance
+ * preference; a button press does not.
+ */
+export async function castAdvance(
+  offset: number,
+  opts: { auto?: boolean } = {},
+): Promise<boolean> {
+  if (opts.auto && !playlist.autoAdvance) return false;
+  const entry = neighbour(offset);
+  // `neighbour` wraps under repeat-all, which on a one-entry queue answers with
+  // the file that just finished; re-casting it is a legitimate repeat, so only
+  // an empty answer stops us.
+  if (!entry) return false;
+  return castFollow(entry);
+}
+
+/// Hand a specific queue entry to the live session — the queue panel's click,
+/// and what `castAdvance` resolves to.
+export async function castFollow(entry: PlaylistEntry): Promise<boolean> {
+  const device = currentDevice;
+  if (!device || !cast.active) return false;
+
+  const before = player.filePath;
+  advancing = true;
+  try {
+    await playEntry(entry);
+    // Wait for mpv to actually be on the new file: everything below reads its
+    // properties, and reading them a beat early describes the previous episode.
+    const deadline = Date.now() + FOLLOW_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (player.filePath && player.filePath !== before && player.duration > 0) break;
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    await setProperty('pause', true).catch(() => {});
+    return await castCurrentFile(device, { keepSession: true });
+  } finally {
+    advancing = false;
+  }
+}
+
+/// Guard against the poll starting a second advance while one is in flight —
+/// the TV keeps reporting the old session as ended for the second or two the
+/// handover takes.
+let advancing = false;
+
+/// True while the session is moving itself to another queue entry.
+///
+/// The page ends a cast whenever a file is opened, because two playbacks at
+/// once is never meant — and following the queue opens a file, so without this
+/// the advance would kill the very session it is trying to carry forward.
+export function castFollowing(): boolean {
+  return advancing;
+}
+
+/// How long to wait for mpv to land on the next entry before handing whatever
+/// it has to the television.
+const FOLLOW_TIMEOUT_MS = 8000;
+
+/**
+ * The renderer took the file and could not play it — go round by the Cast
+ * ladder instead of leaving a black screen.
+ *
+ * This is the answer to the three ways `auto` can be wrong about DLNA, all of
+ * which look the same from here: the container is listed but the codec inside
+ * is not decodable, the device advertises less than it can and was picked for
+ * the wrong reason, or a renderer-only device simply cannot take this file.
+ * Rather than reason about which, the failure itself is the evidence — the
+ * container is remembered as refused for this device *for this run*, so the
+ * rest of the season does not repeat the attempt, and the ladder that names
+ * its own refusals takes over.
+ */
+async function fallbackToCast(reason: 'refused' | 'silent'): Promise<boolean> {
+  const device = currentDevice;
+  const src = castSrcPath;
+  if (!device?.cast || !src || fellBack) return false;
+  fellBack = true;
+  dlnaRefused.add(refusedKey(device, extensionOf(src)));
+  console.warn(`cast: DLNA ${reason}, falling back to Chromecast`);
+
+  stopPoll();
+  cast.active = false;
+  await invoke('dlna_disconnect').catch(() => {});
+  showOsd(t(reason === 'silent' ? 'cast.dlna_silent' : 'cast.dlna_refused'), { sticky: true });
+  const ok = await castCurrentFile(device, { forceTransport: 'cast' });
+  if (!ok) showOsd(t('cast.dlna_refused_failed'));
+  return true;
+}
+
+/// One fallback per session: if the Cast ladder fails too, the viewer gets its
+/// reason rather than a loop between two transports.
+let fellBack = false;
+
+/// A session that has not reported playback by now is not starting. Renderers
+/// answer `TRANSITIONING` for a few polls on a good load and a Cast receiver
+/// buffers, so this sits comfortably past both — it is the guard against the
+/// failure with no error at all: the file accepted, fetched, and nothing on
+/// screen.
+const START_TIMEOUT_MS = 20_000;
 
 // ---- Remote controls --------------------------------------------------------
 

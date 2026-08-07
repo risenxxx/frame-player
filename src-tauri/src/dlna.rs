@@ -485,6 +485,12 @@ struct DlnaState {
 /// device actually refused shows up as one flicker rather than a stuck button.
 const SETTLE: Duration = Duration::from_millis(2500);
 
+/// How close to the duration counts as "the film finished" rather than "someone
+/// pressed stop". A renderer reports the position it last decoded, which lags
+/// the end by a beat, and the last seconds of a file are credits nobody stops
+/// deliberately.
+const END_SLACK: f64 = 8.0;
+
 struct DlnaSession {
     device: DlnaDeviceInfo,
     state: Arc<Mutex<DlnaState>>,
@@ -676,11 +682,17 @@ pub fn dlna_connect(
                         "PLAYING" => "playing".into(),
                         "PAUSED_PLAYBACK" | "PAUSED_RECORDING" => "paused".into(),
                         "TRANSITIONING" => "buffering".into(),
-                        // A renderer that reaches the end simply stops, so the
-                        // difference between "finished" and "stopped from the
-                        // TV" is not on the wire; the frontend treats both as
-                        // the session ending and hands playback back.
-                        "STOPPED" | "NO_MEDIA_PRESENT" => "ended".into(),
+                        // A renderer that reaches the end simply stops, so
+                        // "finished" and "stopped from the TV" arrive as one
+                        // state — and they must not stay one, or pressing stop
+                        // on the remote would advance the queue to the next
+                        // episode. The position decides: within the last few
+                        // seconds of a known duration it is the end of a film,
+                        // anything earlier is somebody stopping it.
+                        "STOPPED" | "NO_MEDIA_PRESENT" => {
+                            let finished = s.duration > 0.0 && s.time >= s.duration - END_SLACK;
+                            if finished { "ended".into() } else { "stopped".into() }
+                        }
                         _ => s.state.clone(),
                     };
                 });
@@ -868,7 +880,14 @@ async fn load_url(
         let args = format!("<Unit>REL_TIME</Unit><Target>{}</Target>", hms(position));
         let _ = soap(&client, &control, AVTRANSPORT, "Seek", &args).await;
     }
-    set_state(&state, |s| s.state = "playing".into());
+    // **Not "playing" — "buffering".** A renderer accepting `Play` says nothing
+    // about it managing to decode what it fetched, and claiming playback here
+    // blinded every detector downstream: the frontend marks the session as
+    // having played, and a television that takes the file and shows nothing
+    // then looks exactly like one that is watching it. The poll reports the
+    // truth a second later (TRANSITIONING → PLAYING), and until it does, the
+    // session is honestly still starting.
+    set_state(&state, |s| s.state = "buffering".into());
     Ok(())
 }
 

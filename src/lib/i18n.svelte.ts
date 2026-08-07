@@ -254,6 +254,11 @@ const ru = {
   'cast.volume_fixed': 'Громкость регулируется на самом телевизоре',
   'cast.torrent_incomplete': 'Торрент ещё не докачан — трансляция появится, когда файл будет скачан целиком',
   'cast.stream_buffering': 'Готовим запас для телевизора… {percent}%',
+  'cast.dlna_refused': 'Телевизор не смог открыть файл как есть — готовим совместимую копию',
+  'cast.dlna_silent': 'Телевизор забрал файл, но не начал показ — готовим совместимую копию',
+  'cast.dlna_refused_failed': 'Не удалось передать файл ни одним из способов',
+  'cast.stuck':
+    'Телевизор забрал файл, но так и не начал показ — трансляция остановлена. Если он умеет два способа передачи, попробуйте другой в настройках устройства.',
   'cast.stream_needs_dlna':
     'Недокачанную раздачу этот телевизор может взять только по DLNA, а он им не отвечает. Дождитесь загрузки файла целиком.',
   'cast.stream_format':
@@ -807,6 +812,11 @@ const en: Record<MessageKey, string> = {
   'cast.volume_fixed': 'Volume is controlled on the TV itself',
   'cast.torrent_incomplete': 'The torrent is not fully downloaded yet — casting will be available once the file is complete',
   'cast.stream_buffering': 'Building a lead for the TV… {percent}%',
+  'cast.dlna_refused': 'The TV could not open the file as it is — preparing a compatible copy',
+  'cast.dlna_silent': 'The TV fetched the file but never started — preparing a compatible copy',
+  'cast.dlna_refused_failed': 'The file could not be handed over by any transport',
+  'cast.stuck':
+    'The TV fetched the file and never started — casting stopped. If it offers two transports, try the other one in the device settings.',
   'cast.stream_needs_dlna':
     'A torrent still downloading can only reach this TV over DLNA, and it is not answering there. Wait for the file to finish.',
   'cast.stream_format':

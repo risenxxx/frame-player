@@ -205,13 +205,16 @@
     castSeek,
     castSeekBy,
     castSetVolume,
+    castAdvance,
+    castFollow,
+    castFollowing,
     castSwitchAudio,
     castToggleMute,
     deviceProfile,
     deviceSummary,
     pinnedUnavailable,
     setDeviceTransport,
-    transportFor,
+    plannedTransport,
     castTogglePause,
     disconnectCast,
     endCast,
@@ -2426,9 +2429,12 @@
         beforeLoad: async (path) => {
           // Opening another file while casting ends the session first: mpv is
           // about to start playing locally, and two playbacks at once — one
-          // here, one on the TV — is never what a viewer meant. (Casting the
-          // new file instead is phase 2; see casting.md.)
-          if (cast.active) await endCast({ osd: t('cast.stopped'), resumeLocal: false });
+          // here, one on the TV — is never what a viewer meant. The exception
+          // is the session moving itself along the queue, which opens the next
+          // episode on purpose and hands it over (`castFollowing`).
+          if (cast.active && !castFollowing()) {
+            await endCast({ osd: t('cast.stopped'), resumeLocal: false });
+          }
           cancelStep();
           attempting = path;
           clearTimeout(loadFailTimer);
@@ -4641,6 +4647,12 @@
         showOsd(chapterTitle(chapter), { sub: formatTime(chapter.time) });
         return true;
       }
+      case 'playlist_prev':
+      case 'playlist_next':
+        // The session follows the queue: the local player opens the neighbour
+        // and the television is handed it, without dropping the session.
+        void castAdvance(id === 'playlist_next' ? 1 : -1);
+        return true;
       case 'frame_prev':
       case 'frame_next':
       case 'speed_down':
@@ -4648,8 +4660,6 @@
       case 'loop':
       case 'ab_loop':
       case 'ab_clear':
-      case 'playlist_prev':
-      case 'playlist_next':
       case 'screenshot':
       case 'screenshot_subs':
       case 'copy_frame':
@@ -6877,7 +6887,8 @@
                 // the flag the pointer handlers leave behind.
                 if (dragArmed) return;
                 openMenu = null;
-                void playEntry(entry);
+                if (cast.active) void castFollow(entry);
+                else void playEntry(entry);
               }}
             >
               <span class="chapter-name">{entry.title}</span>
@@ -6945,7 +6956,7 @@
               >
                 <span class="cast-name">{device.name}</span>
                 <span class="cast-model">
-                  {(cast.profileRevision, deviceSummary(device, player.filePath))}
+                  {(cast.profileRevision, deviceSummary(device))}
                 </span>
               </button>
               {#if cast.dlnaSweeping && !device.dlna}
@@ -7002,7 +7013,7 @@
                   {#if pinnedUnavailable(device)}
                     {t('cast.transport_unavailable')}
                   {:else if deviceProfile(device).transport === 'auto'}
-                    {transportFor(device, player.filePath) === 'dlna'
+                    {plannedTransport(device) === 'dlna'
                       ? t('cast.transport_auto_dlna')
                       : t('cast.transport_auto_cast')}
                   {/if}
@@ -7243,7 +7254,7 @@
       {/if}
       </div>
       <div class="cluster cl-center">
-      <button data-tip={withKey(t('osc.prev'), 'playlist_prev')} aria-label={t('osc.prev')} disabled={player.playlistPos <= 0 || cast.active} onclick={() => void command('playlist-prev', [])}>
+      <button data-tip={withKey(t('osc.prev'), 'playlist_prev')} aria-label={t('osc.prev')} disabled={player.playlistPos <= 0} onclick={() => (cast.active ? void castAdvance(-1) : void command('playlist-prev', []))}>
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
       </button>
       <button class="play" data-tip={withKey(t('osc.play'), 'pause')} aria-label={t('osc.play')} disabled={showEmpty} onclick={() => (cast.remote ? castTogglePause() : void togglePause())}>
@@ -7253,7 +7264,7 @@
           <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
         {/if}
       </button>
-      <button data-tip={withKey(t('osc.next'), 'playlist_next')} aria-label={t('osc.next')} disabled={player.playlistPos >= player.playlistCount - 1 || cast.active} onclick={() => void command('playlist-next', [])}>
+      <button data-tip={withKey(t('osc.next'), 'playlist_next')} aria-label={t('osc.next')} disabled={player.playlistPos >= player.playlistCount - 1} onclick={() => (cast.active ? void castAdvance(1) : void command('playlist-next', []))}>
         <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
       </button>
       </div>

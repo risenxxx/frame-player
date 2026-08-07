@@ -1577,6 +1577,37 @@ pub(crate) async fn serve_one_file(
     Ok(url)
 }
 
+/// LOAD a URL somebody else registered — today the torrent stream, which is
+/// served by `cast_serve_torrent` rather than by `cast_load`'s own registration.
+///
+/// The rung exists because a **direct-play** torrent needs no preparation at
+/// all: the receiver fetches it over HTTP with Range exactly as it fetches a
+/// prepared file, so "the file is not finished" stops being a reason to refuse.
+/// Anything that would need repacking still waits for the whole file — half a
+/// film remuxed is half a film.
+#[tauri::command]
+pub async fn cast_load_url(
+    service: tauri::State<'_, Arc<CastService>>,
+    url: String,
+    name: String,
+    position: f64,
+    title: Option<String>,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
+        inner.session.as_ref().ok_or("not connected")?.cmd_tx.clone()
+    };
+    cmd_tx
+        .send(Cmd::Load {
+            url,
+            mime: cast_mime(&name),
+            title,
+            position,
+            hls_format: None,
+        })
+        .map_err(|_| "session ended".to_string())
+}
+
 /// Register an **incomplete** torrent file as the thing the LAN server serves,
 /// and hand back its URL.
 ///
