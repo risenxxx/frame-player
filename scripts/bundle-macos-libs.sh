@@ -66,10 +66,30 @@ else
   echo "  ! no libMoltenVK.dylib — brew install molten-vk" >&2
 fi
 
+echo "==> ffmpeg CLI"
+# The cast prepare rung (cast.rs) spawns the ffmpeg *binary* — for
+# `-movflags +faststart`, `-progress` and kill-to-cancel, none of which the
+# library route gives for free. Windows gets it from the BtbN SDK; here it is
+# Homebrew's, which is the same 0.4 MB shim over the very dylibs this script
+# is already bundling, so it costs the closure a few extra entries (libvmaf and
+# friends) and nothing else. Same licensing footing as libmpv itself: this build
+# links Homebrew's GPL FFmpeg either way — see the note in build-libmpv-macos.sh.
+cli_stage="$(mktemp -d)"
+trap 'rm -rf "$cli_stage"' EXIT
+if [ -x "$brew_prefix/bin/ffmpeg" ]; then
+  cp -f "$brew_prefix/bin/ffmpeg" "$cli_stage/ffmpeg"
+  chmod 755 "$cli_stage/ffmpeg"
+else
+  echo "  ! no $brew_prefix/bin/ffmpeg — brew install ffmpeg (cast prepare/HLS will not work)" >&2
+fi
+
 echo "==> Transitive closure"
 seen="$(mktemp)"; queue="$(mktemp)"
-trap 'rm -f "$seen" "$queue"' EXIT
+trap 'rm -f "$seen" "$queue"; rm -rf "$cli_stage"' EXIT
 for root in "$lib_dir"/*.dylib; do deps_of "$root" >> "$queue"; done
+# The CLI is a root of the closure too: it pulls in libraries libmpv does not
+# (libvmaf came in this way), and a missing one is a binary that dies at exec.
+[ -f "$cli_stage/ffmpeg" ] && deps_of "$cli_stage/ffmpeg" >> "$queue"
 
 while [ -s "$queue" ]; do
   dep="$(head -1 "$queue")"
@@ -136,6 +156,29 @@ for l in $ffmpeg_libs; do
   # would break when the cache is restored into a different directory.
   ln -s "../../lib/$real" "$ffmpeg_dir/lib/lib$l.dylib"
 done
+
+if [ -f "$cli_stage/ffmpeg" ]; then
+  echo "==> Installing the ffmpeg CLI"
+  mkdir -p "$ffmpeg_dir/bin"
+  cp -f "$cli_stage/ffmpeg" "$ffmpeg_dir/bin/ffmpeg"
+  chmod 755 "$ffmpeg_dir/bin/ffmpeg"
+  deps_of "$ffmpeg_dir/bin/ffmpeg" | while read -r d; do
+    [ -f "$lib_dir/$(basename "$d")" ] || continue
+    install_name_tool -change "$d" "@rpath/$(basename "$d")" "$ffmpeg_dir/bin/ffmpeg" 2>/dev/null || true
+  done
+  # One rpath covers both layouts, which is why the CLI is placed where it is:
+  # in dev build.rs copies it to target/<profile>/ beside target/<profile>/lib,
+  # and in the bundle it is a resource at Contents/Resources/ next to
+  # Contents/Resources/lib. `@executable_path` differs between the two, the
+  # relative position does not. (The app binary needs two rpaths for the same
+  # reason it lives in Contents/MacOS instead — see build.rs.)
+  install_name_tool -add_rpath "@executable_path/lib" "$ffmpeg_dir/bin/ffmpeg" 2>/dev/null || true
+  codesign --force --sign - "$ffmpeg_dir/bin/ffmpeg" 2>/dev/null || true
+  left=$(otool -L "$ffmpeg_dir/bin/ffmpeg" | tail -n +2 | grep -c '^\s*/opt\|^\s*/usr/local' || true)
+  if [ "$left" -gt 0 ]; then
+    echo "  ! $left dependency(ies) still point at Homebrew — the bundle will not run elsewhere" >&2
+  fi
+fi
 
 count=$(ls -1 "$lib_dir"/*.dylib | wc -l | tr -d ' ')
 size=$(du -sh "$lib_dir" | cut -f1)

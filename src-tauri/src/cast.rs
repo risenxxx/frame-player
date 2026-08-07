@@ -471,9 +471,82 @@ fn simple(status: StatusCode) -> Response<Body> {
         .unwrap()
 }
 
+/// `FP_CAST_DEBUG=1` turns on the wire and server logs. Off by default: a
+/// playing HLS session is a request every few seconds and a status frame every
+/// second, which would bury everything else in the dev console — the same
+/// reasoning as the `log::set_level(Error)` next to `ffmpeg_the_third::init()`.
+pub(crate) fn cast_debug() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("FP_CAST_DEBUG").map(|v| v != "0").unwrap_or(false)
+    })
+}
+
+/// A failed LOAD is the one thing worth printing unconditionally: the receiver
+/// names its own reason and we otherwise collapse every failure into
+/// `load_failed`, which is the same sentence for a codec it cannot decode and a
+/// segment it cannot parse. `detailedErrorCode` is the Web Receiver's
+/// `ErrorCode` enum — the HLS band (2xx) is what distinguishes "cannot fetch"
+/// from "cannot parse what it fetched".
+fn log_media_error(what: &str, payload: &Value) {
+    let code = payload["detailedErrorCode"].as_i64();
+    let named = match code {
+        Some(100) => "MEDIA_UNKNOWN",
+        Some(101) => "MEDIA_ABORTED",
+        Some(102) => "MEDIA_DECODE",
+        Some(103) => "MEDIA_NETWORK",
+        Some(104) => "MEDIA_SRC_NOT_SUPPORTED",
+        Some(110) => "SOURCE_BUFFER_FAILURE",
+        Some(201) => "HLS_NETWORK_MASTER_PLAYLIST",
+        Some(202) => "HLS_NETWORK_PLAYLIST",
+        Some(203) => "HLS_NETWORK_NO_KEY_RESPONSE",
+        Some(204) => "HLS_NETWORK_KEY_LOAD",
+        Some(205) => "HLS_NETWORK_SEGMENTS",
+        Some(206) => "HLS_SEGMENT_PARSING",
+        Some(_) => "see the Web Receiver ErrorCode enum",
+        None => "no detailedErrorCode",
+    };
+    eprintln!(
+        "[cast] {what}: code={} ({named}) reason={} payload={payload}",
+        code.map(|c| c.to_string()).unwrap_or_else(|| "-".into()),
+        payload["reason"].as_str().unwrap_or("-"),
+    );
+}
+
 /// The one route: `/c/<token>/<anything>`. Everything else — and every token
 /// that is not the currently registered one — is 404.
+///
+/// Wrapper over the handler so that every answer is logged in one place under
+/// `FP_CAST_DEBUG`: *what the TV asked for* is half of any load diagnosis —
+/// a receiver that fetched the playlist and stopped failed at parsing it, one
+/// that fetched init.mp4 and a segment failed at decoding, and one that asked
+/// for nothing at all is the firewall case the connect flow already warns about.
 async fn serve_cast(shared: Arc<ServeShared>, req: Request<hyper::body::Incoming>) -> Response<Body> {
+    if !cast_debug() {
+        return serve_cast_inner(shared, req).await;
+    }
+    let line = format!(
+        "{} {} range={} timeseek={}",
+        req.method(),
+        req.uri().path(),
+        req.headers()
+            .get(header::RANGE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("-"),
+        // A DLNA renderer that means to seek by time asks with this header
+        // instead of Range; logging it is how we learn whether the seek that
+        // "succeeds" and does nothing ever reached us at all.
+        req.headers()
+            .get("TimeSeekRange.dlna.org")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("-"),
+    );
+    let res = serve_cast_inner(shared, req).await;
+    eprintln!("[cast] http {line} -> {}", res.status().as_u16());
+    res
+}
+
+async fn serve_cast_inner(shared: Arc<ServeShared>, req: Request<hyper::body::Incoming>) -> Response<Body> {
     if req.method() == Method::OPTIONS {
         return simple(StatusCode::NO_CONTENT);
     }
@@ -524,7 +597,25 @@ async fn serve_cast(shared: Arc<ServeShared>, req: Request<hyper::body::Incoming
     let mut res = with_cors(
         Response::builder()
             .header(header::ACCEPT_RANGES, "bytes")
-            .header(header::CONTENT_TYPE, mime),
+            .header(header::CONTENT_TYPE, mime)
+            // **A DLNA renderer decides whether it may seek from these two
+            // headers, not from `Accept-Ranges`.** Measured on the LG: without
+            // them the TV accepts a `Seek` action, reports the target position
+            // once, then carries on from where it was and never issues a single
+            // Range request — a seek that fails while answering "OK". Cast
+            // ignores both headers, so they cost the other transport nothing.
+            // `DLNA.ORG_OP=01` is "byte-range seek yes, time-seek no", which
+            // is exactly what this server can do; the flags are the standard
+            // streaming set (streaming transfer mode, DLNA v1.5). Advertising
+            // `11` was tried — the LG asked for neither a Range nor a
+            // `TimeSeekRange` afterwards, so claiming a time-seek we have not
+            // implemented buys nothing and would mislead a stricter renderer.
+            .header("transferMode.dlna.org", "Streaming")
+            .header(
+                "contentFeatures.dlna.org",
+                "DLNA.ORG_OP=01;DLNA.ORG_CI=0;\
+                 DLNA.ORG_FLAGS=01700000000000000000000000000000",
+            ),
     );
 
     let range = req
@@ -567,6 +658,23 @@ async fn serve_cast(shared: Arc<ServeShared>, req: Request<hyper::body::Incoming
     res.body(BoxBody::new(body)).unwrap()
 }
 
+/// `cast_mime` by path, for callers outside this module.
+pub(crate) fn cast_mime_for(file: &std::path::Path) -> &'static str {
+    cast_mime(&file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+}
+
+/// Requests the LAN server has answered for the current registration. Zero
+/// after a load the device accepted is the firewall signature, and that test is
+/// the same whichever transport asked it to fetch.
+pub(crate) fn server_hits(service: &Arc<CastService>) -> u64 {
+    let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
+    inner
+        .server
+        .as_ref()
+        .map(|s| s.shared.hits.load(Ordering::Relaxed))
+        .unwrap_or(0)
+}
+
 /// Content types inside an HLS session directory.
 fn hls_mime(name: &str) -> &'static str {
     match name.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str() {
@@ -584,6 +692,10 @@ fn hls_mime(name: &str) -> &'static str {
 fn cast_mime(name: &str) -> &'static str {
     match name.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str() {
         "mp4" | "m4v" | "mov" => "video/mp4",
+        // Never reachable through Cast (the verdict prepares or refuses an MKV
+        // long before this), but the same server feeds the DLNA path, where a
+        // renderer that advertises video/x-matroska takes the file untouched.
+        "mkv" => "video/x-matroska",
         "webm" => "video/webm",
         "mp3" => "audio/mpeg",
         "m4a" | "aac" => "audio/mp4",
@@ -707,6 +819,9 @@ struct Pump {
 impl Pump {
     async fn send(&mut self, namespace: &str, destination: &str, payload: Value) -> Result<(), String> {
         let text = payload.to_string();
+        if cast_debug() && namespace != NS_HEARTBEAT {
+            eprintln!("[cast] -> {namespace} {text}");
+        }
         let frame = wire::encode(SENDER_ID, destination, namespace, &text);
         let mut msg = Vec::with_capacity(frame.len() + 4);
         msg.extend_from_slice(&(frame.len() as u32).to_be_bytes());
@@ -742,9 +857,16 @@ impl Pump {
             "contentType": mime,
         });
         if let Some(format) = hls_format {
-            let fmp4 = format == "fmp4";
-            media["hlsSegmentFormat"] = json!(if fmp4 { "fmp4" } else { "ts" });
-            media["hlsVideoSegmentFormat"] = json!(if fmp4 { "fmp4" } else { "mpeg2_ts" });
+            // Only the *video* hint, and that is load-bearing: `hlsSegmentFormat`
+            // is the format of an HLS **audio** segment, and sending it beside a
+            // muxed A/V stream made this TV reject the LOAD outright — a bare
+            // `LOAD_FAILED` with no `detailedErrorCode`, after it had already
+            // fetched the playlist, the init segment and segment zero. Measured
+            // both ways on the same rendition: with the field, refused; without
+            // it, plays. It cost fMP4 entirely, and looked like "the receiver
+            // cannot do fMP4" because fMP4 was only ever tried with HEVC.
+            media["hlsVideoSegmentFormat"] =
+                json!(if format == "fmp4" { "fmp4" } else { "mpeg2_ts" });
         }
         if let Some(title) = title {
             media["metadata"] = json!({ "metadataType": 0, "title": title });
@@ -854,6 +976,9 @@ impl Pump {
     async fn handle_msg(&mut self, msg: wire::Decoded) -> Result<bool, String> {
         let payload: Value = serde_json::from_str(&msg.payload).unwrap_or(Value::Null);
         let kind = payload["type"].as_str().unwrap_or("");
+        if cast_debug() && msg.namespace != NS_HEARTBEAT {
+            eprintln!("[cast] <- {} {}", msg.namespace, msg.payload);
+        }
         match msg.namespace.as_str() {
             NS_HEARTBEAT => {
                 if kind == "PING" {
@@ -968,6 +1093,7 @@ impl Pump {
                     // LOAD_FAILED, and swallowing it would hang "loading".
                     if self.load_request.is_some() && player_state == "IDLE" {
                         if idle_reason == "ERROR" {
+                            log_media_error("IDLE/ERROR", &payload);
                             self.load_request = None;
                             set_status(&self.status, |s| {
                                 s.state = "error".into();
@@ -1009,6 +1135,7 @@ impl Pump {
                     });
                 }
                 "LOAD_FAILED" | "LOAD_CANCELLED" | "INVALID_REQUEST" | "ERROR" => {
+                    log_media_error(kind, &payload);
                     // Only a failure of OUR load counts — an unrelated error
                     // frame must not tear the session down.
                     let answered = payload["requestId"].as_u64();
@@ -1384,6 +1511,48 @@ pub async fn cast_load(
         .map_err(|_| "session ended".to_string())
 }
 
+/// Bind the LAN server (if it is not up already), register one file behind a
+/// fresh token and hand back the URL a device on `device_ip`'s subnet can fetch
+/// it from. The Cast path does this inline in `cast_load` with its own privacy
+/// and HLS rules; this is the same three steps for anything else that hands a
+/// television a URL — today the DLNA reconnaissance in dlna.rs.
+pub(crate) async fn serve_one_file(
+    service: &Arc<CastService>,
+    device_ip: IpAddr,
+    file: &std::path::Path,
+    hidden: bool,
+) -> Result<String, String> {
+    let (ip, port, shared) = ensure_server(service, device_ip).await?;
+    let basename = file
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "video".into());
+    let mime = cast_mime(&basename);
+    let token = format!("{:032x}", rand::random::<u128>());
+    // The privacy rule travels with the server, not with the transport: a file
+    // under a private root is served under its token plus the extension, so the
+    // name never reaches the wire or the television's screen. DLNA made this
+    // the sixth enforcement point the day it started using this function.
+    let url_name = if hidden {
+        let ext = basename.rsplit('.').next().unwrap_or("mp4").to_ascii_lowercase();
+        format!("{token}.{ext}")
+    } else {
+        crate::torrent::urlencode(&basename)
+    };
+    let url = format!("http://{ip}:{port}/c/{token}/{url_name}");
+    {
+        let mut reg = shared.reg.lock().unwrap_or_else(|p| p.into_inner());
+        *reg = Some(Registered {
+            token,
+            path: file.to_path_buf(),
+            mime,
+            dir: false,
+        });
+        shared.hits.store(0, Ordering::Relaxed);
+    }
+    Ok(url)
+}
+
 async fn ensure_server(
     service: &Arc<CastService>,
     device_ip: IpAddr,
@@ -1582,22 +1751,27 @@ const FFMPEG_BIN: &str = "ffmpeg.exe";
 #[cfg(not(windows))]
 const FFMPEG_BIN: &str = "ffmpeg";
 
-/// Next to the exe (dev: build.rs copies it there; installed: bundled by
-/// tauri.conf resources), with the source tree as a dev fallback for a build
-/// that predates the copy step.
-fn ffmpeg_bin() -> Option<PathBuf> {
+/// Next to the exe (dev: build.rs copies it there; Windows install: bundled to
+/// the exe's own directory), then the **resource directory**, which is where it
+/// lands inside a macOS `.app` — the exe there is in `Contents/MacOS` and the
+/// resources in `Contents/Resources`, so "next to the exe" is not one place on
+/// both platforms. The source tree is the last resort, for a dev build that
+/// predates the copy step.
+fn ffmpeg_bin(app: &tauri::AppHandle) -> Option<PathBuf> {
+    use tauri::Manager as _;
+
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             candidates.push(dir.join(FFMPEG_BIN));
         }
     }
-    candidates.push(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("ffmpeg")
-            .join("bin")
-            .join(FFMPEG_BIN),
-    );
+    if let Ok(res) = app.path().resource_dir() {
+        candidates.push(res.join(FFMPEG_BIN));
+    }
+    let tree = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    candidates.push(tree.join("ffmpeg").join("bin").join(FFMPEG_BIN));
+    candidates.push(tree.join("ffmpeg-macos").join("bin").join(FFMPEG_BIN));
     candidates.into_iter().find(|p| p.is_file())
 }
 
@@ -1701,7 +1875,7 @@ pub async fn cast_prepare(
     if out.is_file() && out.metadata().map(|m| m.len() > 0).unwrap_or(false) {
         return Ok(out.to_string_lossy().into_owned());
     }
-    let ffmpeg = ffmpeg_bin().ok_or("no ffmpeg binary")?;
+    let ffmpeg = ffmpeg_bin(&app).ok_or("no ffmpeg binary")?;
     let tmp = dir.join(format!("{key}.part"));
 
     let service = service.inner().clone();
@@ -1776,7 +1950,7 @@ pub async fn cast_hls_prepare(
 
     let dir = base.join(format!("{:016x}", rand::random::<u64>()));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let ffmpeg = ffmpeg_bin().ok_or("no ffmpeg binary")?;
+    let ffmpeg = ffmpeg_bin(&app).ok_or("no ffmpeg binary")?;
     let playlist = dir.join("index.m3u8");
 
     let service = service.inner().clone();
@@ -1791,20 +1965,57 @@ pub async fn cast_hls_prepare(
             .args(["-map", "0:v:0"])
             .args(["-map", &format!("0:a:{}", audio_index.max(0))])
             .args(["-c:v", "copy"]);
-        if transcode_audio {
-            cmd.args(["-c:a", "eac3", "-b:a", "640k"]);
-            if channels > 6 {
-                cmd.args(["-ac", "6"]);
-            }
+        // **The audio ladder is a property of the transport, not of the file.**
+        // The progressive path passes E-AC-3 through to the TV's own decoder
+        // and 5.1 comes out; HLS goes through the receiver's browser pipeline,
+        // and this one takes AAC stereo and nothing else — measured on the real
+        // TV, one rendition per cell: E-AC-3 refused in TS and in fMP4 and
+        // refused again from a master playlist's CODECS, AC-3 refused, and AAC
+        // 5.1 accepted and then *killed the receiver app* a few segments in.
+        // So HLS always transcodes, and it says so in the settings hint: the
+        // mode costs surround. `transcode_audio` describes the progressive
+        // rung and is deliberately not consulted here.
+        let _ = transcode_audio;
+        cmd.args(["-c:a", "aac", "-b:a", "192k"]);
+        if channels == 6 {
+            // **A plain `-ac 2` throws the LFE away**, and on a soundbar that
+            // is the most audible thing about the fold-down: measured on the
+            // rotating-tone file, the LFE second reads −13.9 dB in the source
+            // and **−90.3 dB** after ffmpeg's own downmix — not attenuated,
+            // gone. (Which is the standard Dolby downmix behaviour, and the
+            // right call for broadcast, where LFE is +10 dB in band and would
+            // overload; here it just means an action scene loses its bass.)
+            // `lfe_mix_level` on the resampler does not change it — measured,
+            // no effect at all — so the matrix is written out by hand.
+            // Coefficients are the ITU downmix normalised by 1/(1+2·0.707) so
+            // nothing clips (measured peak −12.1 dB against −10.9 dB before),
+            // with LFE carried at the same weight as centre and surround: the
+            // LFE second comes back at −16.8 dB, in line with its neighbours.
+            // Written in channel *indices* rather than names on purpose — 5.1
+            // and 5.1(side) share the order FL FR FC LFE S/BL S/BR, and a
+            // named formula would fail on whichever of the two it was not
+            // written for. Anything else (stereo already, or 7.1) takes the
+            // stock downmix.
+            cmd.args([
+                "-af",
+                "pan=stereo|c0=0.4142*c0+0.2929*c2+0.2929*c4+0.2929*c3\
+                 |c1=0.4142*c1+0.2929*c2+0.2929*c5+0.2929*c3",
+            ]);
         } else {
-            cmd.args(["-c:a", "copy"]);
+            cmd.args(["-ac", "2"]);
         }
         cmd.args(["-f", "hls"])
             .args(["-hls_time", "4"])
             .args(["-hls_playlist_type", "vod"])
             .args(["-hls_flags", "independent_segments"]);
         if fmp4 {
-            // HEVC is out of spec in TS segments; fMP4 is its HLS home.
+            // HEVC is out of spec in TS segments; fMP4 is its HLS home. And the
+            // MP4 path's `hvc1` tag is needed here for the same reason it is
+            // needed there — measured: without it ffmpeg writes `hev1` into
+            // init.mp4 (parameter sets in-band), which the receiver refuses
+            // with "could not open this file". fMP4 is only ever chosen for
+            // HEVC (`hlsVariant`), so the tag needs no codec test of its own.
+            cmd.args(["-tag:v", "hvc1"]);
             cmd.args(["-hls_segment_type", "fmp4"])
                 .args(["-hls_fmp4_init_filename", "init.mp4"]);
             cmd.arg("-hls_segment_filename")
@@ -2215,6 +2426,142 @@ mod tests {
                 break;
             }
         }
+    }
+
+    /// A whole cast driven from a test: bind the LAN server, register the
+    /// media, LAUNCH + LOAD against a real device, print every frame and every
+    /// HTTP request, then stop the receiver. Off by default; it takes over the
+    /// TV for the duration.
+    ///
+    /// ```bash
+    /// FP_CAST_DEBUG=1 FP_CAST_LOAD=192.168.2.48 \
+    ///   FP_CAST_FILE=/path/to/index.m3u8 \
+    ///   cargo test --lib cast::tests::load_probe -- --nocapture
+    /// ```
+    ///
+    /// `FP_CAST_FILE` takes a plain media file (progressive, served as one
+    /// file) or an HLS playlist (its directory is served and the segment
+    /// format is read off the playlist, so `ts` and `fmp4` renditions need no
+    /// flag). `FP_CAST_SECONDS` is how long to watch before stopping (default
+    /// 20). Why this exists: every receiver question so far — which container,
+    /// which codec, whether the TV fetched anything at all — costs a GUI run,
+    /// a file switch and a copy-pasted log, when the answer is one LOAD and
+    /// the frames that follow it.
+    #[tokio::test]
+    async fn load_probe() {
+        let Ok(target) = std::env::var("FP_CAST_LOAD") else {
+            return;
+        };
+        // Everything below spawns through tauri's async_runtime, which would
+        // otherwise build a second runtime and hand this one's TcpListener to
+        // a reactor that is not driving it.
+        tauri::async_runtime::set(tokio::runtime::Handle::current());
+
+        let file = PathBuf::from(
+            std::env::var("FP_CAST_FILE").expect("FP_CAST_FILE=<media file or .m3u8>"),
+        );
+        assert!(file.is_file(), "no such file: {}", file.display());
+        let seconds: u64 = std::env::var("FP_CAST_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20);
+
+        let is_hls = file.extension().map(|e| e == "m3u8").unwrap_or(false);
+        // The rendition says which it is: `.m4s` segments are fMP4, and an
+        // EXT-X-MAP is the same statement in the playlist's own words.
+        let hls_format = is_hls.then(|| {
+            let text = std::fs::read_to_string(&file).unwrap_or_default();
+            if text.contains(".m4s") || text.contains("EXT-X-MAP") {
+                "fmp4".to_string()
+            } else {
+                "ts".to_string()
+            }
+        });
+        let (serve_root, name, mime) = if is_hls {
+            (
+                file.parent().unwrap().to_path_buf(),
+                "index.m3u8".to_string(),
+                "application/x-mpegURL",
+            )
+        } else {
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let mime = cast_mime(&name);
+            (file.clone(), name, mime)
+        };
+
+        let device = CastDeviceInfo {
+            id: "probe".into(),
+            name: "probe".into(),
+            model: String::new(),
+            ip: target.clone(),
+            port: 8009,
+        };
+        let ip: IpAddr = target.parse().expect("FP_CAST_LOAD=<device ip>");
+
+        let service = Arc::new(CastService::default());
+        let (srv_ip, port, shared) = ensure_server(&service, ip).await.expect("server binds");
+        let token = format!("{:032x}", rand::random::<u128>());
+        let url = format!("http://{srv_ip}:{port}/c/{token}/{name}");
+        {
+            let mut reg = shared.reg.lock().unwrap();
+            *reg = Some(Registered {
+                token,
+                path: serve_root.clone(),
+                mime,
+                dir: is_hls,
+            });
+        }
+        println!(
+            "[probe] serving {} as {url}\n[probe] mime={mime} hls={hls_format:?}",
+            serve_root.display()
+        );
+
+        let status = Arc::new(Mutex::new(StatusInner {
+            state: "connecting".into(),
+            rate: 1.0,
+            ..Default::default()
+        }));
+        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+        let session = tauri::async_runtime::spawn(run_session(device, status.clone(), cmd_rx));
+
+        cmd_tx
+            .send(Cmd::Load {
+                url,
+                mime,
+                title: Some("probe".into()),
+                position: 0.0,
+                hls_format,
+            })
+            .expect("session takes the load");
+
+        let mut last = String::new();
+        for _ in 0..(seconds * 2) {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let s = status.lock().unwrap();
+            let line = format!(
+                "state={} error={:?} t={:.1} dur={:.1} fetches={}",
+                s.state,
+                s.error,
+                s.media_time,
+                s.duration,
+                shared.hits.load(Ordering::Relaxed)
+            );
+            drop(s);
+            if line != last {
+                println!("[probe] {line}");
+                last = line;
+            }
+        }
+
+        let fetches = shared.hits.load(Ordering::Relaxed);
+        let final_state = {
+            let s = status.lock().unwrap();
+            format!("{} {:?}", s.state, s.error)
+        };
+        println!("[probe] VERDICT: {final_state}, {fetches} HTTP requests served");
+        let _ = cmd_tx.send(Cmd::Disconnect);
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        session.abort();
     }
 
     #[test]

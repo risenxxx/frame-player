@@ -11,6 +11,8 @@
     },
     "resources": {
       "ffmpeg/bin/*.dll": null,
+      "ffmpeg/bin/ffmpeg.*": null,
+      "ffmpeg-macos/bin/ffmpeg": "./",
       "lib/**/*": "lib/"
     }
   }

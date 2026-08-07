@@ -30,6 +30,38 @@ export interface CastDevice {
   port: number;
 }
 
+export interface DlnaDevice {
+  id: string;
+  name: string;
+  model: string;
+  ip: string;
+  control_url: string;
+  rendering_url: string | null;
+  /// What the renderer said it accepts (`ConnectionManager::GetProtocolInfo`).
+  mimes: string[];
+}
+
+export type Transport = 'cast' | 'dlna';
+
+/**
+ * One television, however many ways there are to reach it.
+ *
+ * The same set answers on two protocols and **cannot be joined by identifier**
+ * — measured on the LG, its Cast id and its renderer's UDN are different UUIDs
+ * — so the merge key is the address, which both discoveries report. The
+ * remembered profile is keyed differently on purpose: an address is a DHCP
+ * lease and would lose the setting silently, so a profile is filed under the
+ * most stable id the device has and matched by name+model as a fallback.
+ */
+export interface TvDevice {
+  key: string;
+  name: string;
+  model: string;
+  ip: string;
+  cast?: CastDevice;
+  dlna?: DlnaDevice;
+}
+
 interface CastStatusMsg {
   state: string;
   error: string | null;
@@ -50,10 +82,58 @@ const FETCH_TIMEOUT_MS = 8000;
 
 const POLL_MS = 500;
 const DEVICE_POLL_MS = 800;
+/// How long the picker admits it is still looking for a second transport.
+const DLNA_SWEEP_MS = 4500;
 
 class Cast {
   devices = $state<CastDevice[]>([]);
+  dlnaDevices = $state<DlnaDevice[]>([]);
   discovering = $state(false);
+  /// What the transport chosen for a device would mean for the file that is
+  /// open — computed once when the picker opens, so each row can state its
+  /// consequence without every row running an async probe.
+  plan = $state<{ container: string; verdict: CastVerdict } | null>(null);
+  /// Which transport the live session is using; the controls, the poll and the
+  /// disconnect all route on it.
+  transport = $state<Transport>('cast');
+  /// Bumped when a device profile changes, so rows recompute their line.
+  profileRevision = $state(0);
+  /// The second discovery has not finished its first sweep, so a row that shows
+  /// only Cast today may still gain DLNA. SSDP is a UDP broadcast answered at
+  /// leisure, where mDNS answers at once — without saying so, the gear (and the
+  /// consequence line under the name) appears seconds later for no visible
+  /// reason, which reads as the panel changing its mind.
+  dlnaSweeping = $state(false);
+
+  /// One row per television: the two discoveries merged by address.
+  get tvs(): TvDevice[] {
+    const byIp = new Map<string, TvDevice>();
+    for (const c of this.devices) {
+      byIp.set(c.ip, {
+        key: deviceKey(c.id, c.name, c.model),
+        name: c.name,
+        model: c.model,
+        ip: c.ip,
+        cast: c,
+      });
+    }
+    for (const d of this.dlnaDevices) {
+      const existing = byIp.get(d.ip);
+      if (existing) {
+        existing.dlna = d;
+        continue;
+      }
+      byIp.set(d.ip, {
+        key: deviceKey(d.id, d.name, d.model),
+        name: d.name,
+        model: d.model,
+        ip: d.ip,
+        dlna: d,
+      });
+    }
+    return [...byIp.values()];
+  }
+
   /// A session exists, from connect until disconnect — the window is a remote.
   active = $state(false);
   deviceName = $state<string | null>(null);
@@ -104,6 +184,143 @@ let sawPlayback = false;
 /// handback resumes to.
 let resumeUnpaused = false;
 
+// ---- Per-device profile ------------------------------------------------------
+
+const PROFILES_KEY = 'frameplayer.tv-devices';
+
+interface DeviceProfile {
+  /// 'auto' resolves per file; a pinned transport is the viewer overriding
+  /// that, and it survives sessions.
+  transport: Transport | 'auto';
+  /// Kept so a profile can be found again when the primary id changes — an
+  /// LG renderer's UDN looks service-scoped and may not survive a reboot.
+  name?: string;
+  model?: string;
+}
+
+function deviceKey(id: string, name: string, model: string): string {
+  return id || `${name}|${model}`;
+}
+
+function loadProfiles(): Record<string, DeviceProfile> {
+  try {
+    return JSON.parse(localStorage.getItem(PROFILES_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+export function deviceProfile(device: TvDevice): DeviceProfile {
+  const all = loadProfiles();
+  const direct = all[device.key];
+  if (direct) return direct;
+  // The id moved (a new UDN, a device that lost its Cast half): recognise the
+  // television by what a person would recognise it by.
+  const byName = Object.values(all).find(
+    (p) => p.name === device.name && p.model === device.model,
+  );
+  return byName ?? { transport: 'auto' };
+}
+
+export function setDeviceTransport(device: TvDevice, transport: Transport | 'auto') {
+  const all = loadProfiles();
+  all[device.key] = { transport, name: device.name, model: device.model };
+  localStorage.setItem(PROFILES_KEY, JSON.stringify(all));
+  // The picker reads this through a plain function call, so nudge the store to
+  // make the rows re-render with their new consequence line.
+  cast.profileRevision++;
+}
+
+/// Container MIME as a DLNA renderer's Sink list spells it. Only what the
+/// prepare ladder already knows about; anything unlisted is not offered to
+/// DLNA, which is the safe direction — the Cast rung still applies.
+const DLNA_MIME: Record<string, string[]> = {
+  mkv: ['video/x-matroska'],
+  mp4: ['video/mp4'],
+  m4v: ['video/mp4'],
+  mov: ['video/quicktime', 'video/mp4'],
+  avi: ['video/avi', 'video/x-msvideo', 'video/x-ms-avi'],
+  ts: ['video/mp2t', 'video/mp2ts', 'video/vnd.dlna.mpeg-tts'],
+  m2ts: ['video/mp2t', 'video/mp2ts', 'video/vnd.dlna.mpeg-tts'],
+  mpg: ['video/mpeg'],
+  mpeg: ['video/mpeg'],
+  webm: ['video/webm'],
+  wmv: ['video/x-ms-wmv'],
+};
+
+function extensionOf(path: string): string {
+  return path.split(/[?#]/)[0].split('.').pop()?.toLowerCase() ?? '';
+}
+
+/// Whether this renderer says it takes the open file as it is.
+export function dlnaTakesFile(device: TvDevice, path: string | null): boolean {
+  if (!device.dlna || !path) return false;
+  const wanted = DLNA_MIME[extensionOf(path)];
+  if (!wanted) return false;
+  return wanted.some((m) => device.dlna!.mimes.includes(m));
+}
+
+export function deviceIsVideoCapable(device: TvDevice): boolean {
+  if (device.cast) return true;
+  return device.dlna?.mimes.some((m) => m.startsWith('video/')) ?? false;
+}
+
+/**
+ * Which transport this device will use for the file that is open.
+ *
+ * Auto prefers DLNA whenever the renderer declares the container, because that
+ * path reaches the television's own decoder: no repacking, surround and HEVC
+ * intact, and seeking done by the TV itself. Cast is the answer for everything
+ * else — a container the renderer does not list, a network source, or a device
+ * with no renderer at all.
+ */
+export function transportFor(device: TvDevice, path: string | null): Transport {
+  const pinned = deviceProfile(device).transport;
+  if (pinned === 'dlna' && device.dlna) return 'dlna';
+  if (pinned === 'cast' && device.cast) return 'cast';
+  if (!device.cast) return 'dlna';
+  if (!device.dlna) return 'cast';
+  return dlnaTakesFile(device, path) && !isNetworkSource(path ?? '') ? 'dlna' : 'cast';
+}
+
+/// Whether the viewer's pinned choice cannot be honoured this session — said
+/// out loud in the row rather than silently ignored.
+export function pinnedUnavailable(device: TvDevice): boolean {
+  const pinned = deviceProfile(device).transport;
+  return (pinned === 'dlna' && !device.dlna) || (pinned === 'cast' && !device.cast);
+}
+
+/**
+ * What will happen if this row is clicked, in one short sentence — the thing a
+ * viewer actually decides on. It is deliberately about consequences (wait,
+ * sound, whether it plays at all) rather than protocol names, which live under
+ * the gear for whoever went looking for them.
+ */
+export function deviceSummary(device: TvDevice, path: string | null): string {
+  if (!deviceIsVideoCapable(device)) return t('cast.sum_audio_only');
+  const transport = transportFor(device, path);
+  if (transport === 'dlna') {
+    return dlnaTakesFile(device, path) ? t('cast.sum_direct') : t('cast.sum_dlna_unlisted');
+  }
+  const verdict = cast.plan?.verdict;
+  if (verdict?.kind === 'refuse') return t('cast.sum_refuse');
+  if (castMode() === 'hls') return t('cast.sum_hls');
+  return verdict?.kind === 'prepare' ? t('cast.sum_prepare') : t('cast.sum_direct');
+}
+
+/// Read once when the picker opens: the rows need the verdict, and it is the
+/// same for every row (it is about the file, not the device).
+export async function refreshCastPlan() {
+  const path = player.filePath;
+  if (!path) {
+    cast.plan = null;
+    return;
+  }
+  const resolved = await resolveCastSource(path);
+  const src = 'refuse' in resolved ? path : resolved.src;
+  cast.plan = { container: extensionOf(src), verdict: await castVerdict(src) };
+}
+
 export function startCastDiscovery() {
   if (devicetimerRunning()) return;
   cast.discovering = true;
@@ -111,9 +328,20 @@ export function startCastDiscovery() {
     console.warn('cast_discover_start failed:', e);
     cast.discovering = false;
   });
+  void invoke('dlna_discover_start').catch((e) => console.warn('dlna_discover_start failed:', e));
+  cast.dlnaSweeping = true;
+  // Cleared by the first sweep that finds anything, or by this deadline — a
+  // spinner that never stops is worse than one that gives up.
+  setTimeout(() => (cast.dlnaSweeping = false), DLNA_SWEEP_MS);
+  void refreshCastPlan();
   const pull = async () => {
-    const list = await invoke<CastDevice[]>('cast_devices').catch(() => []);
-    cast.devices = list;
+    const [castList, dlnaList] = await Promise.all([
+      invoke<CastDevice[]>('cast_devices').catch(() => []),
+      invoke<DlnaDevice[]>('dlna_devices').catch(() => []),
+    ]);
+    cast.devices = castList;
+    cast.dlnaDevices = dlnaList;
+    if (dlnaList.length > 0) cast.dlnaSweeping = false;
   };
   void pull();
   deviceTimer = setInterval(() => void pull(), DEVICE_POLL_MS);
@@ -129,7 +357,9 @@ export function stopCastDiscovery() {
     deviceTimer = null;
   }
   cast.discovering = false;
+  cast.dlnaSweeping = false;
   void invoke('cast_discover_stop').catch(() => {});
+  void invoke('dlna_discover_stop').catch(() => {});
 }
 
 /// Containers the receiver takes as-is over HTTP.
@@ -362,7 +592,7 @@ async function selectedAudioParams(): Promise<{ audioIndex: number; channels: nu
  * starts, and every exit path below replaces it — success (the poll's first
  * "playing"), each distinct failure, and the firewall timeout.
  */
-export async function castCurrentFile(device: CastDevice): Promise<boolean> {
+export async function castCurrentFile(device: TvDevice): Promise<boolean> {
   const path = player.filePath;
   if (!path) return false;
   const resolved = await resolveCastSource(path);
@@ -371,6 +601,9 @@ export async function castCurrentFile(device: CastDevice): Promise<boolean> {
     return false;
   }
   const src = resolved.src;
+  const transport = transportFor(device, src);
+  if (transport === 'dlna') return castOverDlna(device, src);
+
   const verdict = await castVerdict(src);
   if (verdict.kind === 'refuse') {
     showOsd(verdict.reason);
@@ -379,12 +612,13 @@ export async function castCurrentFile(device: CastDevice): Promise<boolean> {
 
   showOsd(t('cast.connecting', { name: device.name }), { sticky: true });
   try {
-    await invoke('cast_connect', { device });
+    await invoke('cast_connect', { device: device.cast });
   } catch (e) {
     console.warn('cast_connect failed:', e);
     showOsd(t('cast.err_unreachable'));
     return false;
   }
+  cast.transport = 'cast';
 
   cast.active = true;
   cast.deviceName = device.name;
@@ -452,11 +686,81 @@ export async function castCurrentFile(device: CastDevice): Promise<boolean> {
   return true;
 }
 
-/// TS segments for H.264 (the receiver's zero-surprise default), fMP4 for HEVC
-/// (out of spec in TS).
-async function hlsVariant(): Promise<'ts' | 'fmp4'> {
+/**
+ * Cast over DLNA: hand the renderer the file itself.
+ *
+ * There is no ladder here and no prepare step — that machinery exists because
+ * the Cast receiver decodes in a browser pipeline, while a DLNA renderer *is*
+ * the television's own player. Measured on the real set: an untouched 4K HEVC
+ * Main-10 HDR10 MKV with E-AC-3 5.1 plays, seeks (the TV reads the MKV's own
+ * cues and range-requests the offset itself) and keeps its surround.
+ */
+async function castOverDlna(device: TvDevice, src: string): Promise<boolean> {
+  const renderer = device.dlna;
+  if (!renderer) return false;
+  if (isNetworkSource(src)) {
+    showOsd(t('cast.local_only'));
+    return false;
+  }
+
+  showOsd(t('cast.connecting', { name: device.name }), { sticky: true });
+  try {
+    await invoke('dlna_connect', { device: renderer });
+  } catch (e) {
+    console.warn('dlna_connect failed:', e);
+    showOsd(t('cast.err_unreachable'));
+    return false;
+  }
+
+  cast.transport = 'dlna';
+  cast.active = true;
+  cast.deviceName = device.name;
+  cast.state = 'loading';
+  cast.time = player.timePos;
+  cast.duration = player.duration;
+  sawPlayback = false;
+  resumeUnpaused = !player.paused;
+  castSrcPath = src;
+  sessionHls = null;
+
+  await setProperty('pause', true).catch(() => {});
+  loadStartedAt = Date.now();
+  const hidden = isPrivatePath(src);
+  try {
+    await invoke('dlna_load', {
+      path: src,
+      position: player.timePos,
+      title: hidden ? null : player.displayTitle,
+      hidden,
+    });
+  } catch (e) {
+    console.warn('dlna_load failed:', e);
+    await endCast({ osd: t('cast.err_load'), resumeLocal: true });
+    return false;
+  }
+  startPoll();
+  return true;
+}
+
+/// Which HLS rendition to build — or `null` for "this file cannot go over HLS
+/// at all", which sends it down the progressive path instead.
+///
+/// **HLS is H.264 only on this receiver.** Measured against the real TV with a
+/// rendition per cell: H.264 plays in TS and (once the LOAD stopped carrying
+/// `hlsSegmentFormat`) in fMP4, while HEVC is refused in fMP4 — with the tag
+/// corrected to `hvc1`, and refused a beat earlier when a master playlist
+/// declares `CODECS="hvc1…"`, i.e. it is the codec being turned down and not
+/// the packaging. The same TV plays 4K HEVC HDR perfectly over progressive
+/// MP4, because that path reaches its own decoder rather than the receiver's
+/// browser pipeline. Carrying HEVC over HLS would need a video transcode rung,
+/// which is out of scope; so in HLS mode a HEVC file quietly gets the
+/// progressive rung, which for a local file is the better answer anyway.
+///
+/// TS rather than fMP4 for the H.264 case: both play, and TS is the format the
+/// Default Media Receiver has always taken.
+async function hlsVariant(): Promise<'ts' | 'fmp4' | null> {
   const video = (await getProperty('video-format', 'string').catch(() => null)) ?? '';
-  return video === 'hevc' ? 'fmp4' : 'ts';
+  return video === 'h264' ? 'ts' : null;
 }
 
 function startPoll() {
@@ -473,7 +777,9 @@ function stopPoll() {
 
 async function poll() {
   if (!cast.active) return;
-  const status = await invoke<CastStatusMsg>('cast_status').catch(() => null);
+  const status = await invoke<CastStatusMsg>(
+    cast.transport === 'dlna' ? 'dlna_status' : 'cast_status',
+  ).catch(() => null);
   if (!status || !cast.active) return;
 
   cast.state = status.state;
@@ -541,7 +847,9 @@ export async function endCast(opts: {
   cast.deviceName = null;
   // A prepare still running dies with the session; harmless when none is.
   void invoke('cast_prepare_cancel').catch(() => {});
-  const lastTime = await invoke<number>('cast_disconnect').catch(() => 0);
+  const lastTime = await invoke<number>(
+    cast.transport === 'dlna' ? 'dlna_disconnect' : 'cast_disconnect',
+  ).catch(() => 0);
   // The prepared copy of a private file must not outlive its session, and
   // with the cache set to "keep nothing" neither does anyone else's; a public
   // one otherwise stays cached so re-casting it is instant. (HLS sessions are
@@ -553,6 +861,7 @@ export async function endCast(opts: {
   preparedHidden = false;
   castSrcPath = null;
   sessionHls = null;
+  cast.transport = 'cast';
   showOsd(opts.osd);
   if (!wasActive || !opts.resumeLocal || !player.hasFile) return;
 
@@ -573,9 +882,25 @@ export async function disconnectCast(): Promise<void> {
 
 // ---- Remote controls --------------------------------------------------------
 
+/// Both transports answer the same four actions under different command names,
+/// which is what lets one set of controls, one seekbar and one casting screen
+/// serve either.
+function controlCommand(): string {
+  return cast.transport === 'dlna' ? 'dlna_control' : 'cast_control';
+}
+
+/// A refused command used to vanish into an empty catch, which is how a control
+/// that does nothing looks exactly like a control that worked. A renderer
+/// answers refusals in earnest (UPnP 606 "not authorized", 701 "transition not
+/// available"), and the viewer is owed the difference.
+function reportControlFailure(e: unknown) {
+  console.warn('cast control failed:', e);
+  showOsd(t('cast.command_failed'));
+}
+
 export function castTogglePause() {
-  void invoke('cast_control', { action: cast.paused ? 'play' : 'pause', value: null }).catch(
-    () => {},
+  void invoke(controlCommand(), { action: cast.paused ? 'play' : 'pause', value: null }).catch(
+    reportControlFailure,
   );
   // Optimistic, like every local control: the next status report is up to
   // half a second away and a button that lags reads as broken.
@@ -585,7 +910,7 @@ export function castTogglePause() {
 export function castSeek(time: number) {
   const clamped = Math.max(0, Math.min(cast.duration || time, time));
   cast.time = clamped;
-  void invoke('cast_control', { action: 'seek', value: clamped }).catch(() => {});
+  void invoke(controlCommand(), { action: 'seek', value: clamped }).catch(reportControlFailure);
 }
 
 export function castSeekBy(delta: number) {
@@ -597,7 +922,7 @@ export function castSetVolume(frac: number) {
   if (!cast.volumeAdjustable) return;
   const next = Math.max(0, Math.min(1, frac));
   cast.volume = next;
-  void invoke('cast_control', { action: 'volume', value: next }).catch(() => {});
+  void invoke(controlCommand(), { action: 'volume', value: next }).catch(() => {});
 }
 
 /// The wheel/keys path: same value, plus the OSD (shown as percent). A device
@@ -625,6 +950,13 @@ export function castNudgeVolume(delta: number) {
 export async function castSwitchAudio(track: Track): Promise<void> {
   const src = castSrcPath;
   if (!cast.remote || !src) return;
+  // Over DLNA the renderer got the original file with every track in it, so the
+  // choice is the television's own and ours to stay out of — re-sending the
+  // file to change it would restart playback for nothing.
+  if (cast.transport === 'dlna') {
+    showOsd(t('cast.track_on_tv'));
+    return;
+  }
   const codec = track.codec?.toLowerCase() ?? null;
   const transcode = !(codec && CAST_AUDIO_COPY.includes(codec));
   const audioIndex = Math.max(0, player.audioTracks.indexOf(track));
@@ -664,8 +996,17 @@ export async function castSwitchAudio(track: Track): Promise<void> {
 }
 
 export function castToggleMute() {
+  // Mute is part of the volume control, not a separate capability: a receiver
+  // that declares its volume fixed (or, over DLNA, never reports a usable one)
+  // ignores this too, and the icon would flip and flip back on its own. The
+  // button is disabled for the same reason the slider is; this is the keyboard
+  // path, which gets the explanation instead.
+  if (!cast.volumeAdjustable) {
+    showOsd(t('cast.volume_fixed'));
+    return;
+  }
   const next = !cast.muted;
   cast.muted = next;
-  void invoke('cast_control', { action: 'mute', value: next ? 1 : 0 }).catch(() => {});
+  void invoke(controlCommand(), { action: 'mute', value: next ? 1 : 0 }).catch(() => {});
   showOsd(t(next ? 'osd.sound_off' : 'osd.sound_on'));
 }

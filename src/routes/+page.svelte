@@ -207,6 +207,11 @@
     castSetVolume,
     castSwitchAudio,
     castToggleMute,
+    deviceProfile,
+    deviceSummary,
+    pinnedUnavailable,
+    setDeviceTransport,
+    transportFor,
     castTogglePause,
     disconnectCast,
     endCast,
@@ -2350,6 +2355,14 @@
   }
 
   onMount(async () => {
+    // The system's own double-click interval, used by the cast click path. Not
+    // awaited and not on the critical path: 500 ms is the right default on both
+    // platforms if the call is slow or fails.
+    void invoke<number>('double_click_time')
+      .then((ms) => {
+        if (ms > 0) doubleClickMs = ms;
+      })
+      .catch(() => {});
     // "Open with" file and the post-update resume: both are learned BEFORE the
     // window is shown — if a file is on its way, the start screen must not
     // flash in front of the video (a black background holds until it loads).
@@ -4122,10 +4135,14 @@
   /// sockets at startup, and the effect's cleanup covers every way the panel
   /// closes (Escape, outside click, casting starting).
   let castSearchLong = $state(false);
+  /// Which device row has its profile expanded. One at a time: two open rows
+  /// in a panel this size read as a form rather than a list of televisions.
+  let tvSettingsFor = $state<string | null>(null);
   $effect(() => {
     if (openMenu === 'cast' && !cast.active) {
       startCastDiscovery();
       castSearchLong = false;
+      tvSettingsFor = null;
       const timer = setTimeout(() => (castSearchLong = true), 6000);
       return () => {
         clearTimeout(timer);
@@ -4388,7 +4405,55 @@
     // unpausing) was discussed and rejected: half a second of delay on every
     // "resume" costs more than an artefact on a double click. The instant path
     // without this ambiguity is Space and K. Do not "fix" without discussing.
+    //
+    // **While casting, that trade inverts and so does the code.** The cancelling
+    // trick relies on a pair of toggles costing nothing; on a television a
+    // pause and a resume 100 ms apart is not a frozen frame but a decode
+    // restart — two remote commands, a buffer flush and a visible hiccup. And
+    // the delay that was too expensive locally is free here: the remote already
+    // answers in a few hundred milliseconds and nobody frame-steps a TV. So the
+    // click waits out the *system's own* double-click interval (never a guessed
+    // constant — the reason `double_click_time` exists) and the double click
+    // cancels it outright.
+    if (cast.remote) {
+      clearCastClick();
+      castClickTimer = setTimeout(() => {
+        castClickTimer = null;
+        castTogglePause();
+      }, doubleClickMs);
+      return;
+    }
     void togglePause();
+  }
+
+  /// The pending single-click toggle while casting, if any.
+  let castClickTimer: ReturnType<typeof setTimeout> | null = null;
+  let doubleClickMs = $state(500);
+
+  /// The casting screen's click: the same deferral as the video area, without
+  /// the target check (the card is one box and every part of it is "the
+  /// picture" as far as the gesture is concerned).
+  function onCastScreenClick() {
+    if (ctxMenu) {
+      ctxMenu = null;
+      return;
+    }
+    if (openMenu) {
+      openMenu = null;
+      return;
+    }
+    clearCastClick();
+    castClickTimer = setTimeout(() => {
+      castClickTimer = null;
+      castTogglePause();
+    }, doubleClickMs);
+  }
+
+  function clearCastClick() {
+    if (castClickTimer !== null) {
+      clearTimeout(castClickTimer);
+      castClickTimer = null;
+    }
   }
 
   /// True when the event started inside something editable, where the system's
@@ -4444,6 +4509,9 @@
 
   function onVideoDblClick() {
     // The pause was already undone by the second click — fullscreen only here.
+    // Casting is the exception: there the first click is still pending, and
+    // this is what stops it reaching the television at all.
+    clearCastClick();
     void toggleFullscreen();
   }
 
@@ -5100,7 +5168,24 @@
        running, and covering a playing picture with a status card would read
        as the player dying for the length of the remux. -->
   {#if cast.remote}
-    <div class="overlay castscreen">
+    <!-- The status card covers the video area, so without a handler of its own
+         the gesture the player is built around — click to pause — simply stops
+         existing the moment a cast starts. It routes to the same deferred path
+         as the video underneath. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="overlay castscreen"
+      onclick={(e) => {
+        if (e.target !== e.currentTarget && !(e.target as HTMLElement).closest('.castscreen-box'))
+          return;
+        onCastScreenClick();
+      }}
+      ondblclick={() => {
+        clearCastClick();
+        void toggleFullscreen();
+      }}
+    >
       <div class="castscreen-box">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"/></svg>
         <span class="castscreen-title">{t('cast.casting_on', { name: cast.deviceName ?? '' })}</span>
@@ -6843,19 +6928,85 @@
             {t('cast.disconnect')}
           </button>
         {:else}
-          {#each cast.devices as device (device.id)}
-            <button
-              class="menu-item cast-device"
-              onclick={() => {
-                openMenu = null;
-                void castCurrentFile(device);
-              }}
-            >
-              <span class="cast-name">{device.name}</span>
-              {#if device.model && device.model !== device.name}
-                <span class="cast-model">{device.model}</span>
+          {#each cast.tvs as device (device.key)}
+            <!-- One row per television, however many protocols reach it. The
+                 second line states the consequence for the open file; the gear
+                 holds the per-device profile, which is where the protocol names
+                 live for whoever came looking for them. -->
+            <div class="tv-row">
+              <button
+                class="menu-item cast-device"
+                onclick={() => {
+                  openMenu = null;
+                  void castCurrentFile(device);
+                }}
+              >
+                <span class="cast-name">{device.name}</span>
+                <span class="cast-model">
+                  {(cast.profileRevision, deviceSummary(device, player.filePath))}
+                </span>
+              </button>
+              {#if cast.dlnaSweeping && !device.dlna}
+                <div
+                  class="tv-sweep"
+                  data-tip={t('cast.looking_for_transports')}
+                  aria-label={t('cast.looking_for_transports')}
+                ></div>
+              {:else if device.cast && device.dlna}
+                <button
+                  class="tv-gear"
+                  class:open={tvSettingsFor === device.key}
+                  aria-label={t('cast.transport_settings')}
+                  data-tip={t('cast.transport_settings')}
+                  onclick={() =>
+                    (tvSettingsFor = tvSettingsFor === device.key ? null : device.key)}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="15"
+                    height="15"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M4 8h8.4M17.6 8H20M4 16h4.4M13.6 16H20" />
+                    <circle cx="15" cy="8" r="2.6" />
+                    <circle cx="11" cy="16" r="2.6" />
+                  </svg>
+                </button>
               {/if}
-            </button>
+            </div>
+            {#if tvSettingsFor === device.key}
+              <!-- Expanded in place rather than in a second floating panel: a
+                   panel hoisted out of this one would need the submenu's hover
+                   bridge, its click guards and its drill-down fallback for a
+                   window too narrow to hold two — all of that for one control. -->
+              <div class="tv-settings">
+                <div class="tv-settings-label">{t('cast.transport')}</div>
+                <div class="segmented">
+                  {#each [['auto', t('cast.transport_auto')], ['dlna', t('cast.transport_dlna')], ['cast', t('cast.transport_cast')]] as [value, label] (value)}
+                    <button
+                      class="segopt"
+                      class:sel={(cast.profileRevision, deviceProfile(device).transport === value)}
+                      onclick={() => setDeviceTransport(device, value as 'auto' | 'cast' | 'dlna')}
+                    >
+                      {label}
+                    </button>
+                  {/each}
+                </div>
+                <div class="tv-settings-hint">
+                  {#if pinnedUnavailable(device)}
+                    {t('cast.transport_unavailable')}
+                  {:else if deviceProfile(device).transport === 'auto'}
+                    {transportFor(device, player.filePath) === 'dlna'
+                      ? t('cast.transport_auto_dlna')
+                      : t('cast.transport_auto_cast')}
+                  {/if}
+                </div>
+              </div>
+            {/if}
           {:else}
             <div class="cast-empty">
               {castSearchLong ? t('cast.empty') : t('cast.searching')}
@@ -6875,6 +7026,15 @@
     {:else if trackMenu}
       <div class="menu scrollable">
         <div class="menu-title">{t(trackMenu === 'audio' ? 'osc.audio' : 'osc.subs')}</div>
+        <!-- Over DLNA the file went across with all its tracks and the choice
+             belongs to the television — its renderer declares no action for
+             audio at all (it has vendor ones for subtitles and 3D, so the
+             absence is a decision, not a gap). The list would otherwise keep
+             showing this player's selection, which is a claim we cannot back:
+             a switch made on the TV's own remote never reaches us. -->
+        {#if cast.transport === 'dlna' && cast.remote}
+          <div class="cast-hint">{t('cast.tracks_on_tv')}</div>
+        {/if}
         {#each trackMenu === 'audio' ? player.audioTracks : player.subTracks as track (track.id)}
           <!-- The × appears for external subtitle tracks only. An embedded one
                cannot be removed without rewriting the video file, and mpv's
@@ -7040,7 +7200,16 @@
     </div>
     <div class="controls">
       <div class="cluster cl-left">
-      <button data-tip={withKey(t('osc.sound'), 'mute')} aria-label={t('osc.sound')} onclick={() => (cast.remote ? castToggleMute() : toggleMute())}>
+      <!-- Disabled with the slider beside it, and for the same reason: a
+           receiver that will not take a volume will not take a mute either, and
+           a button that flips back on its own reads as broken. The keyboard
+           path still explains where the volume lives. -->
+      <button
+        data-tip={withKey(t('osc.sound'), 'mute')}
+        aria-label={t('osc.sound')}
+        disabled={cast.remote && !cast.volumeAdjustable}
+        onclick={() => (cast.remote ? castToggleMute() : toggleMute())}
+      >
         {#if cast.remote ? cast.muted : player.muted || player.volume === 0}
           <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16.5 12A4.5 4.5 0 0 0 14 8v2.2l2.5 2.5v-.7zM19 12a7 7 0 0 1-1.2 3.9l1.5 1.5A9 9 0 0 0 21 12a9 9 0 0 0-7-8.8v2.1A7 7 0 0 1 19 12zM4.3 3L3 4.3 7.7 9H3v6h4l5 5v-6.7l4.3 4.2a6.9 6.9 0 0 1-2.3 1.2v2.1a9 9 0 0 0 3.7-1.8L20 21.7 21.3 20 4.3 3zM12 4L9.9 6.1 12 8.2V4z"/></svg>
         {:else}
@@ -10943,7 +11112,9 @@
     transition: transform 0.12s ease;
   }
 
-  input[type='range']:hover::-webkit-slider-thumb {
+  /* :not(:disabled) is the whole point — the thumb grew under the pointer on a
+     slider that takes no input, which is the control claiming to be live. */
+  input[type='range']:hover:not(:disabled)::-webkit-slider-thumb {
     transform: scale(1.25);
   }
 
@@ -10979,6 +11150,91 @@
 
   .cast-model {
     font-size: 11px;
+    color: rgba(232, 232, 236, 0.45);
+  }
+
+  .tv-row {
+    display: flex;
+    align-items: stretch;
+  }
+
+  /* Without this the long consequence line grows the row instead of
+     ellipsizing, and the panel sprouts a horizontal scrollbar — min-width: auto
+     is the flex default and every ancestor between the label and the fixed box
+     needs it cleared. */
+  .tv-row > .menu-item.cast-device {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .tv-row .cast-name,
+  .tv-row .cast-model {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Same footprint as the gear, so nothing shifts when one replaces the other. */
+  .tv-sweep {
+    display: flex;
+    align-items: center;
+    align-self: center;
+    width: 39px;
+    height: 15px;
+    justify-content: center;
+  }
+
+  .tv-sweep::after {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(232, 232, 236, 0.25);
+    border-top-color: rgba(232, 232, 236, 0.7);
+    animation: spin 0.8s linear infinite;
+  }
+
+  .tv-gear {
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    /* Three strengths in colour, never opacity: a thin glyph re-rasterises
+       when it leaves full opacity, and in WebKit that reads as a twitch. */
+    color: rgba(232, 232, 236, 0.4);
+  }
+
+  .tv-row:hover .tv-gear {
+    color: rgba(232, 232, 236, 0.66);
+  }
+
+  /* Written to beat the container's own hover: Svelte scopes the descendant
+     selector with a free :where(), so `.tv-row:hover .tv-gear` outweighs a bare
+     `.tv-gear:hover` and the glyph would never reach full strength. */
+  .tv-row:hover .tv-gear:hover,
+  .tv-gear.open {
+    color: #e8e8ec;
+  }
+
+  .tv-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 14px 12px;
+    color: #e8e8ec;
+  }
+
+  .tv-settings-label {
+    font-size: 11px;
+    color: rgba(232, 232, 236, 0.55);
+  }
+
+  .tv-settings-hint {
+    font-size: 11px;
+    line-height: 1.4;
     color: rgba(232, 232, 236, 0.45);
   }
 

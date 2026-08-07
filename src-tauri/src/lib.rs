@@ -8,6 +8,7 @@ mod macos_chrome;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 mod cast;
+mod dlna;
 mod opensubtitles;
 mod screenshot;
 mod step_engine;
@@ -894,6 +895,7 @@ pub fn run() {
         // Same shape for the same reason: the cast session task and the LAN
         // file server's connections outlive any one command call.
         .manage(std::sync::Arc::new(cast::CastService::default()))
+        .manage(std::sync::Arc::new(dlna::DlnaService::default()))
         .invoke_handler(tauri::generate_handler![
             take_pending_files,
             open_file_ready,
@@ -934,6 +936,14 @@ pub fn run() {
             torrent::torrent_forget,
             torrent::torrent_relocate,
             torrent::torrent_clear_cache,
+            dlna::dlna_discover_start,
+            dlna::dlna_discover_stop,
+            dlna::dlna_devices,
+            dlna::dlna_connect,
+            dlna::dlna_load,
+            dlna::dlna_status,
+            dlna::dlna_control,
+            dlna::dlna_disconnect,
             cast::cast_discover_start,
             cast::cast_discover_stop,
             cast::cast_devices,
@@ -981,6 +991,23 @@ pub fn run() {
         })
         .setup(|app| {
             let _ = ffmpeg_the_third::init();
+            // Recon only, off by default: see dlna.rs. It has to run inside the
+            // app because macOS drops multicast for a process with no Local
+            // Network permission, which makes a CLI probe answer "nothing here"
+            // whatever the network holds.
+            if std::env::var("FP_DLNA_PROBE").is_ok() {
+                tauri::async_runtime::spawn(dlna::probe());
+            }
+            // `FP_DLNA_PLAY=<file>` drives a whole DLNA session through the
+            // same commands the picker calls — how the transport is tested
+            // without a hand on the mouse.
+            if let Ok(path) = std::env::var("FP_DLNA_PLAY") {
+                let handle = app.handle().clone();
+                let target = std::env::var("FP_DLNA_TARGET").ok();
+                tauri::async_runtime::spawn(async move {
+                    dlna::selftest(&handle, target, path).await;
+                });
+            }
             // Quieten OUR copy of libavcodec. mpv links its own and installs a
             // log callback for it (its lines read `[ffmpeg/video] hevc: …`);
             // ours keeps libavcodec's default, which writes straight to stderr
