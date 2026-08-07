@@ -92,7 +92,7 @@ class Cast {
   /// What the transport chosen for a device would mean for the file that is
   /// open — computed once when the picker opens, so each row can state its
   /// consequence without every row running an async probe.
-  plan = $state<{ container: string; verdict: CastVerdict } | null>(null);
+  plan = $state<{ container: string; verdict: CastVerdict; streaming: boolean } | null>(null);
   /// Which transport the live session is using; the controls, the poll and the
   /// disconnect all route on it.
   transport = $state<Transport>('cast');
@@ -298,6 +298,27 @@ export function pinnedUnavailable(device: TvDevice): boolean {
  */
 export function deviceSummary(device: TvDevice, path: string | null): string {
   if (!deviceIsVideoCapable(device)) return t('cast.sum_audio_only');
+  // **A row must not pass judgement on what it does not know yet.** SSDP is
+  // still sweeping for the first seconds, so a device whose DLNA half has not
+  // arrived is not a device without DLNA — and for a torrent still downloading
+  // the difference is the whole answer, which is how a half-downloaded film
+  // came to be told to finish first. The gear slot already shows a spinner
+  // through this; the line says the same thing in words.
+  // ...but only where the missing half could change the answer. A file the
+  // Cast rung already plays untouched cannot be improved by finding a renderer,
+  // so making the common case wait 4.5 s to say "plays as it is" would be
+  // caution costing honesty in the other direction.
+  if (cast.dlnaSweeping && !device.dlna) {
+    const settled = !cast.plan?.streaming && cast.plan?.verdict.kind === 'direct';
+    if (!settled) return t('cast.sum_checking');
+  }
+  // A torrent that is still downloading has one path and one refusal, and the
+  // row must not offer the prepare its verdict would otherwise claim.
+  if (cast.plan?.streaming) {
+    const ext = cast.plan.container;
+    const takes = device.dlna?.mimes.some((m) => (DLNA_MIME[ext] ?? []).includes(m)) ?? false;
+    return takes ? t('cast.sum_stream') : t('cast.sum_stream_wait');
+  }
   const transport = transportFor(device, path);
   if (transport === 'dlna') {
     return dlnaTakesFile(device, path) ? t('cast.sum_direct') : t('cast.sum_dlna_unlisted');
@@ -317,8 +338,12 @@ export async function refreshCastPlan() {
     return;
   }
   const resolved = await resolveCastSource(path);
-  const src = 'refuse' in resolved ? path : resolved.src;
-  cast.plan = { container: extensionOf(src), verdict: await castVerdict(src) };
+  const src = 'src' in resolved ? resolved.src : path;
+  cast.plan = {
+    container: extensionOf(src),
+    verdict: await castVerdict(src),
+    streaming: 'stream' in resolved,
+  };
 }
 
 export function startCastDiscovery() {
@@ -342,6 +367,10 @@ export function startCastDiscovery() {
     cast.devices = castList;
     cast.dlnaDevices = dlnaList;
     if (dlnaList.length > 0) cast.dlnaSweeping = false;
+    // Only while the source is a torrent still downloading: it is the one plan
+    // that changes under the panel, and re-reading it for a plain file would be
+    // a handful of mpv round trips every tick for an answer that cannot move.
+    if (cast.plan?.streaming) void refreshCastPlan();
   };
   void pull();
   deviceTimer = setInterval(() => void pull(), DEVICE_POLL_MS);
@@ -415,17 +444,33 @@ export async function castVerdict(src: string): Promise<CastVerdict> {
  * an incomplete torrent is the planned HLS-over-the-swarm rung (casting.md);
  * until it exists the refusal says to wait for the download.
  */
-async function resolveCastSource(
-  path: string,
-): Promise<{ src: string } | { refuse: string }> {
+/// What the transports can be pointed at: a file on disk, or a torrent still
+/// downloading (which only the DLNA rung can take — see `castOverDlna`).
+type CastSource =
+  | { src: string }
+  | { stream: { infoHash: string; index: number; name: string; ext: string } }
+  | { refuse: string };
+
+async function resolveCastSource(path: string): Promise<CastSource> {
   const torrent = parseTorrentUrl(path);
   if (torrent) {
     const local = await invoke<{ path: string; complete: boolean } | null>(
       'torrent_local_path',
       { infoHash: torrent.infoHash, index: torrent.index },
     ).catch(() => null);
+    // A complete file is an ordinary file and takes every rung, prepare
+    // included; an incomplete one can only be streamed, because nothing can
+    // repack bytes that have not arrived.
     if (local?.complete) return { src: local.path };
-    return { refuse: t('cast.torrent_incomplete') };
+    const name = decodeURIComponent(path.split('/').pop() ?? 'video');
+    return {
+      stream: {
+        infoHash: torrent.infoHash,
+        index: torrent.index,
+        name,
+        ext: name.split('.').pop()?.toLowerCase() ?? '',
+      },
+    };
   }
   if (isNetworkSource(path)) return { refuse: t('cast.local_only') };
   return { src: path };
@@ -439,10 +484,26 @@ const MODE_KEY = 'frameplayer.castMode';
 const CAP_KEY = 'frameplayer.castCacheCap';
 const CAP_CHOICES = [0, 5, 20, 50];
 
-export type CastMode = 'prepare' | 'hls';
+export type CastMode = 'auto' | 'prepare' | 'hls';
 
+/**
+ * How a file reaches a **Chromecast** — DLNA is chosen per device, in the
+ * picker, because that choice depends on the device.
+ *
+ * `auto` is the default and the honest one: the pill used to force a transport
+ * without knowing the file, which is a decision the player is better placed to
+ * make. Today auto always means the progressive path, because HLS turned out to
+ * carry only H.264 with stereo on real hardware — its remaining reason to exist
+ * is a source the progressive path cannot serve at all (an incomplete torrent),
+ * and when that rung lands this is the one function that has to learn about it.
+ *
+ * Migration: a stored value is an explicit choice and is kept; **an absent key
+ * is auto**, so nobody who never opened this setting is pinned to the transport
+ * that used to be the default.
+ */
 export function castMode(): CastMode {
-  return localStorage.getItem(MODE_KEY) === 'hls' ? 'hls' : 'prepare';
+  const stored = localStorage.getItem(MODE_KEY);
+  return stored === 'hls' || stored === 'prepare' ? stored : 'auto';
 }
 
 export function setCastMode(mode: CastMode) {
@@ -600,6 +661,11 @@ export async function castCurrentFile(device: TvDevice): Promise<boolean> {
     showOsd(resolved.refuse);
     return false;
   }
+  // A torrent that is still downloading has exactly one path to a television,
+  // and it is not a choice: nothing can be prepared from bytes that have not
+  // arrived, and the segmenter would cost the release its codecs even if it
+  // could. So it is DLNA or an honest refusal.
+  if ('stream' in resolved) return castTorrentStream(device, resolved.stream);
   const src = resolved.src;
   const transport = transportFor(device, src);
   if (transport === 'dlna') return castOverDlna(device, src);
@@ -638,7 +704,7 @@ export async function castCurrentFile(device: TvDevice): Promise<boolean> {
   // In HLS mode everything goes through the segmenter, direct-play files
   // included — the mode is the transport, and half its purpose today is
   // letting the receiver's HLS behaviour be tested with known-good files.
-  sessionHls = mode === 'hls' ? (await hlsVariant()) : null;
+  sessionHls = mode === 'hls' ? await hlsVariant() : null;
   let castPath = src;
   if (sessionHls || verdict.kind === 'prepare') {
     cast.state = 'preparing';
@@ -682,6 +748,123 @@ export async function castCurrentFile(device: TvDevice): Promise<boolean> {
     return false;
   }
 
+  startPoll();
+  return true;
+}
+
+/// Bytes of lead the television gets before it is told to start.
+///
+/// Not a guess about the swarm but about the receiver: it has its own HTTP
+/// timeouts, and a read that blocks for a minute on a dry swarm may end the
+/// media session rather than show "buffering" — the one thing about this rung
+/// that cannot be known from the sender side. Small enough not to be a second
+/// wait on a healthy swarm, big enough that the renderer's opening probes (the
+/// header, and for MKV the cues at the *end*) do not all land on missing
+/// pieces at once.
+const STREAM_LEAD_BYTES = 24 * 1024 * 1024;
+/// Give up leading and hand it over anyway: a slow swarm is the viewer's to
+/// judge, and the readout under the top bar already says peers and rate.
+const STREAM_LEAD_TIMEOUT_MS = 45_000;
+
+/**
+ * Cast a torrent that is still downloading.
+ *
+ * The bytes come from librqbit's blocking stream — the same mechanism that
+ * feeds mpv, so the television's Range requests become piece priority — routed
+ * through the cast server's one-source-behind-a-token rule rather than the
+ * loopback torrent server, which a TV cannot reach and which must not be put on
+ * the LAN (it would publish every torrent in the session under a guessable
+ * path). Reading the sparse file off disk is not an alternative: a stretch that
+ * has not arrived reads back as zeros, and the TV would play them silently.
+ */
+async function castTorrentStream(
+  device: TvDevice,
+  stream: { infoHash: string; index: number; name: string; ext: string },
+): Promise<boolean> {
+  const renderer = device.dlna;
+  if (!renderer) {
+    showOsd(t('cast.stream_needs_dlna'));
+    return false;
+  }
+  const wanted = DLNA_MIME[stream.ext];
+  if (!wanted || !wanted.some((m) => renderer.mimes.includes(m))) {
+    showOsd(t('cast.stream_format', { what: stream.ext || '?' }));
+    return false;
+  }
+
+  // The lead, announced: this is a wait the viewer is owed an explanation for,
+  // and the figure moves, so it is a sticky popup replaced on every exit path.
+  showOsd(t('cast.stream_buffering', { percent: 0 }), { sticky: true });
+  const until = Date.now() + STREAM_LEAD_TIMEOUT_MS;
+  let fileSize = 0;
+  for (;;) {
+    const status = await invoke<{ file_done: number; file_size: number }>('torrent_status', {
+      infoHash: stream.infoHash,
+      index: stream.index,
+    }).catch(() => null);
+    const done = status?.file_done ?? 0;
+    if (status?.file_size) fileSize = status.file_size;
+    const target = Math.min(STREAM_LEAD_BYTES, status?.file_size ?? STREAM_LEAD_BYTES);
+    if (done >= target || Date.now() > until) break;
+    showOsd(t('cast.stream_buffering', { percent: Math.round((done / target) * 100) }), {
+      sticky: true,
+    });
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  showOsd(t('cast.connecting', { name: device.name }), { sticky: true });
+  try {
+    await invoke('dlna_connect', { device: renderer });
+  } catch (e) {
+    console.warn('dlna_connect failed:', e);
+    showOsd(t('cast.err_unreachable'));
+    return false;
+  }
+  const hidden = isPrivatePath(player.filePath ?? '');
+  let url: string;
+  try {
+    url = await invoke<string>('cast_serve_torrent', {
+      infoHash: stream.infoHash,
+      index: stream.index,
+      name: stream.name,
+      deviceIp: renderer.ip,
+      hidden,
+    });
+  } catch (e) {
+    console.warn('cast_serve_torrent failed:', e);
+    showOsd(t('cast.err_load'));
+    return false;
+  }
+
+  cast.transport = 'dlna';
+  cast.active = true;
+  cast.deviceName = device.name;
+  cast.state = 'loading';
+  cast.time = player.timePos;
+  cast.duration = player.duration;
+  sawPlayback = false;
+  resumeUnpaused = !player.paused;
+  castSrcPath = null;
+  sessionHls = null;
+
+  await setProperty('pause', true).catch(() => {});
+  loadStartedAt = Date.now();
+  try {
+    await invoke('dlna_load_url', {
+      url,
+      position: player.timePos,
+      title: hidden ? null : player.displayTitle,
+      duration: player.duration,
+      mime: DLNA_MIME[stream.ext]?.[0] ?? 'video/mp4',
+      // The renderer decides seekability from the metadata before it fetches a
+      // byte, and size is one of the three things it reads.
+      size: fileSize,
+    });
+  } catch (e) {
+    console.warn('dlna_load_url failed:', e);
+    await endCast({ osd: t('cast.err_load'), resumeLocal: true });
+    return false;
+  }
   startPoll();
   return true;
 }

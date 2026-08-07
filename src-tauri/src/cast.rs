@@ -398,10 +398,18 @@ struct Registered {
     path: PathBuf,
     mime: &'static str,
     dir: bool,
+    /// A torrent still downloading, served through librqbit's blocking stream
+    /// instead of read from disk: `(info hash, file index, file name)`. The
+    /// sparse file on disk is not an option — a stretch that has not arrived
+    /// reads back as zeros, and the television would play them without a word.
+    torrent: Option<(String, usize, String)>,
 }
 
 struct ServeShared {
     reg: Mutex<Option<Registered>>,
+    /// Set when a torrent source is registered — the cast server does not own
+    /// the torrent session and only borrows it to stream through.
+    torrents: Mutex<Option<Arc<crate::torrent::TorrentService>>>,
     /// Requests served for the current registration. Zero after a LOAD that the
     /// TV accepted is the firewall signature: the command channel worked, the
     /// media channel never reached us.
@@ -560,13 +568,27 @@ async fn serve_cast_inner(shared: Arc<ServeShared>, req: Request<hyper::body::In
         return simple(StatusCode::NOT_FOUND);
     };
 
-    let (base, base_mime, is_dir) = {
+    let (base, base_mime, is_dir, torrent) = {
         let reg = shared.reg.lock().unwrap_or_else(|p| p.into_inner());
         match reg.as_ref() {
-            Some(r) if r.token == token => (r.path.clone(), r.mime, r.dir),
+            Some(r) if r.token == token => (r.path.clone(), r.mime, r.dir, r.torrent.clone()),
             _ => return simple(StatusCode::NOT_FOUND),
         }
     };
+    if let Some((hash, index, name)) = torrent {
+        let Some(service) = shared.torrents.lock().unwrap_or_else(|p| p.into_inner()).clone() else {
+            return simple(StatusCode::INTERNAL_SERVER_ERROR);
+        };
+        shared.hits.fetch_add(1, Ordering::Relaxed);
+        let range = req
+            .headers()
+            .get(header::RANGE)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.to_string());
+        return service
+            .serve_file(&hash, index, &name, range, req.method() == Method::HEAD)
+            .await;
+    }
     let (file_path, mime) = if is_dir {
         // One flat component inside the session dir, nothing else: no dots at
         // the front (`..` included), no separators — a token-scoped directory
@@ -1487,6 +1509,7 @@ pub async fn cast_load(
             path: serve_root.clone(),
             mime,
             dir: is_hls,
+            torrent: None,
         });
         shared.hits.store(0, Ordering::Relaxed);
         old
@@ -1547,7 +1570,55 @@ pub(crate) async fn serve_one_file(
             path: file.to_path_buf(),
             mime,
             dir: false,
+            torrent: None,
         });
+        shared.hits.store(0, Ordering::Relaxed);
+    }
+    Ok(url)
+}
+
+/// Register an **incomplete** torrent file as the thing the LAN server serves,
+/// and hand back its URL.
+///
+/// This is the rung the whole HLS detour was built for and could not deliver:
+/// segmenting costs the file's codecs (H.264 + stereo on the measured receiver),
+/// while a renderer that takes the container plays the release untouched —
+/// HEVC, surround and all — and librqbit's blocking reads feed it exactly as
+/// they feed mpv, turning the television's own Range requests into piece
+/// priority. The privacy rule is unchanged: one source behind a random token,
+/// and a private-root file is named after the token instead of itself.
+#[tauri::command]
+pub async fn cast_serve_torrent(
+    service: tauri::State<'_, Arc<CastService>>,
+    torrents: tauri::State<'_, Arc<crate::torrent::TorrentService>>,
+    info_hash: String,
+    index: usize,
+    name: String,
+    device_ip: String,
+    hidden: bool,
+) -> Result<String, String> {
+    let device_ip: IpAddr = device_ip.parse().map_err(|_| "bad device address".to_string())?;
+    let (ip, port, shared) = ensure_server(&service, device_ip).await?;
+    let token = format!("{:032x}", rand::random::<u128>());
+    let ext = name.rsplit('.').next().unwrap_or("mkv").to_ascii_lowercase();
+    let url_name = if hidden {
+        format!("{token}.{ext}")
+    } else {
+        crate::torrent::urlencode(&name)
+    };
+    let url = format!("http://{ip}:{port}/c/{token}/{url_name}");
+    {
+        let mut reg = shared.reg.lock().unwrap_or_else(|p| p.into_inner());
+        *reg = Some(Registered {
+            token,
+            // Unused on this route, but a registration without a path would
+            // mean an Option threaded through every reader for nothing.
+            path: PathBuf::new(),
+            mime: cast_mime(&name),
+            dir: false,
+            torrent: Some((info_hash.to_ascii_lowercase(), index, name)),
+        });
+        *shared.torrents.lock().unwrap_or_else(|p| p.into_inner()) = Some(torrents.inner().clone());
         shared.hits.store(0, Ordering::Relaxed);
     }
     Ok(url)
@@ -1589,6 +1660,7 @@ async fn ensure_server(
 
     let shared = Arc::new(ServeShared {
         reg: Mutex::new(None),
+        torrents: Mutex::new(None),
         hits: AtomicU64::new(0),
     });
     let serve_shared = shared.clone();
@@ -1704,22 +1776,43 @@ pub fn cast_disconnect(service: tauri::State<'_, Arc<CastService>>) -> f64 {
         let _ = session.cmd_tx.send(Cmd::Disconnect);
         drop(session.task);
     }
-    if let Some(server) = server {
-        let reg = server
-            .shared
-            .reg
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take();
-        server.task.abort();
-        // HLS segments are transient by contract — they die with the session.
-        if let Some(reg) = reg {
-            if reg.dir {
-                let _ = std::fs::remove_dir_all(&reg.path);
-            }
+    stop_server(server);
+    last
+}
+
+/// Take the LAN server down and let go of what it was serving.
+///
+/// Factored out because **the DLNA transport ends through its own disconnect**
+/// and used to leave this running: the token stayed valid and the file stayed
+/// fetchable on the LAN after the session was over, which is precisely the
+/// promise the one-file-behind-a-token design makes. Every transport that
+/// borrows this server has to release it the same way.
+fn stop_server(server: Option<Server>) {
+    let Some(server) = server else { return };
+    let reg = server
+        .shared
+        .reg
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take();
+    *server.shared.torrents.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    server.task.abort();
+    // HLS segments are transient by contract — they die with the session.
+    if let Some(reg) = reg {
+        if reg.dir {
+            let _ = std::fs::remove_dir_all(&reg.path);
         }
     }
-    last
+}
+
+/// Release the LAN server on behalf of a transport with its own disconnect
+/// path (DLNA). One entry point rather than handing out the private `Server`.
+pub(crate) fn release_server(service: &Arc<CastService>) {
+    let server = {
+        let mut inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
+        inner.server.take()
+    };
+    stop_server(server);
 }
 
 // ---- Prepare: remux / audio-transcode into a Cast-ready MP4 ----------------
@@ -2509,6 +2602,7 @@ mod tests {
                 path: serve_root.clone(),
                 mime,
                 dir: is_hls,
+                torrent: None,
             });
         }
         println!(

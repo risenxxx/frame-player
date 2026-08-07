@@ -764,14 +764,9 @@ pub async fn dlna_load(
     title: Option<String>,
     hidden: bool,
 ) -> Result<(), String> {
-    let (control, ip, state) = {
+    let ip = {
         let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
-        let session = inner.session.as_ref().ok_or("not connected")?;
-        (
-            session.device.control_url.clone(),
-            session.device.ip.clone(),
-            session.state.clone(),
-        )
+        inner.session.as_ref().ok_or("not connected")?.device.ip.clone()
     };
     let file = std::path::PathBuf::from(&path);
     if !file.is_file() {
@@ -782,6 +777,40 @@ pub async fn dlna_load(
     let mime = crate::cast::cast_mime_for(&file);
     let size = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
     let duration = media_duration(&file);
+    load_url(&service, url, mime.to_string(), size, duration, position, title).await
+}
+
+/// The same load for a URL somebody else registered — the torrent stream, where
+/// there is no file to open and the size and duration come from the torrent and
+/// from mpv instead of from a container header.
+#[tauri::command]
+pub async fn dlna_load_url(
+    service: tauri::State<'_, Arc<DlnaService>>,
+    url: String,
+    mime: String,
+    size: u64,
+    duration: f64,
+    position: f64,
+    title: Option<String>,
+) -> Result<(), String> {
+    let duration = (duration > 0.0).then_some(duration);
+    load_url(&service, url, mime, size, duration, position, title).await
+}
+
+async fn load_url(
+    service: &Arc<DlnaService>,
+    url: String,
+    mime: String,
+    size: u64,
+    duration: Option<f64>,
+    position: f64,
+    title: Option<String>,
+) -> Result<(), String> {
+    let (control, state) = {
+        let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let session = inner.session.as_ref().ok_or("not connected")?;
+        (session.device.control_url.clone(), session.state.clone())
+    };
     set_state(&state, |s| {
         s.state = "loading".into();
         s.error = None;
@@ -803,7 +832,7 @@ pub async fn dlna_load(
     let name = title.unwrap_or_else(|| "Frame Player".into());
     let args = format!(
         "<CurrentURI>{url}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>",
-        didl(&url, mime, &name, size, duration)
+        didl(&url, &mime, &name, size, duration)
     );
     if let Err(e) = soap(&client, &control, AVTRANSPORT, "SetAVTransportURI", &args).await {
         eprintln!("[dlna] {e}");
@@ -961,7 +990,14 @@ pub async fn dlna_control(
 /// Stop the renderer and tear the session down; returns the last position, so
 /// the handback to mpv lands where the television was.
 #[tauri::command]
-pub async fn dlna_disconnect(service: tauri::State<'_, Arc<DlnaService>>) -> Result<f64, String> {
+pub async fn dlna_disconnect(
+    service: tauri::State<'_, Arc<DlnaService>>,
+    cast_service: tauri::State<'_, Arc<crate::cast::CastService>>,
+) -> Result<f64, String> {
+    // The LAN server is shared with the Cast transport and was left running
+    // when a DLNA session ended — the token outliving its session is the one
+    // thing this server promises not to do.
+    crate::cast::release_server(&cast_service);
     let session = {
         let mut inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
         inner.session.take()
@@ -1048,7 +1084,7 @@ pub async fn selftest(app: &tauri::AppHandle, target: Option<String>, path: Stri
             s.state, s.time, s.duration, s.volume, s.volume_known, s.fetches
         );
     }
-    match dlna_disconnect(service.clone()).await {
+    match dlna_disconnect(service.clone(), cast_service.clone()).await {
         Ok(last) => eprintln!("[dlna] disconnected at {last:.1}s"),
         Err(e) => eprintln!("[dlna] disconnect failed: {e}"),
     }

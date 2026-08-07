@@ -2127,7 +2127,7 @@
   let castCacheBytes = $state<number | null>(null);
   const CAST_CAP_CHOICES = [0, 5, 20, 50];
 
-  function setCastModeHere(mode: 'prepare' | 'hls') {
+  function setCastModeHere(mode: 'auto' | 'prepare' | 'hls') {
     castModeVal = mode;
     setCastMode(mode);
   }
@@ -6408,32 +6408,34 @@
             <button class="btn-danger" onclick={clearTorrentCache}>{t('torrent.cache_clear')}</button>
           </div>
         {:else if settingsTab === 'tv'}
-          <!-- The mode is the transport, and the hint switches with the pill:
-               each value explains its own consequences in one breath, because
-               "prepare vs HLS" means nothing to a viewer until it is said in
-               terms of start-up wait, seeking, sound and disk. -->
+          <!-- The hint switches with the pill: each value explains its own
+               consequences in one breath, because "prepare vs HLS" means
+               nothing to a viewer until it is said in terms of start-up wait,
+               seeking, sound and disk. `auto` leads and is the default — the
+               two-value version made the viewer choose a transport without
+               knowing the file, which is a decision the player is better placed
+               to make; the named values are the override. -->
           <div class="setting">
             <div class="setting-label">{t('cast.set_mode')}</div>
             <div class="segmented">
-              <button
-                class="segopt"
-                class:sel={castModeVal === 'prepare'}
-                onclick={() => setCastModeHere('prepare')}
-              >
-                {t('cast.mode_prepare')}
-              </button>
-              <button
-                class="segopt"
-                class:sel={castModeVal === 'hls'}
-                onclick={() => setCastModeHere('hls')}
-              >
-                {t('cast.mode_hls')}
-              </button>
+              {#each [['auto', t('cast.mode_auto')], ['prepare', t('cast.mode_prepare')], ['hls', t('cast.mode_hls')]] as [value, label] (value)}
+                <button
+                  class="segopt"
+                  class:sel={castModeVal === value}
+                  onclick={() => setCastModeHere(value as 'auto' | 'prepare' | 'hls')}
+                >
+                  {label}
+                </button>
+              {/each}
             </div>
             <div class="setting-hint">
-              {castModeVal === 'hls' ? t('cast.mode_hls_hint') : t('cast.mode_prepare_hint')}
+              {castModeVal === 'hls'
+                ? t('cast.mode_hls_hint')
+                : castModeVal === 'prepare'
+                  ? t('cast.mode_prepare_hint')
+                  : t('cast.mode_auto_hint')}
             </div>
-            <div class="setting-hint">{t('cast.mode_torrent_note')}</div>
+            <div class="setting-hint">{t('cast.mode_scope_note')}</div>
           </div>
           <div class="setting">
             <div class="setting-label">{t('cast.set_cache')}</div>

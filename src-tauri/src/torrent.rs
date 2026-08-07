@@ -1011,7 +1011,29 @@ impl TorrentService {
             return simple(StatusCode::NOT_FOUND);
         };
         let name = parts.next().unwrap_or("").to_string();
+        let range = req
+            .headers()
+            .get(header::RANGE)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.to_string());
+        self.serve_file(hash, index, &name, range, req.method() == Method::HEAD)
+            .await
+    }
 
+    /// Serve one file of one torrent, Range and all. Split out of the route so
+    /// the **cast** server can call it: a television cannot fetch from the
+    /// loopback address this listener binds, and exposing this one to the LAN
+    /// would put every torrent in the session on the network under a guessable
+    /// path. So the cast side keeps its single-registered-source-behind-a-token
+    /// rule and streams through here.
+    pub(crate) async fn serve_file(
+        self: &Arc<Self>,
+        hash: &str,
+        index: usize,
+        name: &str,
+        range: Option<String>,
+        head_only: bool,
+    ) -> Response<Body> {
         // The request itself is what selects the file: see the module header.
         //
         // The reason is logged rather than swallowed. This used to answer a bare
@@ -1043,13 +1065,17 @@ impl TorrentService {
             // Without this ffmpeg treats the source as unseekable and the
             // seekbar becomes a progress bar.
             .header(header::ACCEPT_RANGES, "bytes")
-            .header(header::CONTENT_TYPE, mime_for(&name));
+            .header(header::CONTENT_TYPE, mime_for(name))
+            // A DLNA renderer reads these before it will seek; harmless to
+            // everyone else (see cast.rs, where the same pair is set).
+            .header("transferMode.dlna.org", "Streaming")
+            .header(
+                "contentFeatures.dlna.org",
+                "DLNA.ORG_OP=01;DLNA.ORG_CI=0;\
+                 DLNA.ORG_FLAGS=01700000000000000000000000000000",
+            );
 
-        let range = req
-            .headers()
-            .get(header::RANGE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| parse_range(v, total));
+        let range = range.as_deref().and_then(|v| parse_range(v, total));
 
         let (status, start, len) = match range {
             Some(Some((start, end_inclusive))) => {
@@ -1077,7 +1103,7 @@ impl TorrentService {
 
         let res = res.status(status).header(header::CONTENT_LENGTH, len);
 
-        if req.method() == Method::HEAD {
+        if head_only {
             return res.body(empty()).unwrap();
         }
 

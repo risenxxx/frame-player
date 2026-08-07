@@ -253,6 +253,11 @@ const ru = {
   'cast.err_format': 'Телевизор не воспроизведёт этот файл ({what})',
   'cast.volume_fixed': 'Громкость регулируется на самом телевизоре',
   'cast.torrent_incomplete': 'Торрент ещё не докачан — трансляция появится, когда файл будет скачан целиком',
+  'cast.stream_buffering': 'Готовим запас для телевизора… {percent}%',
+  'cast.stream_needs_dlna':
+    'Недокачанную раздачу этот телевизор может взять только по DLNA, а он им не отвечает. Дождитесь загрузки файла целиком.',
+  'cast.stream_format':
+    'Телевизор не заявляет формат {what} — недокачанную раздачу перепаковать нельзя, так что придётся дождаться загрузки.',
   'set.tab_tv': 'ТВ',
   // The picker's second line: what clicking this row will mean, in the terms a
   // viewer decides on — waiting, sound, whether it plays at all.
@@ -262,6 +267,12 @@ const ru = {
   'cast.sum_refuse': 'Не сможет открыть этот файл',
   'cast.sum_dlna_unlisted': 'Этот формат телевизор не заявляет',
   'cast.sum_audio_only': 'Только звук',
+  'cast.sum_stream': 'Поток с раздачи · как есть',
+  // Not «дождитесь загрузки»: the reason is not that too little has arrived —
+  // half the film may be on disk — but that this device needs the whole file,
+  // because a torrent still downloading cannot be repacked for it.
+  'cast.sum_stream_wait': 'Ещё качается: нужен файл целиком',
+  'cast.sum_checking': 'Проверяем способы подключения…',
   'cast.transport': 'Способ передачи',
   'cast.transport_auto': 'Авто',
   'cast.transport_dlna': 'DLNA',
@@ -276,14 +287,17 @@ const ru = {
   'cast.transport_unavailable': 'Выбранный способ сейчас недоступен — работает автоматический.',
   'cast.track_on_tv': 'Дорожку выбирает сам телевизор',
   'cast.set_mode': 'Режим трансляции',
+  'cast.mode_auto': 'Авто',
   'cast.mode_prepare': 'Подготовка',
   'cast.mode_hls': 'HLS-поток',
+  'cast.mode_auto_hint':
+    'Плеер выбирает сам. Сейчас это всегда подготовка: она сохраняет объёмный звук и 4K HDR, а поток — нет. Поток пригодится, когда появится просмотр недокачанных раздач: подготовить то, чего ещё нет на диске, нельзя.',
   'cast.mode_prepare_hint':
     'Файл заранее перепаковывается в совместимый MP4: несколько секунд перед стартом (повторный запуск — мгновенно из кэша), точная перемотка, надёжные объёмный звук и 4K HDR.',
   'cast.mode_hls_hint':
     'Видео нарезается на сегменты и отдаётся потоком; на диске ничего не остаётся после сеанса. Звук всегда переводится в стерео — объёмный по этому пути телевизоры не принимают. Файлы HEVC транслируются подготовкой в любом случае: HLS их не поддерживает.',
-  'cast.mode_torrent_note':
-    'Полностью скачанные торренты используют выбранный режим; недокачанные будут транслироваться потоком, когда появится их поддержка.',
+  'cast.mode_scope_note':
+    'Относится к трансляции через Chromecast. Если телевизор доступен ещё и по DLNA, способ передачи выбирается для него отдельно — в списке устройств, кнопкой настроек рядом с названием.',
   'cast.set_cache': 'Кэш подготовленных файлов',
   'cast.cache_none': 'Не хранить',
   'cast.cap_gb': '{n} ГБ',
@@ -792,6 +806,11 @@ const en: Record<MessageKey, string> = {
   'cast.err_format': 'The TV cannot play this file ({what})',
   'cast.volume_fixed': 'Volume is controlled on the TV itself',
   'cast.torrent_incomplete': 'The torrent is not fully downloaded yet — casting will be available once the file is complete',
+  'cast.stream_buffering': 'Building a lead for the TV… {percent}%',
+  'cast.stream_needs_dlna':
+    'A torrent still downloading can only reach this TV over DLNA, and it is not answering there. Wait for the file to finish.',
+  'cast.stream_format':
+    'The TV does not list the {what} format, and a torrent still downloading cannot be repacked — wait for it to finish.',
   'set.tab_tv': 'TV',
   'cast.sum_direct': 'Plays as it is',
   'cast.sum_prepare': 'Prepared before it starts',
@@ -799,6 +818,9 @@ const en: Record<MessageKey, string> = {
   'cast.sum_refuse': 'Cannot open this file',
   'cast.sum_dlna_unlisted': 'The TV does not list this format',
   'cast.sum_audio_only': 'Audio only',
+  'cast.sum_stream': 'Streamed from the torrent · as it is',
+  'cast.sum_stream_wait': 'Still downloading: needs the whole file',
+  'cast.sum_checking': 'Checking how this device can be reached…',
   'cast.transport': 'Transport',
   'cast.transport_auto': 'Auto',
   'cast.transport_dlna': 'DLNA',
@@ -813,14 +835,17 @@ const en: Record<MessageKey, string> = {
   'cast.transport_unavailable': 'The chosen transport is unavailable right now — using automatic.',
   'cast.track_on_tv': 'The TV picks the track itself',
   'cast.set_mode': 'Casting mode',
+  'cast.mode_auto': 'Auto',
   'cast.mode_prepare': 'Prepare',
   'cast.mode_hls': 'HLS stream',
+  'cast.mode_auto_hint':
+    'The player decides. Today that is always Prepare: it keeps surround sound and 4K HDR, and streaming does not. Streaming will earn its place once partially downloaded torrents can be watched — there is nothing on disk to prepare.',
   'cast.mode_prepare_hint':
     'The file is repacked into a compatible MP4 up front: a few seconds before the start (instant on a re-cast — the copy is cached), precise seeking, reliable surround sound and 4K HDR.',
   'cast.mode_hls_hint':
     'The video is cut into segments and streamed; nothing stays on disk after the session. Audio is always converted to stereo — TVs do not take surround over this path. HEVC files are cast by preparing them regardless: HLS cannot carry them.',
-  'cast.mode_torrent_note':
-    'Fully downloaded torrents use the selected mode; partially downloaded ones will stream once that support arrives.',
+  'cast.mode_scope_note':
+    'Applies to casting over Chromecast. If the TV is also reachable over DLNA, its transport is chosen separately — in the device list, with the settings button next to its name.',
   'cast.set_cache': 'Prepared file cache',
   'cast.cache_none': 'Keep nothing',
   'cast.cap_gb': '{n} GB',
