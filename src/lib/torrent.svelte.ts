@@ -539,7 +539,13 @@ export function torrentResume(
   row: TorrentOnDisk,
 ): { name: string; pos: number; dur: number; index: number } | null {
   if (!row.info_hash) return null;
-  const prefix = `torrent:${row.info_hash}/`;
+  // Lower-cased, like the two other walks over this store and like
+  // `torrentIsPlaying`: a folder from the older layout may be upper-case hex and
+  // `torrent_list` reports it as it found it. This one was the odd one out —
+  // comparing an upper-case prefix against a lower-cased id matches nothing, so
+  // such a torrent's row silently lost its "continue watching" line and opened
+  // the file picker instead of resuming.
+  const prefix = `torrent:${row.info_hash.toLowerCase()}/`;
   let best: { name: string; pos: number; dur: number; index: number; ts: number } | null = null;
   for (const [id, rec] of Object.entries(positionsLoad())) {
     if (!id.toLowerCase().startsWith(prefix)) continue;

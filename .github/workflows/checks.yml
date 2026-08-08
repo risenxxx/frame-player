@@ -1,0 +1,41 @@
+# The frontend gates, on every push and pull request.
+#
+# Until now the only workflow was `release.yml`, which is gated on a version bump
+# — so nothing checked an ordinary commit, and the four gates only ran when
+# somebody remembered to run them. Each of them exists because it catches a class
+# of mistake the compiler does not (see the notes at the top of each script), and
+# a gate nobody runs is a comment.
+#
+# Node only, and deliberately so: the Rust half needs libmpv and the FFmpeg SDK,
+# which `release.yml` either downloads (Windows) or builds from source (macOS,
+# ~an hour cold) — that is a separate job with its own caches, not something to
+# bolt on here. `cargo check` and `clippy` are therefore NOT covered by this
+# workflow; run them locally per the note in CLAUDE.md.
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # svelte-check, then the three things it cannot see: a `$effect` at a
+      # module's top level (throws on import, builds clean), an import cycle, and
+      # a CSS rule whose markup went to another component. Then the unit tests.
+      - name: Gates
+        run: npm run gates

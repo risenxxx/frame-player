@@ -698,10 +698,18 @@ export async function clearHistory() {
 /// the excluded folders, extracted because purging needs it against one folder
 /// rather than against the whole list. Mirrored in Rust (`path_under`).
 function pathUnder(path: string, root: string): boolean {
-  const r = root.replace(/[/\\]+$/, '').toLowerCase();
+  // Separators are normalised on **both** sides, not merely accepted on the
+  // path's. The two strings come from different places — a folder picked in the
+  // OS dialog, against whatever mpv reports as `path` — and on Windows they
+  // disagree about the direction of the slash: `samePath` in playlist.svelte.ts
+  // normalises for exactly this reason, where the cost of missing is a queue
+  // that silently does not build. Here the cost is a privacy root that does not
+  // match, which is a leak, so it is the one place that must not be laxer.
+  const norm = (s: string) => s.toLowerCase().replace(/\\/g, '/');
+  const r = norm(root).replace(/\/+$/, '');
   if (r === '') return false;
-  const p = path.toLowerCase();
-  return p === r || p.startsWith(`${r}/`) || p.startsWith(`${r}\\`);
+  const p = norm(path);
+  return p === r || p.startsWith(`${r}/`);
 }
 
 /**

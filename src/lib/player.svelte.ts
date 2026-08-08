@@ -1207,7 +1207,13 @@ export type SkipKind = 'intro' | 'recap' | 'preview' | 'credits' | 'ad';
  * ("01. Intro") and trailing punctuation ("Previously on…").
  */
 const SKIP_ALTERNATIVES: ReadonlyArray<readonly [SkipKind, string]> = [
-  // Ordered: "opening credits" is an intro, not credits, so intro is tried first.
+  // Ordered intro-first, which **is no longer load-bearing** and is kept as
+  // defence rather than as a rule. It mattered while the patterns were
+  // substring searches: "Opening Credits" matched both. Anchoring them to the
+  // whole title made the alternatives disjoint — verified by enumerating every
+  // title they match from a corpus of their own literals and diffing the
+  // verdicts under both orders, which are identical. Re-order freely; but if a
+  // pattern ever loses its anchors, this is what stops the pair colliding.
   [
     'intro',
     String.raw`intro(?:duction)?|opening(?:\s+(?:credits|titles?|sequence|theme|song))?|op\s*\d*|main\s+titles?|title\s+sequence|заставка|опенинг|вступление|(?:вступительные|начальные)\s+титры`,

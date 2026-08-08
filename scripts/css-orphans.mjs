@@ -28,9 +28,10 @@
 // its rule in `ContextMenu.svelte` while the delay stepper had become
 // `TrackMenu.svelte`, so its −/+ rendered as native macOS push buttons; the
 // same sweep then found `.link-actions`, `.cast-hint`, `.queue-row` and
-// `.queue-remove` in the same state. `css-diff` cannot see any of it, because
-// it normalises the scope hash away on purpose — to that comparison
-// `.speedopt.svelte-a` and `.speedopt.svelte-b` are one rule.
+// `.queue-remove` in the same state. A build-output diff cannot see any of it
+// either: normalising the scope hash away is exactly what makes such a
+// comparison readable, and to it `.speedopt.svelte-a` and `.speedopt.svelte-b`
+// are one rule.
 //
 //   node scripts/css-orphans.mjs
 //

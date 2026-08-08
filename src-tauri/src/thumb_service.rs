@@ -438,12 +438,22 @@ pub fn is_private(path: &str) -> bool {
 /// Windows file systems are so by default. Mirrored in JS (`isPrivatePath`);
 /// change one, change the other.
 fn path_under(path: &str, root: &str) -> bool {
-    let root = root.trim_end_matches(['/', '\\']).to_lowercase();
+    // Separators normalised on **both** sides, matching the JS twin
+    // (`pathUnder` in history.svelte.ts). The two strings come from different
+    // places — a folder picked in the OS dialog against whatever mpv reports as
+    // `path` — and on Windows they disagree about the slash direction. Accepting
+    // either only on the *path* side, which is what this did, leaves a root
+    // spelled `E:\Films` failing to match `E:/Films/a.mkv`: a privacy root that
+    // does not match is a leak, so this is the one comparison that must not be
+    // laxer than the queue's `samePath`, which has normalised all along.
+    let norm = |s: &str| s.to_lowercase().replace('\\', "/");
+    let root = norm(root);
+    let root = root.trim_end_matches('/');
     if root.is_empty() {
         return false;
     }
-    let p = path.to_lowercase();
-    p == root || p.starts_with(&format!("{root}/")) || p.starts_with(&format!("{root}\\"))
+    let p = norm(path);
+    p == root || p.starts_with(&format!("{root}/"))
 }
 
 /// Delete every cached storyboard for files inside a folder.
@@ -874,6 +884,34 @@ pub fn thumb_start(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The privacy predicate, and the only test here that needs no fixture.
+    ///
+    /// It is mirrored in JS (`pathUnder` in history.svelte.ts) and the two must
+    /// agree: this is the copy that decides whether a thumbnail lands on disk
+    /// for a file inside an excluded folder, so a disagreement is a leak with
+    /// nothing on screen to show for it. The JS side has the same cases.
+    #[test]
+    fn path_under_matches_on_a_component_boundary() {
+        assert!(path_under("/Movies/a.mkv", "/Movies"));
+        assert!(path_under("/Movies", "/Movies"));
+        // A prefix is not a parent: /Movies2 is a different folder.
+        assert!(!path_under("/Movies2/a.mkv", "/Movies"));
+        assert!(!path_under("/MoviesArchive/a.mkv", "/Movies"));
+
+        // Case, and the slash direction, on either side: the root comes from an
+        // OS folder picker and the path from mpv, and on Windows they disagree.
+        assert!(path_under("e:\\films\\a.mkv", "E:\\Films"));
+        assert!(path_under("E:/Films/a.mkv", "E:\\Films"));
+        assert!(path_under("E:\\Films\\a.mkv", "E:/Films"));
+        assert!(!path_under("E:\\Films2\\a.mkv", "E:\\Films"));
+
+        // A trailing separator on the root is noise; an empty root matches
+        // nothing, because "history off" is a separate flag and not a `/` root.
+        assert!(path_under("/Movies/a.mkv", "/Movies/"));
+        assert!(!path_under("/Movies/a.mkv", "/"));
+        assert!(!path_under("/Movies/a.mkv", ""));
+    }
 
     /// FP_TEST_VIDEO=<path> cargo test container_title_smoke -- --nocapture
     ///
