@@ -52,6 +52,18 @@ const DECODE_THREADS: usize = 3;
 /// minutes.
 const YIELD_RATIO: u32 = 3;
 const MAX_YIELD_MS: u64 = 120;
+/// The same duty cycle on battery, where the trade is the other way round: the
+/// storyboard rests *twice* as long as it works, so a pass costs roughly a
+/// third of a core instead of two and takes about three times as long.
+///
+/// Both halves are needed. Measured on a 4K HEVC file, an expensive cell takes
+/// ~1.3 s, so on mains the 120 ms ceiling — not the 1:3 ratio — is what
+/// actually decides the rate: 1.3 s of work against 120 ms of rest is a ~90 %
+/// duty cycle, which is the 164–208 % of processor a fresh 4K file spends for
+/// its first ~40 seconds. Raising the ratio without raising the ceiling would
+/// change nothing at all on exactly the files where this matters.
+const BATTERY_YIELD_MULT: u32 = 2;
+const BATTERY_MAX_YIELD_MS: u64 = 2000;
 /// Past this distance, decoding forward is certainly costlier than a new seek.
 const MAX_CONTINUE_SECS: f64 = 6.0;
 /// The same, for the exact hover preview. Much tighter than MAX_CONTINUE_SECS:
@@ -288,21 +300,6 @@ impl ThumbSession {
         }
         let jpeg = self.encode_current()?;
         Ok((self.cur_pts.unwrap_or(0.0), jpeg))
-    }
-
-    /// Scales `self.frame` down to thumbnail size and encodes it as JPEG.
-    /// How much of a *picture* the current frame is, 0 upwards.
-    ///
-    /// The poster today is whatever frame sits at the requested second, black
-    /// frames and fades included — position is the only criterion. This is the
-    /// content one: mean absolute deviation of luma, which is high for a lit
-    /// scene with detail and near zero for a black frame, a white flash or a
-    /// flat title card. Deliberately crude and computed on the already-scaled
-    /// 320px RGB rather than the source frame: it only has to rank a handful of
-    /// candidates against each other, and ffmpeg's own `thumbnail` filter picks
-    /// by much the same idea (distance from the average histogram).
-    fn score_current(&mut self) -> Result<f64, String> {
-        Ok(rgb_score(&self.scaled_rgb()?))
     }
 
     /// The current frame, scaled to the thumbnail size and packed tight (the
@@ -864,12 +861,20 @@ pub fn thumb_start(
             // expensive ones (refining a whole 4K GOP) it is tens of
             // milliseconds during which the machine belongs to the player. The
             // mutex is released meanwhile, so hover requests skip the queue.
-            let spent = started.elapsed() / YIELD_RATIO;
-            std::thread::sleep(
-                spent
-                    .max(std::time::Duration::from_millis(5))
-                    .min(std::time::Duration::from_millis(MAX_YIELD_MS)),
-            );
+            //
+            // On battery the same arithmetic runs with the other pair of
+            // numbers, asked per cell so that unplugging is noticed within a
+            // few of them. Only the *background* pass changes: a hover request
+            // is somebody waiting, and it decodes at full speed on either
+            // supply.
+            let spent = started.elapsed();
+            let rest = if crate::power::on_battery() {
+                (spent * BATTERY_YIELD_MULT)
+                    .min(std::time::Duration::from_millis(BATTERY_MAX_YIELD_MS))
+            } else {
+                (spent / YIELD_RATIO).min(std::time::Duration::from_millis(MAX_YIELD_MS))
+            };
+            std::thread::sleep(rest.max(std::time::Duration::from_millis(5)));
         }
         let mut inner = lock(&inner_arc);
         if inner.path == path && inner.dirty {
@@ -969,7 +974,7 @@ mod tests {
                 .collect();
             let mean = luma.iter().sum::<f64>() / luma.len() as f64;
             let spread = luma.iter().map(|v| (v - mean).abs()).sum::<f64>() / luma.len() as f64;
-            let score = s.score_current().expect("score");
+            let score = rgb_score(&rgb);
             let jpeg = s.encode_current().expect("encode");
             let out = std::env::temp_dir().join(format!("poster-{pos}.jpg"));
             std::fs::write(&out, &jpeg).ok();
@@ -1222,7 +1227,16 @@ fn rgb_stats(rgb: &[u8]) -> (f64, f64) {
     (mean, spread)
 }
 
-/// The scoring maths, on a packed RGB buffer — see `score_current`.
+/// How much of a *picture* a frame is, 0 upwards, on a packed RGB buffer.
+///
+/// The on-demand poster is whatever frame sits at the requested second, black
+/// frames and fades included — position is the only criterion there. This is
+/// the content one: mean absolute deviation of luma, which is high for a lit
+/// scene with detail and near zero for a black frame, a white flash or a flat
+/// title card. Deliberately crude, and computed on the already-scaled 320px RGB
+/// rather than the source frame: it only has to rank a handful of candidates
+/// against each other, and ffmpeg's own `thumbnail` filter picks by much the
+/// same idea (distance from the average histogram).
 fn rgb_score(rgb: &[u8]) -> f64 {
     let (mean, spread) = rgb_stats(rgb);
     // A frame can be busy and still be a bad poster: an almost-black scene with

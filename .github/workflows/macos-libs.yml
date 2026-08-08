@@ -28,7 +28,7 @@ on:
     paths:
       - 'scripts/build-macos-libs.sh'
       - 'scripts/bundle-macos-libs.sh'
-      - 'scripts/check-macos-licenses.sh'
+      - 'scripts/macos-libs-key.sh'
       - 'patches/mpv-*.patch'
       - '.github/workflows/macos-libs.yml'
 
@@ -49,13 +49,11 @@ jobs:
         id: key
         run: |
           set -euo pipefail
-          key=$(cat scripts/build-macos-libs.sh \
-                    scripts/bundle-macos-libs.sh \
-                    scripts/check-macos-licenses.sh \
-                    patches/mpv-*.patch \
-                | shasum -a 256 | cut -c1-12)
-          name="macos-$(uname -m)-$key"
-          echo "key=$key"   >> "$GITHUB_OUTPUT"
+          # The shared script, never a second copy of the formula: the fetch side
+          # computes the same name, and two implementations would agree until one
+          # was edited — after which a freshly published set 404s and reads as a
+          # broken bucket rather than a broken hash.
+          name="$(scripts/macos-libs-key.sh)"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "### \`$name\`" >> "$GITHUB_STEP_SUMMARY"
 

@@ -34,7 +34,7 @@ wrong window.
 `patches/mpv-<version>-macos-wid-embedding.patch` adds the macOS case, reusing
 the `NSView` mpv already renders into — it just installs it somewhere else
 instead of into a window of its own. Four files, roughly +160/−15, built by
-`scripts/build-libmpv-macos.sh`.
+`scripts/build-macos-libs.sh`.
 
 | File | Change |
 |---|---|

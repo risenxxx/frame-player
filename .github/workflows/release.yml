@@ -103,23 +103,21 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1
 
       # --- macOS native libs ---------------------------------------------------
-      # Builds the patched libmpv (--wid embedding, see FINDINGS-macos.md), then
-      # moves the whole transitive closure into src-tauri/lib with @rpath paths.
-      # Those directories are self-contained, so a cache hit needs no Homebrew at
-      # all — the meson build of mpv only runs when the patch or scripts changed.
-      - name: Cache native libs (macOS)
+      # Downloaded, not built. The set is produced once by the `macOS libs`
+      # workflow and published to R2; this reads it, verifies its checksum and
+      # re-checks its licenses. Twenty-odd megabytes against a twenty-minute
+      # source build of FFmpeg and mpv.
+      #
+      # It replaces an `actions/cache` around that build, which looked equivalent
+      # and was not: GitHub evicts a cache after seven days without a hit, so any
+      # gap between releases longer than a week paid the whole compile again — on
+      # the critical path, every time. Windows has fetched prebuilt libraries
+      # from the start; this is the macOS half of that.
+      - name: Fetch native libs (macOS)
         if: runner.os == 'macOS'
-        id: mac-lib-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            src-tauri/lib
-            src-tauri/ffmpeg-macos
-          key: mac-libs-${{ matrix.platform }}-${{ hashFiles('patches/mpv-*.patch', 'scripts/build-libmpv-macos.sh', 'scripts/bundle-macos-libs.sh') }}
-
-      - name: Build patched libmpv (macOS)
-        if: runner.os == 'macOS' && steps.mac-lib-cache.outputs.cache-hit != 'true'
-        run: scripts/build-libmpv-macos.sh
+        env:
+          FP_LIBS_URL: ${{ vars.R2_PUBLIC_URL_LIBS }}
+        run: scripts/fetch-macos-libs.sh
 
       - name: Install dependencies
         run: npm ci

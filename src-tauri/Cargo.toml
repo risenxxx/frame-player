@@ -118,6 +118,7 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_Devices_Display",
     "Win32_Graphics_Gdi",
     "Win32_Foundation",
+    "Win32_System_Power",
 ] }
 
 # Two librqbit crates, vendored with one small fix each — see vendor/README.md.

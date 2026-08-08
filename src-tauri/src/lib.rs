@@ -10,6 +10,7 @@ mod macos_menu;
 mod cast;
 mod dlna;
 mod opensubtitles;
+mod power;
 mod screenshot;
 mod step_engine;
 mod thumb_service;

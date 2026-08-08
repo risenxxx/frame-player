@@ -300,21 +300,30 @@ npm run tauri build  # NSIS installer
 
 macOS needs a **patched libmpv**: mpv's macOS backend does not implement `--wid`
 at all, so stock libmpv opens a window of its own instead of rendering into
-ours. The patch is in [patches/](patches/) (+162/−14 across four files) and is
-applied by the build script. Requires Xcode Command Line Tools and Homebrew.
+ours. The patch is in [patches/](patches/) (+162/−14 across four files).
+
+The libraries are prebuilt and fetched, the same way Windows fetches its SDKs —
+no Homebrew and no compiler needed to build the app itself:
 
 ```bash
 npm install
-scripts/build-libmpv-macos.sh   # patch + build libmpv, fetch the wrapper
-scripts/bundle-macos-libs.sh    # flatten the dylib closure into src-tauri/lib, rewrite paths to @rpath
+scripts/fetch-macos-libs.sh     # libmpv (patched, LGPL) + FFmpeg + the dylib closure
 npm run tauri:macos             # development run
 npm run tauri:macos:build       # .app bundle
 npm run tauri:macos:dmg         # disk image
 ```
 
-Note that `build-libmpv-macos.sh` links against Homebrew's ffmpeg, which is a
-GPL build. A redistributable player needs an LGPL ffmpeg and `-Dgpl=false`,
-mirroring the Windows side.
+To rebuild that set — when changing the patch or a pinned version — run
+`scripts/build-macos-libs.sh` (Xcode Command Line Tools and Homebrew required;
+it compiles FFmpeg and mpv, twenty minutes or so) and publish it through the
+**macOS libs** workflow, which re-checks the licenses before uploading.
+
+FFmpeg is built here rather than taken from Homebrew because Homebrew's is a
+GPL-3 build: it enables the GPL parts and links x264 and x265, and mpv built
+against it is GPL too. The player needs none of that — it never encodes video
+(`-c:v copy` everywhere; only audio is transcoded, to AAC or E-AC-3, both
+native) — so `--disable-gpl` plus `-Dgpl=false` costs no functionality and keeps
+the distributed application LGPL, matching Windows.
 
 ### Tests
 
@@ -372,12 +381,23 @@ updater signature is a separate thing and is always verified.
 
 The application is [MIT](LICENSE) licensed.
 
-Distributed builds link against **libmpv** and **FFmpeg**, which are used under
-the **LGPL v2.1+** — they are dynamically linked and shipped unmodified as
-separate libraries, except on macOS, where libmpv carries the embedding patch in
-[patches/](patches/) and its source is therefore published here alongside it.
-The bundle also includes libass, libplacebo, MoltenVK, LuaJIT and others, each
-under its own license. Torrent streaming uses
+Distributed builds link against **libmpv** and **FFmpeg** under the **LGPL
+v2.1+**, on both platforms. They are separate dynamic libraries, so the right the
+LGPL reserves for you — to replace one with your own build and keep the player
+working — is a matter of swapping a file in `Contents/Resources/lib` (macOS) or
+beside the executable (Windows).
+
+Their sources: FFmpeg and mpv upstream at the versions pinned in
+[scripts/build-macos-libs.sh](scripts/build-macos-libs.sh) and
+[scripts/fetch-libs.ps1](scripts/fetch-libs.ps1), plus the one modification this
+project makes — the macOS `--wid` embedding patch in [patches/](patches/), which
+is why libmpv is built here rather than taken as a binary. Neither build enables
+the GPL parts: no x264, no x265, no librubberband, and `-Dgpl=false` for mpv.
+[scripts/check-macos-licenses.sh](scripts/check-macos-licenses.sh) is what
+enforces that, and it runs before anything is published.
+
+The bundle also includes libass, libplacebo, MoltenVK, LuaJIT, dav1d and others,
+each under its own license. Torrent streaming uses
 [librqbit](https://github.com/ikatson/rqbit) (Apache-2.0).
 
 Frame Player is not affiliated with the mpv, FFmpeg or OpenSubtitles projects.

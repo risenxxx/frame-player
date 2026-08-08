@@ -131,6 +131,18 @@ that exposed it was casting a torrent that was still downloading: the file
 completes mid-session, and the completion handler dutifully starts a 4K
 storyboard behind a paused player.
 
+The fifth is about *what it is being spent* — on battery the pass rests twice as
+long as it works instead of a third as long, which measured on a 4K HEVC file
+turns 164–208 % of processor for forty seconds into 64–105 % for sixty. Only the
+background pass is throttled; a hover is somebody waiting and decodes at full
+speed either way. Worth knowing before tuning any of this: on an expensive file
+the *ceiling* on a single rest, not the ratio, is what decides the rate — a cell
+costing over a second against a 120 ms cap is a ninety per cent duty cycle, so
+changing the ratio alone would have changed nothing on exactly the files where
+it matters. The power source is read per cell behind a short cache, and a
+machine that cannot answer counts as plugged in: degrading the player on a
+machine that merely failed to report is the worse way to be wrong.
+
 **Frame stepping** — a sidecar decoder that pre-warms a GOP ring on pause, so
 the first step is instant. Currently disabled behind a flag: mpv's own stepping
 turned out to be good enough, and the sidecar's canvas path could not reproduce

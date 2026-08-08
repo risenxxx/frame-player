@@ -20,8 +20,10 @@
 #     been the built-in `scaletempo2` since mpv 0.36, and nothing in this
 #     project asks for rubberband.
 #
-# Output is byte-identical in shape to `build-libmpv-macos.sh`, so the rest of
-# the build does not care which produced it.
+# It replaces `build-libmpv-macos.sh`, which built against Homebrew's GPL
+# ffmpeg. That script is deleted rather than kept beside this one: two build
+# scripts differing only in the license of what they produce is an invitation to
+# run the wrong one, and the result would look and work identically.
 #
 # Requires: Xcode Command Line Tools, Homebrew, nasm (for FFmpeg's asm).
 set -euo pipefail

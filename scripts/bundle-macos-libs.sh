@@ -12,7 +12,7 @@
 # Important: this runs BEFORE `tauri build`. Editing Mach-O headers after the
 # bundle is built would break its signature and force a separate .dmg rebuild.
 #
-# Run: scripts/bundle-macos-libs.sh   (after scripts/build-libmpv-macos.sh)
+# Run: scripts/bundle-macos-libs.sh   (after scripts/build-macos-libs.sh)
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,7 +31,7 @@ ffmpeg_libs="avutil avcodec avformat avdevice avfilter swscale swresample"
 
 for req in libmpv.dylib libmpv-wrapper.dylib; do
   if [ ! -f "$lib_dir/$req" ]; then
-    echo "missing $lib_dir/$req — run scripts/build-libmpv-macos.sh first" >&2
+    echo "missing $lib_dir/$req — run scripts/build-macos-libs.sh first" >&2
     exit 1
   fi
 done
