@@ -597,17 +597,31 @@ export async function loadRecent() {
   }
   const usable = pool.filter((r) => isNetworkSource(r.path) || alive.has(r.path));
   history.recent = usable.slice(0, RECENT_LIMIT);
+  // **The returned promise ends here, with the list published and no picture in
+  // it yet.** That is what lets the caller at launch await this before showing
+  // the window: the existence check is one batched `stat`, so the rail is on
+  // screen at its final size from the first frame instead of appearing a beat
+  // later and pushing everything below it down. Awaiting the posters instead
+  // would mean holding the window for a dozen keyframe decodes.
+  void loadPosters(seq);
+}
 
-  // Posters load one at a time, not in a batch: each one decodes a frame in the
-  // worst case, and starting a dozen decoders for the start screen is exactly
-  // the greed already cured in the storyboard.
-  //
-  // **A missing poster no longer removes the entry.** `poster_frame` opens a
-  // path, so it fails for every network source — a YouTube link, a torrent
-  // episode — and dropping those on that basis meant they could never stay in
-  // this list at all, which quietly disabled resuming a torrent from a card.
-  // Whether the source is gone is now decided above, by the existence check;
-  // this loop only decides whether there is a picture.
+/**
+ * Fill in the pictures, one at a time rather than in a batch: each one decodes a
+ * frame in the worst case, and starting a dozen decoders for the start screen is
+ * exactly the greed already cured in the storyboard.
+ *
+ * **A missing poster does not remove the entry.** `poster_frame` opens a path,
+ * so it fails for every network source — a YouTube link, a torrent episode — and
+ * dropping those on that basis meant they could never stay in the list at all,
+ * which quietly disabled resuming a torrent from a card. Whether the source is
+ * gone is decided by the existence check in `loadRecent`; this loop only decides
+ * whether there is a picture.
+ *
+ * Not awaited by `loadRecent`, and the `seq` guard is what makes that safe: a
+ * second call supersedes this one mid-flight.
+ */
+async function loadPosters(seq: number) {
   for (const item of history.recent) {
     if (seq !== recentSeq) return;
     // **A torrent episode has a poster too, and finding it costs no session.**

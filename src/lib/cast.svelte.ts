@@ -407,6 +407,24 @@ export function plannedTransport(device: TvDevice): Transport {
   return transportFor(device, cast.plan?.src ?? player.filePath);
 }
 
+/**
+ * What the session is doing, as a sentence.
+ *
+ * A function rather than a `$derived`: it goes through `t()`, and two
+ * components show it — the picker's current-device row and the casting screen.
+ */
+export function castStateLabel(): string {
+  return cast.state === 'connecting'
+    ? t('cast.state_connecting')
+    : cast.state === 'preparing'
+      ? t('cast.state_preparing')
+      : cast.state === 'loading' || cast.state === 'buffering'
+        ? t('cast.state_loading')
+        : cast.state === 'paused'
+          ? t('cast.state_paused')
+          : t('cast.state_playing');
+}
+
 export function deviceSummary(device: TvDevice): string {
   const path = cast.plan?.src ?? player.filePath;
   if (!deviceIsVideoCapable(device)) return t('cast.sum_audio_only');

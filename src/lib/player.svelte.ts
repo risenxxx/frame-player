@@ -357,6 +357,35 @@ export function hasYtdlp(): boolean {
  * The caller shows the window afterwards: `force-window=yes` gives mpv a black
  * field before the first frame, and the window is transparent until then.
  */
+/**
+ * Resolve when mpv reports that playback has actually restarted, or give up
+ * after `ms`.
+ *
+ * `command('seek', …)` resolves when mpv *accepts* the command, not when it has
+ * performed it, and `time-pos` at that moment is still the position before the
+ * jump. `playback-restart` is the event that means the seek is done. The
+ * timeout is there so a seek that never completes cannot leave a caller waiting
+ * on a promise for ever.
+ */
+export function waitPlaybackSettled(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    playbackRestartWaiters.push(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+let playbackRestartWaiters: Array<() => void> = [];
+
+/// Called from the `playbackRestart` hook: releases everyone waiting above.
+export function notePlaybackRestart() {
+  const waiting = playbackRestartWaiters;
+  playbackRestartWaiters = [];
+  for (const w of waiting) w();
+}
+
 export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>> {
   hooks = config;
   const unlisteners: Array<() => void> = [];
@@ -652,8 +681,32 @@ export function changeSpeed(factor: number) {
 // `add` rather than `set` for the same reason toggles use `cycle`: mpv owns the
 // value, and the local mirror can be stale after a queue overflow.
 
+/**
+ * Delays are dialled in with mpv's `add`, which is floating point: ten presses
+ * forward and ten back leave **2.7755575615628914e-17**, not zero. Everything
+ * downstream has to agree on what zero means or the residue leaks in two ways,
+ * both of which it did — the reset button stayed enabled over a readout saying
+ * `+0,00 с`, and `rememberDelay` stores a record whenever the value is not
+ * `=== 0`, so a delay that had been dialled back to nothing was written to disk
+ * and re-applied to that file for ever.
+ *
+ * Half of the last digit shown: anything the readout rounds to zero *is* zero,
+ * which keeps the button, the store and the text answering the same question.
+ */
+const DELAY_EPSILON = 0.005;
+
+export function delayIsZero(seconds: number): boolean {
+  return Math.abs(seconds) < DELAY_EPSILON;
+}
+
+/// mpv's value, snapped to what the player is willing to say about it. Used
+/// before anything is written down — see `DELAY_EPSILON`.
+export function roundDelay(seconds: number): number {
+  return delayIsZero(seconds) ? 0 : Math.round(seconds * 100) / 100;
+}
+
 export function formatDelay(seconds: number): string {
-  const rounded = Math.round(seconds * 100) / 100;
+  const rounded = roundDelay(seconds);
   return t('osc.delay_value', { value: (rounded > 0 ? '+' : '') + rounded.toFixed(2) });
 }
 
@@ -1051,6 +1104,11 @@ let pictureTouched = false;
 /// mpv reports an aspect override as a decimal (`4:3` reads back as 1.333333),
 /// so the menu has to compare numerically rather than by the string it sent.
 export const ASPECT_AUTO = '-2';
+
+/// Repeat state, named for the context menu and the OSC tooltip. Here rather
+/// than in either of them because both draw it, and a second copy would be the
+/// one that drifts.
+export const LOOP_LABEL = { off: 'loop.off', all: 'loop.all', one: 'loop.one' } as const;
 
 export function setPicture(prop: 'video-rotate' | 'video-aspect-override' | 'panscan', value: string) {
   pictureTouched = true;

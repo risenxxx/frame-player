@@ -556,3 +556,15 @@ export function hintPair(a: ActionId, b: ActionId): string {
   if (modsA !== modsB) return `${chordLabel(first)} / ${chordLabel(second)}`;
   return `${chordLabel(first)}/${keyLabel(codeOf(second))}`;
 }
+
+/**
+ * A label with its current hotkey after it, for tooltips.
+ *
+ * An unbound action yields the bare label: "Полный экран ()" is worse than a
+ * tooltip that simply says what the button does, and every action here can be
+ * unbound now.
+ */
+export function withKey(label: string, id: ActionId): string {
+  const key = hint(id);
+  return key ? t('osc.with_key', { label, key }) : label;
+}

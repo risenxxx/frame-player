@@ -192,6 +192,15 @@ async function getStr(prop: string): Promise<string | null> {
  * mpv never advances on its own, so `loop-playlist` never fires and "repeat
  * all" would otherwise do nothing at all.
  */
+/**
+ * How long the end screen counts down before starting the next entry.
+ *
+ * Here rather than in either place that reads it, because both must agree: the
+ * page arms a timer with it and the card draws a progress sweep of exactly that
+ * duration. Two copies would drift and the bar would finish early or late.
+ */
+export const ADVANCE_MS = 5000;
+
 export function neighbour(offset: number): PlaylistEntry | null {
   const count = playlist.entries.length;
   if (count === 0) return null;

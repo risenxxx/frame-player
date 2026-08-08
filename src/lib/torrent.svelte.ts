@@ -29,7 +29,6 @@ import { baseName, displayName, extensionOf } from './format';
 import { history, positionsLoad } from './history.svelte';
 import { SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, player } from './player.svelte';
 import { parseTorrentUrl, torrentId } from './source';
-import { maybeStartThumbs } from './thumbs.svelte';
 
 export interface TorrentFile {
   index: number;
@@ -385,8 +384,16 @@ let bufferTimer: ReturnType<typeof setInterval> | undefined;
  * to the next episode of a torrent is a playlist transition that this module
  * never hears about otherwise — and because the answer for a local file is
  * simply "stop polling".
+ *
+ * `onFileComplete` fires while the file being watched is fully on disk. It is a
+ * callback rather than a call into the thumbnail service, and that is the one
+ * import this module must not have: the two were the only cycle in `src/`
+ * (`thumbs` asks *this* module where the data is, through `positionBuffered`,
+ * which is a fair question about torrent state; this module telling the
+ * thumbnail service to start is not). Expect it on every poll while the file is
+ * complete, so whatever it starts has to be idempotent.
  */
-export function trackTorrentPlayback() {
+export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
   $effect(() => {
     const ref = player.filePath ? parseTorrentUrl(player.filePath) : null;
     clearInterval(timer);
@@ -410,11 +417,10 @@ export function trackTorrentPlayback() {
         // moment where doing so costs the current one nothing.
         if (status.file_size > 0 && status.file_done >= status.file_size) {
           void prefetchNext(ref.infoHash, ref.index);
-          // The file has become an ordinary one on disk, so the seekbar can have
-          // previews now. Retried from here because completion happens *during*
-          // playback — long after the `path` and `duration` events that normally
-          // start a storyboard.
-          maybeStartThumbs();
+          // The file has become an ordinary one on disk. Announced from here
+          // because completion happens *during* playback — long after the
+          // `path` and `duration` events anything else would hang off.
+          onFileComplete();
         } else if (player.timePos > POSTER_AFTER_S && player.duration > 0) {
           // Still downloading: this is the only window in which a poster of it
           // can be taken at all, because after the session ends the holes in the
@@ -512,6 +518,56 @@ export function torrentIsPlaying(row: TorrentOnDisk): boolean {
   // Lower-cased on both sides: a folder from the older layout may be upper-case
   // hex, and `torrent_list` reports it as it found it.
   return ref.infoHash.toLowerCase() === row.info_hash.toLowerCase();
+}
+
+/**
+ * Where the viewer left off inside this torrent — the newest position recorded
+ * against any of its files.
+ *
+ * The single most useful line on a start-screen row, and the reason it is worth
+ * a lookup at all: "продолжить: S01E03 — осталось 23:14" answers what the
+ * torrent is *for*, where a size does not. It is also what lets a row resume
+ * instead of dropping the file picker on someone hunting for the episode they
+ * were already watching.
+ *
+ * Read straight from the position store rather than from `history.recent`,
+ * which holds only the twelve newest entries across everything — a torrent
+ * watched last week has fallen out of that long before its data has fallen off
+ * the disk.
+ */
+export function torrentResume(
+  row: TorrentOnDisk,
+): { name: string; pos: number; dur: number; index: number } | null {
+  if (!row.info_hash) return null;
+  const prefix = `torrent:${row.info_hash}/`;
+  let best: { name: string; pos: number; dur: number; index: number; ts: number } | null = null;
+  for (const [id, rec] of Object.entries(positionsLoad())) {
+    if (!id.toLowerCase().startsWith(prefix)) continue;
+    const ts = rec.ts ?? 0;
+    if (best && ts <= best.ts) continue;
+    best = {
+      name: rec.title || displayName(rec.src ?? id),
+      pos: rec.pos,
+      dur: rec.dur,
+      index: Number(id.slice(prefix.length)),
+      ts,
+    };
+  }
+  return best;
+}
+
+/// Which files of a torrent have a saved position, by index — what the picker
+/// marks, since a season is nine names differing by two characters.
+export function torrentPositions(
+  infoHash: string,
+): Record<number, { pos: number; dur: number }> {
+  const prefix = `torrent:${infoHash.toLowerCase()}/`;
+  const out: Record<number, { pos: number; dur: number }> = {};
+  for (const [id, rec] of Object.entries(positionsLoad())) {
+    if (!id.toLowerCase().startsWith(prefix)) continue;
+    out[Number(id.slice(prefix.length))] = { pos: rec.pos, dur: rec.dur };
+  }
+  return out;
 }
 
 /**
