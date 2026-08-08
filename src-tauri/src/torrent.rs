@@ -1011,7 +1011,29 @@ impl TorrentService {
             return simple(StatusCode::NOT_FOUND);
         };
         let name = parts.next().unwrap_or("").to_string();
+        let range = req
+            .headers()
+            .get(header::RANGE)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.to_string());
+        self.serve_file(hash, index, &name, range, req.method() == Method::HEAD)
+            .await
+    }
 
+    /// Serve one file of one torrent, Range and all. Split out of the route so
+    /// the **cast** server can call it: a television cannot fetch from the
+    /// loopback address this listener binds, and exposing this one to the LAN
+    /// would put every torrent in the session on the network under a guessable
+    /// path. So the cast side keeps its single-registered-source-behind-a-token
+    /// rule and streams through here.
+    pub(crate) async fn serve_file(
+        self: &Arc<Self>,
+        hash: &str,
+        index: usize,
+        name: &str,
+        range: Option<String>,
+        head_only: bool,
+    ) -> Response<Body> {
         // The request itself is what selects the file: see the module header.
         //
         // The reason is logged rather than swallowed. This used to answer a bare
@@ -1043,13 +1065,17 @@ impl TorrentService {
             // Without this ffmpeg treats the source as unseekable and the
             // seekbar becomes a progress bar.
             .header(header::ACCEPT_RANGES, "bytes")
-            .header(header::CONTENT_TYPE, mime_for(&name));
+            .header(header::CONTENT_TYPE, mime_for(name))
+            // A DLNA renderer reads these before it will seek; harmless to
+            // everyone else (see cast.rs, where the same pair is set).
+            .header("transferMode.dlna.org", "Streaming")
+            .header(
+                "contentFeatures.dlna.org",
+                "DLNA.ORG_OP=01;DLNA.ORG_CI=0;\
+                 DLNA.ORG_FLAGS=01700000000000000000000000000000",
+            );
 
-        let range = req
-            .headers()
-            .get(header::RANGE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| parse_range(v, total));
+        let range = range.as_deref().and_then(|v| parse_range(v, total));
 
         let (status, start, len) = match range {
             Some(Some((start, end_inclusive))) => {
@@ -1077,7 +1103,7 @@ impl TorrentService {
 
         let res = res.status(status).header(header::CONTENT_LENGTH, len);
 
-        if req.method() == Method::HEAD {
+        if head_only {
             return res.body(empty()).unwrap();
         }
 
@@ -1229,8 +1255,9 @@ fn stream_url(port: u16, info_hash: &str, index: usize, path: &str) -> String {
 }
 
 /// Percent-encode everything that is not unreserved. Small and local rather than
-/// a dependency: this escapes one file name for one loopback URL.
-fn urlencode(s: &str) -> String {
+/// a dependency: this escapes one file name for one loopback URL. `pub(crate)`
+/// because cast.rs builds its URLs the same way.
+pub(crate) fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.as_bytes() {
         match b {
@@ -1247,10 +1274,10 @@ fn urlencode(s: &str) -> String {
 /// that is present but unsatisfiable, `None` for a header we do not understand
 /// (which is served as the whole file, per RFC 9110).
 ///
-/// Only the single-range `bytes=` form: that is what ffmpeg sends, and a
-/// multipart response to a media player would be answering a question nobody
-/// asked.
-fn parse_range(value: &str, total: u64) -> Option<Option<(u64, u64)>> {
+/// Only the single-range `bytes=` form: that is what ffmpeg sends (and what a
+/// Cast receiver sends — cast.rs shares this parser), and a multipart response
+/// to a media player would be answering a question nobody asked.
+pub(crate) fn parse_range(value: &str, total: u64) -> Option<Option<(u64, u64)>> {
     let spec = value.trim().strip_prefix("bytes=")?;
     if spec.contains(',') {
         return None;
@@ -1458,7 +1485,7 @@ fn file_disk_size(meta: &std::fs::Metadata) -> u64 {
     meta.len()
 }
 
-fn dir_size(path: &std::path::Path) -> u64 {
+pub(crate) fn dir_size(path: &std::path::Path) -> u64 {
     // `symlink_metadata`: a symlink is measured as the link, never followed —
     // otherwise a link pointing out of the cache would be counted as ours, and
     // a cycle would not terminate.
@@ -1945,4 +1972,89 @@ mod tests {
         // The extension survives encoding — ffmpeg probes by it.
         assert!(url.ends_with(".mkv"));
     }
+}
+
+/// The file of a torrent as it sits on disk, **without loading the session**.
+///
+/// The start screen needs this and only this: a path it can decode a poster
+/// from, for a card whose entry is a `torrent:` id. Going through
+/// `torrent_local_path` would mean adding the torrent — a DHT-joining,
+/// peer-connecting session — to draw a thumbnail, which is the opposite of the
+/// rule that nothing opens until it is asked for.
+///
+/// Everything needed is already on disk: the cached `.torrent` gives the file's
+/// relative name and its length, the hash gives the folder, and completeness is
+/// the same allocated-blocks measure `torrent_list` uses to report size. An
+/// incomplete file is refused rather than returned, because its holes read back
+/// as **zeros** — a poster decoded from one is a black rectangle presented as a
+/// frame of the film.
+#[tauri::command]
+pub fn torrent_offline_file(
+    app: tauri::AppHandle,
+    info_hash: String,
+    index: usize,
+) -> Option<LocalFile> {
+    if !is_info_hash(&info_hash) {
+        return None;
+    }
+    let hash = info_hash.to_ascii_lowercase();
+    let dir = TorrentService::download_dir(&app).ok()?;
+    let meta = meta_path(&dir, &hash);
+    let bytes = match std::fs::read(&meta) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[poster] no cached metadata for {hash}: {e}");
+            return None;
+        }
+    };
+    let parsed = match librqbit::torrent_from_bytes::<librqbit::ByteBuf>(&bytes) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[poster] cached metadata for {hash} unreadable: {e:#}");
+            return None;
+        }
+    };
+    let info = parsed.info;
+
+    // Single-file torrents have no file list; the torrent itself is the file.
+    let (rel, length) = match info.iter_file_details().ok()?.nth(index) {
+        Some(f) => (
+            f.filename
+                .iter_components()
+                .flatten()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(std::path::MAIN_SEPARATOR_STR),
+            f.len,
+        ),
+        None => return None,
+    };
+    let path = dir.join(&hash).join(&rel);
+    let Ok(meta) = std::fs::metadata(&path) else {
+        eprintln!("[poster] {hash}/{index}: no file at {}", path.display());
+        return None;
+    };
+    if meta.len() != length {
+        eprintln!(
+            "[poster] {hash}/{index}: {} is {} bytes, torrent says {length}",
+            path.display(),
+            meta.len()
+        );
+        return None;
+    }
+    // On Windows librqbit never marks the file sparse, so the allocated size is
+    // the full length whatever has arrived and this test cannot tell an empty
+    // file from a finished one — hence the caller treats a poster that fails to
+    // decode as "no poster yet" rather than as an error.
+    let complete = file_disk_size(&meta) + (length / 64) >= length;
+    if !complete {
+        eprintln!(
+            "[poster] {hash}/{index}: only {} of {length} bytes allocated — incomplete",
+            file_disk_size(&meta)
+        );
+    }
+    complete.then(|| LocalFile {
+        path: path.to_string_lossy().into_owned(),
+        complete,
+    })
 }

@@ -30,3 +30,8 @@ src-tauri/ffmpeg-macos/
 
 # Fixture for the sidecar smoke tests (see README, "Building")
 /test.mp4
+
+# Session handoff between machines: carries LAN details and personal file
+# paths, so it must never be committed. Transfer it out of band, like
+# private-docs/.
+/HANDOFF.md
