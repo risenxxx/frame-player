@@ -123,6 +123,14 @@ broken. The class matters in both directions — the lowest one pins the work to
 efficiency cores and the storyboard then arrives after the viewer has already
 reached for it.
 
+The fourth constraint is about *when* rather than how much: the storyboard is
+suspended while a television owns playback. It exists to make a hover instant,
+and during a cast nobody is hovering — while the decode is at its most visible,
+because the local player is paused and has nothing to hide it behind. The case
+that exposed it was casting a torrent that was still downloading: the file
+completes mid-session, and the completion handler dutifully starts a 4K
+storyboard behind a paused player.
+
 **Frame stepping** — a sidecar decoder that pre-warms a GOP ring on pause, so
 the first step is instant. Currently disabled behind a flag: mpv's own stepping
 turned out to be good enough, and the sidecar's canvas path could not reproduce

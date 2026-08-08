@@ -194,7 +194,14 @@ jobs:
           $name = "FramePlayer_${version}_x64-setup.exe"
           Copy-Item $exe.FullName "dist/$name"
           $sig = (Get-Content "$($exe.FullName).sig" -Raw).Trim()
-          $base = "${{ secrets.R2_PUBLIC_URL }}".TrimEnd('/')
+          # A variable, like the bucket names: this address is printed in the
+          # README and fetched by every client on every update check, so it was
+          # never a secret — and masking it made the manifest unreadable in the
+          # log of the one job that writes it.
+          $base = "${{ vars.R2_PUBLIC_URL_UPDATES }}".TrimEnd('/')
+          # Unset would produce `/FramePlayer_….exe` in the manifest: a relative
+          # URL that fails at the client, days later, with nothing here to show.
+          if (-not $base) { Write-Error "R2_PUBLIC_URL_UPDATES is not set"; exit 1 }
           @{ "windows-x86_64" = @{ signature = $sig; url = "$base/$name" } } |
             ConvertTo-Json -Depth 4 |
             Set-Content "dist/platform-windows-x86_64.json" -Encoding utf8
@@ -219,7 +226,8 @@ jobs:
           cp "$dmg" "dist/$dmg_name"
           cp "$tgz" "dist/$tgz_name"
           sig=$(tr -d '\n' < "$tgz.sig")
-          base="${{ secrets.R2_PUBLIC_URL }}"
+          base="${{ vars.R2_PUBLIC_URL_UPDATES }}"
+          [ -n "$base" ] || { echo "R2_PUBLIC_URL_UPDATES is not set" >&2; exit 1; }
           base="${base%/}"
           jq -n --arg s "$sig" --arg u "$base/$tgz_name" \
             '{"darwin-aarch64": {signature: $s, url: $u}}' \
@@ -275,7 +283,13 @@ jobs:
         run: |
           set -euo pipefail
           endpoint="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-          bucket="${{ secrets.R2_BUCKET }}"
+          bucket="${{ vars.R2_BUCKET_UPDATES }}"
+          # A variable rather than a secret: a bucket name is not a credential —
+          # the token is — and this one's public domain is in the README already.
+          # Masking it would only turn every `s3://…` in this log into `***`.
+          # Checked rather than assumed: an unset variable would otherwise upload
+          # to `s3:///latest.json` and the failure would name a path, not a cause.
+          [ -n "$bucket" ] || { echo "R2_BUCKET_UPDATES is not set" >&2; exit 1; }
           # Binaries first, latest.json last: until it is updated, no client
           # learns about a version whose files are not uploaded yet.
           for f in dist/*; do

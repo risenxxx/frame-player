@@ -20,6 +20,7 @@ import { isPrivatePath } from './history.svelte';
 import { t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
 import { isNetworkSource, player, type Track } from './player.svelte';
+import { suspendThumbs } from './thumbs.svelte';
 import { neighbour, playEntry, playlist, type PlaylistEntry } from './playlist.svelte';
 import { parseTorrentUrl } from './source';
 
@@ -1024,6 +1025,7 @@ async function castTorrentStream(
   }
 
   cast.transport = dlnaTakes ? 'dlna' : 'cast';
+  suspendThumbs(true);
   cast.active = true;
   cast.deviceName = device.name;
   cast.state = 'loading';
@@ -1094,6 +1096,7 @@ async function castOverDlna(device: TvDevice, src: string, keep = false): Promis
   }
 
   cast.transport = 'dlna';
+  suspendThumbs(true);
   cast.active = true;
   cast.deviceName = device.name;
   cast.state = 'loading';
@@ -1245,6 +1248,7 @@ export async function endCast(opts: {
   resumePaused?: boolean;
 }): Promise<void> {
   stopPoll();
+  suspendThumbs(false);
   const wasActive = cast.active;
   cast.active = false;
   cast.state = 'idle';

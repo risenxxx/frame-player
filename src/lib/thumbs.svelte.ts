@@ -79,9 +79,28 @@ let fadeTimer: ReturnType<typeof setTimeout> | undefined;
  * known — mpv's event order between the two is not guaranteed, so this is
  * called from both.
  */
+/// While a television owns playback, the storyboard is a prefetch for a gesture
+/// nobody is making. It decodes the **whole** file in software — three threads
+/// on a duty cycle, which on a 4K release is the better part of two cores for
+/// minutes — to make hovering instant, and during a cast the viewer is looking
+/// at the television. Hovering still works meanwhile: a cell with no cached
+/// frame is decoded on demand, one seek per hover instead of none.
+///
+/// Set by the cast session rather than read from it, so this module keeps
+/// depending on nothing.
+let suspended = false;
+
+export function suspendThumbs(on: boolean) {
+  suspended = on;
+  // Ending a session is exactly when the prefetch becomes worth doing again,
+  // and `startedFor` is only set once something actually started, so this
+  // resumes rather than restarts.
+  if (!on) maybeStartThumbs();
+}
+
 export function maybeStartThumbs() {
   const src = player.filePath;
-  if (!src || player.duration <= 0 || startedFor === src) return;
+  if (suspended || !src || player.duration <= 0 || startedFor === src) return;
 
   // Never for a stream. The storyboard decodes the WHOLE file in the background
   // to fill the hover previews — over a network source that means pulling the
