@@ -291,7 +291,24 @@ impl ThumbSession {
     }
 
     /// Scales `self.frame` down to thumbnail size and encodes it as JPEG.
-    fn encode_current(&mut self) -> Result<Vec<u8>, String> {
+    /// How much of a *picture* the current frame is, 0 upwards.
+    ///
+    /// The poster today is whatever frame sits at the requested second, black
+    /// frames and fades included — position is the only criterion. This is the
+    /// content one: mean absolute deviation of luma, which is high for a lit
+    /// scene with detail and near zero for a black frame, a white flash or a
+    /// flat title card. Deliberately crude and computed on the already-scaled
+    /// 320px RGB rather than the source frame: it only has to rank a handful of
+    /// candidates against each other, and ffmpeg's own `thumbnail` filter picks
+    /// by much the same idea (distance from the average histogram).
+    fn score_current(&mut self) -> Result<f64, String> {
+        Ok(rgb_score(&self.scaled_rgb()?))
+    }
+
+    /// The current frame, scaled to the thumbnail size and packed tight (the
+    /// scaler's rows are padded). Shared by the encoder and the scorer so a
+    /// candidate is scaled once, not twice.
+    fn scaled_rgb(&mut self) -> Result<Vec<u8>, String> {
         if !self.has_frame {
             return Err("no frame decoded".into());
         }
@@ -330,7 +347,11 @@ impl ThumbSession {
         for y in 0..self.out_h as usize {
             tight.extend_from_slice(&data[y * stride..y * stride + row]);
         }
+        Ok(tight)
+    }
 
+    fn encode_current(&mut self) -> Result<Vec<u8>, String> {
+        let tight = self.scaled_rgb()?;
         let mut jpeg = Vec::new();
         image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY)
             .encode(
@@ -438,6 +459,10 @@ fn path_under(path: &str, root: &str) -> bool {
 /// and would otherwise be the one place an excluded video could still be found.
 #[tauri::command]
 pub fn forget_thumbs_under(app: tauri::AppHandle, folder: String) -> usize {
+    // Saved posters are the same kind of thing kept in a different file, so a
+    // folder excluded from the history must take them with it — one caller,
+    // both stores, or the second one is the leak nobody checks.
+    purge_posters(&app, &folder);
     let Some(dir) = thumbs_dir(&app) else {
         return 0;
     };
@@ -487,6 +512,15 @@ pub fn forget_thumbs(app: tauri::AppHandle, path: String) {
 /// Delete the whole thumbnail disk cache (the "clear history" action).
 #[tauri::command]
 pub fn clear_thumb_cache(app: tauri::AppHandle) {
+    // "Clear the thumbnail cache" means every frame this player kept, and a
+    // saved poster is a frame this player kept.
+    if let Some(posters) = posters_dir(&app) {
+        if let Ok(entries) = std::fs::read_dir(posters) {
+            for e in entries.flatten() {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
     let Some(dir) = thumbs_dir(&app) else { return };
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -875,6 +909,64 @@ mod tests {
         }
     }
 
+    /// The poster scorer, against a real file: does it rank a lit frame above
+    /// a black one, and is the threshold in the right place?
+    /// `FP_TEST_VIDEO=<path> cargo test poster_score_smoke -- --nocapture`
+    #[test]
+    fn poster_score_smoke() {
+        let Ok(path) = std::env::var("FP_TEST_VIDEO") else {
+            return;
+        };
+        let _ = ffmpeg::init();
+        let mut s = ThumbSession::open(&path).expect("open session");
+        for pos in [0.0, 5.0, 30.0, 59.0] {
+            if s.seek_to_keyframe(pos).is_err() || !s.decode_next().unwrap_or(false) {
+                println!("pos={pos} -> no frame");
+                continue;
+            }
+            let rgb = s.scaled_rgb().expect("scale");
+            let luma: Vec<f64> = rgb
+                .chunks_exact(3)
+                .map(|p| 0.299 * p[0] as f64 + 0.587 * p[1] as f64 + 0.114 * p[2] as f64)
+                .collect();
+            let mean = luma.iter().sum::<f64>() / luma.len() as f64;
+            let spread = luma.iter().map(|v| (v - mean).abs()).sum::<f64>() / luma.len() as f64;
+            let score = s.score_current().expect("score");
+            let jpeg = s.encode_current().expect("encode");
+            let out = std::env::temp_dir().join(format!("poster-{pos}.jpg"));
+            std::fs::write(&out, &jpeg).ok();
+            println!(
+                "pos={pos} mean={mean:.1} spread={spread:.1} score={score:.1} -> {}",
+                out.display()
+            );
+        }
+    }
+
+    /// A black frame must score below the threshold, or the whole point of
+    /// scoring is lost — this is the case the feature exists to avoid.
+    #[test]
+    fn black_frames_are_refused() {
+        // 320x180 of pure black, and of mid-grey noise, through the same maths
+        // the scorer runs on the scaled buffer.
+        let black = vec![0u8; 320 * 180 * 3];
+        let mut noisy = Vec::with_capacity(320 * 180 * 3);
+        for i in 0..320 * 180 {
+            let v = if i % 2 == 0 { 90 } else { 170 };
+            noisy.extend_from_slice(&[v, v, v]);
+        }
+        assert!(!poster_usable(&black));
+        assert!(poster_usable(&noisy));
+        // A dark but real scene — the case an absolute threshold got wrong.
+        let dark: Vec<u8> = (0..320 * 180)
+            .flat_map(|i| {
+                let v = if i % 3 == 0 { 8u8 } else { 26 };
+                [v, v, v]
+            })
+            .collect();
+        assert!(poster_usable(&dark));
+        assert!(rgb_score(&noisy) > rgb_score(&dark));
+    }
+
     /// Rounding, and the clamp that keeps it from running off the end.
     #[test]
     fn bucket_rounding() {
@@ -1059,5 +1151,183 @@ fn container_title(path: &str) -> Option<String> {
         // Always closed, on every path out of the block above.
         ffmpeg::sys::avformat_close_input(&mut ctx);
         title
+    }
+}
+
+// ---- Saved posters ---------------------------------------------------------
+//
+// A poster is normally decoded on demand from the file at the watch position,
+// which needs the file to still be there and readable — and for a torrent still
+// downloading it is neither: the holes read back as zeros, so the "poster" would
+// be a black rectangle presented as a frame of the film. Capturing one *while it
+// plays* removes both problems at once, because the data is on disk exactly then
+// and the picture outlives the file.
+//
+// Stored beside the thumbnail cache with the source path written into the file,
+// for the same reason `CACHE_MAGIC` v4 carries it: without the path an entry
+// cannot be attributed to a folder, and `purge_thumbs` could not honour a
+// privacy root being excluded.
+
+const POSTER_MAGIC: &[u8; 4] = b"FPP1";
+
+/// Mean luma and its mean absolute deviation, on a packed RGB buffer.
+fn rgb_stats(rgb: &[u8]) -> (f64, f64) {
+    if rgb.is_empty() {
+        return (0.0, 0.0);
+    }
+    let luma: Vec<f64> = rgb
+        .chunks_exact(3)
+        .map(|p| 0.299 * p[0] as f64 + 0.587 * p[1] as f64 + 0.114 * p[2] as f64)
+        .collect();
+    let mean = luma.iter().sum::<f64>() / luma.len() as f64;
+    let spread = luma.iter().map(|v| (v - mean).abs()).sum::<f64>() / luma.len() as f64;
+    (mean, spread)
+}
+
+/// The scoring maths, on a packed RGB buffer — see `score_current`.
+fn rgb_score(rgb: &[u8]) -> f64 {
+    let (mean, spread) = rgb_stats(rgb);
+    // A frame can be busy and still be a bad poster: an almost-black scene with
+    // noise, or a blown-out flash. Weight the spread by how far the mean sits
+    // from either extreme, so the middle of the range wins ties.
+    let headroom = ((mean / 255.0) * (1.0 - mean / 255.0) * 4.0).clamp(0.0, 1.0);
+    spread * headroom
+}
+
+/// **A score is for ranking candidates, never for refusing them.** Measured on
+/// a real 4K HDR release, whose frames decode dark because nothing tone-maps
+/// them on the way to RGB: a perfectly legible scene scored 2.7 and a bright
+/// one 8.6, so any absolute threshold tuned on ordinary SDR content refuses
+/// most of an HDR film and the card keeps its link mark for ever. What is worth
+/// refusing is only the *degenerate* frame — the black one at the head of a
+/// release, a white flash, a flat card — and that is a fact about the pixels
+/// rather than a judgement about the scene.
+fn poster_usable(rgb: &[u8]) -> bool {
+    let (mean, spread) = rgb_stats(rgb);
+    mean >= 2.0 && spread >= 2.0
+}
+
+fn posters_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    use tauri::Manager as _;
+    let dir = app.path().app_cache_dir().ok()?.join("posters");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+fn poster_file(app: &tauri::AppHandle, id: &str) -> Option<PathBuf> {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    id.hash(&mut h);
+    Some(posters_dir(app)?.join(format!("{:016x}.fpp", h.finish())))
+}
+
+/// Decode a few candidate positions, keep the one that looks most like a
+/// picture, and save it under `id`.
+///
+/// The candidates come from the caller because only it knows which parts of the
+/// file are readable — for a torrent that is the buffered map, and asking for a
+/// second that has not arrived would decode zeros. Bounded work by construction:
+/// a handful of seeks, at the storyboard's background QoS, once per file.
+#[tauri::command]
+pub async fn poster_capture(
+    app: tauri::AppHandle,
+    id: String,
+    path: String,
+    positions: Vec<f64>,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // The privacy gate is the same one the thumbnail cache uses: a file
+        // under an excluded root leaves nothing on disk.
+        if is_private(&path) || positions.is_empty() {
+            eprintln!("[poster] {id}: skipped (private or no candidates)");
+            return Ok(false);
+        }
+        let Some(file) = poster_file(&app, &id) else {
+            return Ok(false);
+        };
+        background_qos();
+        let mut session = match ThumbSession::open(&path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[poster] {id}: cannot open {path}: {e}");
+                return Ok(false);
+            }
+        };
+        let mut best: Option<(f64, Vec<u8>)> = None;
+        for pos in positions.into_iter().take(6) {
+            if session.seek_to_keyframe(pos.max(0.0)).is_err()
+                || !session.decode_next().unwrap_or(false)
+            {
+                eprintln!("[poster] {id}: no frame at {pos:.1}s");
+                continue;
+            }
+            let Ok(rgb) = session.scaled_rgb() else { continue };
+            let score = rgb_score(&rgb);
+            let usable = poster_usable(&rgb);
+            eprintln!(
+                "[poster] {id}: {pos:.1}s score={score:.1} {}",
+                if usable { "usable" } else { "degenerate" }
+            );
+            if !usable || best.as_ref().is_some_and(|(b, _)| *b >= score) {
+                continue;
+            }
+            if let Ok(jpeg) = session.encode_current() {
+                best = Some((score, jpeg));
+            }
+        }
+        let Some((_, jpeg)) = best else {
+            eprintln!("[poster] {id}: nothing usable among the candidates");
+            return Ok(false);
+        };
+        let mut out = Vec::with_capacity(4 + 2 + path.len() + jpeg.len());
+        out.extend_from_slice(POSTER_MAGIC);
+        out.extend_from_slice(&(path.len() as u16).to_le_bytes());
+        out.extend_from_slice(path.as_bytes());
+        out.extend_from_slice(&jpeg);
+        std::fs::write(&file, out).map_err(|e| e.to_string())?;
+        eprintln!("[poster] {id}: saved {}", file.display());
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The saved poster for `id`, if there is one. Answers with the same 8-byte
+/// header the decoded posters use, so the caller cannot tell them apart.
+#[tauri::command]
+pub fn poster_saved(app: tauri::AppHandle, id: String) -> Result<tauri::ipc::Response, String> {
+    let file = poster_file(&app, &id).ok_or("no cache directory")?;
+    let bytes = std::fs::read(file).map_err(|_| "no saved poster".to_string())?;
+    let (jpeg, _) = poster_parse(&bytes).ok_or("unreadable poster")?;
+    Ok(respond(0.0, jpeg))
+}
+
+/// `(jpeg, source path)` out of a stored poster.
+fn poster_parse(bytes: &[u8]) -> Option<(&[u8], String)> {
+    if bytes.len() < 6 || &bytes[..4] != POSTER_MAGIC {
+        return None;
+    }
+    let n = u16::from_le_bytes([bytes[4], bytes[5]]) as usize;
+    let path = String::from_utf8(bytes.get(6..6 + n)?.to_vec()).ok()?;
+    Some((bytes.get(6 + n..)?, path))
+}
+
+/// Drop saved posters whose source is inside `root` — the poster half of
+/// `purge_thumbs`, and the reason the source path is stored in the file.
+pub fn purge_posters(app: &tauri::AppHandle, root: &str) {
+    let Some(dir) = posters_dir(app) else { return };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        let keep = std::fs::read(&p)
+            .ok()
+            .and_then(|b| poster_parse(&b).map(|(_, src)| !path_under(&src, root)))
+            // Unreadable or from an older format: cannot be attributed, so it
+            // goes — the same call the thumbnail cache makes.
+            .unwrap_or(false);
+        if !keep {
+            let _ = std::fs::remove_file(&p);
+        }
     }
 }

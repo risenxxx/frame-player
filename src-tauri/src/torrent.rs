@@ -1973,3 +1973,88 @@ mod tests {
         assert!(url.ends_with(".mkv"));
     }
 }
+
+/// The file of a torrent as it sits on disk, **without loading the session**.
+///
+/// The start screen needs this and only this: a path it can decode a poster
+/// from, for a card whose entry is a `torrent:` id. Going through
+/// `torrent_local_path` would mean adding the torrent — a DHT-joining,
+/// peer-connecting session — to draw a thumbnail, which is the opposite of the
+/// rule that nothing opens until it is asked for.
+///
+/// Everything needed is already on disk: the cached `.torrent` gives the file's
+/// relative name and its length, the hash gives the folder, and completeness is
+/// the same allocated-blocks measure `torrent_list` uses to report size. An
+/// incomplete file is refused rather than returned, because its holes read back
+/// as **zeros** — a poster decoded from one is a black rectangle presented as a
+/// frame of the film.
+#[tauri::command]
+pub fn torrent_offline_file(
+    app: tauri::AppHandle,
+    info_hash: String,
+    index: usize,
+) -> Option<LocalFile> {
+    if !is_info_hash(&info_hash) {
+        return None;
+    }
+    let hash = info_hash.to_ascii_lowercase();
+    let dir = TorrentService::download_dir(&app).ok()?;
+    let meta = meta_path(&dir, &hash);
+    let bytes = match std::fs::read(&meta) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[poster] no cached metadata for {hash}: {e}");
+            return None;
+        }
+    };
+    let parsed = match librqbit::torrent_from_bytes::<librqbit::ByteBuf>(&bytes) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[poster] cached metadata for {hash} unreadable: {e:#}");
+            return None;
+        }
+    };
+    let info = parsed.info;
+
+    // Single-file torrents have no file list; the torrent itself is the file.
+    let (rel, length) = match info.iter_file_details().ok()?.nth(index) {
+        Some(f) => (
+            f.filename
+                .iter_components()
+                .flatten()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(std::path::MAIN_SEPARATOR_STR),
+            f.len,
+        ),
+        None => return None,
+    };
+    let path = dir.join(&hash).join(&rel);
+    let Ok(meta) = std::fs::metadata(&path) else {
+        eprintln!("[poster] {hash}/{index}: no file at {}", path.display());
+        return None;
+    };
+    if meta.len() != length {
+        eprintln!(
+            "[poster] {hash}/{index}: {} is {} bytes, torrent says {length}",
+            path.display(),
+            meta.len()
+        );
+        return None;
+    }
+    // On Windows librqbit never marks the file sparse, so the allocated size is
+    // the full length whatever has arrived and this test cannot tell an empty
+    // file from a finished one — hence the caller treats a poster that fails to
+    // decode as "no poster yet" rather than as an error.
+    let complete = file_disk_size(&meta) + (length / 64) >= length;
+    if !complete {
+        eprintln!(
+            "[poster] {hash}/{index}: only {} of {length} bytes allocated — incomplete",
+            file_disk_size(&meta)
+        );
+    }
+    complete.then(|| LocalFile {
+        path: path.to_string_lossy().into_owned(),
+        complete,
+    })
+}

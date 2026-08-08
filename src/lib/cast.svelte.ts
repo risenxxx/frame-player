@@ -248,6 +248,71 @@ export function deviceProfile(device: TvDevice): DeviceProfile {
   return byName ?? { transport: 'auto' };
 }
 
+export interface CheckLine {
+  /// A stable name for the check; the label and the explanation are this
+  /// side's, because Rust cannot reach the dictionary.
+  id: string;
+  state: 'ok' | 'warn' | 'fail' | 'info' | 'timeout';
+  /// What only Rust knows: addresses, lists, the device's own error text.
+  detail: string;
+}
+
+/// The label and, when there is one to give, the sentence that says what the
+/// answer means. A check with nothing to explain shows only its data.
+export function checkLabel(line: CheckLine): string {
+  return t(`diag.${line.id}` as Parameters<typeof t>[0]);
+}
+
+export function checkNote(line: CheckLine): string {
+  const key = `diag.${line.id}_${line.state}`;
+  const note = t(key as Parameters<typeof t>[0]);
+  // `t` echoes an unknown key, which is the signal that this state needs no
+  // sentence — the data speaks for itself.
+  return note === key ? '' : note;
+}
+
+/**
+ * Everything the player can learn about a device without playing anything.
+ *
+ * The case it exists for is somebody else's television, where a cast fails and
+ * the difference between "the network cannot reach it", "the receiver refused
+ * the file" and "this device does not do that at all" is invisible from the
+ * outside and decides everything. Each check is one the normal flow already
+ * makes; here their answers are written down instead of consumed.
+ */
+export async function diagnoseDevice(device: TvDevice): Promise<CheckLine[]> {
+  const lines = await invoke<CheckLine[]>('cast_diagnose', {
+    ip: device.ip,
+    castPort: device.cast?.port ?? null,
+    // The description URL, not the control URL: the command re-reads the whole
+    // description, which is where the model, the services and their own
+    // descriptions come from.
+    dlnaLocation: device.dlna ? dlnaDescriptionUrl(device.dlna) : null,
+  }).catch((e) => [{ id: 'diagnosis', state: 'fail' as const, detail: String(e) }]);
+  return lines;
+}
+
+function dlnaDescriptionUrl(d: DlnaDevice): string {
+  const [origin] = d.control_url.split('/AVTransport/');
+  return origin ? `${origin}/` : d.control_url;
+}
+
+/// The report as one block of text — what actually reaches a bug report.
+export function diagnosisText(device: TvDevice, lines: CheckLine[]): string {
+  const head = [
+    `Frame Player — device check`,
+    `${device.name}${device.model && device.model !== device.name ? ` (${device.model})` : ''}`,
+    `${device.ip} · transports: ${[device.cast && 'Chromecast', device.dlna && 'DLNA']
+      .filter(Boolean)
+      .join(', ')}`,
+    '',
+  ];
+  return [
+    ...head,
+    ...lines.map((l) => `[${l.state}] ${l.id}${l.detail ? `: ${l.detail}` : ''}`),
+  ].join('\n');
+}
+
 export function setDeviceTransport(device: TvDevice, transport: Transport | 'auto') {
   const all = loadProfiles();
   all[device.key] = { transport, name: device.name, model: device.model };
@@ -523,19 +588,21 @@ const CAP_CHOICES = [0, 5, 20, 50];
 export type CastMode = 'auto' | 'prepare' | 'hls';
 
 /**
- * How a file reaches a **Chromecast** — DLNA is chosen per device, in the
- * picker, because that choice depends on the device.
+ * How a file reaches a **Chromecast**. DLNA is chosen per device in the picker,
+ * because that choice depends on the device; this one is now internal.
  *
- * `auto` is the default and the honest one: the pill used to force a transport
- * without knowing the file, which is a decision the player is better placed to
- * make. Today auto always means the progressive path, because HLS turned out to
- * carry only H.264 with stereo on real hardware — its remaining reason to exist
- * is a source the progressive path cannot serve at all (an incomplete torrent),
- * and when that rung lands this is the one function that has to learn about it.
- *
- * Migration: a stored value is an explicit choice and is kept; **an absent key
- * is auto**, so nobody who never opened this setting is pinned to the transport
- * that used to be the default.
+ * **HLS is no longer offered as a setting**, and that is a conclusion rather
+ * than a simplification. It was built to stream an incomplete torrent, and both
+ * halves of that job went elsewhere — DLNA carries the release untouched and a
+ * direct-play file streams over Cast as it is — while measurement showed HLS
+ * itself carries only H.264 with stereo on this receiver. So as a *choice* it
+ * was strictly worse on everything it could carry and unable to carry the rest:
+ * a menu entry whose every selection makes the result worse. What survives is
+ * the code path, for the one case neither of the others reaches (a receiver
+ * with no DLNA, an incomplete torrent that would need repacking) — a decision
+ * the player makes from facts, not a question for the viewer — and as a
+ * debugging knob: `localStorage.setItem('frameplayer.castMode', 'hls')` still
+ * forces it, which is how the receiver's HLS behaviour gets tested.
  */
 export function castMode(): CastMode {
   const stored = localStorage.getItem(MODE_KEY);

@@ -20,6 +20,7 @@
 //! and every answer here would be a false negative.
 
 use std::collections::BTreeMap;
+use std::net::IpAddr;
 use std::time::Duration;
 
 const SSDP_ADDR: &str = "239.255.255.250:1900";
@@ -478,6 +479,13 @@ struct DlnaState {
     /// next status overwrote the optimism and the button sprang back — the same
     /// shape as the seekbar's `seekSettling`, and the same answer.
     settle_until: Option<std::time::Instant>,
+    /// Where a seek was aimed while the renderer was paused, and until when to
+    /// trust that over the renderer's own answer. **Measured: a paused renderer
+    /// keeps reporting the position it had before the seek** until playback
+    /// resumes, so believing it would drag the knob back to where the film was
+    /// — the same "jumps and returns" the chapter list used to show, from the
+    /// other end.
+    seek_target: Option<(f64, std::time::Instant)>,
 }
 
 /// How long an optimistic state outranks the renderer's own report. Long
@@ -490,6 +498,11 @@ const SETTLE: Duration = Duration::from_millis(2500);
 /// the end by a beat, and the last seconds of a file are credits nobody stops
 /// deliberately.
 const END_SLACK: f64 = 8.0;
+
+/// How long a paused seek's target outranks the renderer's own position. Long
+/// enough to cover a viewer studying the frame before pressing play, bounded so
+/// a renderer that never catches up cannot freeze the knob for good.
+const PAUSED_SEEK_HOLD: Duration = Duration::from_secs(120);
 
 struct DlnaSession {
     device: DlnaDeviceInfo,
@@ -702,8 +715,25 @@ pub fn dlna_connect(
                 let dur = tag(&pos, "TrackDuration").and_then(parse_hms);
                 set_state(&poll_state, |s| {
                     if let Some(t) = time {
-                        s.time = t;
-                        s.reported_at = Some(std::time::Instant::now());
+                        // A pending paused seek outranks a report that has not
+                        // caught up with it; the moment one lands near the
+                        // target — or the deadline passes — the renderer is
+                        // believed again.
+                        let stale = match s.seek_target {
+                            Some((target, until)) => {
+                                if (t - target).abs() < 3.0 || std::time::Instant::now() > until {
+                                    s.seek_target = None;
+                                    false
+                                } else {
+                                    true
+                                }
+                            }
+                            None => false,
+                        };
+                        if !stale {
+                            s.time = t;
+                            s.reported_at = Some(std::time::Instant::now());
+                        }
                     }
                     if let Some(d) = dur {
                         if d > 0.0 {
@@ -972,12 +1002,43 @@ pub async fn dlna_control(
             // Same rule as above, and for the knob rather than the icon: the
             // position is claimed before the call, or a poll in the gap drags
             // it back to where the film was.
+            let was_paused = {
+                let s = state.lock().unwrap_or_else(|p| p.into_inner());
+                s.state == "paused"
+            };
             set_state(&state, |s| {
                 s.time = target;
                 s.reported_at = Some(std::time::Instant::now());
+                s.settle_until = Some(std::time::Instant::now() + SETTLE);
             });
             let args = format!("<Unit>REL_TIME</Unit><Target>{}</Target>", hms(target));
-            soap(&client, &control, AVTRANSPORT, "Seek", &args).await?;
+            if was_paused {
+                // **This renderer refuses to seek while paused** — measured,
+                // UPnP 501 "Action Failed" — so the standard controller remedy
+                // applies: resume, seek, pause again. Verified end to end
+                // against the television: the position moves, the state comes
+                // back paused and the TV fetches the new byte range. It costs a
+                // fraction of a second of playback, which is the honest price
+                // of a seek on a device that has no other way to do one; the
+                // alternative is a seekbar that refuses to work whenever the
+                // film is paused, which is when a viewer most often reaches for
+                // it.
+                let _ = soap(&client, &control, AVTRANSPORT, "Play", "<Speed>1</Speed>").await;
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                let seeked = soap(&client, &control, AVTRANSPORT, "Seek", &args).await;
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                let _ = soap(&client, &control, AVTRANSPORT, "Pause", "").await;
+                set_state(&state, |s| {
+                    s.state = "paused".into();
+                    s.settle_until = Some(std::time::Instant::now() + SETTLE);
+                    s.time = target;
+                    s.reported_at = Some(std::time::Instant::now());
+                    s.seek_target = Some((target, std::time::Instant::now() + PAUSED_SEEK_HOLD));
+                });
+                seeked?;
+            } else {
+                soap(&client, &control, AVTRANSPORT, "Seek", &args).await?;
+            }
         }
         "volume" => {
             let rc = rendering.ok_or("device has no volume control")?;
@@ -1062,6 +1123,15 @@ pub async fn selftest(app: &tauri::AppHandle, target: Option<String>, path: Stri
         return;
     };
     eprintln!("[dlna] selftest on {} ({})", device.name, device.ip);
+    let target_ip = device.ip.clone();
+    // The description URL, which is the control URL minus its service path —
+    // the device list keeps only the latter, and re-deriving it here keeps the
+    // selftest honest about what the command actually receives.
+    let location_for_report = device
+        .control_url
+        .split_once("/AVTransport/")
+        .map(|(origin, _)| format!("{origin}/"))
+        .unwrap_or_else(|| device.control_url.clone());
     if let Err(e) = dlna_connect(service.clone(), device) {
         eprintln!("[dlna] connect failed: {e}");
         return;
@@ -1093,6 +1163,15 @@ pub async fn selftest(app: &tauri::AppHandle, target: Option<String>, path: Stri
                 Err(e) => eprintln!("[dlna] pause failed: {e}"),
             }
         }
+        if tick == 9 {
+            // Seeking while paused is the case the renderer refuses outright
+            // (UPnP 501) and `dlna_control` works around, so the selftest
+            // exercises it here rather than the plain seek above.
+            match dlna_control(service.clone(), "seek".into(), Some(900.0)).await {
+                Ok(()) => eprintln!("[dlna] seek-while-paused ok"),
+                Err(e) => eprintln!("[dlna] seek-while-paused failed: {e}"),
+            }
+        }
         if tick == 10 {
             let _ = dlna_control(service.clone(), "play".into(), None).await;
             eprintln!("[dlna] play sent");
@@ -1103,8 +1182,166 @@ pub async fn selftest(app: &tauri::AppHandle, target: Option<String>, path: Stri
             s.state, s.time, s.duration, s.volume, s.volume_known, s.fetches
         );
     }
+    // Print the diagnosis on the way out: the selftest is the only place it can
+    // be exercised without the GUI, and a report nobody has read once is a
+    // report that says what its author assumed.
+    for l in cast_diagnose(
+        target_ip.clone(),
+        Some(8009),
+        Some(location_for_report.clone()),
+    )
+    .await
+    {
+        eprintln!("[diag] {:<18} {:<8} {}", l.id, l.state, l.detail);
+    }
     match dlna_disconnect(service.clone(), cast_service.clone()).await {
         Ok(last) => eprintln!("[dlna] disconnected at {last:.1}s"),
         Err(e) => eprintln!("[dlna] disconnect failed: {e}"),
     }
+}
+
+// ---- Diagnosis --------------------------------------------------------------
+
+/// One line of a device report.
+///
+/// **`id` rather than a title**: this report is shown to a viewer, in a
+/// localised window, and Rust cannot reach the dictionary — the same split the
+/// macOS menu lives with. So the check names itself with a stable id the
+/// frontend translates, and `detail` carries what only this side knows: the
+/// addresses, the lists, the device's own error text. Data, not prose.
+#[derive(serde::Serialize)]
+pub struct CheckLine {
+    pub id: String,
+    /// ok | warn | fail | info — the report colours its rule from this.
+    pub state: String,
+    pub detail: String,
+}
+
+fn line(id: &str, state: &str, detail: impl Into<String>) -> CheckLine {
+    CheckLine {
+        id: id.to_string(),
+        state: state.to_string(),
+        detail: detail.into(),
+    }
+}
+
+/// Everything this player can learn about a device without playing anything.
+///
+/// The reason it exists: when a cast fails on someone else's television, the
+/// difference between "the network cannot reach it", "the receiver refused the
+/// file" and "the device does not do this at all" is invisible from the outside
+/// and decides everything. Every check here is one we already make somewhere in
+/// the normal flow — this is those checks, run on demand, with their answers
+/// written down instead of consumed.
+///
+/// It deliberately stops short of playing: launching an app on a television to
+/// answer a diagnostic question is a surprise, and the fetch test that needs it
+/// is a separate, announced step.
+#[tauri::command]
+pub async fn cast_diagnose(
+    ip: String,
+    cast_port: Option<u16>,
+    dlna_location: Option<String>,
+) -> Vec<CheckLine> {
+    let mut out = Vec::new();
+    let Ok(addr): Result<IpAddr, _> = ip.parse() else {
+        out.push(line("address", "fail", ip.clone()));
+        return out;
+    };
+
+    // Which of our own interfaces would serve this device, and therefore which
+    // one the television has to be able to reach back on.
+    match crate::cast::lan_ip_for_device(addr) {
+        Some(local) => out.push(line("subnet", "ok", local.to_string())),
+        None => out.push(line("subnet", "fail", String::new())),
+    }
+
+    if let Some(port) = cast_port {
+        let t = std::time::Instant::now();
+        match tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::net::TcpStream::connect((addr, port)),
+        )
+        .await
+        {
+            Ok(Ok(_)) => out.push(line("cast_port", "ok", format!("{addr}:{port} · {} ms", t.elapsed().as_millis()))),
+            Ok(Err(e)) => out.push(line("cast_port", "fail", format!("{addr}:{port} · {e}"))),
+            Err(_) => out.push(line("cast_port", "timeout", format!("{addr}:{port}"))),
+        }
+        match crate::cast::probe_receiver(addr, port).await {
+            Ok(summary) => out.push(line("cast_handshake", "ok", summary)),
+            Err(e) => out.push(line("cast_handshake", "fail", e)),
+        }
+    } else {
+        out.push(line("cast_absent", "info", String::new()));
+    }
+
+    let Some(location) = dlna_location else {
+        out.push(line("dlna_absent", "info", String::new()));
+        return out;
+    };
+
+    let client = reqwest::Client::new();
+    let Some(renderer) = describe(&client, &location).await else {
+        out.push(line("dlna_description", "fail", location.clone()));
+        return out;
+    };
+    out.push(line("dlna_renderer", "ok", format!("{} · {} {}", renderer.friendly_name, renderer.manufacturer, renderer.model)));
+    match &renderer.avtransport {
+        Some(url) => out.push(line("avtransport", "ok", url.clone())),
+        None => out.push(line("avtransport", "fail", String::new())),
+    }
+
+    if let Some(cm) = &renderer.connection_manager {
+        match protocol_info(&client, cm).await {
+            Some(sink) => {
+                let mimes = summarise_sink(&sink);
+                let video: Vec<&String> = mimes.keys().filter(|m| m.starts_with("video/")).collect();
+                out.push(line(
+                    "formats",
+                    if video.is_empty() { "warn" } else { "ok" },
+                    format!(
+                        "{} · {}",
+                        mimes.len(),
+                        video.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                    ),
+                ));
+            }
+            None => out.push(line("formats", "warn", String::new())),
+        }
+    }
+
+    // The two capabilities users notice missing, both read from the device's own
+    // description rather than discovered by failing.
+    if let Some(scpd) = &renderer.avtransport_scpd {
+        if let Ok(r) = client.get(scpd).timeout(Duration::from_secs(5)).send().await {
+            let xml = r.text().await.unwrap_or_default();
+            let actions: Vec<String> = xml
+                .split("<action>")
+                .skip(1)
+                .filter_map(|c| tag(c, "name").map(|s| s.to_string()))
+                .collect();
+            let seekable = actions.iter().any(|a| a == "Seek");
+            out.push(line(
+                "seeking",
+                if seekable { "ok" } else { "warn" },
+                actions.join(", "),
+            ));
+        }
+    }
+    if let Some(rc) = &renderer.rendering_control {
+        let args = "<Channel>Master</Channel>";
+        match soap(&client, rc, RENDERING_CONTROL, "GetVolume", args).await {
+            Ok(v) => {
+                let level = tag(&v, "CurrentVolume").unwrap_or("?").to_string();
+                out.push(line(
+                    "volume",
+                    if level == "0" { "warn" } else { "ok" },
+                    level,
+                ));
+            }
+            Err(e) => out.push(line("volume", "warn", e)),
+        }
+    }
+    out
 }

@@ -1836,6 +1836,81 @@ fn stop_server(server: Option<Server>) {
     }
 }
 
+/// Which of our addresses a device on `device_ip` would fetch from — the same
+/// answer `ensure_server` binds to, exposed for the diagnosis, where "no
+/// interface shares a subnet with it" is the whole explanation for a cast that
+/// never starts.
+pub(crate) fn lan_ip_for_device(device_ip: IpAddr) -> Option<IpAddr> {
+    lan_ip_for(device_ip)
+}
+
+/// Connect, CONNECT, GET_STATUS — the smoke test the kept `discover_smoke`
+/// runs, as something the diagnosis can call. **Deliberately stops short of
+/// LAUNCH**: answering a diagnostic question by starting an app on someone's
+/// television is a surprise, and everything that can be learned without it is
+/// learned here.
+pub(crate) async fn probe_receiver(ip: IpAddr, port: u16) -> Result<String, String> {
+    let stream = tls_connect(ip, port).await?;
+    let (rd, wr) = tokio::io::split(stream);
+    let mut pump = Pump {
+        wr,
+        status: Arc::new(Mutex::new(StatusInner::default())),
+        request_id: 0,
+        transport: None,
+        media_session: None,
+        pending_load: None,
+        load_request: None,
+    };
+    pump.send(NS_CONNECTION, RECEIVER_ID, json!({ "type": "CONNECT" }))
+        .await?;
+    let id = pump.next_id();
+    pump.send(
+        NS_RECEIVER,
+        RECEIVER_ID,
+        json!({ "type": "GET_STATUS", "requestId": id }),
+    )
+    .await?;
+
+    let mut rd = rd;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
+    loop {
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if left.is_zero() {
+            return Err("no RECEIVER_STATUS within 6 s".into());
+        }
+        let mut len = [0u8; 4];
+        if tokio::time::timeout(left, rd.read_exact(&mut len)).await.is_err() {
+            return Err("no RECEIVER_STATUS within 6 s".into());
+        }
+        let n = u32::from_be_bytes(len) as usize;
+        if n > MAX_FRAME {
+            return Err("oversized frame".into());
+        }
+        let mut buf = vec![0u8; n];
+        if rd.read_exact(&mut buf).await.is_err() {
+            return Err("connection closed mid-frame".into());
+        }
+        let Some(msg) = wire::decode(&buf) else {
+            continue;
+        };
+        let payload: Value = serde_json::from_str(&msg.payload).unwrap_or(Value::Null);
+        if payload["type"].as_str() != Some("RECEIVER_STATUS") {
+            continue;
+        }
+        let volume = payload["status"]["volume"]["controlType"]
+            .as_str()
+            .unwrap_or("not reported");
+        let apps = payload["status"]["applications"]
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
+        // Data, not prose: this string ends up in a localised report window,
+        // where the sentence belongs to the frontend and only the device's own
+        // answers belong here.
+        return Ok(format!("volume={volume} apps={apps}"));
+    }
+}
+
 /// Release the LAN server on behalf of a transport with its own disconnect
 /// path (DLNA). One entry point rather than handing out the private `Server`.
 pub(crate) fn release_server(service: &Arc<CastService>) {

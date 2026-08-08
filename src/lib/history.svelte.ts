@@ -15,7 +15,7 @@ import { baseName, displayName } from './format';
 import { t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
 import { isNetworkSource, player, type TrackWish } from './player.svelte';
-import { sourceId } from './source';
+import { parseTorrentUrl, sourceId } from './source';
 
 /// Seconds to rewind when resuming, so playback starts just before where the
 /// viewer left off rather than exactly on it.
@@ -528,6 +528,28 @@ let recentSeq = 0;
  * vanished drop out silently: poster_frame returns an error, and keeping
  * something unopenable in the list is pointless.
  */
+/// Where to decode this entry's poster from, or null for "there is none".
+///
+/// A torrent episode stores a loopback URL, so the plain path check skipped it
+/// and its card showed the link mark for ever. The file is on disk under the
+/// info hash and the cached `.torrent` beside it names the file —
+/// `torrent_offline_file` answers from those two **without adding the torrent**,
+/// joining the DHT or connecting to a peer, which is what kept this off the
+/// start screen before. It answers only for a complete file: the holes in an
+/// incomplete one read back as zeros, so a poster decoded from one would be a
+/// black rectangle presented as a frame of the film.
+async function posterSource(item: RecentItem): Promise<string | null> {
+  const torrent = parseTorrentUrl(item.path);
+  if (torrent) {
+    const local = await invoke<{ path: string; complete: boolean } | null>(
+      'torrent_offline_file',
+      { infoHash: torrent.infoHash, index: torrent.index },
+    ).catch(() => null);
+    return local?.path ?? null;
+  }
+  return isNetworkSource(item.path) ? null : item.path;
+}
+
 export async function loadRecent() {
   const seq = ++recentSeq;
   // Blobs from the previous list live until explicitly revoked — otherwise
@@ -588,9 +610,24 @@ export async function loadRecent() {
   // this loop only decides whether there is a picture.
   for (const item of history.recent) {
     if (seq !== recentSeq) return;
-    if (isNetworkSource(item.path)) continue;
+    // **A torrent episode has a poster too, and finding it costs no session.**
+    // Its stored path is a loopback URL, so this loop used to skip it and the
+    // card showed the link mark for ever. The file is on disk under the info
+    // hash, and the cached `.torrent` beside it names it — `torrent_offline_file`
+    // answers from those two without adding the torrent, joining the DHT or
+    // connecting to a peer. It answers only for a **complete** file: the holes
+    // in an incomplete one read back as zeros, and a poster decoded from one is
+    // a black rectangle presented as a frame of the film.
+    // A poster captured while the file played beats anything decodable now: it
+    // exists for entries whose file is incomplete, gone or unreadable, and it
+    // was chosen for looking like a picture rather than for sitting at a
+    // particular second.
+    const saved = await invoke<ArrayBuffer>('poster_saved', { id: item.id }).catch(() => null);
+    const source = saved ? null : await posterSource(item);
+    if (!saved && !source) continue;
     try {
-      const buf = await invoke<ArrayBuffer>('poster_frame', { path: item.path, pos: item.pos });
+      const buf =
+        saved ?? (await invoke<ArrayBuffer>('poster_frame', { path: source!, pos: item.pos }));
       if (seq !== recentSeq) return;
       if (buf.byteLength > 8) {
         const url = URL.createObjectURL(new Blob([new Uint8Array(buf, 8)], { type: 'image/jpeg' }));

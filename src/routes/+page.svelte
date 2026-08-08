@@ -200,13 +200,18 @@
     cast,
     castCacheCapGb,
     castCurrentFile,
-    castMode,
     castNudgeVolume,
     castSeek,
     castSeekBy,
     castSetVolume,
     castAdvance,
     castFollow,
+    checkLabel,
+    checkNote,
+    diagnoseDevice,
+    diagnosisText,
+    type CheckLine,
+    type TvDevice,
     castFollowing,
     castSwitchAudio,
     castToggleMute,
@@ -219,7 +224,6 @@
     disconnectCast,
     endCast,
     setCastCacheCapGb,
-    setCastMode,
     startCastDiscovery,
     stopCastDiscovery,
   } from '$lib/cast.svelte';
@@ -1280,19 +1284,28 @@
    * remembered at all. With history off nothing was recorded and the honest
    * answer is to say so rather than fail silently.
    */
+  /// Open something from the watch history — and **give it back its queue**.
+  ///
+  /// A local file gets the folder for free (`loadFiles` queues it through the
+  /// `filesOpened` hook), but a torrent episode did not: the resolver handed
+  /// back one URL and the rest of the season was simply lost, so an episode
+  /// opened from the history had no next episode while the same episode opened
+  /// from the torrent list did. Same file, two behaviours, and the difference
+  /// was invisible from the outside.
   async function openRecent(item: RecentItem) {
     if (!item.id.startsWith('torrent:')) {
       await loadFile(item.path);
       return;
     }
     opening = true;
-    const url = await resolveTorrentFile(item.id);
-    if (!url) {
+    const resolved = await resolveTorrentFile(item.id);
+    if (!resolved) {
       opening = false;
       showOsd(t('start.torrent_lost'));
       return;
     }
-    await loadFile(url);
+    await loadFile(resolved.url);
+    await queueTorrent(torrentVideos(resolved.info), resolved.url);
   }
 
   // ---- The torrent list on the start screen -------------------------------
@@ -1856,8 +1869,15 @@
     const hint = skipHint;
     if (!hint) return;
     skipUsed = hint.from;
-    if (hint.chapter) seekChapter(hint.chapter.index);
-    else if (hint.entry) void playEntry(hint.entry);
+    // Both halves follow the session: a chapter jump is a remote seek, and the
+    // next episode goes to the television rather than starting here.
+    if (hint.chapter) {
+      if (cast.remote) castSeek(hint.chapter.time);
+      else seekChapter(hint.chapter.index);
+    } else if (hint.entry) {
+      if (cast.remote) void castFollow(hint.entry);
+      else void playEntry(hint.entry);
+    }
   }
 
   function cancelAdvance() {
@@ -1911,10 +1931,16 @@
   const skipHint = $derived.by(() => {
     if (!hasFile || !player.hasChapters || stepMode) return null;
     if (openMenu !== null || settingsOpen) return null;
+    // **Whose clock.** While casting, the local player is parked paused on the
+    // frame it handed over, so every one of these readings is frozen and the
+    // button never appears — until something moves mpv, and then it appears at
+    // the wrong moment. The television's position is the one the viewer is
+    // watching, so it is the one the offer is measured against.
+    const now = cast.remote ? cast.time : player.timePos;
     // From the position rather than the `chapter` mirror: the mirror lags a
     // seek, and the elapsed time below has to be measured against the same
     // chapter the button would skip.
-    const here = chapterAt(player.timePos);
+    const here = chapterAt(now);
     if (!here || here.index === skipUsed) return null;
     const kind = skipKind(here);
     if (!kind) return null;
@@ -1943,10 +1969,10 @@
     const entry = next && !sameFile ? next : null;
     if (!chapter && !entry) return null;
     // The last chapter ends where the file does.
-    const ends = chapter ? chapter.time : player.duration;
+    const ends = chapter ? chapter.time : (cast.remote ? cast.duration : player.duration);
     if (ends <= here.time) return null;
     const span = Math.min(ends - here.time, SKIP_MAX_WINDOW);
-    const left = here.time + span - player.timePos;
+    const left = here.time + span - now;
     if (left <= 0 || left > span) return null;
     // Both readouts come from the position rather than from a CSS clock, so
     // they survive a seek into the middle of the chapter: the bar shows what is
@@ -1960,6 +1986,16 @@
       fade: Math.min(1, left / SKIP_FADE),
     };
   });
+  /// Release the skip button's mute once the *television* has left the chapter
+  /// it was used on. Its local twin lives in the `time-pos` handler and cannot
+  /// serve here: while casting mpv is paused, so no position report ever
+  /// arrives and the guard would hold for the rest of the session — one skip
+  /// per episode, then nothing.
+  $effect(() => {
+    if (!cast.remote) return;
+    if (skipUsed >= 0 && chapterAt(cast.time)?.index !== skipUsed) skipUsed = -1;
+  });
+
   const osdState = $derived(osd());
   const hasFile = $derived(player.hasFile);
   /// mpv's own title when it has one; failing that, the name the site gave us
@@ -2125,15 +2161,10 @@
   ]);
 
   // ---- The TV (casting) tab ----
-  let castModeVal = $state(castMode());
   let castCapVal = $state(castCacheCapGb());
   let castCacheBytes = $state<number | null>(null);
   const CAST_CAP_CHOICES = [0, 5, 20, 50];
 
-  function setCastModeHere(mode: 'auto' | 'prepare' | 'hls') {
-    castModeVal = mode;
-    setCastMode(mode);
-  }
 
   function setCastCapHere(gb: number) {
     castCapVal = gb;
@@ -4144,6 +4175,39 @@
   /// Which device row has its profile expanded. One at a time: two open rows
   /// in a panel this size read as a form rather than a list of televisions.
   let tvSettingsFor = $state<string | null>(null);
+  /// The device check: which row is running one, whose report is on screen.
+  let diagBusy = $state<string | null>(null);
+  let diagOpen = $state(false);
+  let diagDevice = $state<TvDevice | null>(null);
+  let diagLines = $state<CheckLine[]>([]);
+
+  async function runDiagnosis(device: TvDevice) {
+    diagBusy = device.key;
+    diagDevice = device;
+    diagLines = [];
+    // The dialog opens at once and fills in: the checks take a couple of
+    // seconds against a device in standby, and a button that does nothing
+    // visible for that long reads as a button that did nothing.
+    diagOpen = true;
+    openMenu = null;
+    try {
+      diagLines = await diagnoseDevice(device);
+    } finally {
+      diagBusy = null;
+    }
+  }
+
+  async function copyDiagnosis(device: TvDevice) {
+    // The webview's own clipboard: this is text, and the Rust path next door
+    // exists for an image the clipboard cannot take any other way.
+    try {
+      await navigator.clipboard.writeText(diagnosisText(device, diagLines));
+      showOsd(t('cast.diagnose_copied'));
+    } catch (e) {
+      console.warn('clipboard write failed:', e);
+      showOsd(t('cast.diagnose_copy_failed'));
+    }
+  }
   $effect(() => {
     if (openMenu === 'cast' && !cast.active) {
       startCastDiscovery();
@@ -5404,6 +5468,93 @@
     {@render submenuPanel('picture', pictureItems)}
     {@render submenuPanel('window', windowItems)}
   {/if}
+    {#if diagOpen}
+      <!-- A report is reading material, so it gets a sheet rather than a panel
+           inside a panel: the picker is 280px wide and scrolls, and eight lines
+           of prose in there is a column of two-word fragments. Same shell as
+           every other dialog here — backdrop, head, close — so it behaves the
+           way the settings and the link box already taught. -->
+      <div
+        class="settings-backdrop"
+        role="presentation"
+        onclick={() => (diagOpen = false)}
+        ondblclick={(e) => e.stopPropagation()}
+        oncontextmenu={blockContextMenu}
+      >
+        <div
+          class="settings diag-dialog"
+          role="dialog"
+          aria-label={t('cast.diagnose_title')}
+          tabindex="-1"
+          onclick={(e) => e.stopPropagation()}
+        >
+          <div class="settings-head">
+            <span>{t('cast.diagnose_title')}</span>
+            <button
+              class="settings-close"
+              data-tip={t('set.close')}
+              aria-label={t('bar.close')}
+              onclick={() => (diagOpen = false)}
+            >
+              <svg viewBox="0 0 10 10"><path stroke="currentColor" d="M0 0l10 10M10 0L0 10"/></svg>
+            </button>
+          </div>
+          <div class="diag-device">
+            <span class="diag-device-name">{diagDevice?.name}</span>
+            <span class="diag-device-sub">
+              {diagDevice?.ip}{diagDevice?.model && diagDevice.model !== diagDevice.name
+                ? ` · ${diagDevice.model}`
+                : ''}
+            </span>
+          </div>
+          {#if diagBusy}
+            <div class="diag-waiting">{t('cast.diagnosing')}</div>
+          {:else}
+            <ul class="diag-list">
+              {#each diagLines as check (check.id)}
+                <li class="diag-line {check.state}">
+                  <span class="diag-name">{checkLabel(check)}</span>
+                  {#if checkNote(check)}
+                    <span class="diag-note-line">{checkNote(check)}</span>
+                  {/if}
+                  {#if check.detail}
+                    <span class="diag-detail">{check.detail}</span>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <div class="diag-actions">
+            <button
+              class="diag-copy"
+              disabled={diagBusy !== null || !diagLines.length}
+              onclick={() => diagDevice && void copyDiagnosis(diagDevice)}
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" aria-hidden="true">
+                <rect
+                  x="9"
+                  y="9"
+                  width="11"
+                  height="11"
+                  rx="2.5"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                />
+                <path
+                  d="M15 5.5H6.5A2.5 2.5 0 0 0 4 8v8.5"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                />
+              </svg>
+              {t('cast.diagnose_copy')}
+            </button>
+            <span class="diag-note">{t('cast.diagnose_hint')}</span>
+          </div>
+        </div>
+      </div>
+    {/if}
+
     {#if linkOpen}
       <div
         class="settings-backdrop"
@@ -6418,35 +6569,6 @@
             <button class="btn-danger" onclick={clearTorrentCache}>{t('torrent.cache_clear')}</button>
           </div>
         {:else if settingsTab === 'tv'}
-          <!-- The hint switches with the pill: each value explains its own
-               consequences in one breath, because "prepare vs HLS" means
-               nothing to a viewer until it is said in terms of start-up wait,
-               seeking, sound and disk. `auto` leads and is the default — the
-               two-value version made the viewer choose a transport without
-               knowing the file, which is a decision the player is better placed
-               to make; the named values are the override. -->
-          <div class="setting">
-            <div class="setting-label">{t('cast.set_mode')}</div>
-            <div class="segmented">
-              {#each [['auto', t('cast.mode_auto')], ['prepare', t('cast.mode_prepare')], ['hls', t('cast.mode_hls')]] as [value, label] (value)}
-                <button
-                  class="segopt"
-                  class:sel={castModeVal === value}
-                  onclick={() => setCastModeHere(value as 'auto' | 'prepare' | 'hls')}
-                >
-                  {label}
-                </button>
-              {/each}
-            </div>
-            <div class="setting-hint">
-              {castModeVal === 'hls'
-                ? t('cast.mode_hls_hint')
-                : castModeVal === 'prepare'
-                  ? t('cast.mode_prepare_hint')
-                  : t('cast.mode_auto_hint')}
-            </div>
-            <div class="setting-hint">{t('cast.mode_scope_note')}</div>
-          </div>
           <div class="setting">
             <div class="setting-label">{t('cast.set_cache')}</div>
             <div class="segmented">
@@ -6915,7 +7037,14 @@
             class:sel={chapter.index === player.chapterIndex}
             onclick={() => {
               openMenu = null;
-              seekChapter(chapter.index);
+              // While the television owns playback, `chapter` is a property of
+              // the paused local player: setting it moves mpv, the knob jumps
+              // to the new time and the next status report drags it back — the
+              // seek never leaves this machine. The chapter list is local
+              // knowledge about the same file, so the jump is a remote seek to
+              // its timestamp, exactly as the chapter *keys* already did.
+              if (cast.remote) castSeek(chapter.time);
+              else seekChapter(chapter.index);
             }}
           >
             <span class="chapter-name">{chapterTitle(chapter)}</span>
@@ -6997,26 +7126,48 @@
                    bridge, its click guards and its drill-down fallback for a
                    window too narrow to hold two — all of that for one control. -->
               <div class="tv-settings">
-                <div class="tv-settings-label">{t('cast.transport')}</div>
-                <div class="segmented">
-                  {#each [['auto', t('cast.transport_auto')], ['dlna', t('cast.transport_dlna')], ['cast', t('cast.transport_cast')]] as [value, label] (value)}
-                    <button
-                      class="segopt"
-                      class:sel={(cast.profileRevision, deviceProfile(device).transport === value)}
-                      onclick={() => setDeviceTransport(device, value as 'auto' | 'cast' | 'dlna')}
-                    >
-                      {label}
-                    </button>
-                  {/each}
+                <!-- Two blocks, in the order a person needs them: the choice
+                     with its explanation directly under it, then — behind a
+                     hairline, so it reads as a different subject — the way out
+                     when the choice is not the problem. The check used to sit
+                     between the control and its own hint, which split one
+                     thought in half. -->
+                <div class="tv-block">
+                  <div class="tv-settings-label">{t('cast.transport')}</div>
+                  <div class="segmented">
+                    {#each [['auto', t('cast.transport_auto')], ['dlna', t('cast.transport_dlna')], ['cast', t('cast.transport_cast')]] as [value, label] (value)}
+                      <button
+                        class="segopt"
+                        class:sel={(cast.profileRevision, deviceProfile(device).transport === value)}
+                        onclick={() => setDeviceTransport(device, value as 'auto' | 'cast' | 'dlna')}
+                      >
+                        {label}
+                      </button>
+                    {/each}
+                  </div>
+                  <div class="tv-settings-hint">
+                    {#if pinnedUnavailable(device)}
+                      {t('cast.transport_unavailable')}
+                    {:else if deviceProfile(device).transport === 'auto'}
+                      {plannedTransport(device) === 'dlna'
+                        ? t('cast.transport_auto_dlna')
+                        : t('cast.transport_auto_cast')}
+                    {/if}
+                  </div>
                 </div>
-                <div class="tv-settings-hint">
-                  {#if pinnedUnavailable(device)}
-                    {t('cast.transport_unavailable')}
-                  {:else if deviceProfile(device).transport === 'auto'}
-                    {plannedTransport(device) === 'dlna'
-                      ? t('cast.transport_auto_dlna')
-                      : t('cast.transport_auto_cast')}
-                  {/if}
+                <!-- The row says what the button is FOR. "Проверить устройство"
+                     on its own is a button whose purpose a viewer has to guess;
+                     the question in front of it is the whole affordance, and the
+                     action shrinks to a link-sized thing beside it. -->
+                <div class="tv-block tv-trouble">
+                  <span class="tv-trouble-q">{t('cast.trouble')}</span>
+                  <button
+                    class="tv-check"
+                    disabled={diagBusy === device.key}
+                    onclick={() => void runDiagnosis(device)}
+                  >
+                    {diagBusy === device.key ? t('cast.diagnosing') : t('cast.diagnose')}
+                  </button>
                 </div>
               </div>
             {/if}
@@ -11249,6 +11400,197 @@
     font-size: 11px;
     line-height: 1.4;
     color: rgba(232, 232, 236, 0.45);
+  }
+
+  /* The expanded row is two subjects, and the hairline is what says so: the
+     choice with its explanation, then the way out when the choice is not the
+     problem. */
+  .tv-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Written to win rather than left to source order: `.tv-block` sets a column
+     and this element carries both classes, which is the two-class trap that has
+     already cost this project two bugs. */
+  .tv-block.tv-trouble {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .tv-trouble-q {
+    font-size: 11px;
+    color: rgba(232, 232, 236, 0.55);
+  }
+
+  /* Deliberately not `.btn-outline`: that button is 15px with 20px of padding,
+     which inside a 280px panel row reads as the panel's main action rather
+     than as a way out of a rare problem. The question beside it carries the
+     meaning; this only has to be pressable. */
+  .tv-check {
+    flex: none;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    padding: 3px 10px;
+    color: #d6d6de;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .tv-check:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #e8e8ec;
+  }
+
+  .tv-check:disabled {
+    color: #6a6a74;
+    cursor: default;
+  }
+
+  /* `.settings` is a block box, so the `gap` this used to declare did nothing
+     and the report ran into the device line above it and the footer below.
+     Making the sheet a column is the fix; the two larger gaps are where the
+     subject changes — from "which device" to "what it answered", and from the
+     answers to what you can do with them. */
+  .diag-dialog {
+    display: flex;
+    flex-direction: column;
+    max-width: min(560px, calc(100vw - 48px));
+    gap: 12px;
+  }
+
+  .diag-dialog .diag-list {
+    margin: 6px 0 10px;
+  }
+
+  .diag-device {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding-bottom: 2px;
+  }
+
+  .diag-device-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e8e8ec;
+  }
+
+  .diag-device-sub {
+    font-size: 11px;
+    color: rgba(232, 232, 236, 0.45);
+  }
+
+  .diag-waiting {
+    font-size: 12px;
+    color: rgba(232, 232, 236, 0.55);
+    padding: 12px 0;
+  }
+
+  .diag-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  /* The same size as the check that opened this window, for the same reason:
+     it is not the point of the dialog, the report is. The glyph is what makes
+     it findable once it is this small. */
+  .diag-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    padding: 4px 10px;
+    color: #d6d6de;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .diag-copy:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #e8e8ec;
+  }
+
+  .diag-copy:disabled {
+    color: #6a6a74;
+    cursor: default;
+  }
+
+  .diag-note {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    line-height: 1.4;
+    color: rgba(232, 232, 236, 0.45);
+  }
+
+  .diag-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    width: 100%;
+  }
+
+  .diag-line {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+    line-height: 1.4;
+    /* The state is carried by a bar rather than by colouring the text: a report
+       is read as prose, and eight coloured lines read as an error list. */
+    border-left: 2px solid rgba(232, 232, 236, 0.25);
+    padding-left: 10px;
+  }
+
+  .diag-line.ok {
+    border-left-color: #4ade80;
+  }
+  .diag-line.warn {
+    border-left-color: #fbbf24;
+  }
+  .diag-line.fail,
+  .diag-line.timeout {
+    border-left-color: #f87171;
+  }
+
+  .diag-name {
+    color: #e8e8ec;
+    /* The check's name is a label, not a sentence — first letter up, and the
+       Rust side writes them in lower case so this is the only place it is
+       decided. */
+    text-transform: capitalize;
+  }
+
+  /* Three strengths: the label, the sentence that explains it, and the raw
+     answer from the device — which is data and reads as data. */
+  .diag-note-line {
+    color: rgba(232, 232, 236, 0.65);
+  }
+
+  .diag-detail {
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: rgba(232, 232, 236, 0.4);
+    word-break: break-word;
   }
 
   .cast-current {

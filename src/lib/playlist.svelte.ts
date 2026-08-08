@@ -258,11 +258,18 @@ export function dropPosters() {
 
 // ---- Building a queue from the folder -------------------------------------
 
-/// Path comparison for "is this the file we just opened". Case-insensitive,
-/// like the privacy roots in history.svelte.ts and for the same reason: Windows
-/// and macOS both hand back paths whose case does not match what was asked for.
+/// Path comparison for "is this the file we just opened".
+///
+/// Case-insensitive, like the privacy roots in history.svelte.ts and for the
+/// same reason: Windows and macOS both hand back paths whose case does not
+/// match what was asked for. **And separator-insensitive**, because the two
+/// sides of this comparison come from different places — one from a stored
+/// record or mpv's `path`, the other from a directory read in Rust — and on
+/// Windows a mixed `E:/Videos\ep1.mkv` costs the whole queue: `findIndex`
+/// answers −1, `queueAround` returns without a word, and the player looks like
+/// it decided this folder has no other episodes.
 function samePath(a: string, b: string): boolean {
-  return a.toLowerCase() === b.toLowerCase();
+  return a.toLowerCase().replace(/\\/g, '/') === b.toLowerCase().replace(/\\/g, '/');
 }
 
 /**
@@ -316,11 +323,19 @@ export async function queueFolder(openedPath: string) {
   if (videos.length < 2) return;
 
   videos.sort((a, b) => naturalOrder.compare(baseName(a), baseName(b)));
-  await queueAround(
-    videos,
-    videos.findIndex((p) => samePath(p, openedPath)),
-    'folder',
-  );
+  const at = videos.findIndex((p) => samePath(p, openedPath));
+  if (at < 0) {
+    // The folder was read and the file we just opened is not in it — a path
+    // shape neither side expected, and previously the queue simply never
+    // appeared. Say so: this is the only way the next report arrives with the
+    // two strings that disagree.
+    console.warn('[playlist] opened file not found in its own folder', {
+      openedPath,
+      example: videos[0],
+    });
+    return;
+  }
+  await queueAround(videos, at, 'folder');
 }
 
 /**
