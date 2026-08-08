@@ -44,6 +44,17 @@ torrent are attached automatically, and the next episode is fetched ahead once
 the current one is complete. Nothing is downloaded until you actually ask for
 it, and **seeding is off by default**.
 
+**Send it to the television, without repacking it first.** The player speaks
+both Google Cast and DLNA and picks per device and per file: where the set can
+take the release as it is — which for a DLNA renderer usually means a 4K HEVC
+HDR MKV with Dolby audio, untouched — that is what it gets, with seeking and
+surround intact. Where it cannot, the file is remuxed first, with the video
+stream-copied so a film is ready in seconds rather than in an hour. A torrent
+that is still downloading can be cast too, fed from the same piece-priority
+stream that feeds local playback. While it plays the window is a remote: the
+queue moves the session from episode to episode, chapters and skip buttons act
+on the television, and disconnecting hands playback back at the position it had.
+
 **Skip the intro.** Chapter navigation, a chapter list, and a skip button for
 openings, recaps, "previously on", credits and ads. The button is matched on the
 whole chapter title rather than a substring hidden inside it — so "Ending the
@@ -162,6 +173,24 @@ damaged, with no button and no way past it except the terminal.
   default (a compile-time librqbit feature, not a rate limit).
 - **Subtitle search** (OpenSubtitles) — matched by file hash, with a title
   search as the fallback, sign-in optional and only to raise the daily limit.
+
+**Television**
+
+- **Two transports, chosen for you** — Google Cast and DLNA, discovered
+  together and merged into one row per device. The row says what will happen to
+  *this* file on *that* device ("plays as it is", "prepared before it starts"),
+  and the choice can be pinned per device.
+- **No preparation where none is needed** — a renderer that lists the container
+  plays the original file, so HEVC, HDR and surround survive; where a copy is
+  required the video is stream-copied and only the audio re-encoded.
+- **Torrents while they download** — served to the television from the same
+  blocking stream that feeds the player, with a buffered lead before the load.
+- **The window becomes a remote** — the queue advances the session, the seekbar
+  and keys drive the television, and what a device cannot do (its own volume,
+  its own audio-track choice) is said in words rather than left inert.
+- **A device check** — one button produces a report of what the device answered:
+  reachability, formats it accepts, whether it will seek, what it says about
+  volume. Copyable, and it never starts anything on the screen.
 
 **Interface**
 
@@ -312,18 +341,20 @@ On macOS a test binary cannot find the bundled dylibs on its own, so add
 | `src-tauri/src/thumb_service.rs` | Seekbar thumbnails: decode, background storyboard, disk cache |
 | `src-tauri/src/step_engine.rs` | FFmpeg sidecar frame-stepper (kept working, disabled by default) |
 | `src-tauri/src/torrent.rs` | Torrent session and the loopback HTTP server mpv opens |
+| `src-tauri/src/cast.rs` · `dlna.rs` | Casting: the Cast client, the LAN file server, the UPnP transport |
 | `src-tauri/src/opensubtitles.rs` | Subtitle search and download |
 | `src-tauri/src/macos_*.rs` | Native window chrome and menu bar on macOS |
 | `src-tauri/lua/zoompan.lua` | Atomic zoom+pan applied on mpv's core thread |
 | `patches/` | The mpv `--wid` embedding patch for macOS |
 | `scripts/` | SDK fetching, the macOS libmpv build, dylib bundling, DMG layout |
+| `docs/` | Design notes: why the architecture, the transports and the shipping story look like this |
 | `external-issues-backlog/` | Upstream bugs found here, written up for filing |
 
 [CLAUDE.md](CLAUDE.md) is the engineering state of record: how each subsystem
-works and which invariants must not be broken. Code comments and build scripts
-occasionally cite `architecture.md`, `FINDINGS-macos.md` or a numbered `ROADMAP`
-item — those are working notes kept out of the repository; every conclusion that
-matters to the code is repeated in CLAUDE.md.
+works and which invariants must not be broken. [docs/](docs/) is the reasoning
+behind it — the measurements, the alternatives that were tried, and the dead
+ends worth not repeating. Code comments and build scripts cite those documents
+by name (`architecture.md`, `macos.md`, a numbered `ROADMAP` item).
 
 ## Releases
 

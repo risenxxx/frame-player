@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds a patched libmpv for macOS: upstream mpv + the --wid (NSView) embedding
 # patch that lets mpv render BEHIND the transparent WKWebView instead of opening
-# its own window. See FINDINGS-macos.md.
+# its own window. See docs/macos.md.
 #
 # Output: src-tauri/lib/libmpv.dylib  (plus libmpv-wrapper.dylib, fetched too)
 #
@@ -43,7 +43,7 @@ echo "==> Configuring (libmpv only, no cplayer)"
 cd "mpv-$MPV_VERSION"
 # NOTE: this links against Homebrew's ffmpeg, which is a GPL build. For a
 # redistributable player use an LGPL ffmpeg and add -Dgpl=false, mirroring the
-# Windows side (see FINDINGS-macos.md, "Licensing").
+# Windows side (see docs/macos.md, "Licensing").
 if [ ! -d build ]; then
   meson setup build \
     -Dlibmpv=true \

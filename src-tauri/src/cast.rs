@@ -3,7 +3,7 @@
 //! The TV fetches the file over the LAN from an HTTP server this module runs
 //! and decodes it itself; mpv stops decoding for the duration. This is the only
 //! model compatible with `wid` embedding — mpv renders into a child window, and
-//! no OS casting API can be fed from that. See private-docs/casting.md for the
+//! no OS casting API can be fed from that. See docs/casting.md for the
 //! research, the measured numbers and the dead ends.
 //!
 //! Three decisions worth stating up front, because each replaces an "obvious"
@@ -771,7 +771,7 @@ struct StatusInner {
     /// The receiver's `volume.controlType`: "master"/"attenuation" mean the
     /// device takes SET_VOLUME, "fixed" means it does not (volume lives on the
     /// TV remote), and None means no status has carried a volume object yet —
-    /// the real TV here answers its first GET_STATUS without one, so absence
+    /// one measured television answers its first GET_STATUS without one, so absence
     /// is a normal state, not an error.
     volume_control: Option<String>,
 }
@@ -1317,7 +1317,7 @@ async fn run_session(
                             .await
                             .map(|_| false);
                         // Volume rides on receiver statuses, which otherwise
-                        // only arrive as broadcasts — and the real TV answers
+                        // only arrive as broadcasts — and a measured television answers
                         // its first status without a volume object at all, so
                         // ask periodically rather than hoping.
                         if result.is_ok() {
@@ -1923,7 +1923,7 @@ pub(crate) fn release_server(service: &Arc<CastService>) {
 
 // ---- Prepare: remux / audio-transcode into a Cast-ready MP4 ----------------
 //
-// The phase-2 rung, shaped by what the real TV validated: video is NEVER
+// The phase-2 rung, shaped by what a real television validated: video is NEVER
 // re-encoded (`-c:v copy` — lossless, and the whole reason a film takes
 // seconds), audio is copied when the receiver can take it and re-encoded to
 // E-AC-3 640k otherwise (passthrough confirmed working on the real chain).
@@ -2527,10 +2527,10 @@ mod tests {
             // A VPN TUN with a /32-ish mask that matches nothing.
             ("10.8.0.2".parse().unwrap(), "255.255.255.255".parse().unwrap()),
             // The real LAN interface.
-            ("192.168.2.56".parse().unwrap(), "255.255.255.0".parse().unwrap()),
+            ("192.0.2.10".parse().unwrap(), "255.255.255.0".parse().unwrap()),
         ];
-        let picked = pick_lan_ip(&candidates, "192.168.2.30".parse().unwrap());
-        assert_eq!(picked, Some("192.168.2.56".parse().unwrap()));
+        let picked = pick_lan_ip(&candidates, "192.0.2.48".parse().unwrap());
+        assert_eq!(picked, Some("192.0.2.10".parse().unwrap()));
         // No subnet matches: fall back to the first candidate rather than
         // refusing outright.
         let picked = pick_lan_ip(&candidates, "172.16.0.9".parse().unwrap());
@@ -2540,7 +2540,7 @@ mod tests {
     /// Live smoke test against whatever Cast devices the LAN actually has.
     /// Off by default (needs a network with a TV on it); run with
     /// `FP_TEST_CAST=1 cargo test --lib cast::tests::discover_smoke -- --nocapture`,
-    /// or with a specific device's IP in the variable (`FP_TEST_CAST=192.168.2.48`)
+    /// or with a specific device's IP in the variable (`FP_TEST_CAST=192.0.2.48`)
     /// to skip discovery and test the TLS + status path against that device —
     /// which is how the X.509-v1 certificate fix was verified against the TV
     /// whose cert webpki refuses.
@@ -2633,7 +2633,7 @@ mod tests {
     /// TV for the duration.
     ///
     /// ```bash
-    /// FP_CAST_DEBUG=1 FP_CAST_LOAD=192.168.2.48 \
+    /// FP_CAST_DEBUG=1 FP_CAST_LOAD=192.0.2.48 \
     ///   FP_CAST_FILE=/path/to/index.m3u8 \
     ///   cargo test --lib cast::tests::load_probe -- --nocapture
     /// ```

@@ -9,10 +9,6 @@ node_modules
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Private working notes: design records, research and spike reports. Not
-# published — see private-docs/README.md for what lives there.
-private-docs/
-
 # OpenSubtitles application key used during development. Release builds bake one
 # in at compile time and can override it through the same signed channel as
 # latest.json.
@@ -33,5 +29,3 @@ src-tauri/ffmpeg-macos/
 
 # Session handoff between machines: carries LAN details and personal file
 # paths, so it must never be committed. Transfer it out of band, like
-# private-docs/.
-/HANDOFF.md

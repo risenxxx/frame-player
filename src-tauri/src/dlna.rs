@@ -390,9 +390,9 @@ mod tests {
 
     #[test]
     fn control_urls_resolve_against_the_location() {
-        let loc = "http://192.168.2.48:9197/dmr/description.xml";
-        assert_eq!(absolute(loc, "/upnp/control/AVTransport1"), "http://192.168.2.48:9197/upnp/control/AVTransport1");
-        assert_eq!(absolute(loc, "upnp/control"), "http://192.168.2.48:9197/upnp/control");
+        let loc = "http://192.0.2.48:9197/dmr/description.xml";
+        assert_eq!(absolute(loc, "/upnp/control/AVTransport1"), "http://192.0.2.48:9197/upnp/control/AVTransport1");
+        assert_eq!(absolute(loc, "upnp/control"), "http://192.0.2.48:9197/upnp/control");
         assert_eq!(absolute(loc, "http://other/x"), "http://other/x");
     }
 
@@ -434,7 +434,7 @@ mod tests {
 //
 // DLNA is the third way this player reaches a television, and the one that
 // asks the least of us: the renderer is the TV's **own** player, so a release
-// it already decodes — measured here: MKV, 4K HEVC Main-10 HDR10, E-AC-3 5.1 —
+// it already decodes — measured: MKV, 4K HEVC Main-10 HDR10, E-AC-3 5.1 —
 // plays untouched, with seeking, from the same Range server the Cast path uses.
 // What it costs is that every device answers differently; hence the ladder is
 // read from `GetProtocolInfo` rather than assumed.
@@ -1045,7 +1045,7 @@ pub async fn dlna_control(
             let level = (value.unwrap_or(0.0).clamp(0.0, 1.0) * 100.0).round() as u32;
             let args = format!("<Channel>Master</Channel><DesiredVolume>{level}</DesiredVolume>");
             if let Err(e) = soap(&client, &rc, RENDERING_CONTROL, "SetVolume", &args).await {
-                // Refused (606 on this TV): stop claiming the control exists,
+                // Refused (606 on the measured television): stop claiming the control exists,
                 // so the slider disables itself on the next poll instead of
                 // moving without effect.
                 set_state(&state, |s| s.volume_known = false);

@@ -98,7 +98,7 @@ fn copy_lua_scripts() {
 /// to be in that same src-tauri/lib: dyld tries that directory through the
 /// wrapper's @loader_path rpath. DYLD_LIBRARY_PATH does not work here — npm
 /// runs through the SIP-protected /bin/sh, which strips every DYLD_*. Details
-/// in FINDINGS-macos.md.
+/// in docs/macos.md.
 #[cfg(target_os = "macos")]
 fn copy_wrapper_dylib() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();

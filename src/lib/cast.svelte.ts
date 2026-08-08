@@ -1066,7 +1066,7 @@ async function castOverDlna(device: TvDevice, src: string, keep = false): Promis
 /// Which HLS rendition to build — or `null` for "this file cannot go over HLS
 /// at all", which sends it down the progressive path instead.
 ///
-/// **HLS is H.264 only on this receiver.** Measured against the real TV with a
+/// **HLS is H.264 only on the receiver this was measured against.** Measured against a real television with a
 /// rendition per cell: H.264 plays in TS and (once the LOAD stopped carrying
 /// `hlsSegmentFormat`) in fMP4, while HEVC is refused in fMP4 — with the tag
 /// corrected to `hvc1`, and refused a beat earlier when a master playlist
