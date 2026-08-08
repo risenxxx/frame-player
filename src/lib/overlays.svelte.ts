@@ -30,6 +30,10 @@ class Overlays {
   ctxAt = $state<{ x: number; y: number } | null>(null);
   settings = $state(false);
   info = $state(false);
+  /// The third-party notices. Opened from the settings footer, so it is a layer
+  /// *above* the sheet rather than a replacement for it — Escape has to give the
+  /// settings back rather than close everything.
+  licenses = $state(false);
 
   /// The two track menus share their whole body (list + delay stepper), which
   /// the chapter menu does not — and every call in there takes 'audio' | 'sub',
@@ -37,7 +41,7 @@ class Overlays {
   trackMenu = $derived(this.menu === 'audio' || this.menu === 'sub' ? this.menu : null);
 
   /// Something is over the video, so the chrome must not fade out from under it.
-  any = $derived(this.menu !== null || this.settings);
+  any = $derived(this.menu !== null || this.settings || this.licenses);
 }
 
 export const overlays = new Overlays();
@@ -51,7 +55,7 @@ export const overlays = new Overlays();
 export function initOverlays() {
   $effect(() => {
     chrome.overlayOpen = overlays.any;
-    chrome.sheetOpen = overlays.settings;
+    chrome.sheetOpen = overlays.settings || overlays.licenses;
   });
 }
 
@@ -101,6 +105,10 @@ export function closeTopmost() {
   }
   if (overlays.info) {
     overlays.info = false;
+    return;
+  }
+  if (overlays.licenses) {
+    overlays.licenses = false;
     return;
   }
   if (overlays.settings) {

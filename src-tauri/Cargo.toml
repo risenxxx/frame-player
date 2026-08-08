@@ -1,9 +1,15 @@
 [package]
 name = "frameplayer"
-version = "0.31.0"
+version = "0.32.0"
 description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
 authors = ["Evgenii Zakharov"]
 edition = "2021"
+# Frame Player's own code. Copyleft on purpose: the LGPL work on the bundled
+# libraries bought the freedom to make this application closed or paid, and a
+# permissive license would have handed that same freedom to a closed fork. The
+# libraries keep their own licenses — see THIRD-PARTY-NOTICES.md, which ships
+# inside the application.
+license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

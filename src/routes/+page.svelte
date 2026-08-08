@@ -18,6 +18,7 @@
   import SubsDialog from '$lib/components/SubsDialog.svelte';
   import StartScreen from '$lib/components/StartScreen.svelte';
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
+  import LicensesDialog from '$lib/components/LicensesDialog.svelte';
   import ContextMenu from '$lib/components/ContextMenu.svelte';
   import TopBar from '$lib/components/TopBar.svelte';
   import StepOverlay from '$lib/components/StepOverlay.svelte';
@@ -1334,7 +1335,15 @@
       onclose={() => (overlays.settings = false)}
       onToggleSeeding={() => void toggleSeeding()}
       onClearTorrentCache={() => void clearTorrentCache()}
+      onLicenses={() => (overlays.licenses = true)}
     />
+  {/if}
+
+  <!-- Above the settings sheet rather than instead of it: closing the notices
+       has to give the settings back, which is what the order in `closeTopmost`
+       encodes. Rendered after, so it also paints on top. -->
+  {#if overlays.licenses}
+    <LicensesDialog onclose={() => (overlays.licenses = false)} />
   {/if}
 
   {#if tooltip}
@@ -1370,6 +1379,14 @@
   </button>
 
   {#if !showEmpty}
+  <!-- The click handler is a guard, not an affordance: it stops a click on the
+       bar reaching the video's play/pause. There is nothing here to activate
+       from the keyboard — every control inside is a real button, reachable on
+       its own — so a keydown handler would add a focus stop that leads nowhere.
+       `role="toolbar"` already says what this is. The directive has to be a
+       comment of its own and start with the word: prose in front of it and it
+       is not seen at all. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="osc"
     class:hidden={chrome.idle}

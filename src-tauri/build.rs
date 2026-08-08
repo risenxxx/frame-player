@@ -160,11 +160,31 @@ fn copy_wrapper_dylib() {
 #[cfg(not(target_os = "macos"))]
 fn copy_wrapper_dylib() {}
 
+/// The license and the third-party notices are bundle resources, and resources
+/// are only copied at bundle time — so in dev `resolve_resource` points next to
+/// the exe, where nothing put them. The settings footer's link would then do
+/// nothing in dev and work in the shipped app, which is the wrong way round for
+/// a control whose whole job is to be verifiable. Same as `copy_lua_scripts`.
+fn copy_notices() {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let profile = std::env::var("PROFILE").unwrap();
+    let dst = Path::new(&manifest).join("target").join(&profile);
+    let _ = std::fs::create_dir_all(&dst);
+    for name in ["THIRD-PARTY-NOTICES.md", "LICENSE"] {
+        let src = Path::new(&manifest).join("..").join(name);
+        if src.exists() {
+            let _ = std::fs::copy(&src, dst.join(name));
+        }
+        println!("cargo:rerun-if-changed=../{name}");
+    }
+}
+
 fn main() {
     copy_ffmpeg_dlls();
     copy_ffmpeg_cli();
     copy_lua_scripts();
     copy_wrapper_dylib();
+    copy_notices();
     // The icon is embedded into the exe as a resource during build.rs — without
     // this line cargo never learns that icon.ico changed and leaves the old exe.
     println!("cargo:rerun-if-changed=icons/icon.ico");

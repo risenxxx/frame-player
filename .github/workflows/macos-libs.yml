@@ -32,6 +32,12 @@ on:
       - 'patches/mpv-*.patch'
       - '.github/workflows/macos-libs.yml'
 
+# Two runs publishing at once would race on the prune: each would see the
+# other's set as an older one to drop.
+concurrency:
+  group: macos-libs
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: macos-26
@@ -65,6 +71,14 @@ jobs:
       # stand between a GPL set and the bucket.
       - name: Verify licenses
         run: scripts/check-macos-licenses.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The license gate proves nothing GPL got in; this proves everything that
+      # did get in is attributed. It belongs here rather than only in the Node
+      # checks job, because that job has no library set to compare against — the
+      # coverage check is inert wherever src-tauri/lib does not exist. Needs no
+      # `npm ci`: rendering reads committed files and nothing else.
+      - name: Notices cover the set
+        run: node scripts/gen-notices.mjs --check
 
       # A library set that is LGPL and cannot decode anything is not a success.
       # Cheap end-to-end proof: the CLI runs, the codecs the player actually
@@ -109,11 +123,9 @@ jobs:
           PYEOF
 
       - name: Package
-        id: pack
         run: |
           set -euo pipefail
-          tar czf "${{ steps.key.outputs.name }}.tar.gz" \
-            -C src-tauri lib ffmpeg-macos
+          tar czf "${{ steps.key.outputs.name }}.tar.gz" -C src-tauri lib ffmpeg-macos
           shasum -a 256 "${{ steps.key.outputs.name }}.tar.gz" \
             | tee "${{ steps.key.outputs.name }}.tar.gz.sha256"
           ls -lh "${{ steps.key.outputs.name }}.tar.gz" >> "$GITHUB_STEP_SUMMARY"
@@ -127,6 +139,9 @@ jobs:
           path: ${{ steps.key.outputs.name }}.tar.gz*
           retention-days: 14
 
+      # `publish-macos-libs.sh` packages again rather than reusing the archive
+      # above: the two are byte-identical, and one code path that both this
+      # workflow and the release job take is worth more than saving a `tar`.
       - name: Publish to Cloudflare R2
         if: github.event_name == 'workflow_dispatch' && inputs.publish
         env:
@@ -137,62 +152,23 @@ jobs:
           # release workflow does.
           AWS_REQUEST_CHECKSUM_CALCULATION: when_required
           AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-          # Optional, and only used to check the object came out readable. The
-          # fetch script in step 3 will need it for real.
+          R2_BUCKET: ${{ vars.R2_BUCKET_LIBS }}
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
           R2_PUBLIC_URL_LIBS: ${{ vars.R2_PUBLIC_URL_LIBS }}
         run: |
           set -euo pipefail
-          # Not guaranteed on the macOS image the way it is on ubuntu, and a
-          # missing `aws` here would fail the run after the whole build.
+          [ -n "$R2_BUCKET" ] || { echo "R2_BUCKET_LIBS is not set" >&2; exit 1; }
           command -v aws >/dev/null || brew install -q awscli
-          endpoint="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-          bucket="${{ vars.R2_BUCKET_LIBS }}"
-          [ -n "$bucket" ] || { echo "R2_BUCKET_LIBS is not set" >&2; exit 1; }
-          name="${{ steps.key.outputs.name }}"
-          # A bucket of its own, so the objects sit at its root: the `libs/`
-          # prefix existed only to stay clear of the updater's `latest.json` and
-          # installers when the two shared one bucket.
-          aws s3 cp "$name.tar.gz"        "s3://$bucket/$name.tar.gz"        --endpoint-url "$endpoint"
-          aws s3 cp "$name.tar.gz.sha256" "s3://$bucket/$name.tar.gz.sha256" --endpoint-url "$endpoint"
-
-          # Sweep, and only after the upload succeeded: a set is deleted once its
-          # replacement is already in place, so a failed publish leaves the
-          # previous one serving rather than nothing at all.
-          # The `macos-*` guard survives the move to a dedicated bucket, and now
-          # for a better reason than avoiding the updater: a Windows set
-          # published here later must not be swept away by a macOS run.
-          #
-          # Listed into a variable and filtered in the shell rather than through a
-          # `grep | grep -v` pipeline. With nothing old to delete both greps
-          # match nothing, return 1, and under `pipefail` the step fails — on the
-          # *first successful publish*, which is the one case guaranteed to
-          # happen. The same idiom broke the license gate one step earlier.
-          echo "keeping $name, removing older sets:"
-          listing="$(aws s3 ls "s3://$bucket/" --endpoint-url "$endpoint" || true)"
-          removed=0
-          for old in $(printf '%s\n' "$listing" | awk '{print $4}'); do
-            case "$old" in
-              "$name".tar.gz|"$name".tar.gz.sha256|'') continue ;;
-              macos-*.tar.gz|macos-*.tar.gz.sha256) ;;
-              *) continue ;;
-            esac
-            echo "  - $old"
-            aws s3 rm "s3://$bucket/$old" --endpoint-url "$endpoint"
-            removed=$((removed + 1))
-          done
-          echo "  ($removed removed)"
-          echo "published: \`$name.tar.gz\`" >> "$GITHUB_STEP_SUMMARY"
+          # Only the manual workflow prunes. See the note in
+          # publish-macos-libs.sh for why the release path must not.
+          scripts/publish-macos-libs.sh --retain 5 | tee -a "$GITHUB_STEP_SUMMARY"
 
           # Proves the object is reachable without credentials — which is how
-          # the fetch script will read it, and the one thing about a fresh
-          # bucket that is not obvious: R2 buckets are private until a public
-          # domain is attached. Better to learn it here than when the fetch is
-          # already wired into the build.
+          # the fetch script reads it, and the one thing about a bucket that is
+          # not obvious: R2 buckets are private until a domain is attached.
           if [ -n "${R2_PUBLIC_URL_LIBS:-}" ]; then
-            url="${R2_PUBLIC_URL_LIBS%/}/$name.tar.gz"
+            url="${R2_PUBLIC_URL_LIBS%/}/${{ steps.key.outputs.name }}.tar.gz"
             code="$(curl -sS -o /dev/null -w '%{http_code}' -I "$url" || echo 000)"
             echo "public URL: $url -> HTTP $code" >> "$GITHUB_STEP_SUMMARY"
-            [ "$code" = "200" ] || echo "  (not public yet — attach a domain before step 3)" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "R2_PUBLIC_URL_LIBS not set — skipping the reachability probe" >> "$GITHUB_STEP_SUMMARY"
+            [ "$code" = "200" ] || echo "  (not public yet — attach a domain)" >> "$GITHUB_STEP_SUMMARY"
           fi

@@ -9,6 +9,21 @@
 # will likely look very different (and much more reasonable).
 # See Cargo.toml.orig for the original contents.
 
+# Warnings from code we do not maintain.
+#
+# A crate from the registry is compiled with `--cap-lints allow`; one reached
+# through `[patch.crates-io]` is a *local* package and gets none of that, so
+# upstream's own nits print on every build of this project and bury ours. These
+# two are upstream's: a redundant pair of parentheses in `dht.rs`, and a protocol
+# struct this build never constructs.
+#
+# Named individually rather than silencing `warnings` wholesale: our patch to
+# `dht.rs` lives in this crate too, and a warning it causes — now or after a
+# version bump — is one we do want to see.
+[lints.rust]
+unused_parens = "allow"
+dead_code = "allow"
+
 [package]
 edition = "2021"
 name = "librqbit-dht"

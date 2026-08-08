@@ -219,6 +219,10 @@
   }
 </script>
 
+<!-- `stopPropagation`, so a click inside the menu does not reach the handler
+     that closes it (see the note in CLAUDE.md about hoisted panels losing their
+     parent's guards). Nothing to activate: the rows are buttons. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   class="ctxmenu scrollable"
   class:masked={ctxDrill && !!ctxSubmenu}
@@ -310,6 +314,7 @@
 
 {#snippet submenuPanel(key: CtxSub, body: Snippet)}
   {#if ctxSubmenu === key}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       class="ctxmenu submenu scrollable"
       role="menu"

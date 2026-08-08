@@ -62,9 +62,13 @@
     /// data off the disk.
     onToggleSeeding: () => void;
     onClearTorrentCache: () => void;
+    /// Raises the third-party notices, which are a layer above this sheet. A
+    /// callback rather than reaching for `overlays`: no component in this
+    /// project opens a dialog by itself — the page owns the surface stack.
+    onLicenses: () => void;
   }
 
-  let { onclose, onToggleSeeding, onClearTorrentCache }: Props = $props();
+  let { onclose, onToggleSeeding, onClearTorrentCache, onLicenses }: Props = $props();
 
   // Interactive settings editor: descriptions of the options mirrored into
   // mpv.conf. v = null means "player default" (the line is commented out).
@@ -1128,6 +1132,16 @@
         onclick={() => { if (player.mpvConfPath) void revealItemInDir(player.mpvConfPath); }}
       >
         {t(IS_MAC ? 'set.conf_reveal_mac' : 'set.conf_reveal_win')}
+      </button>
+    </div>
+    <!-- The LGPL notice. The link opens the texts in a layer above this sheet
+         rather than revealing a file: `open-path` is not in the capabilities,
+         and a .md has no reliable handler on Windows regardless. Revealing the
+         file is still offered, inside that dialog. -->
+    <div class="settings-foot">
+      {t('set.licenses_foot')}
+      <button class="settings-link" onclick={onLicenses}>
+        {t('set.licenses_open')}
       </button>
     </div>
   {/if}

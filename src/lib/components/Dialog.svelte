@@ -55,6 +55,10 @@
   }
 </script>
 
+<!-- Clicking the backdrop closes the dialog, and its keyboard equivalent is
+     Escape, which `closeTopmost` has handled all along — not a keydown on a
+     `role="presentation"` scrim, which would put a tab stop on the dimming. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   class="settings-backdrop"
   role="presentation"

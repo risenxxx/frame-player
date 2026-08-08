@@ -13,7 +13,9 @@
       "ffmpeg/bin/*.dll": null,
       "ffmpeg/bin/ffmpeg.*": null,
       "ffmpeg-macos/bin/ffmpeg": "./",
-      "lib/**/*": "lib/"
+      "lib/**/*": "lib/",
+      "../THIRD-PARTY-NOTICES.md": "./",
+      "../LICENSE": "./"
     }
   }
 }

@@ -1,0 +1,425 @@
+{
+  "$comment": [
+    "The third-party inventory THIRD-PARTY-NOTICES.md is generated from. Edited by hand;",
+    "`scripts/gen-notices.mjs` renders it and, when the macOS library set is present, refuses",
+    "to render if any shipped dylib has no entry here. That check is the whole point of the",
+    "`libs` field — a dependency added to the build lands in the notices or fails the gate.",
+    "",
+    "`license` is the license of THE ARTIFACT WE SHIP, which is not always the project's",
+    "headline license. FFmpeg and mpv are the cases that matter: Homebrew's own formulae are",
+    "GPL-3.0 and GPL-2.0, and copying those here would mislabel our own non-GPL builds as GPL.",
+    "Where a project is multi-licensed, `license` records the option taken and `note` says so.",
+    "",
+    "`libs` lists the file stems shipped for that project (no version, no extension). An empty",
+    "list means the project ships no file of its own: it is statically inside the prebuilt",
+    "Windows libmpv-2.dll. Those entries cannot be verified against a closure, so they are",
+    "over-inclusive by design — listing a component the current upstream build happens not to",
+    "carry costs nothing, while omitting one that it does carry is the actual violation."
+  ],
+  "projects": [
+    {
+      "id": "mpv",
+      "name": "mpv",
+      "license": "LGPL-2.1-or-later",
+      "text": "mpv",
+      "url": "https://mpv.io/",
+      "source": "https://github.com/mpv-player/mpv",
+      "libs": ["libmpv", "libmpv-2"],
+      "note": "Built with -Dgpl=false, which is what makes it LGPL rather than GPL-2.0-or-later. On macOS by scripts/build-macos-libs.sh; on Windows this is upstream's own LGPL build, whose embedded configuration string records the same flag."
+    },
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg",
+      "license": "LGPL-2.1-or-later",
+      "text": "ffmpeg",
+      "url": "https://ffmpeg.org/",
+      "source": "https://github.com/FFmpeg/FFmpeg",
+      "libs": [
+        "libavcodec", "libavdevice", "libavfilter", "libavformat", "libavutil",
+        "libswresample", "libswscale",
+        "avcodec", "avdevice", "avfilter", "avformat", "avutil", "swresample", "swscale"
+      ],
+      "note": "Built with --disable-gpl --disable-version3 --disable-nonfree, so no GPL-only component (libx264, libx265, libxvid, librubberband, libvidstab) is present. scripts/check-macos-licenses.sh enforces that before any set is published."
+    },
+    {
+      "id": "libmpv-wrapper",
+      "name": "libmpv-wrapper",
+      "license": "LGPL-2.1-only",
+      "text": "libmpv-wrapper",
+      "url": "https://github.com/nini22P/libmpv-wrapper",
+      "source": "https://github.com/nini22P/libmpv-wrapper",
+      "libs": ["libmpv-wrapper"]
+    },
+    {
+      "id": "libass",
+      "name": "libass",
+      "license": "ISC",
+      "text": "libass",
+      "url": "https://github.com/libass/libass",
+      "source": "https://github.com/libass/libass",
+      "libs": ["libass"]
+    },
+    {
+      "id": "freetype",
+      "name": "FreeType",
+      "license": "FTL",
+      "text": "freetype",
+      "url": "https://freetype.org/",
+      "source": "https://gitlab.freedesktop.org/freetype/freetype",
+      "libs": ["libfreetype"],
+      "note": "Dual-licensed FTL or GPL-2.0-or-later; the FreeType License is the option taken."
+    },
+    {
+      "id": "harfbuzz",
+      "name": "HarfBuzz",
+      "license": "MIT",
+      "text": "harfbuzz",
+      "url": "https://harfbuzz.github.io/",
+      "source": "https://github.com/harfbuzz/harfbuzz",
+      "libs": ["libharfbuzz"]
+    },
+    {
+      "id": "fribidi",
+      "name": "GNU FriBidi",
+      "license": "LGPL-2.1-or-later",
+      "text": "fribidi",
+      "url": "https://github.com/fribidi/fribidi",
+      "source": "https://github.com/fribidi/fribidi",
+      "libs": ["libfribidi"],
+      "note": "The project is distributed as GPL-2.0-or-later AND LGPL-2.1-or-later; the GPL half covers the command-line tool, which is not shipped. The library is LGPL."
+    },
+    {
+      "id": "libplacebo",
+      "name": "libplacebo",
+      "license": "LGPL-2.1-or-later",
+      "text": "libplacebo",
+      "url": "https://libplacebo.org/",
+      "source": "https://code.videolan.org/videolan/libplacebo",
+      "libs": ["libplacebo"]
+    },
+    {
+      "id": "shaderc",
+      "name": "shaderc",
+      "license": "Apache-2.0",
+      "text": "shaderc",
+      "url": "https://github.com/google/shaderc",
+      "source": "https://github.com/google/shaderc",
+      "libs": ["libshaderc_shared", "libshaderc"]
+    },
+    {
+      "id": "lcms2",
+      "name": "Little CMS",
+      "license": "MIT",
+      "text": "lcms2",
+      "url": "https://littlecms.com/",
+      "source": "https://github.com/mm2/Little-CMS",
+      "libs": ["liblcms2"]
+    },
+    {
+      "id": "uchardet",
+      "name": "uchardet",
+      "license": "MPL-1.1",
+      "text": "uchardet",
+      "url": "https://www.freedesktop.org/wiki/Software/uchardet/",
+      "source": "https://gitlab.freedesktop.org/uchardet/uchardet",
+      "libs": ["libuchardet"],
+      "note": "Tri-licensed MPL-1.1 or GPL-2.0-or-later or LGPL-2.1-or-later; MPL-1.1 is the option taken."
+    },
+    {
+      "id": "luajit",
+      "name": "LuaJIT",
+      "license": "MIT",
+      "text": "luajit",
+      "url": "https://luajit.org/",
+      "source": "https://github.com/LuaJIT/LuaJIT",
+      "libs": ["libluajit-5", "libluajit"]
+    },
+    {
+      "id": "libpng",
+      "name": "libpng",
+      "license": "libpng-2.0",
+      "text": "libpng",
+      "url": "http://www.libpng.org/pub/png/libpng.html",
+      "source": "https://github.com/pnggroup/libpng",
+      "libs": ["libpng16", "libpng"]
+    },
+    {
+      "id": "dav1d",
+      "name": "dav1d",
+      "license": "BSD-2-Clause",
+      "text": "dav1d",
+      "url": "https://code.videolan.org/videolan/dav1d",
+      "source": "https://code.videolan.org/videolan/dav1d",
+      "libs": ["libdav1d"]
+    },
+    {
+      "id": "libunibreak",
+      "name": "libunibreak",
+      "license": "Zlib",
+      "text": "libunibreak",
+      "url": "https://github.com/adah1972/libunibreak",
+      "source": "https://github.com/adah1972/libunibreak",
+      "libs": ["libunibreak"]
+    },
+    {
+      "id": "molten-vk",
+      "name": "MoltenVK",
+      "license": "Apache-2.0",
+      "text": "molten-vk",
+      "url": "https://github.com/KhronosGroup/MoltenVK",
+      "source": "https://github.com/KhronosGroup/MoltenVK",
+      "libs": ["libMoltenVK"],
+      "platforms": ["macos"]
+    },
+    {
+      "id": "vulkan-loader",
+      "name": "Vulkan-Loader",
+      "license": "Apache-2.0",
+      "text": "vulkan-loader",
+      "url": "https://github.com/KhronosGroup/Vulkan-Loader",
+      "source": "https://github.com/KhronosGroup/Vulkan-Loader",
+      "libs": ["libvulkan"]
+    },
+    {
+      "id": "libx11",
+      "name": "libX11",
+      "license": "MIT",
+      "text": "libx11",
+      "url": "https://gitlab.freedesktop.org/xorg/lib/libx11",
+      "source": "https://gitlab.freedesktop.org/xorg/lib/libx11",
+      "libs": ["libX11"],
+      "platforms": ["macos"]
+    },
+    {
+      "id": "libxau",
+      "name": "libXau",
+      "license": "MIT",
+      "text": "libxau",
+      "url": "https://gitlab.freedesktop.org/xorg/lib/libxau",
+      "source": "https://gitlab.freedesktop.org/xorg/lib/libxau",
+      "libs": ["libXau"],
+      "platforms": ["macos"]
+    },
+    {
+      "id": "libxdmcp",
+      "name": "libXdmcp",
+      "license": "MIT",
+      "text": "libxdmcp",
+      "url": "https://gitlab.freedesktop.org/xorg/lib/libxdmcp",
+      "source": "https://gitlab.freedesktop.org/xorg/lib/libxdmcp",
+      "libs": ["libXdmcp"],
+      "platforms": ["macos"]
+    },
+    {
+      "id": "libxcb",
+      "name": "libxcb",
+      "license": "MIT",
+      "text": "libxcb",
+      "url": "https://gitlab.freedesktop.org/xorg/lib/libxcb",
+      "source": "https://gitlab.freedesktop.org/xorg/lib/libxcb",
+      "libs": ["libxcb", "libxcb-shape", "libxcb-shm", "libxcb-xfixes"],
+      "platforms": ["macos"]
+    },
+    {
+      "id": "glib",
+      "name": "GLib",
+      "license": "LGPL-2.1-or-later",
+      "text": "LGPL-2.1",
+      "url": "https://gitlab.gnome.org/GNOME/glib",
+      "source": "https://gitlab.gnome.org/GNOME/glib",
+      "libs": ["libglib-2", "libglib"],
+      "note": "GLib's own COPYING is a symlink to the unmodified FSF text, which is what is reproduced here."
+    },
+    {
+      "id": "gettext",
+      "name": "GNU gettext runtime (libintl)",
+      "license": "LGPL-2.1-or-later",
+      "text": "gettext",
+      "url": "https://www.gnu.org/software/gettext/",
+      "source": "https://git.savannah.gnu.org/cgit/gettext.git",
+      "libs": ["libintl"],
+      "note": "Only the runtime library is shipped. The GPL-3.0 text in the gettext distribution covers its command-line tools, which are not."
+    },
+    {
+      "id": "graphite2",
+      "name": "Graphite2",
+      "license": "LGPL-2.1-or-later",
+      "text": "graphite2",
+      "url": "https://github.com/silnrsi/graphite",
+      "source": "https://github.com/silnrsi/graphite",
+      "libs": ["libgraphite2"],
+      "note": "Quad-licensed LGPL-2.1-or-later, MPL-2.0, GPL-2.0-or-later or MIT; LGPL-2.1-or-later is the option taken."
+    },
+    {
+      "id": "pcre2",
+      "name": "PCRE2",
+      "license": "BSD-3-Clause",
+      "text": "pcre2",
+      "url": "https://pcre2project.github.io/pcre2/",
+      "source": "https://github.com/PCRE2Project/pcre2",
+      "libs": ["libpcre2-8", "libpcre2"]
+    },
+    {
+      "id": "jpeg-turbo",
+      "name": "libjpeg-turbo",
+      "license": "IJG AND Zlib AND BSD-3-Clause",
+      "text": "jpeg-turbo",
+      "url": "https://libjpeg-turbo.org/",
+      "source": "https://github.com/libjpeg-turbo/libjpeg-turbo",
+      "libs": ["libjpeg"]
+    },
+    {
+      "id": "libarchive",
+      "name": "libarchive",
+      "license": "BSD-2-Clause",
+      "text": "libarchive",
+      "url": "https://libarchive.org/",
+      "source": "https://github.com/libarchive/libarchive",
+      "libs": []
+    },
+    {
+      "id": "libbluray",
+      "name": "libbluray",
+      "license": "LGPL-2.1-or-later",
+      "text": "libbluray",
+      "url": "https://www.videolan.org/developers/libbluray.html",
+      "source": "https://code.videolan.org/videolan/libbluray",
+      "libs": []
+    },
+    {
+      "id": "vapoursynth",
+      "name": "VapourSynth",
+      "license": "LGPL-2.1-or-later",
+      "text": "vapoursynth",
+      "url": "https://www.vapoursynth.com/",
+      "source": "https://github.com/vapoursynth/vapoursynth",
+      "libs": []
+    },
+    {
+      "id": "subrandr",
+      "name": "subrandr",
+      "license": "MPL-2.0",
+      "text": "subrandr",
+      "url": "https://github.com/afishhh/subrandr",
+      "source": "https://github.com/afishhh/subrandr",
+      "libs": []
+    },
+    {
+      "id": "mujs",
+      "name": "MuJS",
+      "license": "ISC",
+      "text": "mujs",
+      "url": "https://mujs.com/",
+      "source": "https://codeberg.org/ccxvii/mujs",
+      "libs": []
+    },
+    {
+      "id": "sdl2",
+      "name": "SDL2",
+      "license": "Zlib",
+      "text": "sdl2",
+      "url": "https://www.libsdl.org/",
+      "source": "https://github.com/libsdl-org/SDL",
+      "libs": []
+    },
+    {
+      "id": "libsixel",
+      "name": "libsixel",
+      "license": "MIT",
+      "text": "libsixel",
+      "url": "https://github.com/saitoha/libsixel",
+      "source": "https://github.com/saitoha/libsixel",
+      "libs": []
+    },
+    {
+      "id": "curl",
+      "name": "libcurl",
+      "license": "curl",
+      "text": "curl",
+      "url": "https://curl.se/",
+      "source": "https://github.com/curl/curl",
+      "libs": []
+    },
+    {
+      "id": "spirv-cross",
+      "name": "SPIRV-Cross",
+      "license": "Apache-2.0",
+      "text": "spirv-cross",
+      "url": "https://github.com/KhronosGroup/SPIRV-Cross",
+      "source": "https://github.com/KhronosGroup/SPIRV-Cross",
+      "libs": []
+    },
+    {
+      "id": "angle",
+      "name": "ANGLE",
+      "license": "BSD-3-Clause",
+      "text": "angle",
+      "url": "https://chromium.googlesource.com/angle/angle",
+      "source": "https://chromium.googlesource.com/angle/angle",
+      "libs": []
+    },
+    {
+      "id": "libopenmpt",
+      "name": "libopenmpt",
+      "license": "BSD-3-Clause",
+      "text": "libopenmpt",
+      "url": "https://lib.openmpt.org/libopenmpt/",
+      "source": "https://github.com/OpenMPT/openmpt",
+      "libs": []
+    },
+    {
+      "id": "zlib",
+      "name": "zlib",
+      "license": "Zlib",
+      "text": "zlib",
+      "url": "https://zlib.net/",
+      "source": "https://github.com/madler/zlib",
+      "libs": []
+    },
+    {
+      "id": "libwebp",
+      "name": "libwebp",
+      "license": "BSD-3-Clause",
+      "text": "libwebp",
+      "url": "https://developers.google.com/speed/webp",
+      "source": "https://github.com/webmproject/libwebp",
+      "libs": []
+    },
+    {
+      "id": "libxml2",
+      "name": "libxml2",
+      "license": "MIT",
+      "text": "libxml2",
+      "url": "https://gitlab.gnome.org/GNOME/libxml2",
+      "source": "https://gitlab.gnome.org/GNOME/libxml2",
+      "libs": []
+    },
+    {
+      "id": "zimg",
+      "name": "zimg",
+      "license": "WTFPL",
+      "text": "zimg",
+      "url": "https://github.com/sekrit-twc/zimg",
+      "source": "https://github.com/sekrit-twc/zimg",
+      "libs": []
+    },
+    {
+      "id": "libaom",
+      "name": "libaom",
+      "license": "BSD-2-Clause",
+      "text": "libaom",
+      "url": "https://aomedia.googlesource.com/aom/",
+      "source": "https://aomedia.googlesource.com/aom/",
+      "libs": []
+    },
+    {
+      "id": "libvpx",
+      "name": "libvpx",
+      "license": "BSD-3-Clause",
+      "text": "libvpx",
+      "url": "https://www.webmproject.org/",
+      "source": "https://github.com/webmproject/libvpx",
+      "libs": []
+    }
+  ]
+}

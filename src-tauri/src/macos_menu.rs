@@ -50,6 +50,17 @@ pub struct MenuChecksState(Mutex<Option<MenuChecks>>);
 /// be kept in sync by hand. Everything else about the menu is language-agnostic.
 struct Strings {
     about: &'static str,
+    /// Shown in the standard About panel. LGPL-2.1 section 6 asks for a
+    /// prominent notice naming the libraries, and this panel is where a macOS
+    /// viewer looks for it.
+    ///
+    /// It has to be `credits`, not `license`: the standard About panel takes a
+    /// fixed set of keys, and muda's macOS path passes only ApplicationName,
+    /// ApplicationVersion, Version, Copyright, ApplicationIcon and Credits.
+    /// `AboutMetadata.license` exists for the Windows and Linux dialogs and is
+    /// silently dropped here — which is exactly how it was found, by the panel
+    /// showing nothing but a name and a copyright line.
+    credits: &'static str,
     settings: &'static str,
     services: &'static str,
     hide: &'static str,
@@ -87,6 +98,7 @@ struct Strings {
 
 const EN: Strings = Strings {
     about: "About Frame Player",
+    credits: "Frame Player is free software under the GNU GPL, version 3 or later. It uses mpv, FFmpeg, libplacebo and other libraries under the LGPL and other licenses. Full texts are in LICENSE and THIRD-PARTY-NOTICES.md inside the application.",
     settings: "Settings…",
     services: "Services",
     hide: "Hide Frame Player",
@@ -124,6 +136,7 @@ const EN: Strings = Strings {
 
 const RU: Strings = Strings {
     about: "О Frame Player",
+    credits: "Frame Player — свободная программа под GNU GPL версии 3 или новее. Он использует mpv, FFmpeg, libplacebo и другие библиотеки — по LGPL и другим лицензиям. Полные тексты в LICENSE и THIRD-PARTY-NOTICES.md внутри приложения.",
     settings: "Параметры…",
     services: "Службы",
     hide: "Скрыть Frame Player",
@@ -177,6 +190,8 @@ pub fn build(app: &tauri::AppHandle<Wry>, locale: &str) -> tauri::Result<()> {
         Some(AboutMetadata {
             name: Some("Frame Player".into()),
             version: Some(pkg.version.to_string()),
+            copyright: Some("Copyright © 2026 Evgenii Zakharov".into()),
+            credits: Some(s.credits.into()),
             ..Default::default()
         }),
     )?;

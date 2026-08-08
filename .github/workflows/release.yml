@@ -9,6 +9,13 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# One release at a time. Two in flight could both find no published library set,
+# both build it, and both publish — and the second `latest.json` would win while
+# the first release's files were still uploading.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   check-version:
     runs-on: ubuntu-latest
@@ -113,14 +120,48 @@ jobs:
       # gap between releases longer than a week paid the whole compile again — on
       # the critical path, every time. Windows has fetched prebuilt libraries
       # from the start; this is the macOS half of that.
-      - name: Fetch native libs (macOS)
+      - name: Native libs (macOS)
         if: runner.os == 'macOS'
         env:
           FP_LIBS_URL: ${{ vars.R2_PUBLIC_URL_LIBS }}
-        run: scripts/fetch-macos-libs.sh
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_BUCKET: ${{ vars.R2_BUCKET_LIBS }}
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          set -euo pipefail
+          name="$(scripts/macos-libs-key.sh)"
+          if curl -fsI --retry 2 "${FP_LIBS_URL%/}/$name.tar.gz" >/dev/null 2>&1; then
+            scripts/fetch-macos-libs.sh
+          else
+            # No set published for these sources. Build one here rather than
+            # failing the release: forgetting to run the `macOS libs` workflow
+            # after touching a pinned version is the likeliest way this breaks,
+            # and it would break at the least convenient moment.
+            echo "::notice::no published set for $name — building it (~20 min)"
+            echo "built \`$name\` from source" >> "$GITHUB_STEP_SUMMARY"
+            command -v aws >/dev/null || brew install -q awscli
+            scripts/build-macos-libs.sh
+            # Published, so the next release reads it instead of rebuilding —
+            # and **without** `--retain`: a release from an old tag pruning here
+            # would delete the set the main branch needs, which the next release
+            # would rebuild and prune in turn. Only the manual workflow prunes.
+            scripts/publish-macos-libs.sh
+          fi
 
       - name: Install dependencies
         run: npm ci
+
+      # The last point at which a shipped library can still be caught without an
+      # attribution. On macOS the set is on disk by now, so this compares the
+      # notices against what is actually about to be bundled; on Windows the
+      # libraries are DLLs the manifest also names, and the check still verifies
+      # the committed file is the one the inputs render to.
+      - name: Notices are current
+        run: node scripts/gen-notices.mjs --check
 
       # --- Build ---------------------------------------------------------------
       # FP_OPENSUBTITLES_KEY is the application key for subtitle search. It
@@ -296,6 +337,15 @@ jobs:
           done
           aws s3 cp dist/latest.json "s3://$bucket/latest.json" \
             --content-type application/json --cache-control no-cache --endpoint-url "$endpoint"
+
+          # Prune old versions, and only now — after `latest.json` names this
+          # one. Whole versions go at a time, and `latest.json` is untouched
+          # because it matches no version group. The `.exe` and `.dmg` of a
+          # pruned version stay on its GitHub Release, so nothing becomes
+          # unobtainable; the `.app.tar.gz` is the updater's payload and is only
+          # ever fetched for the version `latest.json` names.
+          scripts/r2-retain.sh --kind updates --bucket "$bucket" --endpoint "$endpoint" \
+                               --keep 5 --apply
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

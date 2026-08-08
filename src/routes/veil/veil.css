@@ -1,0 +1,17 @@
+/* The shutter window's own page styles.
+ *
+ * A stylesheet rather than a `<style>` block in the component: the template has
+ * no elements at all — the window *is* the fill — so Svelte has nothing to scope
+ * the rules to and says so ("No scopable elements found in template"). Wrapping
+ * every rule in `:global()` silenced the scoping but not the warning, and the
+ * warning is right: these are document styles, not component styles.
+ *
+ * The colour here is only the initial one. The main window sends the real one
+ * over `veil-color` before showing the shutter — see the component. */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  cursor: none;
+}

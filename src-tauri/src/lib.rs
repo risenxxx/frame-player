@@ -509,6 +509,20 @@ async fn ytdlp_update(app: tauri::AppHandle) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// The bundled third-party notices, read from the resource directory.
+///
+/// It goes through a command rather than the frontend reading the file, because
+/// there is no filesystem plugin here and adding one to read a single read-only
+/// document we ship ourselves would be a far wider permission than the job needs.
+#[tauri::command]
+fn third_party_notices(app: tauri::AppHandle) -> Result<String, String> {
+    let path = app
+        .path()
+        .resolve("THIRD-PARTY-NOTICES.md", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| e.to_string())?;
+    std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 /// mpv.conf in the app config directory: created from the template on first
 /// run, parsed as `key=value` (comments and blank lines are skipped).
 #[tauri::command]
@@ -913,6 +927,7 @@ pub fn run() {
             ytdlp_install,
             ytdlp_update,
             user_mpv_conf,
+            third_party_notices,
             mpv_conf_set,
             step_engine::step_prewarm,
             step_engine::step_enter,

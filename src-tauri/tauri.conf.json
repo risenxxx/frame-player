@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Frame Player",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "identifier": "app.frameplayer",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -61,11 +61,14 @@
     "longDescription": "A video player for Windows and macOS built on libmpv. Plays local files, links and magnet torrents in one window — a torrent can be watched while it is still downloading, with piece priority following the playhead and buffered ranges drawn on the seekbar. Frame stepping and seeking that land where you aim, previews that show the frame you land on, resume for every file, link and episode, subtitle search matched to your exact release, chapters with a skip-intro button, a mini player and frame export. Russian and English.",
     "createUpdaterArtifacts": true,
     "targets": ["nsis"],
+    "license": "GPL-3.0-or-later",
     "resources": {
       "lib/**/*": "lib/",
       "ffmpeg/bin/*.dll": "./",
       "ffmpeg/bin/ffmpeg.*": "./",
-      "lua/*.lua": "lua/"
+      "lua/*.lua": "lua/",
+      "../THIRD-PARTY-NOTICES.md": "./",
+      "../LICENSE": "./"
     },
     "fileAssociations": [
       {

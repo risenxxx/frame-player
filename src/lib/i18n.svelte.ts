@@ -448,6 +448,20 @@ const ru = {
     'Настройки mpv сохраняются в mpv.conf и применяются сразу. Тонкая настройка — в самом файле:',
   'set.conf_reveal_mac': 'показать mpv.conf в Finder',
   'set.conf_reveal_win': 'показать mpv.conf в проводнике',
+  // The notice LGPL-2.1 section 6 requires: it has to name the libraries and say
+  // they are covered by that license. It is a sentence rather than a bare link
+  // for that reason — the link alone would satisfy nobody's obligation.
+  'set.licenses_foot':
+    'Плеер работает на mpv, FFmpeg и других свободных библиотеках — они распространяются по LGPL и другим лицензиям, их полные тексты входят в поставку:',
+  'set.licenses_open': 'открыть лицензии',
+  'lic.title': 'Лицензии',
+  'lic.intro':
+    'Frame Player распространяется по GPL-3.0-or-later — её текст в самом низу. Библиотеки, на которых он работает, идут под своими лицензиями: mpv, FFmpeg, libplacebo и другие под LGPL, остальные каждая под своей. Ниже полный перечень и все тексты, ровно те, что входят в поставку.',
+  'lic.loading': 'Читаем…',
+  'lic.failed':
+    'Не удалось прочитать THIRD-PARTY-NOTICES.md — он должен лежать рядом с приложением.',
+  'lic.reveal_mac': 'показать файл в Finder',
+  'lic.reveal_win': 'показать файл в проводнике',
   'set.normalize': 'Выравнивание громкости',
   'set.normalize_hint':
     'Подтягивает тихие диалоги и придерживает громкие сцены. Полезно ночью и в наушниках.',
@@ -1032,6 +1046,17 @@ const en: Record<MessageKey, string> = {
     'mpv settings are stored in mpv.conf and applied immediately. Fine-tuning lives in the file itself:',
   'set.conf_reveal_mac': 'show mpv.conf in Finder',
   'set.conf_reveal_win': 'show mpv.conf in Explorer',
+  'set.licenses_foot':
+    'Frame Player runs on mpv, FFmpeg and other free software libraries — covered by the LGPL and other licenses, whose full texts ship with the application:',
+  'set.licenses_open': 'open the licenses',
+  'lic.title': 'Licenses',
+  'lic.intro':
+    'Frame Player itself is GPL-3.0-or-later — its text is at the very bottom. The libraries it runs on keep their own licenses: mpv, FFmpeg, libplacebo and others under the LGPL, the rest each under its own. Below is the full inventory and every license text, exactly as they ship with the application.',
+  'lic.loading': 'Reading…',
+  'lic.failed':
+    'Could not read THIRD-PARTY-NOTICES.md — it should sit beside the application.',
+  'lic.reveal_mac': 'show the file in Finder',
+  'lic.reveal_win': 'show the file in Explorer',
   'set.normalize': 'Volume leveling',
   'set.normalize_hint':
     'Lifts quiet dialogue and holds back loud scenes. Useful at night and on headphones.',
