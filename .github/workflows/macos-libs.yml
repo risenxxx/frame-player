@@ -8,7 +8,7 @@
 # on the critical path of every release. Building here instead makes the two
 # platforms symmetric and takes the compile off that path entirely.
 #
-# The artefact is **content-addressed**: its name carries a hash of the scripts
+# The artifact is **content-addressed**: its name carries a hash of the scripts
 # and the patch that produced it, so a checkout can only ever fetch the set that
 # matches its own sources. A fixed name would hand an older commit the newer
 # libraries and mismatch the mpv patch — which fails at runtime, not at build.
@@ -45,7 +45,7 @@ jobs:
       # the license gate and the mpv patch. The pinned FFmpeg and mpv versions
       # live inside `build-macos-libs.sh`, so hashing it covers a version bump
       # too — one input, nothing to keep in step by hand.
-      - name: Compute artefact key
+      - name: Compute artifact key
         id: key
         run: |
           set -euo pipefail
@@ -122,7 +122,7 @@ jobs:
 
       # Downloadable from the run itself, which is what makes a dry run useful:
       # unpack it and look before anything is published.
-      - name: Upload as a workflow artefact
+      - name: Upload as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.key.outputs.name }}
@@ -156,12 +156,23 @@ jobs:
           # Sweep, and only after the upload succeeded: a set is deleted once its
           # replacement is already in place, so a failed publish leaves the
           # previous one serving rather than nothing at all.
+          # Listed into a variable and filtered in the shell rather than through a
+          # `grep | grep -v` pipeline. With nothing old to delete both greps
+          # match nothing, return 1, and under `pipefail` the step fails — on the
+          # *first successful publish*, which is the one case guaranteed to
+          # happen. The same idiom broke the license gate one step earlier.
           echo "keeping $name, removing older sets:"
-          aws s3 ls "s3://$bucket/libs/" --endpoint-url "$endpoint" \
-            | awk '{print $4}' | grep -E "^macos-.*\.tar\.gz(\.sha256)?$" \
-            | grep -v "^$name\.tar\.gz" \
-            | while read -r old; do
-                echo "  - $old"
-                aws s3 rm "s3://$bucket/libs/$old" --endpoint-url "$endpoint"
-              done
+          listing="$(aws s3 ls "s3://$bucket/libs/" --endpoint-url "$endpoint" || true)"
+          removed=0
+          for old in $(printf '%s\n' "$listing" | awk '{print $4}'); do
+            case "$old" in
+              "$name".tar.gz|"$name".tar.gz.sha256|'') continue ;;
+              macos-*.tar.gz|macos-*.tar.gz.sha256) ;;
+              *) continue ;;
+            esac
+            echo "  - $old"
+            aws s3 rm "s3://$bucket/libs/$old" --endpoint-url "$endpoint"
+            removed=$((removed + 1))
+          done
+          echo "  ($removed removed)"
           echo "published: libs/$name.tar.gz" >> "$GITHUB_STEP_SUMMARY"

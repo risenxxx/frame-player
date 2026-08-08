@@ -131,7 +131,7 @@ Two things learned while getting it to work at all, both worth keeping:
 **`hlsSegmentFormat` is the format of an HLS *audio* segment.** Sending it
 beside a muxed A/V stream made the receiver reject the load outright — a bare
 failure with no reason, after it had already fetched the playlist, the
-initialisation segment and segment zero. Only `hlsVideoSegmentFormat` belongs
+initialization segment and segment zero. Only `hlsVideoSegmentFormat` belongs
 there. The bug hid behind an unrelated one for two rounds, because every fMP4
 test was also HEVC.
 
@@ -150,7 +150,7 @@ types including `video/x-matroska`; a 4K HEVC Main-10 HDR MKV with E-AC-3 5.1
 plays with no preparation of any kind.
 
 **Seekability is declared in the metadata, not in HTTP headers.** With a bare
-`<res>` element the television greys out its own seek buttons before fetching a
+`<res>` element the television grays out its own seek buttons before fetching a
 byte and answers a sender `Seek` with "not available". With the DLNA flags in
 `protocolInfo`, plus `size` and `duration`, it reads the container's index
 itself and range-requests the offset. An HTTP-level capability advertisement

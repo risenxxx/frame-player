@@ -112,7 +112,7 @@
       <!-- The digit goes in the gap between the two arrows (y 7–17 of the
            viewBox), which is exactly where Material's own repeat_one puts
            it — drawn as a path rather than a "1" glyph, since a glyph has
-           no dependable centre in the em square. -->
+           no dependable center in the em square. -->
       {#if player.loopMode === 'one'}
         <path fill="currentColor" d="M13 15V9h-1l-2 1v1h1.5v4H13z"/>
       {/if}
@@ -131,7 +131,7 @@
            difference in pitch reads as a mistake rather than as a
            distinction. Two earlier attempts got the vertical placement
            wrong in opposite directions: a play mark hanging BELOW the last
-           bar dropped the glyph's centre to y=14 (against the box's 12),
+           bar dropped the glyph's center to y=14 (against the box's 12),
            and a tighter pitch then lifted the bar group above its
            neighbour's.
            Everything horizontal here is on a 1.2-unit grid, which is what
@@ -143,7 +143,7 @@
            different sub-pixel phase from its neighbour looks like a
            different weight. Hence 2.4 thick on rows 3.6 / 10.8 / 18, shared
            verbatim with the chapter icon.
-           The play mark is centred on the last row and kept NARROW (4.8
+           The play mark is centered on the last row and kept NARROW (4.8
            against 5.6 tall). A wide one read as another arrowhead beside
            the repeat icon, which carries one in the same corner — two
            right-pointing wedges side by side stop looking like two
@@ -335,7 +335,7 @@
   }
 
   /* `.controls` is a `1fr auto 1fr` grid, so hiding the side clusters does not
-     centre what is left — the remaining cluster auto-places into the first
+     center what is left — the remaining cluster auto-places into the first
      column and the row sits against the left edge. The mini row is one item,
      so it gets a one-column grid. */
   .controls.mini {

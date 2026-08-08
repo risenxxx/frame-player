@@ -41,7 +41,7 @@
   }
 
   /* The shared floating-surface fill comes with a hairline and a shadow, and
-     both halves are load-bearing: this fill is the start screen's own colour,
+     both halves are load-bearing: this fill is the start screen's own color,
      so without the border the plate is invisible exactly when a link has just
      been pasted — which is the moment it exists for. The shadow does the same
      job over video, where the border alone would be lost against a bright

@@ -122,7 +122,7 @@
     animation: skip-in 0.18s ease;
   }
 
-  /* Only the colour: `background` shorthand here would drop the drain gradient. */
+  /* Only the color: `background` shorthand here would drop the drain gradient. */
   .skipbtn:hover {
     background-color: rgba(32, 32, 42, 0.94);
     border-color: rgba(255, 255, 255, 0.24);

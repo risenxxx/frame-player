@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// What the open file actually is: container, codecs, colour, decoder — plus
+  /// What the open file actually is: container, codecs, color, decoder — plus
   /// the swarm, when the bytes are arriving over BitTorrent.
   ///
   /// A live readout rather than a snapshot, which is why the refresh timer is
@@ -12,7 +12,7 @@
   import { formatTime } from '$lib/format';
   import { t } from '$lib/i18n.svelte';
   import {
-    colourLine,
+    colorLine,
     isHdr,
     loadMediaInfo,
     overallBitrate,
@@ -68,8 +68,8 @@
     {@render infoRow(t('info.bitrate'), info.video.bitrate ? fmtRate(info.video.bitrate) : null)}
     {@render infoRow(t('info.pixfmt'), info.video.pixelFormat)}
     {@render infoRow(
-      isHdr(info.video) ? t('info.hdr') : t('info.colour'),
-      colourLine(info.video),
+      isHdr(info.video) ? t('info.hdr') : t('info.color'),
+      colorLine(info.video),
     )}
     {@render infoRow(
       t('info.peak'),

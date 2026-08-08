@@ -176,10 +176,10 @@ export function onVideoClick(e: MouseEvent) {
   // stop, not an undo. So a double click on a paused video nudges the frame
   // forward. The alternative (waiting out the system threshold before
   // unpausing) was discussed and rejected: half a second of delay on every
-  // "resume" costs more than an artefact on a double click. The instant path
+  // "resume" costs more than an artifact on a double click. The instant path
   // without this ambiguity is Space and K. Do not "fix" without discussing.
   //
-  // **While casting, that trade inverts and so does the code.** The cancelling
+  // **While casting, that trade inverts and so does the code.** The canceling
   // trick relies on a pair of toggles costing nothing; on a television a
   // pause and a resume 100 ms apart is not a frozen frame but a decode
   // restart — two remote commands, a buffer flush and a visible hiccup. And

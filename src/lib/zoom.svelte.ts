@@ -42,7 +42,7 @@ function baseSize(): { w: number; h: number } | null {
 
 /**
  * Pan within the content: the video covers the window on the axis where it is
- * larger and stays centred on the axis where it is smaller, so no black bars
+ * larger and stays centered on the axis where it is smaller, so no black bars
  * appear.
  */
 function clampPan() {
@@ -65,7 +65,7 @@ function applyZoomPan() {
     // — the only genuinely atomic path (no intermediate frame, which is what
     // made the picture jerk near the edges). Specifically -to (addressed to the
     // script): a broadcast script-message also reaches the plugin's own client,
-    // whose wrapper crashes serialising client-message (an AV in ucrtbase).
+    // whose wrapper crashes serializing client-message (an AV in ucrtbase).
     void command('script-message-to', ['zoompan', 'zoompan', String(z), String(x), String(y)]);
     return;
   }

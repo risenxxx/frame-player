@@ -245,9 +245,9 @@ class Player {
     return this.loopA !== null && this.loopB !== null;
   }
 
-  /// Volume normalisation (a labelled `af` filter). Ours to remember: mpv
+  /// Volume normalization (a labeled `af` filter). Ours to remember: mpv
   /// answers `af` with an escaped form that cannot be compared against.
-  normalise = $state(false);
+  normalize = $state(false);
 
   /// Picture geometry, per file. `aspectOverride` is negative for "from the
   /// container" — mpv's default is -2, and any negative value means auto.
@@ -480,7 +480,7 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
   // player is doing. A control with its own persisted state has to be the
   // source of truth for the property behind it, so the mode is re-asserted here.
   applyLoopMode(player.loopMode);
-  applyNormalise(loadNormalise());
+  applyNormalize(loadNormalize());
 
   unlisteners.push(
     await observeProperties(OBSERVED, ({ name, data }) => {
@@ -785,7 +785,7 @@ export async function loadTracks() {
       const lang = await getProperty(`${base}/lang`, 'string').catch(() => null);
       // Closed captions carry no title and no language, so they used to show up
       // as a bare "Track 1" — with no hint that picking it means captions
-      // positioned on a 32-column grid (hence the off-centre, indented text)
+      // positioned on a 32-column grid (hence the off-center, indented text)
       // that also smear across seeks. Naming them is the honest minimum.
       const codec = await getProperty(`${base}/codec`, 'string').catch(() => null);
       const forced = (await getProperty(`${base}/forced`, 'flag').catch(() => false)) ?? false;
@@ -1052,14 +1052,19 @@ export function clearAbLoop() {
   showOsd(t('osd.ab_off'));
 }
 
-// ---- Volume normalisation -------------------------------------------------
+// ---- Volume normalization -------------------------------------------------
 
-const NORMALISE_KEY = 'frameplayer.normalise';
+// The stored key keeps its British spelling on purpose, alone in this file.
+// It is not a word here, it is an address: renaming it would leave every
+// existing installation's volume-leveling setting behind under a name nothing
+// reads any more — a silent reset, on upgrade, for a preference the viewer set
+// once and would not think to check.
+const NORMALIZE_KEY = 'frameplayer.normalise';
 
 /**
  * Night mode: even out quiet dialogue against loud effects.
  *
- * A LABELLED filter, so it can be removed again without touching an `af` line
+ * A LABELED filter, so it can be removed again without touching an `af` line
  * the user put in their own mpv.conf — which is also why the setting is kept in
  * localStorage rather than written to mpv.conf like the rest of the playback
  * settings: `mpv_conf_set` replaces the last uncommented line of a key, and for
@@ -1072,19 +1077,19 @@ const NORMALISE_KEY = 'frameplayer.normalise';
  * Parameters are dynaudnorm's frame length, gaussian window and target peak:
  * gentle enough that music does not visibly pump, strong enough to matter.
  */
-const NORMALISE_FILTER = '@fpnorm:lavfi=[dynaudnorm=f=250:g=15:p=0.9]';
+const NORMALIZE_FILTER = '@fpnorm:lavfi=[dynaudnorm=f=250:g=15:p=0.9]';
 
-export function loadNormalise(): boolean {
-  return localStorage.getItem(NORMALISE_KEY) === 'on';
+export function loadNormalize(): boolean {
+  return localStorage.getItem(NORMALIZE_KEY) === 'on';
 }
 
-export function applyNormalise(on: boolean) {
-  player.normalise = on;
+export function applyNormalize(on: boolean) {
+  player.normalize = on;
   // `af remove` on a filter that is not there is harmless, and it is what makes
   // this idempotent enough to call at startup.
-  void command('af', [on ? 'add' : 'remove', on ? NORMALISE_FILTER : '@fpnorm']).catch(() => {});
+  void command('af', [on ? 'add' : 'remove', on ? NORMALIZE_FILTER : '@fpnorm']).catch(() => {});
   try {
-    localStorage.setItem(NORMALISE_KEY, on ? 'on' : 'off');
+    localStorage.setItem(NORMALIZE_KEY, on ? 'on' : 'off');
   } catch {
     // not critical: the choice simply will not survive a restart
   }
@@ -1208,7 +1213,7 @@ export type SkipKind = 'intro' | 'recap' | 'preview' | 'credits' | 'ad';
  */
 const SKIP_ALTERNATIVES: ReadonlyArray<readonly [SkipKind, string]> = [
   // Ordered intro-first, which **is no longer load-bearing** and is kept as
-  // defence rather than as a rule. It mattered while the patterns were
+  // defense rather than as a rule. It mattered while the patterns were
   // substring searches: "Opening Credits" matched both. Anchoring them to the
   // whole title made the alternatives disjoint — verified by enumerating every
   // title they match from a corpus of their own literals and diffing the

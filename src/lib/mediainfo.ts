@@ -1,5 +1,5 @@
 /**
- * What the currently open file actually is: container, codecs, colour, decoder.
+ * What the currently open file actually is: container, codecs, color, decoder.
  *
  * Raw values only — every one of these is read straight from mpv and left
  * unformatted, so the panel can render them through `t()` and follow a language
@@ -102,15 +102,15 @@ export function overallBitrate(info: MediaInfo): number | null {
 }
 
 /**
- * The colour line: transfer, primaries, peak brightness.
+ * The color line: transfer, primaries, peak brightness.
  *
  * Kept as raw mpv vocabulary (`pq`, `bt.2020`) rather than translated — these
  * are the names on the spec sheet and on every other tool's screen, and a
  * translated "перцептивная квантизация" would help nobody identify a file.
  * Dolby Vision is worth calling out by name, since mpv reports it as the
- * colour matrix and it is otherwise invisible here.
+ * color matrix and it is otherwise invisible here.
  */
-export function colourLine(video: MediaInfo['video']): string | null {
+export function colorLine(video: MediaInfo['video']): string | null {
   const parts: string[] = [];
   if (video.matrix === 'dolbyvision') parts.push('Dolby Vision');
   if (video.gamma) parts.push(video.gamma.toUpperCase());

@@ -20,7 +20,7 @@
 
   interface Props {
     known: RememberedTorrent;
-    /// True when the link box recognised a pasted magnet as this torrent's
+    /// True when the link box recognized a pasted magnet as this torrent's
     /// successor, rather than the viewer having asked to update it.
     suggested: boolean;
     busy: boolean;

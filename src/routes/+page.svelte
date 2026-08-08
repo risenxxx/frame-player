@@ -354,7 +354,7 @@
 
   /// Whether the hover popup can show a frame at all. The storyboard is off for
   /// a stream (it would pull the whole thing again), so the popup must not
-  /// reserve space for a picture that is never coming — an empty grey rectangle
+  /// reserve space for a picture that is never coming — an empty gray rectangle
   /// reads as a broken preview rather than as an absent one.
   /// The preview box's shape, and it **only ever moves to a real value**.
   ///
@@ -422,7 +422,7 @@
   let tooltip = $state<{ text: string; pos: { x: number; y: number } | null } | null>(null);
   let tipTimer: ReturnType<typeof setTimeout> | undefined;
   let emptyTimer: ReturnType<typeof setTimeout> | undefined;
-  // The video title (centred in the title bar) is driven by hand rather than
+  // The video title (centered in the title bar) is driven by hand rather than
   // straight from displayTitle — the text only changes inside the slide.
   let barTitleText = $state('');
   // Slide phases: out (leaving) / prep (starting pose of the new one) / ''
@@ -811,7 +811,7 @@
       clearClickSuppression();
       // This handler runs in the pointerdown capture phase, i.e. before the
       // click on the video. Without the flag, onVideoClick would see an already
-      // closed menu, fail to recognise a "closing" click and toggle pause.
+      // closed menu, fail to recognize a "closing" click and toggle pause.
       if (dismissOnOutsideClick(e.target as HTMLElement | null)) armClickSuppression();
     };
     // Trackpad scroll gesture phase (macOS only, see macos_chrome.rs).
@@ -1110,7 +1110,7 @@
 
   // ---- Room for the title in the top bar ----------------------------------
   //
-  // The title is centred in the WINDOW, not in what is left between the side
+  // The title is centered in the WINDOW, not in what is left between the side
   // clusters, so both sides have to be reserved equally or it runs into the
   // narrower one first. On macOS that is the logo and the app name (the traffic
   // lights are the system's and live outside this DOM); on Windows it is the
@@ -1496,7 +1496,7 @@
   /* ---- Content languages (ROADMAP 25) ---- */
 
   /* Above the entire UI: layout jumps during the transition stay invisible.
-     Colour: on the start screen — its background (so the transition does not
+     Color: on the start screen — its background (so the transition does not
      blink black), with video — black; set via --veil-color on .player and
      mirrored to the shutter window. */
   .veil {
@@ -1581,7 +1581,7 @@
   }
 
   /* Until a file is open the window is opaque: neither the desktop before mpv
-     initialises nor the startup stages are visible. After .backdrop on
+     initializes nor the startup stages are visible. After .backdrop on
      purpose: the start screen keeps its tint while mpv is still warming up. */
   .player.no-video {
     background: #101016;

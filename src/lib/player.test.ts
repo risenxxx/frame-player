@@ -94,7 +94,7 @@ describe('matchTrack', () => {
 });
 
 describe('skipKind', () => {
-  it('recognises a chapter that names itself', () => {
+  it('recognizes a chapter that names itself', () => {
     expect(skipKind(chapter('Intro'))).toBe('intro');
     expect(skipKind(chapter('OP'))).toBe('intro');
     expect(skipKind(chapter('Заставка'))).toBe('intro');

@@ -102,7 +102,7 @@
        needs to be generous — the settings list grew tall enough to reach the
        window edges at an ordinary player height, and a panel flush against the
        frame reads as a menu, not a dialog. The top figure clears the title bar
-       (48px of content) and the bottom matches it, so centring stays centred.
+       (48px of content) and the bottom matches it, so centering stays centered.
        No `safe` needed unlike the start screen: this child scrolls internally,
        so it never overflows the grid area in the first place. */
     padding: 56px 24px;
@@ -127,7 +127,7 @@
     width: min(598px, 100%);
     /* Against the backdrop's padded grid area, and now honestly: as a
        content-box height this let the sheet stand 32px taller than the area it
-       was centred in, so at full height it reached 39px from the top of the
+       was centered in, so at full height it reached 39px from the top of the
        window and did not in fact clear the 48px title bar the backdrop's 56px
        of padding was chosen to clear. */
     max-height: 100%;

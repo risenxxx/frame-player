@@ -21,7 +21,7 @@
    layer, 4px too big over a `height: 100%` because of its own 2px outline; the
    context menu, rendering 14px taller than the `max-height` the placement gave
    it and walking off the window edge; and the carousel arrow, a 34px circle in
-   a 32px button with the chevron a pixel off centre. Each cost a measurement
+   a 32px button with the chevron a pixel off center. Each cost a measurement
    in a headless browser to find, and each was then fixed with a local
    `box-sizing: border-box` — nine of those had accumulated, which is the reset
    written out one element at a time and only where somebody had already been
@@ -83,7 +83,7 @@
     U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* Focus ring: hidden on mouse clicks, shown (in the theme colour) only for
+/* Focus ring: hidden on mouse clicks, shown (in the theme color) only for
    keyboard navigation (:focus-visible is set by the browser itself). */
 :focus {
   outline: none;
@@ -109,7 +109,7 @@ input {
 }
 
 /* Scrollbar skin, applied to EVERYTHING rather than to an opt-in class.
-   Without these rules Windows draws its native grey-and-white bar: wide, light
+   Without these rules Windows draws its native gray-and-white bar: wide, light
    and alien in a dark UI. A transparent border on the thumb leaves 4px of the
    10px width visible — thin, but still easy to hit, because the whole track is
    clickable.
@@ -581,10 +581,10 @@ button.primary:hover {
    `css-orphans` — the class is still used where it is declared; what moved out
    is the *other* user of it.
 
-   Vertically it is the glyph, not the line box, that has to be centred: with a
+   Vertically it is the glyph, not the line box, that has to be centered: with a
    +/− alone in the button, text metrics put the mark high (the box reserves
    descender space the glyph does not use). `place-items: center` on a grid
-   centres the line box, which is why the stepper carries a measured correction
+   centers the line box, which is why the stepper carries a measured correction
    of its own — see `.delayrow .speedopt`. */
 .speedopt {
   flex: 1;
@@ -736,7 +736,7 @@ button.primary:hover {
 }
 
 
-/* A full-window layer and the centred box inside it.
+/* A full-window layer and the centered box inside it.
 
    Drawn by four different things — the mpv-failed message, the start screen,
    the loading indicator and the casting screen — two of which now live in

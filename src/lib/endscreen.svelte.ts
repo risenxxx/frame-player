@@ -32,7 +32,7 @@ const POSTER_LEAD = 20;
 
 /// How long a skip offer stays up, in seconds — bounded at both ends and never
 /// a bare constant. Longer than the few seconds it started at, because the
-/// decision lands when you recognise the music rather than at the first frame,
+/// decision lands when you recognize the music rather than at the first frame,
 /// and a window that short took the offer away while its reason was still on
 /// screen. Shorter than the chapter itself, because an offer that sits over the
 /// picture for a whole minute stops reading as an offer. And never longer than

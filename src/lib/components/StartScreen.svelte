@@ -205,9 +205,9 @@
               onclick={() => onForgetRecent(item)}
             >
               <!-- An SVG rather than the "×" glyph: the multiplication sign
-                   has no guaranteed vertical centre in the em square, it
+                   has no guaranteed vertical center in the em square, it
                    sits above the middle of the line, and no place-items
-                   fixes that — what gets centred is the line, not the sign. -->
+                   fixes that — what gets centered is the line, not the sign. -->
               <svg viewBox="0 0 10 10" aria-hidden="true">
                 <path
                   stroke="currentColor"
@@ -314,7 +314,7 @@
             </button>
             <!-- Grouped, so `.torrow`'s 11px gap falls once — between the
                  text and the actions — rather than between every pair and
-                 undoing the centring it was computed for. -->
+                 undoing the centering it was computed for. -->
             <div class="torrow-actions">
             {#if row.known}
               {@const known = row.known}
@@ -460,7 +460,7 @@
     align-items: stretch;
     /* 11px, and it is arithmetic rather than taste: the cross has 8px of margin
        plus the row's 3px of padding to its right, so 11px is what sits between
-       it and the row's edge. Matching that on the left centres it in the space
+       it and the row's edge. Matching that on the left centers it in the space
        the highlight leaves — measured, it was 2px against 11px, and the cross
        visibly hugged the highlight instead of sitting between the two edges. */
     gap: 11px;
@@ -575,11 +575,11 @@
      reads as something the player is showing you for no reason. Quiet at rest,
      full strength when the row is under the cursor, lit when it is. */
   /* **Opacity is fixed at 1 and never animated**, and the three strengths come
-     from colour instead. Since the cross is now permanently visible there is
+     from color instead. Since the cross is now permanently visible there is
      nothing opacity buys, and animating it on this element costs something:
      taking a layer off full opacity makes the engine re-rasterise it and switch
      how it antialiases, which on a 1.4px stroke reads as the glyph twitching as
-     the pointer arrives — the "jumps and comes back" this replaced. A colour
+     the pointer arrives — the "jumps and comes back" this replaced. A color
      transition changes no geometry and no compositing. */
   .card-forget.torrow-forget {
     position: static;
@@ -609,7 +609,7 @@
 
   /* The row's two actions as one group, so `.torrow`'s 11px gap falls between
      the text and them rather than between every pair — which is what keeps the
-     cross centred against the row's edge (see `.torrow`). The 8px that used to
+     cross centered against the row's edge (see `.torrow`). The 8px that used to
      sit on the cross moves here for the same reason. */
   .torrow-actions {
     display: flex;
@@ -655,22 +655,22 @@
 
   /* auto-FIT, not auto-fill: fill keeps empty columns in place, so a single
      card was pinned to the left of a wide empty grid. fit collapses the unused
-     columns (together with their gaps) and a group of 1-3 cards is centred by
+     columns (together with their gaps) and a group of 1-3 cards is centered by
      justify-content.
      The 220px upper bound is mandatory: without it (at 1fr) a lone card would
      stretch across the whole list. In a full row it is never reached — four
      columns in 900px give 214px each — so the card size is unchanged.
      Caveat: an incomplete LAST row (a 5th card under four, say) is still pinned
-     left — grid cannot centre a partial row in principle. That is ordinary grid
-     behaviour, and it was not what the complaint was about. */
+     left — grid cannot center a partial row in principle. That is ordinary grid
+     behavior, and it was not what the complaint was about. */
   /* **One row, always.** As a wrapping grid this was the only part of the start
      screen that grew with its content, and once network entries stopped being
      silently dropped it went three rows deep and pushed the torrents section
      220px below the fold at 1280x800 — measured. A rail keeps the page a fixed
      height whatever the history holds, so the list below it is never missed.
 
-     **`safe center`, never a bare `center`.** A few cards should sit centred as
-     the grid did, but a centred flex container that overflows does so in BOTH
+     **`safe center`, never a bare `center`.** A few cards should sit centered as
+     the grid did, but a centered flex container that overflows does so in BOTH
      directions and the start becomes unreachable — no scrollbar goes there.
      Rendered with a bare `center`, twelve cards began at the fifth with the
      first four clipped off the left edge for good. `safe` falls back to
@@ -724,7 +724,7 @@
      the screen allows, and taking 40px off each side for arrows would cost a
      card. Circular for the same reason the mini player's close button is —
      nothing to disagree with the card corners underneath. */
-  /* Centred ON the rail's edge, half outside it. Inside, it covered the first
+  /* Centered ON the rail's edge, half outside it. Inside, it covered the first
      card it was meant to reveal; fully outside, it drifted away from the row it
      belongs to. Straddling costs nothing here because `.start-inner` carries
      24px of horizontal padding — more than the 16px overhang — so nothing
@@ -732,7 +732,7 @@
   .rail-arrow {
     position: absolute;
     /* Level with the posters rather than the whole card: the name and the
-       remaining time sit below and would pull the arrow off centre. */
+       remaining time sit below and would pull the arrow off center. */
     top: 0;
     bottom: 26px;
     width: 32px;
@@ -760,7 +760,7 @@
   }
 
   /* 32 flat, border included — the circle has to be the button it sits in, or
-     the glyph lands a pixel off centre and the chevron visibly leans. That is
+     the glyph lands a pixel off center and the chevron visibly leans. That is
      the border-box reset doing it rather than a line here. */
   .rail-arrow span {
     display: grid;
@@ -777,10 +777,10 @@
     background: rgba(32, 32, 42, 0.96);
   }
 
-  /* **Optically centred, which is not the same as geometrically centred.** A
+  /* **Optically centered, which is not the same as geometrically centered.** A
      chevron's ink sits in its open arms while the eye reads its vertex, so a
-     bbox-centred one leans away from the point: measured on the rendered
-     pixels, the centre of mass of `‹` is 0.18px right of the button's centre
+     bbox-centered one leans away from the point: measured on the rendered
+     pixels, the center of mass of `‹` is 0.18px right of the button's center
      and `›` 0.23px left — exactly the directions they look wrong in. The nudge
      is toward the point, the same correction a play triangle needs. */
   .rail-arrow svg {
@@ -890,27 +890,27 @@
   .overlay.start {
     /* The scroll area starts below the title bar (48px of content height):
        otherwise the scrollbar reaches the top of the window and runs into the
-       window controls. Centring then happens within the remaining area, which
+       window controls. Centering then happens within the remaining area, which
        is arguably more correct for the start screen anyway — the bar occupies
        the top regardless. */
     top: 48px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    /* `safe` is mandatory: in a centred scrollable flex container the overflow
+    /* `safe` is mandatory: in a centered scrollable flex container the overflow
        goes BOTH ways, and the top of the content is cut off — it cannot be
-       scrolled to, the scrollbar does not go there. With `safe`, centring
+       scrolled to, the scrollbar does not go there. With `safe`, centering
        applies only while the content fits, and beyond that the layout is
        pinned to the start. */
     justify-content: safe center;
-    /* The reserve has to be mirrored, because the content here is centred:
-       holding space only on the right moves the centre left by half the bar,
-       which is noticeable against the centred title in the bar above.
+    /* The reserve has to be mirrored, because the content here is centered:
+       holding space only on the right moves the center left by half the bar,
+       which is noticeable against the centered title in the bar above.
 
        This was `overflow-y: auto` + `scrollbar-gutter: stable both-edges`, and
        on macOS the gutter is not honoured at all — so the shift it was written
        to prevent was happening in full. Measured in a WKWebView harness: a
-       centred 200px child in a 400px box sat at 100/100 while the content fit
+       centered 200px child in a 400px box sat at 100/100 while the content fit
        and at **90/110** once it scrolled. Chromium did honour it (100/100 in
        both), so this was a macOS-only defect, and `CSS.supports` reports the
        property as supported on both.

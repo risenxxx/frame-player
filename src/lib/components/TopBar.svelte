@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// The title bar: window buttons, the centred video title, the update button,
+  /// The title bar: window buttons, the centered video title, the update button,
   /// and the torrent readout that hangs below it.
   ///
   /// Two of its states used to be written as `.player.mini .topbar` and
@@ -20,7 +20,7 @@
     /// No file open, so the scrim has nothing to darken.
     noVideo: boolean;
     fullscreen: boolean;
-    /// How much room the centred title may take before it would run into the
+    /// How much room the centered title may take before it would run into the
     /// window buttons — measured by the page, which owns both ends.
     barSide: number;
     barTitleText: string;
@@ -184,7 +184,7 @@
     top: 0;
     left: 0;
     right: 0;
-    /* Three layers: brand on the left, video title centred, window buttons in
+    /* Three layers: brand on the left, video title centered, window buttons in
        the corner. The height is exactly the 48px of content, and that is the
        HIT AREA: the gradient tail lives in ::before, which catches no events.
        The bar used to occupy all 76px and swallowed clicks in the bottom 28px
@@ -235,7 +235,7 @@
   }
 
   .brand .appname {
-    /* The same colour as the video title: the muted #b9b9c3 read as
+    /* The same color as the video title: the muted #b9b9c3 read as
        semi-transparent and disappeared on a bright frame. */
     color: #e8e8ec;
     font-size: 13px;
@@ -391,7 +391,7 @@
 
   .topbar .title {
     /* Bounded by what is actually free: the window minus the wider of the two
-       side clusters on BOTH sides (the title is centred in the window, so the
+       side clusters on BOTH sides (the title is centered in the window, so the
        reservation has to be symmetric), minus a gap so it never arrives flush
        against the logo. `--bar-side` is measured in JS and already carries that
        gap — see the comment there for why a constant does not survive an update
@@ -406,7 +406,7 @@
     text-overflow: ellipsis;
     /* overflow: hidden is needed for the ellipsis, but it also clipped the
        shadow at the ends of the line. Vertical padding gives it room inside the
-       block; the element is centred vertically by flex, so the text does not
+       block; the element is centered vertically by flex, so the text does not
        shift. */
     padding: 8px 0;
     text-shadow: var(--ui-shadow);
@@ -476,7 +476,7 @@
     width: 10px;
     height: 10px;
     /* The same shadow as the logo and the titles: the glyphs sit directly over
-       the frame, and without it the light grey lines are lost on bright video.
+       the frame, and without it the light gray lines are lost on bright video.
        drop-shadow rather than text-shadow — the shadow must follow the shape's
        outline, not the element's rectangle. */
     filter: var(--ui-shadow-drop);

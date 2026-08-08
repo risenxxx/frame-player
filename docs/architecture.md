@@ -32,7 +32,7 @@ mpv command, never a webview operation.
 **"Nothing painted" means "the desktop shows through."** The window is
 deliberately transparent; a moment when neither mpv nor the webview has painted
 is a hole. Hence an opaque backdrop that holds until mpv's output is up, and an
-opaque window background colour underneath both — erring long costs nothing,
+opaque window background color underneath both — erring long costs nothing,
 erring short shows the desktop.
 
 **Two compositors have to agree about geometry.** Fullscreen transitions,
@@ -48,7 +48,7 @@ every command, and a second thing to ship and keep alive. Rejected.
 
 **A render-API presenter** — our own child window plus an OpenGL/Vulkan context,
 `mpv_render_context` and a texture ring. This is the endgame upgrade: it would
-give frame-exact control, sub-5 ms stepping and perfect colour agreement with
+give frame-exact control, sub-5 ms stepping and perfect color agreement with
 whatever we draw. It costs the hardest kind of native work on both platforms
 (compositing beneath the webview, DPI, fullscreen, HDR), and the current
 architecture does not preclude moving to it later.
@@ -67,7 +67,7 @@ sub-properties instead (`track-list/count`, `track-list/N/title`), which every
 list property in mpv supports.
 
 **Never broadcast a `script-message`.** Only targeted `script-message-to`; the
-broadcast path crashes in the wrapper's client-message serialiser.
+broadcast path crashes in the wrapper's client-message serializer.
 
 **State mirrors go stale.** mpv's event queue can overflow and drop
 property-change events. Toggles therefore use `cycle`, never
@@ -101,7 +101,7 @@ the whole dependency closure ship with the application; nothing is taken from
 the user's system. The single exception is `yt-dlp`, which is optional by
 design, looked up at runtime, and updates itself.
 
-**Nothing may block player startup.** Whatever waits during initialisation holds
+**Nothing may block player startup.** Whatever waits during initialization holds
 up the window, and until the player is up a click on a file does nothing — which
 reads as a dead application rather than a slow one. Discovery, torrent sessions,
 external-binary probes and network calls are all on demand.
@@ -140,7 +140,7 @@ as well as making the user wait.
 | Path | What is there |
 |---|---|
 | `src/routes/+page.svelte` | Markup, CSS, and everything gesture-shaped: seekbar, wheel, hotkeys, menus, overlays |
-| `src/lib/player.svelte.ts` | mpv state mirrors, initialisation, commands, tracks, file loading |
+| `src/lib/player.svelte.ts` | mpv state mirrors, initialization, commands, tracks, file loading |
 | `src/lib/*.svelte.ts` | State modules: history, playlist, torrents, casting, thumbnails, zoom, window prefs |
 | `src-tauri/src/lib.rs` | Plugin registration, window lifecycle, the small commands |
 | `src-tauri/src/thumb_service.rs` | Seekbar thumbnails and posters: decoding, scoring, disk cache |

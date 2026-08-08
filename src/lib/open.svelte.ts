@@ -144,7 +144,7 @@ class Opening {
 
   /// The torrent list on the start screen.
   rows = $state<TorrentRow[]>([]);
-  /// The folder being deleted, so its row can grey out — `remove_dir_all` over
+  /// The folder being deleted, so its row can gray out — `remove_dir_all` over
   /// 9 GB is not instant and a row that keeps looking clickable invites a second
   /// press.
   rowBusy = $state<string | null>(null);
@@ -467,7 +467,7 @@ export async function playTorrentFile(info: TorrentInfo, file: TorrentFile) {
 /**
  * Turning seeding off has to take effect now, not at the next magnet — a switch
  * that reads "off" while pieces are still going out would be a lie about the one
- * behaviour here with legal weight attached. That costs the running torrent, so
+ * behavior here with legal weight attached. That costs the running torrent, so
  * the popup says so rather than leaving a stream that silently died.
  */
 export async function toggleSeeding() {
@@ -495,7 +495,7 @@ export async function clearTorrentCache() {
  * which is what `resolveTorrentFile` does and the reason torrents are remembered
  * at all. And the resolver used to hand back one URL with the rest of the season
  * dropped, so an episode opened from the history had no next episode while the
- * same episode opened from the torrent list did: one file, two behaviours,
+ * same episode opened from the torrent list did: one file, two behaviors,
  * invisible from outside.
  */
 export async function openRecent(item: RecentItem) {

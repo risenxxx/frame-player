@@ -173,7 +173,7 @@
      10px` for the horizontal inset silently took the vertical padding to zero,
      so this cell was **12px tall inside a 27px row** — the long thin pill. It
      now fills the row's content height like the two glyph buttons, and the text
-     is centred by the grid rather than by a padding that has to be kept in step
+     is centered by the grid rather than by a padding that has to be kept in step
      with theirs. */
   .delayrow .speedopt.delayreset {
     flex: 0 0 auto;

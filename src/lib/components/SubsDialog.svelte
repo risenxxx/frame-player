@@ -196,7 +196,7 @@
             e.stopPropagation();
           }}
         />
-        <!-- A boolean is a switch in this UI, never a pill. Labelled
+        <!-- A boolean is a switch in this UI, never a pill. Labeled
              the way the settings rows are: the text is a sibling and
              the switch carries its own `aria-label`, because a `<label>`
              around a `<button>` labels nothing and does not forward
@@ -251,7 +251,7 @@
 <style>
   /* The row owns the vertical spacing, not the field inside it: `.link-input`
      carries `margin: 4px 0 8px` for the link dialog, where it is the only
-     thing in its row, and an asymmetric margin on a centred flex item tilts
+     thing in its row, and an asymmetric margin on a centered flex item tilts
      the pair — the field sat 2px high and the button looked dropped. */
   .subs-query {
     display: flex;

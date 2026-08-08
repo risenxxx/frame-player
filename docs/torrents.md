@@ -6,7 +6,7 @@ television, when casting, is served the same bytes from the LAN server instead.
 
 The point of the design is that **reading is what drives downloading**. mpv's
 Range requests tell the torrent client where the viewer is, and the client
-prioritises pieces around it. Nothing is fetched speculatively, and nothing at
+prioritizes pieces around it. Nothing is fetched speculatively, and nothing at
 all is fetched until a file is actually opened.
 
 ## What the design costs and buys
@@ -58,11 +58,11 @@ torrent rather than with what was watched. With it: 2.4 ms. The one real risk
 that persistence brings is that a torrent recorded as running is restored
 running, which would talk to peers for something nobody asked to watch; the
 session therefore pauses everything it restores, and has to wait out the
-initialising state first, because a client refuses to pause a torrent in it.
+initializing state first, because a client refuses to pause a torrent in it.
 
 **A freshly added torrent is not ready to be touched**, and the order of the
-steps is load-bearing: wait for initialisation, select the file, unpause, wait
-again. Selection is refused outright while initialising, and streaming accepts
+steps is load-bearing: wait for initialization, select the file, unpause, wait
+again. Selection is refused outright while initializing, and streaming accepts
 only a paused or live torrent. On a small release the window is invisible; on a
 nine-episode season it swallowed the whole of playback. The server therefore
 answers **503** rather than 404 for "not ready", because "the file does not

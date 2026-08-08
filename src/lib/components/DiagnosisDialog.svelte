@@ -169,8 +169,8 @@
     gap: 2px;
     font-size: 12px;
     line-height: 1.4;
-    /* The state is carried by a bar rather than by colouring the text: a report
-       is read as prose, and eight coloured lines read as an error list. */
+    /* The state is carried by a bar rather than by coloring the text: a report
+       is read as prose, and eight colored lines read as an error list. */
     border-left: 2px solid rgba(232, 232, 236, 0.25);
     padding-left: 10px;
   }

@@ -340,14 +340,14 @@ export function showSeekOsd(target: number) {
  * Bounds for the wheel scrub: the file, or the A–B segment while one is set.
  *
  * A continuous gesture is CLAMPED where a key press wraps, and the difference
- * is not arbitrary — it is what the two gestures are. Fingers travelling right
+ * is not arbitrary — it is what the two gestures are. Fingers traveling right
  * mean "later", and wrapping would break that correspondence: a steady swipe
  * would spin the picture around a short loop instead of moving through it. A
  * key press has no such correspondence to keep; it is a step, and a step that
  * clamped would go dead at the edge under repeats.
  *
  * Clamping is also what this gesture already does at the ends of the file, so
- * a segment is the same behaviour with tighter bounds rather than a new rule
+ * a segment is the same behavior with tighter bounds rather than a new rule
  * to learn.
  *
  * The upper bound stops just short of B: landing exactly on it disarms the

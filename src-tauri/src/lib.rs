@@ -86,7 +86,7 @@ fn take_pending_files(state: tauri::State<'_, PendingOpen>) -> Vec<String> {
     out
 }
 
-/// The frontend has subscribed to `OPEN_FILE_EVENT`, so files can be signalled
+/// The frontend has subscribed to `OPEN_FILE_EVENT`, so files can be signaled
 /// from now on. Anything buffered while mpv was starting is announced at once.
 #[tauri::command]
 fn open_file_ready(app: tauri::AppHandle, state: tauri::State<'_, PendingOpen>) {
@@ -663,7 +663,7 @@ fn hdr_status_impl(window: &tauri::WebviewWindow) -> Option<HdrStatus> {
     };
 
     // Win11 24H2+: the exact display mode (SDR/WCG/HDR). On 24H2 the older
-    // GET_ADVANCED_COLOR_INFO also reports auto colour management (ACM) on SDR
+    // GET_ADVANCED_COLOR_INFO also reports auto color management (ACM) on SDR
     // panels, which is not HDR. windows-sys 0.61 has no struct for it yet, so
     // it is declared here after SDK 10.0.26100 (wingdi.h).
     const GET_ADVANCED_COLOR_INFO_2: i32 = 15;
@@ -815,7 +815,7 @@ fn window_float_over_fullscreen(window: tauri::WebviewWindow, on: bool) {
 
 /// The system double-click threshold. The webview detects dblclick by the same
 /// value, so any single-click delay must match it exactly: set it lower and the
-/// single-click action fires before the system recognises the double click, so
+/// single-click action fires before the system recognizes the double click, so
 /// a double click runs both.
 #[tauri::command]
 fn double_click_time() -> u32 {
@@ -844,7 +844,7 @@ fn double_click_time() -> u32 {
 /// finds the driver by a JSON manifest in system directories (ours comes from
 /// Homebrew). A machine without Homebrew has none, so point the loader at the
 /// manifest shipped next to our libraries. This has to happen before the first
-/// vkCreateInstance, i.e. before mpv is initialised.
+/// vkCreateInstance, i.e. before mpv is initialized.
 #[cfg(target_os = "macos")]
 fn point_vulkan_at_bundled_driver() {
     let Ok(exe) = std::env::current_exe() else {

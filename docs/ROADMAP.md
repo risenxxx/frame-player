@@ -26,7 +26,7 @@ nothing about watching a film.
 | 10 | Media info panel — a live readout, not a snapshot |
 | 11 | Picture geometry: rotation, aspect override, pan-and-scan |
 | 12 | Audio device selection |
-| 13 | Volume levelling |
+| 13 | Volume leveling |
 | 14 | Subtitle appearance: size, position, border style |
 | 15 | Network streams via yt-dlp, with the binary managed by the player |
 | 16 | Subtitle search and download from OpenSubtitles, by file hash first |
@@ -124,7 +124,7 @@ A folder of `.mkv` files in Explorer is a grid of identical icons. Two of the
 three mechanisms behind the word "preview" cost nothing to run — a thumbnail
 provider and a preview handler are both components the shell loads on demand and
 drops again, with no background process. The work is COM registration, a
-separate small binary, and the shell's caching behaviour, which is
+separate small binary, and the shell's caching behavior, which is
 unforgiving of a slow or crashing provider.
 
 ### Quick Look on Space (Windows)
@@ -189,7 +189,7 @@ unplugged drive. Small, and only worth doing if those cases turn out to matter.
 ### A render-API presenter
 
 Replacing the child-view embedding with our own surface and mpv's render API.
-Frame-exact control, sub-5 ms stepping, perfect colour agreement between the
+Frame-exact control, sub-5 ms stepping, perfect color agreement between the
 video and what is drawn over it — at the cost of the hardest native work on both
 platforms. The current architecture does not preclude it, which is the reason it
 can stay on this list rather than being decided now.

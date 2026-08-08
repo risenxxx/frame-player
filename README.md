@@ -38,7 +38,7 @@ Most of what follows exists somewhere else. What is unusual is how much of it is
 
 **Watch a torrent while it is still downloading.** Paste a magnet link and a
 whole season becomes a queue you can start playing in seconds. Pieces are
-prioritised around the playhead, the seekbar shades what has already arrived so
+prioritized around the playhead, the seekbar shades what has already arrived so
 you can see whether a jump will land or wait, subtitles shipped inside the
 torrent are attached automatically, and the next episode is fetched ahead once
 the current one is complete. Nothing is downloaded until you actually ask for
@@ -207,8 +207,8 @@ damaged, with no button and no way past it except the terminal.
 - **Zoom and pan** — Ctrl+wheel anchored at the cursor, drag to pan.
 - **Frame export** — save or copy the current frame exactly as the VO decoded
   it, HDR tone mapping included, with or without subtitles.
-- **Media info panel** — a live readout of codecs, bitrate, colour and channels.
-- **Customisable hotkeys** bound to *physical* keys, so they work in any
+- **Media info panel** — a live readout of codecs, bitrate, color and channels.
+- **Customizable hotkeys** bound to *physical* keys, so they work in any
   keyboard layout.
 - **Privacy** — folders can be excluded from the watch history, and excluding
   one also erases what was already recorded for it (positions, remembered

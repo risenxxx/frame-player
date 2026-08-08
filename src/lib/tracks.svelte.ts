@@ -170,7 +170,7 @@ function applySavedTrack(
 }
 
 /**
- * Start the standing restore. Must be called from a component's initialisation
+ * Start the standing restore. Must be called from a component's initialization
  * — see the note on `initChrome` for what a top-level `$effect` costs.
  */
 export function initTracks() {

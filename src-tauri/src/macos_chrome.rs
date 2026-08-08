@@ -69,7 +69,7 @@ pub fn apply(window: &tauri::WebviewWindow) {
     // frames with the buttons hanging in empty space.
     //
     // The background sits BELOW both the mpv view and the webview, so it covers
-    // nothing: it only shows where nobody painted. The colour is the same
+    // nothing: it only shows where nobody painted. The color is the same
     // #101016 as the `.player.backdrop` fill in the frontend.
     //
     // setOpaque(true) is deliberately avoided: an opaque window loses the
@@ -84,7 +84,7 @@ pub fn apply(window: &tauri::WebviewWindow) {
 
     // Force the dark appearance instead of following the system. The player's
     // chrome is dark whatever the system theme is, and the frame view draws
-    // itself to match the *appearance*, not the background colour: in light
+    // itself to match the *appearance*, not the background color: in light
     // mode it puts a bright highlight along the window's top edge, far stronger
     // than the shadow on the other three sides and clearly visible against the
     // dark fill. Captured both ways — the line all but disappears under
@@ -110,7 +110,7 @@ pub fn apply(window: &tauri::WebviewWindow) {
 
     // The traffic lights: an empty toolbar makes the title bar tall enough that
     // AppKit gives them the inset we want, and keeps owning their layout and
-    // hover behaviour. See the section comment below for why not to move them
+    // hover behavior. See the section comment below for why not to move them
     // by hand.
     install_toolbar(&ns, mtm);
     toolbar_off_in_fullscreen(&ns);
@@ -218,12 +218,15 @@ pub fn watch_scroll_phase<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let app = app.clone();
     let handler = RcBlock::new(move |event: core::ptr::NonNull<NSEvent>| -> *mut NSEvent {
         let phase = unsafe { event.as_ref().phase() };
-        // Began/Changed/Stationary — fingers on the trackpad. Ended/Cancelled —
+        // Began/Changed/Stationary — fingers on the trackpad. Ended/Canceled —
         // lifted. Inertia after lifting arrives with phase = None and does not
         // count as either.
         let down = phase.contains(NSEventPhase::Began)
             || phase.contains(NSEventPhase::Changed)
             || phase.contains(NSEventPhase::Stationary);
+        // `Cancelled` with two Ls is Apple's spelling of the variant, not ours —
+        // an identifier from AppKit rather than a word, and the one place in
+        // this file that does not follow the project's American spelling.
         let up = phase.contains(NSEventPhase::Ended) || phase.contains(NSEventPhase::Cancelled);
         if down || up {
             let _ = app.emit("frameplayer://scroll-phase", down);
@@ -269,7 +272,7 @@ static BUTTONS_VISIBLE: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 // itself at (19, 33) — the roomier inset a tall title bar wants — and lays out
 // their tracking rects to match. Measured to hold in the window, across resizes,
 // after `setTitle`, and in fullscreen, where the buttons keep the system's own
-// placement and behaviour. None of it needs maintaining, and no other code has
+// placement and behavior. None of it needs maintaining, and no other code has
 // to know the buttons are special.
 //
 // The one thing to watch: this puts a 66 pt system view over the player's own
@@ -302,7 +305,7 @@ pub fn set_buttons_visible(window: &tauri::WebviewWindow, visible: bool) {
     // window-placement popup (on the green one) is showing, or a tooltip is
     // about to. Hiding them now is not allowed — the popup is anchored to the
     // button and follows it into the corner when it disappears. It is also just
-    // the expected macOS behaviour.
+    // the expected macOS behavior.
     if !visible && pointer_over_buttons(&ns) {
         return;
     }
@@ -358,7 +361,7 @@ fn pointer_over_buttons(ns: &NSWindow) -> bool {
 //
 // Floating over ANOTHER application's fullscreen space is the one thing a
 // system PiP panel does that an always-on-top window does not, and what it
-// takes is not what it looks like. Measured, with a probe app that put labelled
+// takes is not what it looks like. Measured, with a probe app that put labeled
 // windows in every configuration and screenshotted them over a fullscreen
 // TextEdit:
 //
@@ -402,7 +405,7 @@ fn pointer_over_buttons(ns: &NSWindow) -> bool {
 struct SavedWindow {
     class: &'static objc2::runtime::AnyClass,
     style: NSWindowStyleMask,
-    behaviour: NSWindowCollectionBehavior,
+    behavior: NSWindowCollectionBehavior,
 }
 
 static SAVED: std::sync::Mutex<Option<SavedWindow>> = std::sync::Mutex::new(None);
@@ -439,7 +442,7 @@ pub fn set_float_over_fullscreen(window: &tauri::WebviewWindow, on: bool) {
             return;
         }
         let style = ns.styleMask();
-        let behaviour = ns.collectionBehavior();
+        let behavior = ns.collectionBehavior();
 
         unsafe { objc2::ffi::object_setClass(obj, panel as *const AnyClass) };
         ns.setStyleMask(style | NSWindowStyleMask::NonactivatingPanel);
@@ -448,7 +451,7 @@ pub fn set_float_over_fullscreen(window: &tauri::WebviewWindow, on: bool) {
         // deactivation.
         ns.setHidesOnDeactivate(false);
 
-        let mut wanted = behaviour;
+        let mut wanted = behavior;
         // The flags sit in different exclusivity groups; AppKit takes at most
         // one from each, so what shares a group has to come off. Notably
         // `FullScreenPrimary` — the flag that makes a window fullscreen-capable
@@ -473,12 +476,12 @@ pub fn set_float_over_fullscreen(window: &tauri::WebviewWindow, on: bool) {
         *saved = Some(SavedWindow {
             class: was,
             style,
-            behaviour,
+            behavior,
         });
     } else if let Some(prev) = saved.take() {
         // Exactly the reverse order, and the class last: everything above was
         // set through NSPanel's implementation.
-        ns.setCollectionBehavior(prev.behaviour);
+        ns.setCollectionBehavior(prev.behavior);
         ns.setStyleMask(prev.style);
         unsafe { objc2::ffi::object_setClass(obj, prev.class as *const AnyClass) };
     }

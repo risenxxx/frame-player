@@ -200,7 +200,7 @@
 
   /* Always on screen, never faded in: taking a 1.4px stroke off full opacity
      makes the engine re-rasterise it and the glyph visibly twitches in
-     WKWebView. The three strengths are colour, exactly as on `.torrow-forget`. */
+     WKWebView. The three strengths are color, exactly as on `.torrow-forget`. */
   .link-recent-forget {
     flex: none;
     width: 24px;

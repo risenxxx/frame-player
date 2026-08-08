@@ -41,7 +41,7 @@ jobs:
     if: needs.check-version.outputs.should_release == 'true'
     strategy:
       # Both artifacts are needed for a complete latest.json, so let each
-      # platform report its own failure instead of cancelling its sibling.
+      # platform report its own failure instead of canceling its sibling.
       fail-fast: false
       matrix:
         include:
@@ -52,7 +52,7 @@ jobs:
           # + darwin-x86_64); see FINDINGS-macos.md for why it is not worth it yet.
           #
           # The runner must be NO OLDER than the macOS users run: macOS gates
-          # behaviour changes on the SDK version a binary is linked against. A
+          # behavior changes on the SDK version a binary is linked against. A
           # build made on macos-15 (SDK 15.5) got the old window chrome on
           # macOS 26 — different traffic-light spacing, and our padding offset
           # reset — even though the code in the binary was correct.

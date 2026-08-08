@@ -115,7 +115,7 @@ export type EpisodeRef = { title: string; season: number; episode: number };
  * 122 subtitles for the 2024 series. The numbers are the difference between
  * "nothing found" and a usable list for every series.
  *
- * Only unambiguous markers are recognised, and that restraint is the whole
+ * Only unambiguous markers are recognized, and that restraint is the whole
  * design — the same lesson the chapter-skip patterns learned. A bare number in
  * a release name is not an episode: `1080p`, `2024`, `x264` and `5.1` are all
  * numbers sitting in exactly the places a naive parser would read one. So:

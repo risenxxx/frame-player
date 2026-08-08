@@ -31,7 +31,7 @@ abandoned is more useful written down than deleted: the next person will have
 the same idea, and the interesting part is why it failed rather than that it
 did.
 
-**Device behaviour is observation, not specification.** Televisions, receivers
+**Device behavior is observation, not specification.** Televisions, receivers
 and swarms do not document themselves. Where a document says a device refuses
 something, that is what one device did on one network; the phrasing tries to
 keep the difference between "the protocol forbids this" and "this set refused

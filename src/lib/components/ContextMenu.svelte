@@ -138,7 +138,7 @@
   /// underneath an open menu is not a case worth chasing.
   ///
   /// `const`, not `$state`: this component is rendered inside `{#if ctxAt}`, so
-  /// it mounts afresh on every right-click and the initialiser is what re-reads
+  /// it mounts afresh on every right-click and the initializer is what re-reads
   /// the width. Nothing assigns it after that, and saying `$state` would claim
   /// otherwise.
   const ctxDrill = window.innerWidth < SIDE_BY_SIDE_MIN;
@@ -532,13 +532,13 @@
   }
 
   /* Mantine style: the item is a flex row, the chevron pushed to the right by
-     space-between and centred on the line. `margin-left: auto` would not work
+     space-between and centered on the line. `margin-left: auto` would not work
      here at all — .menu-item is display: block (the neighbouring .hint gets by
      with float, but float gives an icon a crooked baseline).
      The selector must use two classes: the rule `.menu-item { display: block }`
      is declared LOWER in the file, and at equal specificity it would win — flex
      silently did not apply, the chevron stayed right after the text and sat on
-     the baseline, i.e. above the centre of the line. */
+     the baseline, i.e. above the center of the line. */
   .menu-item.back {
     display: flex;
     align-items: center;

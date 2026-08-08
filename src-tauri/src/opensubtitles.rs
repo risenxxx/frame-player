@@ -145,7 +145,7 @@ pub struct SearchResult {
     /// not, whatever the request contained.
     ///
     /// Derived from the results rather than from what was sent, and that
-    /// distinction is the whole fix for the first version's worst behaviour:
+    /// distinction is the whole fix for the first version's worst behavior:
     /// **the API answers a hash-and-query request with the union of both**
     /// (measured: hash alone 11 results, all matching; the same hash with an
     /// unrelated query 50 results, still 11 matching), so "we sent a hash"
@@ -286,7 +286,7 @@ impl From<ApiFailure> for String {
 }
 
 /// What the panel receives when a download fails. `kind` is what it branches
-/// on: a spent quota is not an error to apologise for, it is a state with a way
+/// on: a spent quota is not an error to apologize for, it is a state with a way
 /// out (wait, or sign in for a larger allowance).
 #[derive(serde::Serialize)]
 pub struct SubsError {

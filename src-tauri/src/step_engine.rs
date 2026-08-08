@@ -41,7 +41,7 @@ pub struct StepSession {
     continuous_tail: bool,
 }
 
-// Access to the session is serialised through a Mutex; FFmpeg contexts are not
+// Access to the session is serialized through a Mutex; FFmpeg contexts are not
 // thread-bound (no TLS), so moving them between threads is safe.
 unsafe impl Send for StepSession {}
 

@@ -54,13 +54,13 @@ else
     say '✗' "$cli would not run — cannot read its configuration"
     fail=1
   fi
+  # `case`, not `printf | grep -q`: see the note in build-macos-libs.sh. The
+  # same idiom there would have let a GPL build pass.
   for opt in --enable-gpl --enable-nonfree --enable-version3; do
-    if printf '%s' "$cfg" | grep -q -- "$opt"; then
-      say '✗' "ffmpeg built with $opt"
-      fail=1
-    else
-      say '✓' "ffmpeg without $opt"
-    fi
+    case "$cfg" in
+      *"$opt"*) say '✗' "ffmpeg built with $opt"; fail=1 ;;
+      *)        say '✓' "ffmpeg without $opt" ;;
+    esac
   done
 fi
 
@@ -68,10 +68,18 @@ fi
 # The subtle failure: meson finds Homebrew's ffmpeg through pkg-config, the
 # build succeeds, and the result is GPL with every other check still green.
 if [ -f "$lib_dir/libmpv.dylib" ]; then
-  bad="$(otool -L "$lib_dir/libmpv.dylib" | tail -n +2 \
-        | grep -oE '(x264|x265|rubberband)[^ ]*' | sort -u | tr '\n' ' ')"
+  # This is the line that failed in CI, and it failed on **success**: with no
+  # GPL library to find, `grep -o` exits 1, `pipefail` propagates it, `set -e`
+  # aborts — so the gate passed only while the bundle was broken. It had been
+  # tested against a GPL set, where every grep matched and returned 0, and the
+  # passing path had therefore never once been executed.
+  links="$(otool -L "$lib_dir/libmpv.dylib")"
+  bad=''
+  for g in x264 x265 rubberband; do
+    case "$links" in *"$g"*) bad="$bad $g" ;; esac
+  done
   if [ -n "$bad" ]; then
-    say '✗' "libmpv links: $bad"
+    say '✗' "libmpv links:$bad"
     fail=1
   else
     say '✓' "libmpv links nothing GPL"

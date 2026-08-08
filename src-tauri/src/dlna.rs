@@ -313,7 +313,7 @@ fn media_duration(path: &std::path::Path) -> Option<f64> {
 /// The DIDL-Lite that goes with the URI — and **this is where a renderer
 /// decides whether the stream may be seeked**, before it has fetched a single
 /// byte. Measured on the LG: with a bare `<res protocolInfo="http-get:*:mime:*">`
-/// the TV's own on-screen transport greys its seek buttons out from the start
+/// the TV's own on-screen transport grays its seek buttons out from the start
 /// and answers a sender `Seek` with "not available", no matter what the HTTP
 /// responses later advertise. The three things it reads are the DLNA flags in
 /// the fourth protocolInfo field, `size`, and `duration`.
@@ -358,7 +358,7 @@ pub async fn probe() {
         if let Some(cm) = &r.connection_manager {
             match protocol_info(&client, cm).await {
                 Some(sink) => {
-                    let formats = summarise_sink(&sink);
+                    let formats = summarize_sink(&sink);
                     eprintln!("[dlna]     accepts {} distinct MIME types:", formats.len());
                     for (mime, count) in formats {
                         eprintln!("[dlna]       {mime} ({count} profile(s))");
@@ -373,7 +373,7 @@ pub async fn probe() {
 
 /// The Sink list is hundreds of `http-get:*:<mime>:DLNA.ORG_PN=...` entries;
 /// what matters for the ladder is which MIME types appear at all.
-fn summarise_sink(sink: &str) -> BTreeMap<String, usize> {
+fn summarize_sink(sink: &str) -> BTreeMap<String, usize> {
     let mut out: BTreeMap<String, usize> = BTreeMap::new();
     for entry in sink.split(',') {
         let parts: Vec<&str> = entry.split(':').collect();
@@ -401,7 +401,7 @@ mod tests {
         let sink = "http-get:*:video/mp4:DLNA.ORG_PN=AVC_MP4_MP_HD,\
                     http-get:*:video/mp4:DLNA.ORG_PN=AVC_MP4_HP_HD,\
                     http-get:*:video/x-matroska:*";
-        let s = summarise_sink(sink);
+        let s = summarize_sink(sink);
         assert_eq!(s.get("video/mp4"), Some(&2));
         assert_eq!(s.get("video/x-matroska"), Some(&1));
     }
@@ -569,7 +569,7 @@ async fn collect_renderers(timeout: Duration) -> Vec<DlnaDeviceInfo> {
         let mimes = match &r.connection_manager {
             Some(cm) => protocol_info(&client, cm)
                 .await
-                .map(|sink| summarise_sink(&sink).keys().cloned().collect())
+                .map(|sink| summarize_sink(&sink).keys().cloned().collect())
                 .unwrap_or_default(),
             None => Vec::new(),
         };
@@ -1212,7 +1212,7 @@ pub async fn selftest(app: &tauri::AppHandle, target: Option<String>, path: Stri
 #[derive(serde::Serialize)]
 pub struct CheckLine {
     pub id: String,
-    /// ok | warn | fail | info — the report colours its rule from this.
+    /// ok | warn | fail | info — the report colors its rule from this.
     pub state: String,
     pub detail: String,
 }
@@ -1295,7 +1295,7 @@ pub async fn cast_diagnose(
     if let Some(cm) = &renderer.connection_manager {
         match protocol_info(&client, cm).await {
             Some(sink) => {
-                let mimes = summarise_sink(&sink);
+                let mimes = summarize_sink(&sink);
                 let video: Vec<&String> = mimes.keys().filter(|m| m.starts_with("video/")).collect();
                 out.push(line(
                     "formats",

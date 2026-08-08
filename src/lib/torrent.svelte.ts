@@ -506,7 +506,7 @@ export async function listTorrents(): Promise<TorrentRow[]> {
  *
  * Two things about how it is answered. The source is **what mpv has open**, not
  * `torrent.info` — that one is set when a magnet *resolves*, so a season whose
- * file picker was cancelled would go on claiming to be playing with nothing
+ * file picker was canceled would go on claiming to be playing with nothing
  * loaded at all. And it is a function rather than a field of the row, so it is
  * re-read whenever `filePath` changes: a value baked in when the list was
  * fetched would be a snapshot taken ~300 ms after the file was unloaded, and a

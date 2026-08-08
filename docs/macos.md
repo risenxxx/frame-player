@@ -39,7 +39,7 @@ instead of into a window of its own. Four files, roughly +160/−15, built by
 | File | Change |
 |---|---|
 | `video/out/mac/common.swift` | Resolve `--wid` to an `NSView`; add mpv's view as the bottom-most subview of the host and track it; notification-based resize/DPI/screen observers, since there is no window delegate to attach to; embedded fallbacks for screen, display link, backing scale and window size queries; skip `initApp()` so the host keeps its activation policy, Dock icon and menu bar; skip window geometry |
-| `video/out/mac_common.swift` | Visibility and backing-property changes fall back to the host window; a re-initialisation guard |
+| `video/out/mac_common.swift` | Visibility and backing-property changes fall back to the host window; a re-initialization guard |
 | `video/out/vulkan/context_mac.m` | Sizing no longer bails when there is no window of its own, and comes from the view |
 | `DOCS/man/options.rst` | Document the macOS `--wid` case |
 
@@ -51,9 +51,9 @@ frame. Patching only the Swift side produces an embedded view whose surface
 never resizes. The fix takes the size from the view in **backing pixels**, which
 is also what makes Retina correct.
 
-**Re-initialisation was gated on "no window yet".** Embedded, that condition is
+**Re-initialization was gated on "no window yet".** Embedded, that condition is
 true forever, so every reconfiguration — each new file, each resolution change —
-would re-run initialisation and stack another view. Replaced with an explicit
+would re-run initialization and stack another view. Replaced with an explicit
 flag.
 
 **Window geometry was applied on reconfigure**, pushing a screen-derived size
@@ -116,9 +116,9 @@ and then jumping, so the buttons are hidden across the transition and unhidden
 once the toolbar is back.
 
 Two smaller ones. The window is forced to the dark appearance, because the frame
-view draws itself to match the appearance rather than the background colour and
+view draws itself to match the appearance rather than the background color and
 under a light system theme puts a bright highlight along the top edge. And the
-window gets an opaque background colour, so that the moment before the webview's
+window gets an opaque background color, so that the moment before the webview's
 first composite shows a dark fill rather than the desktop — but not
 `setOpaque(true)`, which costs the rounded corners and the shadow.
 
@@ -127,12 +127,12 @@ first composite shows a dark fill rather than the desktop — but not
 "Always on top" only lifts a window above others *on its own space*, and a
 fullscreen application is a space of its own — so the mini player vanished
 exactly when a small window on top is wanted. Everything plausible about this is
-wrong, and it was settled with a probe application that put labelled windows in
+wrong, and it was settled with a probe application that put labeled windows in
 each configuration:
 
 - **The window level is irrelevant.** An ordinary window does not reach the
   space at any level, including levels above everything the system itself draws.
-- **The collection behaviour is necessary but not sufficient.**
+- **The collection behavior is necessary but not sufficient.**
 - What decides it is being an `NSPanel` **with the non-activating style bit**,
   and it then works at the ordinary floating level. Either half alone fails.
 

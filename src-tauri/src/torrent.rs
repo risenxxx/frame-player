@@ -5,7 +5,7 @@
 //! mpv opens `http://127.0.0.1:<port>/…` and its Range requests *are* the signal
 //! for "the viewer is here", which the client turns into piece priority.
 //! [librqbit](https://lib.rs/crates/librqbit) already does that half: it blocks
-//! a read until the piece arrives and prioritises what is being streamed.
+//! a read until the piece arrives and prioritizes what is being streamed.
 //!
 //! Four decisions in here are worth stating, because each one is a place the
 //! obvious implementation is wrong.
@@ -322,7 +322,7 @@ impl TorrentService {
                 //
                 // What it costs is a list of torrents restored when the session
                 // is built (measured: 21 ms for one) — which is the
-                // background-client behaviour this app refuses, hence
+                // background-client behavior this app refuses, hence
                 // `pause_restored` immediately after. Two things measured and
                 // *not* a problem: the stored `paused` flag is honoured, and
                 // data deleted behind our back is caught rather than trusted —
@@ -414,7 +414,7 @@ impl TorrentService {
     /// Turning it **off has to take effect now**, not at the next magnet: the
     /// switch is a statement about what the machine is doing this second, and a
     /// setting that reads "off" while pieces are still going out would be a lie
-    /// about the one behaviour with legal weight attached to it. That costs the
+    /// about the one behavior with legal weight attached to it. That costs the
     /// current stream — the session goes with it — which is the honest trade and
     /// is what the settings hint warns about.
     ///
@@ -626,7 +626,7 @@ impl TorrentService {
     /// file" until the failure started reporting its reason.
     async fn select(&self, info_hash: &str, index: usize) -> Result<Arc<ManagedTorrent>, String> {
         // The lock is dropped before each wait: initialization is seconds on a
-        // large torrent, and holding it would serialise every other request —
+        // large torrent, and holding it would serialize every other request —
         // including the parallel connections ffmpeg opens — behind it.
         let (session, handle) = {
             let inner = self.inner.lock().await;

@@ -20,13 +20,13 @@
 // throws `https://svelte.dev/e/effect_orphan`.
 //
 // The fix is always the same shape: wrap it in an exported `initX()` and call
-// that from a component's initialisation, as `trackTorrentPlayback` and
+// that from a component's initialization, as `trackTorrentPlayback` and
 // `initChrome` do.
 //
 //   node scripts/check-runes.mjs
 //
 // What counts as orphaned is a `$effect` **statement** at brace depth 0. An
-// effect inside a function is somebody's initialiser and is the whole point;
+// effect inside a function is somebody's initializer and is the whole point;
 // `const f = () => $effect(…)` is one too, since an arrow body does not run
 // until it is called. So the token is only reported when nothing but `;` or `}`
 // precedes it on its line — which is what tells a statement from an expression
@@ -47,7 +47,7 @@
 //
 // Only same-file writes count as writes, so this is deliberately narrow: it
 // says nothing about class fields, which are the cross-file case. A `$state`
-// whose initialiser is the whole point and which is never reassigned should be
+// whose initializer is the whole point and which is never reassigned should be
 // a `const` and will be reported until it is one.
 
 // ## 3. A declaration whose code left

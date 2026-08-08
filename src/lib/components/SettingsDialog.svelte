@@ -9,7 +9,7 @@
   /// the current values, polling the display and tearing the key recorder down
   /// are all just this component's lifecycle.
   ///
-  /// One deliberate behaviour change came with that. The display's HDR state
+  /// One deliberate behavior change came with that. The display's HDR state
   /// used to be polled every three seconds for the whole life of the app; it is
   /// only ever shown here, so the timer now runs only while the dialog is open.
   import { invoke } from '@tauri-apps/api/core';
@@ -47,7 +47,7 @@
     removeExcludedFolder,
     toggleHistory,
   } from '$lib/history.svelte';
-  import { applyNormalise, player, readList } from '$lib/player.svelte';
+  import { applyNormalize, player, readList } from '$lib/player.svelte';
   import { playlist, setPlaylistPref } from '$lib/playlist.svelte';
   import { torrentPrefs } from '$lib/torrent.svelte';
   import { castCacheCapGb, setCastCacheCapGb } from '$lib/cast.svelte';
@@ -331,7 +331,7 @@
    * The first entry for a description wins, which is mpv's own preferred
    * output. What that gives up is exclusive mode, and deliberately: it is an
    * audiophile setting that takes the device away from every other app, it
-   * cannot be labelled in this dialog without inventing jargon, and anyone who
+   * cannot be labeled in this dialog without inventing jargon, and anyone who
    * wants it can name the device in mpv.conf — which is what the footer of this
    * dialog already says is where mpv's own settings live.
    */
@@ -453,7 +453,7 @@
       showOsd(t(st.enabled ? 'osd.display_hdr' : 'osd.display_sdr'));
       // Embedded through wid, mpv may not notice the HDR switch
       // (WM_DISPLAYCHANGE is only broadcast to top-level windows) — re-apply
-      // the hint so the VO re-reads the output colour space.
+      // the hint so the VO re-reads the output color space.
       const hint =
         (await getProperty('target-colorspace-hint', 'string').catch(() => null)) ?? 'no';
       if (player.hasFile && hint !== 'no') {
@@ -1090,19 +1090,19 @@
     <div class="setting" class:muted={bitstream}>
       <div class="row-toggle">
         <div class="row-text">
-          <div class="setting-label">{t('set.normalise')}</div>
+          <div class="setting-label">{t('set.normalize')}</div>
           <div class="setting-hint">
-            {t(bitstream ? 'set.normalise_spdif' : 'set.normalise_hint')}
+            {t(bitstream ? 'set.normalize_spdif' : 'set.normalize_hint')}
           </div>
         </div>
         <button
           class="switch"
-          class:on={player.normalise && !bitstream}
+          class:on={player.normalize && !bitstream}
           role="switch"
-          aria-checked={player.normalise && !bitstream}
+          aria-checked={player.normalize && !bitstream}
           disabled={bitstream}
-          aria-label={t('set.normalise')}
-          onclick={() => applyNormalise(!player.normalise)}
+          aria-label={t('set.normalize')}
+          onclick={() => applyNormalize(!player.normalize)}
         >
           <span class="switch-knob"></span>
         </button>
@@ -1207,7 +1207,7 @@
     border: none;
     border-radius: 50%;
     background: transparent;
-    /* Colour, never opacity: this is a 1.4px stroke that is always on screen,
+    /* Color, never opacity: this is a 1.4px stroke that is always on screen,
        and taking it off full opacity makes WKWebView re-rasterise and wobble it
        (the same finding as the torrent list's delete cross). */
     color: rgba(255, 255, 255, 0.4);
@@ -1222,7 +1222,7 @@
   /* Written to win, not left to source order — measured in the built bundle,
      `.lang-chip.first .lang-drop` weighs (0,4,0) against a bare
      `.lang-drop:hover`'s (0,3,0), so on the preferred chip the cross would have
-     stayed at its resting colour under the pointer. The same arithmetic the
+     stayed at its resting color under the pointer. The same arithmetic the
      link-history cross ran into. */
   .lang-chip .lang-drop:hover {
     background: rgba(0, 0, 0, 0.25);

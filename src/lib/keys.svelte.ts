@@ -387,7 +387,7 @@ const STORAGE_KEY = 'frameplayer.keys';
  * Only what the user changed, never the whole table. A full snapshot would
  * freeze this build's defaults into every profile, so a default corrected in a
  * later version would reach nobody who had ever opened the editor. Same shape
- * as `frameplayer.loop` and `frameplayer.normalise`: state that is ours, written
+ * as `frameplayer.loop` and `frameplayer.normalize`: state that is ours, written
  * and never read back from anywhere else.
  */
 type Overrides = Partial<Record<ActionId, string[]>>;

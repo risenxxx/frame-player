@@ -29,7 +29,7 @@ without entitlements it breaks the Lua runtime mpv uses for the zoom/pan script.
 
 Two things to know about the result: the signature covers the inner binary, then
 the bundle, and only then are the disk image and the update archive built — so
-both artefacts inherit the seal. And since macOS 15, right-click → Open no
+both artifacts inherit the seal. And since macOS 15, right-click → Open no
 longer bypasses Gatekeeper; Privacy & Security is the only route, so the release
 notes have to say so.
 
@@ -65,7 +65,7 @@ from the signing certificate.
 
 - **Unsigned** — there is no identity, so every build starts from zero and for
   a niche application the warning never goes away.
-- **Signed with an organisation-validated certificate** — reputation accrues to
+- **Signed with an organization-validated certificate** — reputation accrues to
   the publisher and is inherited by new files. The warm-up is once per
   *certificate*, not once per release; the duration is unpublished and reported
   anywhere from hundreds to thousands of installs.
@@ -83,7 +83,7 @@ which is not.
 
 | | macOS | Windows |
 |---|---|---|
-| artefact | `.app.tar.gz`, gzip | `-setup.exe`, solid LZMA |
+| artifact | `.app.tar.gz`, gzip | `-setup.exe`, solid LZMA |
 | what the updater does | unpack, swap the application directory | launch a separate installer process |
 | removes the old version first | no | **yes** — runs the previous uninstaller and waits |
 

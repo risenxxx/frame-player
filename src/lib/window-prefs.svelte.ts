@@ -172,7 +172,7 @@ export async function toggleMini() {
     }
     await win.setAlwaysOnTop(true);
     // After the level: floating is what puts the window on top at all, the
-    // collection behaviour only decides which spaces it may appear on.
+    // collection behavior only decides which spaces it may appear on.
     await floatOverFullscreen(true);
 
     beforeMini = { x: pos.x, y: pos.y, w: size.width, h: size.height, onTop: windowPrefs.alwaysOnTop };
@@ -464,7 +464,7 @@ export async function fitWindowToVideo(scale: number | null) {
     const pad = SCREEN_PADDING * dpr;
     const area = mon?.workArea;
     // Whether the requested size had to be shrunk to fit decides whether the
-    // position is kept or the window is centred (see below).
+    // position is kept or the window is centered (see below).
     let shrunk = false;
     if (area) {
       const maxW = area.size.width - pad * 2 - chromeW;
@@ -499,7 +499,7 @@ export async function fitWindowToVideo(scale: number | null) {
       //  • the size was granted as requested — the window stays where it was
       //    and is only pulled back inside if it overflowed;
       //  • the size had to be shrunk to fit (or it hit the minimum, in which
-      //    case maxX < minX) — the old position is meaningless, so centre it.
+      //    case maxX < minX) — the old position is meaningless, so center it.
       const x = shrunk || maxX < minX ? centerX : Math.min(Math.max(pos.x, minX), maxX);
       const y = shrunk || maxY < minY ? centerY : Math.min(Math.max(pos.y, minY), maxY);
       if (x !== pos.x || y !== pos.y) {

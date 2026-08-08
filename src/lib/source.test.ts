@@ -98,13 +98,13 @@ describe('parseTorrentUrl', () => {
 });
 
 describe('torrent links', () => {
-  it('recognises a magnet whatever its case, and after a paste with spaces', () => {
+  it('recognizes a magnet whatever its case, and after a paste with spaces', () => {
     expect(isMagnet(`magnet:?xt=urn:btih:${HASH}`)).toBe(true);
     expect(isMagnet(`  MAGNET:?xt=urn:btih:${HASH}  `)).toBe(true);
     expect(isMagnet('https://x.test/a.torrent')).toBe(false);
   });
 
-  it('recognises a .torrent link with a query or a fragment after it', () => {
+  it('recognizes a .torrent link with a query or a fragment after it', () => {
     expect(isTorrentLink('https://x.test/a.torrent')).toBe(true);
     expect(isTorrentLink('https://x.test/a.torrent?key=1')).toBe(true);
     expect(isTorrentLink('https://x.test/a.torrent#frag')).toBe(true);

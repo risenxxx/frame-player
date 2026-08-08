@@ -88,7 +88,7 @@ export async function prepareResume(path: string) {
  * The knob alone, with no `start` and no mpv call.
  *
  * Launching with a file on the command line needs exactly this and no more: the
- * OSC is on screen from that moment, but mpv has not been initialised yet, so
+ * OSC is on screen from that moment, but mpv has not been initialized yet, so
  * setting `start` there would fail into a `catch` and — worse — record a
  * `startPrimed` that `prepareResume` is about to recompute from `beforeLoad`
  * anyway.

@@ -61,26 +61,26 @@ for (const file of walk(SRC)) {
   graph.set(file, deps);
 }
 
-// Depth-first, colouring nodes: grey means "on the current path", which is what
+// Depth-first, coloring nodes: gray means "on the current path", which is what
 // a back edge points at.
-const colour = new Map();
+const color = new Map();
 const stack = [];
 const cycles = new Map();
 function visit(node) {
-  colour.set(node, 1);
+  color.set(node, 1);
   stack.push(node);
   for (const dep of [...(graph.get(node) ?? [])].sort()) {
-    if (colour.get(dep) === 1) {
+    if (color.get(dep) === 1) {
       const loop = stack.slice(stack.indexOf(dep)).concat(dep);
       cycles.set([...loop].sort().join('|'), loop);
-    } else if (!colour.has(dep)) {
+    } else if (!color.has(dep)) {
       visit(dep);
     }
   }
   stack.pop();
-  colour.set(node, 2);
+  color.set(node, 2);
 }
-for (const node of [...graph.keys()].sort()) if (!colour.has(node)) visit(node);
+for (const node of [...graph.keys()].sort()) if (!color.has(node)) visit(node);
 
 for (const loop of cycles.values()) {
   console.log(`  ! cycle: ${loop.map((f) => relative(SRC, f)).join(' -> ')}`);

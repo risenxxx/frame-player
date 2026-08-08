@@ -3,7 +3,7 @@
  *
  * Separate from `format.ts`, which is documented as pure and importless — these
  * go through `t()`, so they read reactive state and a component calling one
- * re-renders on a language switch. That is the point: units are labelled at
+ * re-renders on a language switch. That is the point: units are labeled at
  * render time rather than baked into the value, so switching the language
  * relabels a panel without waiting for its next refresh.
  */

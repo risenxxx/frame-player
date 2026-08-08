@@ -29,11 +29,11 @@ set -euo pipefail
 MPV_VERSION="0.41.0"
 # Pinned to the patch level, not the series: `8.1` is a real tarball too, and
 # taking it would mean two runs of this script producing different libraries
-# from identical inputs — which the content-addressed artefact key would then
+# from identical inputs — which the content-addressed artifact key would then
 # report as the same set. Matches the Windows side's 8.1.x.
 FFMPEG_VERSION="8.1.2"
 WRAPPER_VERSION="v0.1.1"
-# Bumping any of these changes the artefact key: the macos-libs workflow hashes
+# Bumping any of these changes the artifact key: the macos-libs workflow hashes
 # this file, so a version pin and the name of the published set move together.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -94,11 +94,20 @@ make install
 
 # The check that matters, run against the thing that was actually built rather
 # than against the flags that were meant to be passed.
-if "$ff_prefix/bin/ffmpeg" -hide_banner -version | grep -qE -- '--enable-(gpl|nonfree|version3)'; then
-  echo "FATAL: the built ffmpeg is not LGPL — see its configuration line" >&2
-  "$ff_prefix/bin/ffmpeg" -hide_banner -version | sed -n '2p' >&2
-  exit 1
-fi
+#
+# Captured into a variable, never piped into `grep -q`. Under `pipefail` that
+# idiom **fails open**: grep exits at the first match, the writer can take
+# SIGPIPE, the pipeline reports non-zero, and the `if` skips its own body — so a
+# GPL build would sail through the check meant to stop it. Whether the SIGPIPE
+# actually lands depends on the output fitting the pipe buffer, which is a
+# coin-flip nobody should be resting a licence check on.
+ff_version="$("$ff_prefix/bin/ffmpeg" -hide_banner -version)"
+case "$ff_version" in
+  *--enable-gpl*|*--enable-nonfree*|*--enable-version3*)
+    echo "FATAL: the built ffmpeg is not LGPL — see its configuration line" >&2
+    printf '%s\n' "$ff_version" | sed -n '2p' >&2
+    exit 1 ;;
+esac
 
 # ---------------------------------------------------------------------------
 echo "==> mpv $MPV_VERSION (patched, -Dgpl=false)"

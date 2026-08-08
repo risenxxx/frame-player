@@ -58,10 +58,10 @@ function onQueueDown(event: PointerEvent, index: number) {
 
 function onQueueMove(event: PointerEvent) {
   if (dragFrom === null) return;
-  const travelled = event.clientY - dragStartY;
-  if (!dragArmed && Math.abs(travelled) < DRAG_SLOP) return;
+  const traveled = event.clientY - dragStartY;
+  if (!dragArmed && Math.abs(traveled) < DRAG_SLOP) return;
   dragArmed = true;
-  const steps = Math.round(travelled / dragRowHeight);
+  const steps = Math.round(traveled / dragRowHeight);
   const last = playlist.entries.length - 1;
   dragTo = Math.min(last, Math.max(0, dragFrom + steps));
 }
@@ -78,7 +78,7 @@ async function onQueueUp(event: PointerEvent) {
   } catch {
     // The capture is gone already — nothing to release.
   }
-  // A press that never travelled is a click, and the click handler on the row
+  // A press that never traveled is a click, and the click handler on the row
   // does the rest.
   if (!wasDrag || from === null || to === null || from === to) return;
   // mpv moves the entry so that it *takes the place of* index2, computed on

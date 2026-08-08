@@ -255,7 +255,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    /* Three strengths in colour, never opacity: a thin glyph re-rasterises
+    /* Three strengths in color, never opacity: a thin glyph re-rasterises
        when it leaves full opacity, and in WebKit that reads as a twitch. */
     color: rgba(232, 232, 236, 0.4);
   }
@@ -296,7 +296,7 @@
     gap: 2px;
     padding: 4px 14px 8px;
     /* Explicit: this is a bare div, not a .menu-item button, so it inherits
-       the document's default (black) rather than the menu's text colour —
+       the document's default (black) rather than the menu's text color —
        which is exactly how the device name shipped unreadable. */
     color: #e8e8ec;
   }

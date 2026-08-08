@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// Previous / replay / next, with a cancellable countdown on next.
+  /// Previous / replay / next, with a cancelable countdown on next.
   ///
   /// `keep-open=always` parks mpv on the last frame of *every* entry rather than
   /// only the last one, so this is the end of an episode as much as the end of a
@@ -152,14 +152,14 @@
      the left, "previous" under the card on the right, each aligned to the edge
      it sits against. Both labels were left-aligned before, which put them at
      the same side of the screen and made the row look like one thing pushed
-     off-centre rather than two choices either side of a middle. */
+     off-center rather than two choices either side of a middle. */
   .endcard.prev {
     text-align: right;
   }
 
   /* These sit directly on the final frame of the film — a 0.35 scrim is not a
      background — so both lines carry the shadow every other caption over the
-     video does. And the label is the start screen's grey lifted to something
+     video does. And the label is the start screen's gray lifted to something
      that survives a bright frame: at #8f8f9c on a snow scene it was invisible,
      which is exactly where the viewer is looking for "what is next". A rule
      that has to beat `.card-name`/`.card-left` is written to win rather than

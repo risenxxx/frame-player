@@ -438,14 +438,14 @@ pub fn is_private(path: &str) -> bool {
 /// Windows file systems are so by default. Mirrored in JS (`isPrivatePath`);
 /// change one, change the other.
 fn path_under(path: &str, root: &str) -> bool {
-    // Separators normalised on **both** sides, matching the JS twin
+    // Separators normalized on **both** sides, matching the JS twin
     // (`pathUnder` in history.svelte.ts). The two strings come from different
     // places — a folder picked in the OS dialog against whatever mpv reports as
     // `path` — and on Windows they disagree about the slash direction. Accepting
     // either only on the *path* side, which is what this did, leaves a root
     // spelled `E:\Films` failing to match `E:/Films/a.mkv`: a privacy root that
     // does not match is a leak, so this is the one comparison that must not be
-    // laxer than the queue's `samePath`, which has normalised all along.
+    // laxer than the queue's `samePath`, which has normalized all along.
     let norm = |s: &str| s.to_lowercase().replace('\\', "/");
     let root = norm(root);
     let root = root.trim_end_matches('/');
@@ -729,7 +729,7 @@ fn bucket_count(duration: f64, interval: f64) -> usize {
 /// Truncation made the preview systematically earlier than the position being
 /// aimed at — by up to a full step, which is 10 s on anything longer than
 /// 40 minutes — while the seek that follows a click is exact. The two errors
-/// therefore added instead of cancelling, and the previewed frame was reliably
+/// therefore added instead of canceling, and the previewed frame was reliably
 /// behind the frame playback started from. Measured on a 24-minute file (6 s
 /// step, 30 hover positions): the preview showed a different scene in 60 % of
 /// them with truncation, 37 % with rounding.
@@ -984,7 +984,7 @@ mod tests {
     /// scoring is lost — this is the case the feature exists to avoid.
     #[test]
     fn black_frames_are_refused() {
-        // 320x180 of pure black, and of mid-grey noise, through the same maths
+        // 320x180 of pure black, and of mid-gray noise, through the same maths
         // the scorer runs on the scaled buffer.
         let black = vec![0u8; 320 * 180 * 3];
         let mut noisy = Vec::with_capacity(320 * 180 * 3);

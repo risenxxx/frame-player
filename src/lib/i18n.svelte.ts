@@ -375,7 +375,7 @@ const ru = {
   'info.fps_label': 'Частота кадров',
   'info.bitrate': 'Битрейт',
   'info.pixfmt': 'Формат пикселей',
-  'info.colour': 'Цвет',
+  'info.color': 'Цвет',
   'info.hdr': 'HDR',
   'info.peak': 'Пиковая яркость',
   'info.decoding': 'Декодирование',
@@ -448,10 +448,10 @@ const ru = {
     'Настройки mpv сохраняются в mpv.conf и применяются сразу. Тонкая настройка — в самом файле:',
   'set.conf_reveal_mac': 'показать mpv.conf в Finder',
   'set.conf_reveal_win': 'показать mpv.conf в проводнике',
-  'set.normalise': 'Выравнивание громкости',
-  'set.normalise_hint':
+  'set.normalize': 'Выравнивание громкости',
+  'set.normalize_hint':
     'Подтягивает тихие диалоги и придерживает громкие сцены. Полезно ночью и в наушниках.',
-  'set.normalise_spdif':
+  'set.normalize_spdif':
     'Недоступно при выводе битстрима на ресивер: звук не декодируется плеером, обрабатывать нечего.',
   'set.queue': 'Очередь из папки',
   'set.queue_hint':
@@ -961,7 +961,7 @@ const en: Record<MessageKey, string> = {
   'info.fps_label': 'Frame rate',
   'info.bitrate': 'Bitrate',
   'info.pixfmt': 'Pixel format',
-  'info.colour': 'Colour',
+  'info.color': 'Color',
   'info.hdr': 'HDR',
   'info.peak': 'Peak brightness',
   'info.decoding': 'Decoding',
@@ -1032,17 +1032,17 @@ const en: Record<MessageKey, string> = {
     'mpv settings are stored in mpv.conf and applied immediately. Fine-tuning lives in the file itself:',
   'set.conf_reveal_mac': 'show mpv.conf in Finder',
   'set.conf_reveal_win': 'show mpv.conf in Explorer',
-  'set.normalise': 'Volume levelling',
-  'set.normalise_hint':
+  'set.normalize': 'Volume leveling',
+  'set.normalize_hint':
     'Lifts quiet dialogue and holds back loud scenes. Useful at night and on headphones.',
-  'set.normalise_spdif':
+  'set.normalize_spdif':
     'Unavailable while bitstreaming to a receiver: the player never decodes the audio, so there is nothing to process.',
   'set.queue': 'Queue from the folder',
   'set.queue_hint':
     'Opening one file queues the other videos in its folder, in name order.',
   'set.autoadvance': 'Play the next file',
   'set.autoadvance_hint':
-    'At the end of a file the next one starts by itself after a few seconds; it can be cancelled.',
+    'At the end of a file the next one starts by itself after a few seconds; it can be canceled.',
   'set.history': 'Watch history',
   'set.history_hint': 'Playback position, the “Continue watching” list and thumbnails on disk.',
   'set.excluded': 'Excluded folders',

@@ -806,7 +806,7 @@ struct Session {
 #[derive(Default)]
 pub struct CastService {
     inner: Mutex<Inner>,
-    /// The running prepare (ffmpeg child), outside `inner` so cancelling never
+    /// The running prepare (ffmpeg child), outside `inner` so canceling never
     /// contends with the session lock.
     prepare: Mutex<Option<std::process::Child>>,
 }
@@ -1149,7 +1149,7 @@ impl Pump {
                                     s.error = Some("load_failed".into());
                                     "error".into()
                                 }
-                                "CANCELLED" | "INTERRUPTED" => "stopped".into(),
+                                "CANCELED" | "INTERRUPTED" => "stopped".into(),
                                 _ => s.state.clone(),
                             },
                             _ => s.state.clone(),
@@ -1209,7 +1209,7 @@ async fn run_session(
     let (rd, wr) = tokio::io::split(stream);
 
     // A dedicated reader task: `read_exact` inside `select!` is not
-    // cancellation-safe (a cancelled half-read frame desynchronises the
+    // cancellation-safe (a canceled half-read frame desynchronises the
     // framing for good), so frames are read in one place and forwarded.
     let (msg_tx, mut msg_rx) = mpsc::channel::<wire::Decoded>(16);
     let reader = tauri::async_runtime::spawn(async move {
@@ -2181,14 +2181,14 @@ pub async fn cast_hls_prepare(
             // is the most audible thing about the fold-down: measured on the
             // rotating-tone file, the LFE second reads −13.9 dB in the source
             // and **−90.3 dB** after ffmpeg's own downmix — not attenuated,
-            // gone. (Which is the standard Dolby downmix behaviour, and the
+            // gone. (Which is the standard Dolby downmix behavior, and the
             // right call for broadcast, where LFE is +10 dB in band and would
             // overload; here it just means an action scene loses its bass.)
             // `lfe_mix_level` on the resampler does not change it — measured,
             // no effect at all — so the matrix is written out by hand.
-            // Coefficients are the ITU downmix normalised by 1/(1+2·0.707) so
+            // Coefficients are the ITU downmix normalized by 1/(1+2·0.707) so
             // nothing clips (measured peak −12.1 dB against −10.9 dB before),
-            // with LFE carried at the same weight as centre and surround: the
+            // with LFE carried at the same weight as center and surround: the
             // LFE second comes back at −16.8 dB, in line with its neighbours.
             // Written in channel *indices* rather than names on purpose — 5.1
             // and 5.1(side) share the order FL FR FC LFE S/BL S/BR, and a
@@ -2440,9 +2440,9 @@ fn run_ffmpeg_job(
             .take();
         match child {
             Some(mut child) => child.wait().map_err(|e| format!("ffmpeg: {e}"))?,
-            // Cancelled from the outside: the canceller killed and reaped it.
+            // Canceled from the outside: the canceler killed and reaped it.
             // The caller removes whatever partial output its mode produced.
-            None => return Err("cancelled".into()),
+            None => return Err("canceled".into()),
         }
     };
     let _ = err_thread.join();

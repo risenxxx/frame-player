@@ -75,10 +75,10 @@ class Chrome {
   /// The start screen is showing. Set by the page, which debounces it — a
   /// playlist transition blanks the filename for a moment and the picker screen
   /// must not flash — so it is deliberately not `!player.hasFile`. The shutter
-  /// colour is the one thing here that depends on it.
+  /// color is the one thing here that depends on it.
   startScreen = $state(true);
 
-  /// Room for the centred title, measured from whichever side cluster is wider.
+  /// Room for the centered title, measured from whichever side cluster is wider.
   barSide = $state(0);
   brandEl = $state<HTMLElement | null>(null);
   chromeEl = $state<HTMLElement | null>(null);
@@ -216,7 +216,7 @@ function windowButtonsEffect() {
 // While the window is resizing, mpv's child window relayouts a frame or two
 // behind its parent — the transparent area falls through to the desktop. The
 // veil (above the whole UI, so control jumps are hidden too) masks the
-// artefact; it is released adaptively, shortly after the last resize event,
+// artifact; it is released adaptively, shortly after the last resize event,
 // with the timeout only as a safety ceiling.
 // Release order: the shutter hides first (the main window beneath it already
 // wears the black veil), then the veil dissolves — the seam is invisible.
@@ -231,7 +231,7 @@ export function releaseVeil() {
 /// is only a ceiling for a transition that produces no resize at all.
 ///
 /// It has to be the *same* timer, which is why this is exported rather than
-/// left to the caller: while the page kept a timer of its own, cancelling the
+/// left to the caller: while the page kept a timer of its own, canceling the
 /// adaptive release did not cancel the ceiling, so a resize that ran long had
 /// its veil taken away from underneath it.
 export function scheduleVeilRelease(ms: number) {
@@ -247,7 +247,7 @@ function fsVeil() {
 // Wait until the veil frame is ACTUALLY on screen before resizing the window.
 // Otherwise the resize starts before the veil's first paint and Windows
 // briefly shows a stretched buffer with the old layout (controls "jump" up
-// and to the left). A black frame stretches into black — no visible artefact.
+// and to the left). A black frame stretches into black — no visible artifact.
 async function presentVeil() {
   fsVeil();
   await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
@@ -294,11 +294,11 @@ async function hideShutter() {
   }
 }
 
-// The veil and shutter exist for DWM composition artefacts — on macOS the
+// The veil and shutter exist for DWM composition artifacts — on macOS the
 // system animates the fullscreen transition and there is nothing to hide.
 async function maskFullscreenTransition() {
   if (IS_MAC) return;
-  // The shutter colour must match the veil (the release relies on an
+  // The shutter color must match the veil (the release relies on an
   // invisible seam between them) — announce it before show().
   await emitTo('veil', 'veil-color', chrome.startScreen ? '#101016' : '#000').catch(() => {});
   await presentVeil();
@@ -420,7 +420,7 @@ function barSideEffect() {
 
 /**
  * Start the shell's three standing effects. **Must be called from a component's
- * initialisation.**
+ * initialization.**
  *
  * A bare `$effect` at the top level of a `.svelte.ts` throws `effect_orphan`
  * the moment the module is imported, and `svelte-check` says nothing about it —

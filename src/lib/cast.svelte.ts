@@ -255,8 +255,8 @@ export function deviceProfile(device: TvDevice): DeviceProfile {
   const all = loadProfiles();
   const direct = all[device.key];
   if (direct) return direct;
-  // The id moved (a new UDN, a device that lost its Cast half): recognise the
-  // television by what a person would recognise it by.
+  // The id moved (a new UDN, a device that lost its Cast half): recognize the
+  // television by what a person would recognize it by.
   const byName = Object.values(all).find(
     (p) => p.name === device.name && p.model === device.model,
   );
@@ -661,7 +661,7 @@ export type CastMode = 'auto' | 'prepare' | 'hls';
  * with no DLNA, an incomplete torrent that would need repacking) — a decision
  * the player makes from facts, not a question for the viewer — and as a
  * debugging knob: `localStorage.setItem('frameplayer.castMode', 'hls')` still
- * forces it, which is how the receiver's HLS behaviour gets tested.
+ * forces it, which is how the receiver's HLS behavior gets tested.
  */
 export function castMode(): CastMode {
   const stored = localStorage.getItem(MODE_KEY);
@@ -878,7 +878,7 @@ export async function castCurrentFile(
   const mode = castMode();
   // In HLS mode everything goes through the segmenter, direct-play files
   // included — the mode is the transport, and half its purpose today is
-  // letting the receiver's HLS behaviour be tested with known-good files.
+  // letting the receiver's HLS behavior be tested with known-good files.
   sessionHls = mode === 'hls' ? await hlsVariant() : null;
   let castPath = src;
   if (sessionHls || verdict.kind === 'prepare') {
@@ -890,7 +890,7 @@ export async function castCurrentFile(
         : await prepareForCast(src, verdict.transcodeAudio, audioIndex, channels);
     } catch (e) {
       console.warn('cast prepare failed:', e);
-      // Cancelled by an endCast from elsewhere — that path already spoke.
+      // Canceled by an endCast from elsewhere — that path already spoke.
       if (cast.active) await endCast({ osd: t('cast.prepare_failed'), resumeLocal: false });
       return false;
     }
