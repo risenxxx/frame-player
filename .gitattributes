@@ -1,0 +1,13 @@
+# The license inventory and the file rendered from it must be byte-identical on
+# every platform: `npm run notices:check` compares a fresh render against the
+# committed copy, and a CRLF checkout makes that comparison fail on Windows and
+# nowhere else. It did — one upstream text (libopenmpt's) ships with CRLF, git
+# normalised it in the blob while leaving the working copy alone, and the Windows
+# runner then checked every one of these files out as CRLF.
+#
+# `gen-notices.mjs` also normalises on read, so the gate no longer depends on
+# this file. Both are kept: the script guarantees the comparison, this guarantees
+# the working copies match their blobs, and neither is a substitute for the other.
+LICENSE                 text eol=lf
+THIRD-PARTY-NOTICES.md  text eol=lf
+licenses/**             text eol=lf

@@ -33,7 +33,19 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dir = join(root, 'licenses');
 const OUT = join(root, 'THIRD-PARTY-NOTICES.md');
 
-const read = (p) => readFileSync(p, 'utf8');
+/**
+ * Every read is normalised to LF, and that is load-bearing rather than tidy.
+ *
+ * This file is rendered and then compared against the committed copy, so the
+ * render has to be byte-identical on every machine — and without this it is not.
+ * One upstream text (libopenmpt's) ships with CRLF; git normalised it to LF in
+ * the blob while leaving the working copy alone, so the generator embedded CRLF
+ * on the machine that fetched it. The Windows runner then checked *everything*
+ * out as CRLF, the joins below stayed LF, and `--check` failed there and only
+ * there. Normalising on read makes the output depend on the content and not on
+ * anybody's `core.autocrlf`; `.gitattributes` keeps the working copies honest.
+ */
+const read = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
 const readJson = (p) => JSON.parse(read(p));
 
 /**
