@@ -22,6 +22,11 @@ lib_dir="$repo_root/src-tauri/lib"
 ffmpeg_dir="$repo_root/src-tauri/ffmpeg-macos"
 # /opt/homebrew on Apple Silicon, /usr/local on Intel.
 brew_prefix="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
+# Where the ffmpeg CLI and headers come from. Homebrew's by default, which is a
+# **GPL** build; `build-macos-libs.sh` points this at its own LGPL prefix
+# instead. Only these two need saying out loud — the dylibs arrive on their own,
+# through the closure of whatever libmpv was linked against.
+ffmpeg_prefix="${FFMPEG_PREFIX:-$brew_prefix}"
 ffmpeg_libs="avutil avcodec avformat avdevice avfilter swscale swresample"
 
 for req in libmpv.dylib libmpv-wrapper.dylib; do
@@ -72,15 +77,16 @@ echo "==> ffmpeg CLI"
 # library route gives for free. Windows gets it from the BtbN SDK; here it is
 # Homebrew's, which is the same 0.4 MB shim over the very dylibs this script
 # is already bundling, so it costs the closure a few extra entries (libvmaf and
-# friends) and nothing else. Same licensing footing as libmpv itself: this build
-# links Homebrew's GPL FFmpeg either way — see the note in build-libmpv-macos.sh.
+# friends) and nothing else. Same licensing footing as libmpv itself, whichever
+# that is: `$FFMPEG_PREFIX` decides, and the two must agree — a GPL CLI beside
+# LGPL libraries would make the bundle GPL through the back door.
 cli_stage="$(mktemp -d)"
 trap 'rm -rf "$cli_stage"' EXIT
-if [ -x "$brew_prefix/bin/ffmpeg" ]; then
-  cp -f "$brew_prefix/bin/ffmpeg" "$cli_stage/ffmpeg"
+if [ -x "$ffmpeg_prefix/bin/ffmpeg" ]; then
+  cp -f "$ffmpeg_prefix/bin/ffmpeg" "$cli_stage/ffmpeg"
   chmod 755 "$cli_stage/ffmpeg"
 else
-  echo "  ! no $brew_prefix/bin/ffmpeg — brew install ffmpeg (cast prepare/HLS will not work)" >&2
+  echo "  ! no $ffmpeg_prefix/bin/ffmpeg — brew install ffmpeg (cast prepare/HLS will not work)" >&2
 fi
 
 echo "==> Transitive closure"
@@ -137,11 +143,11 @@ echo "==> ffmpeg linking directory"
 rm -rf "$ffmpeg_dir"
 mkdir -p "$ffmpeg_dir/lib" "$ffmpeg_dir/include"
 for h in libavutil libavcodec libavformat libavdevice libavfilter libswscale libswresample; do
-  if [ -d "$brew_prefix/include/$h" ]; then
+  if [ -d "$ffmpeg_prefix/include/$h" ]; then
     # -L is required: Homebrew's include holds relative symlinks into Cellar,
     # and without dereferencing them the links themselves get copied — broken
     # the moment they land anywhere else.
-    cp -RL "$brew_prefix/include/$h" "$ffmpeg_dir/include/"
+    cp -RL "$ffmpeg_prefix/include/$h" "$ffmpeg_dir/include/"
   else
     echo "  ! no $h headers — bindgen will not build" >&2
   fi

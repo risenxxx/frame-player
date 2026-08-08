@@ -1,0 +1,167 @@
+# Builds the macOS native-library set once and publishes it, so no other job
+# ever has to compile FFmpeg.
+#
+# Windows has worked this way from the start — `fetch-libs.ps1` downloads
+# prebuilt libmpv and FFmpeg — while macOS compiled mpv inside the release job
+# behind an `actions/cache`. That cache is evicted after seven days without a
+# hit, so any project releasing less often than weekly pays a cold source build
+# on the critical path of every release. Building here instead makes the two
+# platforms symmetric and takes the compile off that path entirely.
+#
+# The artefact is **content-addressed**: its name carries a hash of the scripts
+# and the patch that produced it, so a checkout can only ever fetch the set that
+# matches its own sources. A fixed name would hand an older commit the newer
+# libraries and mismatch the mpv patch — which fails at runtime, not at build.
+#
+# Run it by hand (`workflow_dispatch`) after changing anything it hashes. A pull
+# request touching those files builds and verifies but publishes nothing.
+name: macOS libs
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Upload to R2 (off = build and verify only)
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - 'scripts/build-macos-libs.sh'
+      - 'scripts/bundle-macos-libs.sh'
+      - 'scripts/check-macos-licenses.sh'
+      - 'patches/mpv-*.patch'
+      - '.github/workflows/macos-libs.yml'
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Everything that decides what the libraries are: the two build scripts,
+      # the license gate and the mpv patch. The pinned FFmpeg and mpv versions
+      # live inside `build-macos-libs.sh`, so hashing it covers a version bump
+      # too — one input, nothing to keep in step by hand.
+      - name: Compute artefact key
+        id: key
+        run: |
+          set -euo pipefail
+          key=$(cat scripts/build-macos-libs.sh \
+                    scripts/bundle-macos-libs.sh \
+                    scripts/check-macos-licenses.sh \
+                    patches/mpv-*.patch \
+                | shasum -a 256 | cut -c1-12)
+          name="macos-$(uname -m)-$key"
+          echo "key=$key"   >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "### \`$name\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build (LGPL FFmpeg, then patched mpv)
+        run: scripts/build-macos-libs.sh
+
+      # The gate the whole exercise exists for. It re-runs here rather than
+      # trusting the build script's own call, because this is the step that must
+      # stand between a GPL set and the bucket.
+      - name: Verify licenses
+        run: scripts/check-macos-licenses.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # A library set that is LGPL and cannot decode anything is not a success.
+      # Cheap end-to-end proof: the CLI runs, the codecs the player actually
+      # needs are present, and the encoders the cast path uses exist.
+      - name: Smoke-test the set
+        run: |
+          set -euo pipefail
+          export DYLD_FALLBACK_LIBRARY_PATH="$PWD/src-tauri/lib"
+          cli=src-tauri/ffmpeg-macos/bin/ffmpeg
+          "$cli" -hide_banner -version | sed -n '1,2p'
+          # Captured once into variables rather than piped per codec. `grep -q`
+          # exits at the first match, ffmpeg takes SIGPIPE, and under `pipefail`
+          # the whole pipeline then reports failure — measured, exit 141. A
+          # twenty-minute build would have died at its last step over that.
+          decoders="$("$cli" -hide_banner -decoders 2>/dev/null)"
+          encoders="$("$cli" -hide_banner -encoders 2>/dev/null)"
+          for d in h264 hevc vp9 libdav1d aac ac3 eac3 flac opus; do
+            case "$decoders" in
+              *" $d "*) ;;
+              *) echo "missing decoder: $d" >&2; exit 1 ;;
+            esac
+          done
+          # The two the cast prepare rung transcodes to, and mpeg4 for the
+          # sidecar's test fixture. Video is always `-c:v copy`, so no video
+          # encoder is required and none is checked for.
+          for e in aac eac3 mpeg4 png; do
+            case "$encoders" in
+              *" $e "*) ;;
+              *) echo "missing encoder: $e" >&2; exit 1 ;;
+            esac
+          done
+          echo "decoders and encoders present"
+          # libmpv actually loads, resolving its whole @rpath closure — which is
+          # what catches a broken path rewrite. `otool -L` only reports what the
+          # header says; dlopen is the thing that has to succeed at runtime.
+          # Deliberately not `|| true`: a check that cannot fail is decoration.
+          python3 - <<'PYEOF'
+          import ctypes
+          for lib in ('src-tauri/lib/libmpv.dylib', 'src-tauri/lib/libmpv-wrapper.dylib'):
+              ctypes.CDLL(lib)
+              print('loaded', lib)
+          PYEOF
+
+      - name: Package
+        id: pack
+        run: |
+          set -euo pipefail
+          tar czf "${{ steps.key.outputs.name }}.tar.gz" \
+            -C src-tauri lib ffmpeg-macos
+          shasum -a 256 "${{ steps.key.outputs.name }}.tar.gz" \
+            | tee "${{ steps.key.outputs.name }}.tar.gz.sha256"
+          ls -lh "${{ steps.key.outputs.name }}.tar.gz" >> "$GITHUB_STEP_SUMMARY"
+
+      # Downloadable from the run itself, which is what makes a dry run useful:
+      # unpack it and look before anything is published.
+      - name: Upload as a workflow artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.key.outputs.name }}
+          path: ${{ steps.key.outputs.name }}.tar.gz*
+          retention-days: 14
+
+      - name: Publish to Cloudflare R2
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # R2 and newer AWS CLI checksum defaults disagree — relax both, as the
+          # release workflow does.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          set -euo pipefail
+          # Not guaranteed on the macOS image the way it is on ubuntu, and a
+          # missing `aws` here would fail the run after the whole build.
+          command -v aws >/dev/null || brew install -q awscli
+          endpoint="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          bucket="${{ secrets.R2_BUCKET }}"
+          name="${{ steps.key.outputs.name }}"
+          # Under `libs/`, well away from the updater's own objects: the sweep
+          # below deletes by prefix, and a stray match there would take
+          # `latest.json` or an installer with it.
+          aws s3 cp "$name.tar.gz"        "s3://$bucket/libs/$name.tar.gz"        --endpoint-url "$endpoint"
+          aws s3 cp "$name.tar.gz.sha256" "s3://$bucket/libs/$name.tar.gz.sha256" --endpoint-url "$endpoint"
+
+          # Sweep, and only after the upload succeeded: a set is deleted once its
+          # replacement is already in place, so a failed publish leaves the
+          # previous one serving rather than nothing at all.
+          echo "keeping $name, removing older sets:"
+          aws s3 ls "s3://$bucket/libs/" --endpoint-url "$endpoint" \
+            | awk '{print $4}' | grep -E "^macos-.*\.tar\.gz(\.sha256)?$" \
+            | grep -v "^$name\.tar\.gz" \
+            | while read -r old; do
+                echo "  - $old"
+                aws s3 rm "s3://$bucket/libs/$old" --endpoint-url "$endpoint"
+              done
+          echo "published: libs/$name.tar.gz" >> "$GITHUB_STEP_SUMMARY"
