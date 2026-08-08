@@ -85,6 +85,17 @@ const POLL_MS = 500;
 const DEVICE_POLL_MS = 800;
 /// How long the picker admits it is still looking for a second transport.
 const DLNA_SWEEP_MS = 4500;
+/// Rebuild discovery from scratch after this many empty polls.
+///
+/// **A permission granted after the sockets were opened does not reach them.**
+/// On macOS the system asks for Local Network access the first time something
+/// multicasts, and a third-party firewall may ask again per destination; both
+/// prompts are answered *after* the search has started, and the sockets that
+/// were refused in the meantime stay refused. Re-sending queries on them
+/// changes nothing — the daemon has to be torn down and built again, which is
+/// what turns "allow" into devices appearing without the viewer closing the
+/// panel and opening it a second time to make it work.
+const REBUILD_AFTER_EMPTY_POLLS = 9;
 
 class Cast {
   devices = $state<CastDevice[]>([]);
@@ -109,6 +120,10 @@ class Cast {
   transport = $state<Transport>('cast');
   /// Bumped when a device profile changes, so rows recompute their line.
   profileRevision = $state(0);
+  /// How many times discovery has been rebuilt during this search. The picker
+  /// uses it to stop claiming that nothing is there: after a rebuild or two the
+  /// honest statement is "still looking", not "not found".
+  rebuilds = $state(0);
   /// The second discovery has not finished its first sweep, so a row that shows
   /// only Cast today may still gain DLNA. SSDP is a UDP broadcast answered at
   /// leisure, where mDNS answers at once — without saying so, the gear (and the
@@ -450,6 +465,8 @@ export async function refreshCastPlan() {
 export function startCastDiscovery() {
   if (devicetimerRunning()) return;
   cast.discovering = true;
+  emptyPolls = 0;
+  cast.rebuilds = 0;
   void invoke('cast_discover_start').catch((e) => {
     console.warn('cast_discover_start failed:', e);
     cast.discovering = false;
@@ -468,6 +485,11 @@ export function startCastDiscovery() {
     cast.devices = castList;
     cast.dlnaDevices = dlnaList;
     if (dlnaList.length > 0) cast.dlnaSweeping = false;
+    if (castList.length || dlnaList.length) {
+      emptyPolls = 0;
+    } else if (++emptyPolls >= REBUILD_AFTER_EMPTY_POLLS) {
+      void rebuildDiscovery();
+    }
     // Only while the source is a torrent still downloading: it is the one plan
     // that changes under the panel, and re-reading it for a plain file would be
     // a handful of mpv round trips every tick for an answer that cannot move.
@@ -476,6 +498,25 @@ export function startCastDiscovery() {
   void pull();
   deviceTimer = setInterval(() => void pull(), DEVICE_POLL_MS);
 }
+
+/// Tear both discoveries down and start them again. Cheap: one mDNS daemon and
+/// a handful of UDP sockets.
+async function rebuildDiscovery() {
+  emptyPolls = 0;
+  cast.rebuilds++;
+  await Promise.all([
+    invoke('cast_discover_stop').catch(() => {}),
+    invoke('dlna_discover_stop').catch(() => {}),
+  ]);
+  await Promise.all([
+    invoke('cast_discover_start').catch(() => {}),
+    invoke('dlna_discover_start').catch(() => {}),
+  ]);
+  cast.dlnaSweeping = true;
+  setTimeout(() => (cast.dlnaSweeping = false), DLNA_SWEEP_MS);
+}
+
+let emptyPolls = 0;
 
 function devicetimerRunning(): boolean {
   return deviceTimer !== null;

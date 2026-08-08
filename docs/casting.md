@@ -261,6 +261,15 @@ virtual interfaces that win it — the query leaves into a switch nobody is
 listening on and discovery reports an empty network. One socket per usable
 interface, with the multicast interface set explicitly, fixes it.
 
+**Discovery has to survive being denied.** The permission prompt and any
+firewall prompt are answered *after* the search has started, and sockets refused
+in the meantime stay refused — re-sending queries on them changes nothing. So
+discovery is rebuilt from scratch after a few fruitless polls, and the panel
+never announces failure while it is still looking: saying "no devices found" six
+seconds in lands exactly when the prompt is still on screen waiting to be
+answered, and the viewer's only visible way forward is to close the panel and
+open it again.
+
 Worth knowing when discovery finds nothing on macOS: since macOS 15 a process
 without Local Network permission has its multicast silently dropped, and the
 system's own resolver is exempt. A command-line probe will report an empty

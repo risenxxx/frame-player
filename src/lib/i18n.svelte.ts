@@ -228,7 +228,13 @@ const ru = {
   'cast.tip': 'Смотреть на телевизоре',
   'cast.title': 'Воспроизведение на ТВ',
   'cast.searching': 'Поиск устройств…',
-  'cast.empty': 'Устройства не найдены',
+  'cast.still_looking': 'Продолжаем искать…',
+  'cast.perm_wait_mac':
+    'Если система или брандмауэр спросили разрешение на доступ к локальной сети — дайте его. Поиск идёт постоянно, устройство появится само, закрывать это окно не нужно.',
+  'cast.perm_wait_win':
+    'Если брандмауэр спросил разрешение — дайте его. Поиск идёт постоянно, устройство появится само, закрывать это окно не нужно.',
+  'cast.perm_warn_mac':
+    'macOS спросит разрешение на доступ к локальной сети — без него плеер не увидит телевизор и не сможет передать ему видео.',
   'cast.empty_hint':
     'Телевизор должен быть включён и в той же сети, что и компьютер. Гостевая сеть или изоляция точки доступа делают его невидимым.',
   'cast.firewall_warn':
@@ -817,7 +823,13 @@ const en: Record<MessageKey, string> = {
   'cast.tip': 'Watch on TV',
   'cast.title': 'Playing on TV',
   'cast.searching': 'Looking for devices…',
-  'cast.empty': 'No devices found',
+  'cast.still_looking': 'Still looking…',
+  'cast.perm_wait_mac':
+    'If the system or a firewall asked for permission to use the local network, allow it. The search keeps running — the device will appear on its own, there is no need to close this.',
+  'cast.perm_wait_win':
+    'If a firewall asked for permission, allow it. The search keeps running — the device will appear on its own, there is no need to close this.',
+  'cast.perm_warn_mac':
+    'macOS will ask for permission to use the local network — without it the player cannot see the TV or hand it the video.',
   'cast.empty_hint':
     'The TV must be on and on the same network as this computer. A guest network or AP isolation makes it invisible.',
   'cast.firewall_warn':

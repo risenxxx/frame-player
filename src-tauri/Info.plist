@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Merged into the bundle's Info.plist by tauri-bundler.
+
+  Since macOS 15 a process that touches the local network needs the user's
+  permission, and the system asks for it the first time something multicasts.
+  Without a usage description the prompt has nothing to say about *why*, which
+  is the worst possible moment to be vague: the answer decides whether the
+  player can ever see a television. NSBonjourServices declares the service types
+  the player browses, which the platform requires to be listed.
+-->
+<plist version="1.0">
+<dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Frame Player looks for televisions and media receivers on your network so it can play videos on them.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_googlecast._tcp</string>
+    </array>
+</dict>
+</plist>

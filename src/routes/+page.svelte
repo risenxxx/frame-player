@@ -7172,18 +7172,38 @@
               </div>
             {/if}
           {:else}
+            <!-- **Never a verdict while the search is still running.** The
+                 first version said "no devices found" after six seconds, which
+                 is exactly when a permission prompt is still on screen waiting
+                 to be answered — so the panel announced failure at the moment
+                 the viewer was in the middle of fixing it, and the only way
+                 forward was to close it and open it again. It now says what is
+                 true: still looking, and an allowed prompt will be picked up. -->
             <div class="cast-empty">
-              {castSearchLong ? t('cast.empty') : t('cast.searching')}
+              <span class="cast-spin"></span>
+              {castSearchLong ? t('cast.still_looking') : t('cast.searching')}
             </div>
           {/each}
           <!-- The number-one cause of "casting doesn't work" is the network,
                not the code, so the panel says so up front: the Defender prompt
                before the first cast, and the usual reasons a TV is invisible
                once the search has clearly come up dry. -->
+          <!-- Three ages of the same panel. Before anything is known: the
+               platform's permission warning, so the prompt is expected rather
+               than a surprise. Once the search has run a while with nothing:
+               what to do about it. Only after discovery has been rebuilt a few
+               times — by then a granted prompt would have taken effect — the
+               reasons a television is genuinely invisible. -->
           <div class="cast-hint">
-            {castSearchLong && cast.devices.length === 0
-              ? t('cast.empty_hint')
-              : t('cast.firewall_warn')}
+            {#if cast.tvs.length}
+              {IS_MAC ? t('cast.perm_warn_mac') : t('cast.firewall_warn')}
+            {:else if cast.rebuilds >= 2}
+              {t('cast.empty_hint')}
+            {:else if castSearchLong}
+              {IS_MAC ? t('cast.perm_wait_mac') : t('cast.perm_wait_win')}
+            {:else}
+              {IS_MAC ? t('cast.perm_warn_mac') : t('cast.firewall_warn')}
+            {/if}
           </div>
         {/if}
       </div>
@@ -11633,6 +11653,18 @@
   .cast-state {
     font-size: 11px;
     color: rgba(232, 232, 236, 0.55);
+  }
+
+  .cast-spin {
+    display: inline-block;
+    vertical-align: -2px;
+    width: 11px;
+    height: 11px;
+    margin-right: 7px;
+    border-radius: 50%;
+    border: 2px solid rgba(232, 232, 236, 0.25);
+    border-top-color: rgba(232, 232, 236, 0.7);
+    animation: spin 0.8s linear infinite;
   }
 
   .cast-empty {

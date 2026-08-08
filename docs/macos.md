@@ -163,6 +163,23 @@ system finds devices fine. Anything discovery-shaped therefore has to be
 measured from inside the application, and a bundled build is the only place the
 permission can be granted at all.
 
+Two things follow for anything that browses the network:
+
+**The prompt has to explain itself.** `NSLocalNetworkUsageDescription` and
+`NSBonjourServices` live in `src-tauri/Info.plist`, which the bundler merges into
+the application's own (verified in a built bundle). Without the description the
+system asks for network access with nothing to say about why — at the moment
+whose answer decides whether the feature can ever work.
+
+**The prompt is answered after the search has started.** So are the prompts of
+any third-party firewall, and a socket refused in the meantime stays refused —
+re-sending on it changes nothing. Discovery therefore has to be *rebuilt*, not
+retried, and the interface must not report failure while a prompt is still on
+screen waiting for an answer. Reported from a real installation: the first run
+found nothing and showed no prompt, the second showed one, and by the time it
+was granted the panel had already said "no devices found" — the only visible way
+forward being to close it and open it again.
+
 ## Testing
 
 A test binary in a custom target directory cannot find the bundled libraries
