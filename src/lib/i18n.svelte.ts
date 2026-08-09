@@ -141,6 +141,15 @@ const ru = {
   'torrent.seed_hint':
     'Выключено по умолчанию. Пока идёт просмотр, плеер только скачивает и не отдаёт куски другим участникам — в Германии и ряде других стран за раздачу отвечают строже, чем за скачивание. Полностью незаметным это не делает: чтобы найти источники, плеер всё равно объявляет о себе трекерам и DHT.',
   'torrent.seed_restarted': 'Раздача остановлена, торрент закрыт',
+  'torrent.port': 'Разрешить входящие подключения',
+  'torrent.port_hint':
+    'Выключено по умолчанию. Плеер попросит роутер открыть порт для себя (UPnP) — большинство участников раздачи сидят за NAT и могут подключиться только сами, поэтому без этого до них не достучаться. Взамен порт становится виден из интернета, пока открыта раздача. Переключение закрывает текущий торрент. Работает, только если UPnP включён на самом роутере.',
+  'torrent.port_restarted': 'Настройка применена, торрент закрыт',
+  'torrent.port_checking': 'Спрашиваем роутер…',
+  'torrent.port_mapped': 'Порт {port} открыт → {detail}',
+  'torrent.port_unmapped': 'Роутер отвечает, но порт {port} не открыт — похоже, UPnP на нём запрещён.',
+  'torrent.port_no_router': 'Роутер не ответил на запрос UPnP.',
+  'torrent.port_no_session': 'Порт откроется, когда вы откроете раздачу.',
   'torrent.resolving': 'Ищем раздачу…',
   'torrent.resolving_hint': 'Список файлов приходит от других участников раздачи — это занимает до минуты.',
   'torrent.pick_title': 'Что смотрим',
@@ -750,6 +759,15 @@ const en: Record<MessageKey, string> = {
   'torrent.seed_hint':
     'Off by default. While you watch, the player only downloads and never serves pieces to other peers — in Germany and several other countries uploading carries far more risk than downloading. It does not make you invisible: finding peers still means announcing to trackers and the DHT.',
   'torrent.seed_restarted': 'Uploading stopped, the torrent was closed',
+  'torrent.port': 'Accept incoming connections',
+  'torrent.port_hint':
+    'Off by default. The player asks the router to open a port for it (UPnP) — most peers in a swarm sit behind NAT and can only ever connect to you, so without this they are unreachable. In exchange the port is visible from the internet for as long as a torrent is open. Switching it closes the current torrent. It only works if UPnP is enabled on the router itself.',
+  'torrent.port_restarted': 'Applied, the torrent was closed',
+  'torrent.port_checking': 'Asking the router…',
+  'torrent.port_mapped': 'Port {port} is open → {detail}',
+  'torrent.port_unmapped': 'The router answered, but port {port} is not open — UPnP looks disabled on it.',
+  'torrent.port_no_router': 'The router did not answer a UPnP request.',
+  'torrent.port_no_session': 'The port opens when you open a torrent.',
   'torrent.resolving': 'Finding the torrent…',
   'torrent.resolving_hint': 'The file list comes from other peers, which can take up to a minute.',
   'torrent.pick_title': 'What to watch',

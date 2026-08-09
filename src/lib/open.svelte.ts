@@ -55,8 +55,10 @@ import {
   findSupersededTorrent,
   forgetTorrent,
   listTorrents,
+  refreshPortStatus,
   rememberTorrent,
   resolveTorrentFile,
+  setPortForward,
   setSeeding,
   torrent,
   torrentIsPlaying,
@@ -499,6 +501,27 @@ export async function toggleSeeding() {
     torrent.status = null;
     showOsd(t('torrent.seed_restarted'));
   }
+}
+
+/**
+ * Same shape as seeding, and for a related reason: the port mapping is baked
+ * into the session too, so turning it off has to shut the port now rather than
+ * at the next magnet — a switch reading "off" over a router that is still
+ * forwarding would be a lie about the one setting here that changes the machine
+ * rather than the app.
+ *
+ * The status is re-read afterwards because the answer has certainly changed:
+ * with the session gone there is nothing mapped, and the row says so instead of
+ * standing on what the router replied a minute ago.
+ */
+export async function togglePortForward() {
+  const stopped = await setPortForward(!torrentPrefs.portForward);
+  if (stopped) {
+    torrent.info = null;
+    torrent.status = null;
+    showOsd(t('torrent.port_restarted'));
+  }
+  await refreshPortStatus();
 }
 
 export async function clearTorrentCache() {

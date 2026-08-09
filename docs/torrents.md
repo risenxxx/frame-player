@@ -209,6 +209,54 @@ strictness is what caused the bug above, so the only check is that the length is
 a whole number of six-byte records, and anything else means "no peers" rather
 than wrong addresses.
 
+## Why a swarm has fewer peers than the tracker page claims
+
+Twenty-four seeders on a tracker page and five connections is not a lie on
+either side. Probing every address a rutracker announce returned, one at a time,
+splits the difference cleanly — of about thirty:
+
+| what happened | count | what it means |
+|---|---|---|
+| no answer to a SYN | 20–22 | behind NAT; reachable only if it dials us |
+| handshake completed | 5 | these are the ones we download from |
+| connection refused | 2–3 | host up, port shut — a stale record |
+| cut mid-handshake | 1 | deep packet inspection |
+
+So the common failure is NAT, not filtering, and not a swarm that has died. That
+also settles what is *not* worth doing, which is the more useful half, because
+each of these is the obvious next idea:
+
+- **More trackers.** Public open trackers know 0–1 additional peers for a
+  release that only exists on one tracker. Announcing to strangers costs privacy
+  and buys nothing.
+- **Asking for more peers.** The tracker caps its answer at roughly thirty
+  regardless of what the request asks for.
+- **IPv6.** The tracker sends no IPv6 peer list at all.
+- **Peer exchange.** Already running for any non-private torrent — visible as
+  the seen-peer count growing past what the tracker handed over.
+- **Encryption.** One case in thirty here. It is a real gap on networks where
+  the interference is heavier, but it was not the bottleneck being measured.
+
+What remains is being reachable, so that the twenty behind NAT can start the
+connection themselves. That is an opt-in setting rather than a default, because
+it is the only thing here that changes the machine rather than the application:
+a port becomes reachable from the internet for as long as a torrent is open. It
+helps even with uploading switched off, which is worth stating plainly — a seed
+serves you whether or not you serve anyone, so this is about who can *begin* a
+connection, not about what goes out.
+
+The setting reports what the router answered rather than what was asked of it.
+The client's port-forwarding task is fire-and-forget, and a router with UPnP
+disabled — which is common — ignores the request silently, so a switch wired
+only to the request would be a claim. Instead the gateway is asked for the
+mapping afterwards, and "switched on" and "actually open" stay two separate
+lines. Two things that make that answer readable: the UPnP error meaning "no
+such mapping" is an *answer*, not a failure, and must not be reported as a
+missing router; and on macOS a search that finds nothing is ambiguous — a router
+without UPnP and a refused Local Network permission are indistinguishable from
+inside the process, which is also why none of this can be tested from a command
+line there.
+
 ## Known limits
 
 **Cold seeks cost downloading.** A jump into a region nobody has fetched waits

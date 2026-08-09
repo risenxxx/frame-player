@@ -15,6 +15,7 @@ mod screenshot;
 mod step_engine;
 mod thumb_service;
 mod torrent;
+mod upnp;
 mod window_guard;
 
 const OPEN_FILE_EVENT: &str = "frameplayer://open-file";
@@ -944,6 +945,8 @@ pub fn run() {
             torrent::torrent_add,
             torrent::torrent_status,
             torrent::torrent_set_seeding,
+            torrent::torrent_set_port_forward,
+            torrent::torrent_port_status,
             torrent::torrent_prefetch,
             torrent::torrent_local_path,
             torrent::torrent_offline_file,

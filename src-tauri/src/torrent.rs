@@ -235,6 +235,8 @@ struct Inner {
     /// what is actually running, which is the only thing that can be trusted to
     /// answer "are we uploading right now".
     seeding: bool,
+    /// Likewise for the port mapping: baked into the session when it is built.
+    port_forward: bool,
 }
 
 impl TorrentService {
@@ -310,15 +312,17 @@ impl TorrentService {
         self: &Arc<Self>,
         dir: PathBuf,
         seeding: bool,
+        port_forward: bool,
     ) -> Result<(Arc<Session>, u16), String> {
         let port = self.ensure_server().await?;
         {
             let inner = self.inner.lock().await;
-            // Only reuse a session that matches the current preference.
-            // `disable_upload` is fixed when the session is built, so a session
-            // that seeds cannot be talked out of it — see `set_seeding`.
+            // Only reuse a session that matches the current preferences. Both
+            // `disable_upload` and the port forwarder are fixed when the session
+            // is built, so a session that seeds cannot be talked out of it and
+            // one built without a mapping cannot grow one — see `set_seeding`.
             if let Some(session) = inner.session.clone() {
-                if inner.seeding == seeding {
+                if inner.seeding == seeding && inner.port_forward == port_forward {
                     return Ok((session, port));
                 }
             }
@@ -398,6 +402,17 @@ impl TorrentService {
                 // librqbit takes the first port that binds. No UPnP — a video
                 // player does not open router ports behind the user's back.
                 listen_port_range: Some(42800..42900),
+                // **Off by default and opt-in, because it changes the machine
+                // rather than the app**: a mapping makes this port reachable
+                // from the internet for as long as the session lives. What it
+                // buys is measured and large — of ~30 addresses a rutracker
+                // announce returned, 20–22 never answered a SYN, i.e. they are
+                // behind NAT and can only ever be reached if they dial us. A
+                // reachable client turns those from unreachable into possible.
+                // See upnp.rs, which is what lets the setting say whether the
+                // router actually did it: librqbit's forwarder reports to
+                // nobody, and a switch that cannot tell is worse than none.
+                enable_upnp_port_forwarding: port_forward,
                 ..Default::default()
             },
         )
@@ -414,7 +429,22 @@ impl TorrentService {
         let mut inner = self.inner.lock().await;
         inner.session = Some(session.clone());
         inner.seeding = seeding;
+        inner.port_forward = port_forward;
         Ok((session, port))
+    }
+
+    /// The port librqbit is listening on, or 0 when no session has been built.
+    ///
+    /// What `upnp.rs` asks the router about — and the reason "no session yet" is
+    /// a state of its own rather than a failure: nothing is mapped before the
+    /// first torrent, because the session that would ask for it does not exist.
+    pub async fn listen_port(&self) -> u16 {
+        let inner = self.inner.lock().await;
+        inner
+            .session
+            .as_ref()
+            .and_then(|s| s.tcp_listen_port())
+            .unwrap_or(0)
     }
 
     /// Stop the session and forget every torrent in it.
@@ -447,14 +477,35 @@ impl TorrentService {
     /// Turning it **on** needs no such urgency, but goes down the same path so
     /// there is only one rule to reason about.
     pub async fn set_seeding(&self, seeding: bool) -> bool {
-        let changed = {
+        self.rebuild_if(|inner| inner.seeding != seeding).await
+    }
+
+    /// Apply the port-mapping preference, on the same terms as seeding.
+    ///
+    /// Turning it **off** has the same urgency for the same shape of reason: the
+    /// switch is a statement about what this machine is exposing right now, and
+    /// one reading "off" over a router that is still forwarding the port would
+    /// be a lie about the only setting here that changes the machine rather than
+    /// the app. `enable_upnp_port_forwarding` is baked into the session, so both
+    /// directions cost the running torrent — which is what the hint warns about.
+    /// The mapping itself lapses by itself once the forwarder stops renewing it
+    /// (librqbit takes a 60 s lease).
+    pub async fn set_port_forward(&self, on: bool) -> bool {
+        self.rebuild_if(|inner| inner.port_forward != on).await
+    }
+
+    /// Tear the session down when a preference baked into it has changed.
+    /// Returns whether it did, which the frontend turns into "the current
+    /// torrent stopped", since it did.
+    async fn rebuild_if(&self, changed: impl FnOnce(&Inner) -> bool) -> bool {
+        let needed = {
             let inner = self.inner.lock().await;
-            inner.session.is_some() && inner.seeding != seeding
+            inner.session.is_some() && changed(&inner)
         };
-        if changed {
+        if needed {
             self.shutdown_session().await;
         }
-        changed
+        needed
     }
 
     /// Resolve a magnet (or a `.torrent` URL/path) into its file list.
@@ -467,8 +518,11 @@ impl TorrentService {
         dir: PathBuf,
         source: String,
         seeding: bool,
+        port_forward: bool,
     ) -> Result<TorrentInfo, String> {
-        let (session, port) = self.ensure_started(dir.clone(), seeding).await?;
+        let (session, port) = self
+            .ensure_started(dir.clone(), seeding, port_forward)
+            .await?;
 
         let source = source.trim().to_string();
 
@@ -1667,9 +1721,14 @@ pub async fn torrent_add(
     service: tauri::State<'_, Arc<TorrentService>>,
     source: String,
     seeding: bool,
+    port_forward: bool,
 ) -> Result<TorrentInfo, String> {
     let dir = TorrentService::download_dir(&app)?;
-    service.inner().clone().add(dir, source, seeding).await
+    service
+        .inner()
+        .clone()
+        .add(dir, source, seeding, port_forward)
+        .await
 }
 
 /// Returns true if a running session had to be torn down to apply this — the
@@ -1680,6 +1739,43 @@ pub async fn torrent_set_seeding(
     seeding: bool,
 ) -> Result<bool, String> {
     Ok(service.set_seeding(seeding).await)
+}
+
+/// Returns true if a running session had to be torn down — see `set_port_forward`.
+#[tauri::command]
+pub async fn torrent_set_port_forward(
+    service: tauri::State<'_, Arc<TorrentService>>,
+    on: bool,
+) -> Result<bool, String> {
+    Ok(service.set_port_forward(on).await)
+}
+
+/// What the router says about the BitTorrent port.
+///
+/// Asked rather than assumed: librqbit's forwarder is fire-and-forget, so
+/// "the switch is on" says nothing about whether a packet ever reached the
+/// router — and on a router with UPnP disabled, which is common, it never does.
+#[tauri::command]
+pub async fn torrent_port_status(
+    service: tauri::State<'_, Arc<TorrentService>>,
+    on: bool,
+) -> Result<crate::upnp::PortStatus, String> {
+    if !on {
+        return Ok(crate::upnp::PortStatus {
+            state: "off".into(),
+            ..Default::default()
+        });
+    }
+    let port = service.listen_port().await;
+    if port == 0 {
+        // Nothing is mapped and nothing failed: the session that would ask for
+        // a mapping is built on the first torrent, and there has not been one.
+        return Ok(crate::upnp::PortStatus {
+            state: "no_session".into(),
+            ..Default::default()
+        });
+    }
+    Ok(crate::upnp::check(port).await)
 }
 
 #[tauri::command]
@@ -1914,7 +2010,7 @@ mod tests {
             // Never seeds, matching the shipped default — a test must not
             // quietly upload to strangers.
             let info = service
-                .add(dir, magnet, false)
+                .add(dir, magnet, false, false)
                 .await
                 .expect("resolve failed");
             println!("resolved in {:?}: {:?}", t0.elapsed(), info.name);
@@ -2056,7 +2152,7 @@ mod tests {
             let service = Arc::new(TorrentService::default());
 
             let info = service
-                .add(dir, magnet, false)
+                .add(dir, magnet, false, false)
                 .await
                 .expect("resolve failed");
             let file = info
@@ -2301,7 +2397,7 @@ mod tests {
             // A magnet with no trackers: if anything reached for the network,
             // there is nowhere for it to go and this would hang rather than pass.
             let info = service
-                .add(base.clone(), format!("magnet:?xt=urn:btih:{hash}"), false)
+                .add(base.clone(), format!("magnet:?xt=urn:btih:{hash}"), false, false)
                 .await
                 .expect("add failed");
             assert_eq!(info.files.len(), 1);
@@ -2430,7 +2526,7 @@ mod tests {
 
             // First run: just add it, so the store is seeded.
             let first = Arc::new(TorrentService::default());
-            let info = first.add(base.clone(), magnet.clone(), false).await.unwrap();
+            let info = first.add(base.clone(), magnet.clone(), false, false).await.unwrap();
             first.shutdown_session().await;
 
             // Then say it was RUNNING when the app closed. Writing that into the
@@ -2456,7 +2552,7 @@ mod tests {
 
             // Second run: a fresh service over the same store.
             let second = Arc::new(TorrentService::default());
-            second.add(base.clone(), magnet, false).await.unwrap();
+            second.add(base.clone(), magnet, false, false).await.unwrap();
             let status = second.status(&info.info_hash, 0).await;
             assert_eq!(
                 status.state, "paused",
@@ -2507,7 +2603,7 @@ mod tests {
 
             // First run: opened once, which is what puts it in the store.
             let first = Arc::new(TorrentService::default());
-            first.add(base.clone(), magnet.clone(), false).await.unwrap();
+            first.add(base.clone(), magnet.clone(), false, false).await.unwrap();
             first.shutdown_session().await;
             let store = base.join(SESSION_DIR).join("session.json");
             assert!(
@@ -2525,7 +2621,7 @@ mod tests {
 
             // The next session is where it used to reappear.
             let third = Arc::new(TorrentService::default());
-            third.ensure_started(base.clone(), false).await.unwrap();
+            third.ensure_started(base.clone(), false, false).await.unwrap();
             assert!(
                 !base.join(&hash).is_dir(),
                 "the deleted torrent was restored and its folder recreated"
@@ -2624,7 +2720,7 @@ mod tests {
 
             let first = Arc::new(TorrentService::default());
             first
-                .add(base.clone(), format!("magnet:?xt=urn:btih:{hash}"), false)
+                .add(base.clone(), format!("magnet:?xt=urn:btih:{hash}"), false, false)
                 .await
                 .unwrap();
             first.shutdown_session().await;
@@ -2632,7 +2728,7 @@ mod tests {
             // A later run that opens some other torrent, so the session exists
             // and this one is in it only because it was restored.
             let second = Arc::new(TorrentService::default());
-            second.ensure_started(base.clone(), false).await.unwrap();
+            second.ensure_started(base.clone(), false, false).await.unwrap();
             second.forget(&base, &hash).await.unwrap();
 
             let store = base.join(SESSION_DIR).join("session.json");

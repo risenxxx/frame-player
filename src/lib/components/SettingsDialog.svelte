@@ -50,7 +50,7 @@
   } from '$lib/history.svelte';
   import { applyNormalize, player, readList } from '$lib/player.svelte';
   import { playlist, setPlaylistPref } from '$lib/playlist.svelte';
-  import { torrentPrefs } from '$lib/torrent.svelte';
+  import { refreshPortStatus, torrent, torrentPrefs } from '$lib/torrent.svelte';
   import { castCacheCapGb, setCastCacheCapGb } from '$lib/cast.svelte';
   import { showOsd } from '$lib/osd.svelte';
   import { syncMenuChecks } from '$lib/window-prefs.svelte';
@@ -62,6 +62,7 @@
     /// on a setting: one stops the session and rebuilds it, the other deletes
     /// data off the disk.
     onToggleSeeding: () => void;
+    onTogglePortForward: () => void;
     onClearTorrentCache: () => void;
     /// Raises the third-party notices, which are a layer above this sheet. A
     /// callback rather than reaching for `overlays`: no component in this
@@ -69,7 +70,8 @@
     onLicenses: () => void;
   }
 
-  let { onclose, onToggleSeeding, onClearTorrentCache, onLicenses }: Props = $props();
+  let { onclose, onToggleSeeding, onTogglePortForward, onClearTorrentCache, onLicenses }: Props =
+    $props();
 
   // Interactive settings editor: descriptions of the options mirrored into
   // mpv.conf. v = null means "player default" (the line is commented out).
@@ -662,6 +664,31 @@
       langQuery = '';
     };
   });
+
+  /// Ask the router when the section that shows the answer comes up, and only
+  /// then: it is an SSDP search plus a SOAP round trip, and asking on every
+  /// settings opening would spend it on six tabs out of seven. Re-reads on each
+  /// visit rather than caching, because the answer legitimately changes — a
+  /// mapping appears once the first torrent builds the session.
+  $effect(() => {
+    if (settingsTab === 'torrents') void refreshPortStatus();
+  });
+
+  /// The sentence under the switch. `null` while it is off — a row that is off
+  /// has nothing to report, and a line saying so would be noise on the setting
+  /// most people will never turn on.
+  const portLine = $derived.by(() => {
+    if (!torrentPrefs.portForward) return null;
+    if (torrent.portChecking) return t('torrent.port_checking');
+    const s = torrent.portStatus;
+    if (!s) return null;
+    if (s.state === 'mapped') {
+      return t('torrent.port_mapped', { port: s.port, detail: s.detail ?? '' });
+    }
+    if (s.state === 'unmapped') return t('torrent.port_unmapped', { port: s.port });
+    if (s.state === 'no_router') return t('torrent.port_no_router');
+    return t('torrent.port_no_session');
+  });
 </script>
 
 <Dialog title={t('set.title')} scrollable {onclose}>
@@ -794,6 +821,40 @@
                bare `.knob` has no rule anywhere, so this one rendered as a
                track with nothing in it — on/off told apart only by the
                background. -->
+          <span class="switch-knob"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- The only large lever left on peer count, and it is measured rather
+         than believed: of ~30 addresses a rutracker announce returned, 20–22
+         never answered a SYN — peers behind NAT, which can only ever dial us.
+         Public trackers, `numwant`, IPv6 and PEX were all measured and give
+         nothing here.
+
+         It carries a status line because the switch alone would be a claim:
+         librqbit's forwarder reports to nobody, and a router with UPnP
+         disabled swallows the request in silence. "On" and "working" are
+         different facts, so the row says both. -->
+    <div class="setting">
+      <div class="row-toggle">
+        <div class="row-text">
+          <div class="setting-label">{t('torrent.port')}</div>
+          <div class="setting-hint">{t('torrent.port_hint')}</div>
+          {#if portLine}
+            <div class="setting-hint port-state" class:ok={torrent.portStatus?.state === 'mapped'}>
+              {portLine}
+            </div>
+          {/if}
+        </div>
+        <button
+          class="switch"
+          class:on={torrentPrefs.portForward}
+          role="switch"
+          aria-checked={torrentPrefs.portForward}
+          aria-label={t('torrent.port')}
+          onclick={onTogglePortForward}
+        >
           <span class="switch-knob"></span>
         </button>
       </div>
@@ -1609,6 +1670,21 @@
 
   .row-text .setting-hint {
     margin-top: 0;
+  }
+
+  /* A live readout, not a second sentence of the hint — so it gets air above
+     it and reads brighter once the router has confirmed the mapping. Brighter
+     rather than colored: the accent means selected/on/primary, and a passive
+     readout wearing it inverts that (the OSD bar made exactly this mistake).
+     Written as `.row-text .port-state` so it beats the `margin-top: 0` above,
+     which is a descendant rule of the same shape and would otherwise win on
+     source order. */
+  .row-text .port-state {
+    margin-top: 8px;
+  }
+
+  .port-state.ok {
+    color: #b9b9c3;
   }
 
   /* A section that has lost its meaning under the current settings: visible

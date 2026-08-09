@@ -88,6 +88,25 @@ const PREFS_KEY = 'frameplayer.torrent';
  */
 class TorrentPrefs {
   seeding = $state(false);
+
+  /**
+   * Ask the router to open the BitTorrent port (UPnP).
+   *
+   * **Off by default because it changes the machine rather than the app**, and
+   * on at all because it is the only large lever left on peer count. Measured on
+   * a rutracker swarm, one address at a time: of ~30 the tracker handed out,
+   * **20–22 never answered a SYN** — peers behind NAT, reachable only if they
+   * dial us — 5 completed a handshake, and exactly one showed the mid-handshake
+   * cut that means DPI. Everything else that suggests itself was measured and is
+   * worth nothing here: public trackers know 0–1 extra peers for a
+   * tracker-exclusive release, `numwant` is capped by the tracker, `peers6` is
+   * not sent at all, and PEX already runs.
+   *
+   * It helps even with seeding off, which is the counter-intuitive part: a seed
+   * serves us whether or not we serve anyone, so being reachable is about who
+   * can *start* a connection, not about what goes out.
+   */
+  portForward = $state(false);
 }
 
 export const torrentPrefs = new TorrentPrefs();
@@ -96,10 +115,22 @@ export function loadTorrentPrefs() {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return;
-    const saved = JSON.parse(raw) as { seeding?: boolean };
+    const saved = JSON.parse(raw) as { seeding?: boolean; portForward?: boolean };
     if (typeof saved.seeding === 'boolean') torrentPrefs.seeding = saved.seeding;
+    if (typeof saved.portForward === 'boolean') torrentPrefs.portForward = saved.portForward;
   } catch {
     // A corrupted preference must not cost the safe default.
+  }
+}
+
+function persistPrefs() {
+  try {
+    localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({ seeding: torrentPrefs.seeding, portForward: torrentPrefs.portForward }),
+    );
+  } catch {
+    // not critical
   }
 }
 
@@ -109,12 +140,53 @@ export function loadTorrentPrefs() {
  */
 export async function setSeeding(on: boolean): Promise<boolean> {
   torrentPrefs.seeding = on;
-  try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ seeding: on }));
-  } catch {
-    // not critical
-  }
+  persistPrefs();
   return await invoke<boolean>('torrent_set_seeding', { seeding: on }).catch(() => false);
+}
+
+/// Same contract as `setSeeding`: both flags are baked into the session when it
+/// is built, so changing either costs whatever was streaming.
+export async function setPortForward(on: boolean): Promise<boolean> {
+  torrentPrefs.portForward = on;
+  persistPrefs();
+  return await invoke<boolean>('torrent_set_port_forward', { on }).catch(() => false);
+}
+
+export interface PortStatus {
+  /// `off` | `no_session` | `mapped` | `unmapped` | `no_router` | `no_port`
+  state: string;
+  port: number;
+  detail: string | null;
+}
+
+/// Guards a probe that outlives the panel that asked for it — an SSDP search
+/// plus a SOAP round trip is seconds, and the settings sheet can be closed and
+/// reopened inside one.
+let portSeq = 0;
+
+/**
+ * Ask the router whether the port is actually forwarded.
+ *
+ * The switch on its own would be a claim rather than a fact: librqbit's
+ * forwarder is a fire-and-forget task that reports to nobody, and a router with
+ * UPnP disabled — which is common — swallows the request in silence. So the
+ * setting shows what the router itself answers, and "on" and "working" stay
+ * separate things on screen.
+ */
+export async function refreshPortStatus() {
+  const seq = ++portSeq;
+  torrent.portChecking = torrentPrefs.portForward;
+  try {
+    const status = await invoke<PortStatus>('torrent_port_status', {
+      on: torrentPrefs.portForward,
+    });
+    if (seq !== portSeq) return;
+    torrent.portStatus = status;
+  } catch {
+    if (seq === portSeq) torrent.portStatus = null;
+  } finally {
+    if (seq === portSeq) torrent.portChecking = false;
+  }
 }
 
 /// Stretches of the playing file that are on disk, as fractions [0..1].
@@ -135,6 +207,10 @@ class TorrentState {
   /// A magnet is being resolved: the DHT lookup that turns an info hash into a
   /// file list, which routinely takes ten seconds and can take a minute.
   resolving = $state(false);
+  /// What the router last said about the forwarded port, and whether an answer
+  /// is being waited for. Read only by the settings row — see `refreshPortStatus`.
+  portStatus = $state<PortStatus | null>(null);
+  portChecking = $state(false);
 }
 
 export const torrent = new TorrentState();
@@ -193,6 +269,7 @@ export async function addTorrent(source: string): Promise<TorrentInfo> {
     const info = await invoke<TorrentInfo>('torrent_add', {
       source,
       seeding: torrentPrefs.seeding,
+      portForward: torrentPrefs.portForward,
     });
     torrent.info = info;
     return info;

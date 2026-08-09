@@ -65,6 +65,7 @@
     startResize,
     toggleFullscreen,
   } from '$lib/chrome.svelte';
+  import { initSubShift, subShift } from '$lib/sub-shift.svelte';
   import {
     cancelAdvance,
     endOfFile,
@@ -96,6 +97,7 @@
     resolveTitleIfMissing,
     submitLink,
     submitUpdate,
+    togglePortForward,
     toggleSeeding,
   } from '$lib/open.svelte';
   import {
@@ -996,6 +998,10 @@
   // lights, and the title bar's side measurement. Started from here rather than
   // left at the module's top level: see the note on `initChrome`.
   initChrome();
+  // Lifts the subtitles clear of the control bar while it is up. Its own
+  // effects rather than the chrome's: what it measures is the bar, but what it
+  // writes is an mpv option, and the shell has no business knowing about those.
+  initSubShift();
   // Releases the skip guard from the *television's* position: while casting,
   // mpv is paused and `noteLocalPosition` never fires.
   initEndScreen();
@@ -1342,6 +1348,7 @@
     <SettingsDialog
       onclose={() => (overlays.settings = false)}
       onToggleSeeding={() => void toggleSeeding()}
+      onTogglePortForward={() => void togglePortForward()}
       onClearTorrentCache={() => void clearTorrentCache()}
       onLicenses={() => (overlays.licenses = true)}
     />
@@ -1398,6 +1405,7 @@
   <div
     class="osc"
     class:hidden={chrome.idle}
+    bind:this={subShift.oscEl}
     role="toolbar"
     tabindex="-1"
     onclick={(e) => e.stopPropagation()}

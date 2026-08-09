@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::time::Duration;
 
-const SSDP_ADDR: &str = "239.255.255.250:1900";
+pub(crate) const SSDP_ADDR: &str = "239.255.255.250:1900";
 const AVTRANSPORT: &str = "urn:schemas-upnp-org:service:AVTransport:1";
 const CONNECTION_MANAGER: &str = "urn:schemas-upnp-org:service:ConnectionManager:1";
 const RENDERING_CONTROL: &str = "urn:schemas-upnp-org:service:RenderingControl:1";
@@ -131,7 +131,7 @@ async fn ssdp_search(timeout: Duration) -> Vec<String> {
 /// One bound socket per usable IPv4 interface: loopback and link-local (APIPA,
 /// a Wi-Fi adapter with no lease) are skipped because nothing answers there and
 /// each costs the full search timeout.
-fn ssdp_sockets() -> Vec<(std::net::Ipv4Addr, tokio::net::UdpSocket)> {
+pub(crate) fn ssdp_sockets() -> Vec<(std::net::Ipv4Addr, tokio::net::UdpSocket)> {
     let mut out = Vec::new();
     for iface in if_addrs::get_if_addrs().unwrap_or_default() {
         let std::net::IpAddr::V4(ip) = iface.ip() else {
@@ -164,7 +164,7 @@ fn ssdp_sockets() -> Vec<(std::net::Ipv4Addr, tokio::net::UdpSocket)> {
 }
 
 /// Case-insensitive HTTP-style header lookup, value trimmed.
-fn header(text: &str, name: &str) -> Option<String> {
+pub(crate) fn header(text: &str, name: &str) -> Option<String> {
     text.lines().find_map(|line| {
         let (k, v) = line.split_once(':')?;
         (k.trim().eq_ignore_ascii_case(name)).then(|| v.trim().to_string())
@@ -172,7 +172,7 @@ fn header(text: &str, name: &str) -> Option<String> {
 }
 
 /// The text between the first `<tag>` and its `</tag>`, if any.
-fn tag<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
+pub(crate) fn tag<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
     let open = format!("<{name}>");
     let close = format!("</{name}>");
     let start = xml.find(&open)? + open.len();
@@ -181,7 +181,7 @@ fn tag<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
 }
 
 /// Resolve a description's relative `controlURL` against its LOCATION.
-fn absolute(location: &str, url: &str) -> String {
+pub(crate) fn absolute(location: &str, url: &str) -> String {
     if url.starts_with("http://") || url.starts_with("https://") {
         return url.to_string();
     }
