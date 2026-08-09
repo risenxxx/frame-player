@@ -1039,14 +1039,24 @@
     if (IS_MAC) return;
     lastTaskbarUpdate = performance.now();
     const win = getCurrentWindow();
-    if (!hasFile || player.duration <= 0) {
+    // **While casting the position lives on the television.** mpv sits paused
+    // on the file it handed over, so reading its mirrors here pins the bar to
+    // the moment of the handoff and paints it "paused" for the whole session —
+    // `player.paused` being true is what makes the handover work in the first
+    // place. Same rule as the seekbar, the chapter list and the skip button:
+    // while `cast.remote`, the position is `cast.time`.
+    const remote = cast.remote;
+    const time = remote ? cast.time : player.timePos;
+    const total = remote ? cast.duration : player.duration;
+    const paused = remote ? cast.state === 'paused' : player.paused;
+    if (!hasFile || total <= 0) {
       void win.setProgressBar({ status: ProgressBarStatus.None }).catch(() => {});
       return;
     }
     void win
       .setProgressBar({
-        status: player.paused ? ProgressBarStatus.Paused : ProgressBarStatus.Normal,
-        progress: Math.min(100, Math.max(0, Math.round((player.timePos / player.duration) * 100))),
+        status: paused ? ProgressBarStatus.Paused : ProgressBarStatus.Normal,
+        progress: Math.min(100, Math.max(0, Math.round((time / total) * 100))),
       })
       .catch(() => {});
   }
@@ -1112,7 +1122,22 @@
   /// two writers on one seekbar is the jitter bug in a new costume.
   $effect(() => {
     const time = cast.time;
-    if (cast.remote && !seek.dragging) seek.value = time;
+    if (!cast.remote) return;
+    if (!seek.dragging) seek.value = time;
+    // **The taskbar has no other driver while casting.** It is refreshed from
+    // mpv's property events, and with the local player parked `time-pos` never
+    // arrives — so the bar was set once, at the handoff, and sat there for the
+    // whole session. This poll is the only thing that knows the television
+    // moved. Unthrottled on purpose: it runs at the cast poll's 2 Hz, which is
+    // what the observer's 1 s throttle exists to cut a ~10 Hz local report
+    // down to, and a skipped run would leave the bar the wrong colour across a
+    // pause. Inside the `remote` guard for a reason that is easy to miss: the
+    // update reads mpv's mirrors on the local branch, so calling it here
+    // unconditionally would make this effect depend on `time-pos` and re-run
+    // ten times a second all through ordinary playback. Leaving the session
+    // hands the bar back to those same property events, which is where it
+    // belongs — the handback's seek and unpause both fire one.
+    updateTaskbarProgress();
   });
 
   /// Drop an entry. mpv renumbers what follows, so the list is re-read rather

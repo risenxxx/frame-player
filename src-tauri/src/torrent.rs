@@ -1480,9 +1480,15 @@ async fn pause_restored(session: &Arc<Session>) {
             }
         }
         if let Err(e) = api.api_torrent_action_pause(id).await {
-            // "not live" is the common answer — most were stored paused.
+            // **Already paused is the success case, not a failure**, and
+            // librqbit spells it two ways depending on where the refusal comes
+            // from: "not live" from the state machine, and "torrent is already
+            // paused" from the action itself — the second is what an ordinary
+            // startup prints, since most restored torrents were stored paused.
+            // Reporting either one puts an error in the log for the outcome
+            // this function exists to reach.
             let msg = format!("{e:#}");
-            if !msg.contains("not live") {
+            if !msg.contains("not live") && !msg.contains("already paused") {
                 eprintln!("[torrent] pausing a restored torrent failed: {msg}");
             }
         }

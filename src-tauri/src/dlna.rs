@@ -504,6 +504,17 @@ const END_SLACK: f64 = 8.0;
 /// a renderer that never catches up cannot freeze the knob for good.
 const PAUSED_SEEK_HOLD: Duration = Duration::from_secs(120);
 
+/// How long to keep asking a renderer to start before calling the load failed.
+/// Deliberately bounded well inside the frontend's own "fetched and never
+/// played" timeout: once the television is preparing, judging whether anything
+/// ever appears is that detector's job and not this one's.
+const PLAY_BUDGET: Duration = Duration::from_secs(12);
+
+/// Between `Play` attempts. A renderer that refuses because it is still
+/// bringing its player up answers at once, so this pause is the whole cost of
+/// a retry.
+const PLAY_RETRY: Duration = Duration::from_millis(1200);
+
 struct DlnaSession {
     device: DlnaDeviceInfo,
     state: Arc<Mutex<DlnaState>>,
@@ -884,31 +895,78 @@ async fn load_url(
         });
         return Err(e);
     }
-    // **Accepting a URI is not being ready for a command.** Setting it is what
-    // makes the TV bring its player up, and the service is unreachable while
-    // that happens — measured: the first Play after a set is answered by a
-    // dropped connection, not a fault. Retry rather than believe it.
-    let mut played = false;
-    for _ in 0..6 {
-        if soap(&client, &control, AVTRANSPORT, "Play", "<Speed>1</Speed>")
-            .await
-            .is_ok()
-        {
-            played = true;
+    // **Accepting a URI is not being ready for a command, and a refusal is not
+    // a verdict.** Setting the URI is what makes the TV bring its player up,
+    // and until that is done the renderer answers `Play` with a dropped
+    // connection or with UPnP 701 "transition not available".
+    //
+    // The trap is that the refusal arrives while the television is *already
+    // fetching the file*: measured on the LG, `SetAVTransportURI` alone starts
+    // it, so counting refusals means giving up on a load that is under way.
+    // Measured on a 10 GB 2160p MKV: the set answered `TRANSITIONING` from the
+    // first poll to the last, served a HEAD, a read from byte 0 and then the
+    // Matroska cues from the 10 GB mark ~18 s in — while the old six-attempt
+    // budget expired around seven seconds and reported "the TV could not open
+    // this file". Casting the same file again succeeded at once, against a
+    // player that was by then already up.
+    //
+    // So the renderer is asked what it is doing rather than counted at. It is
+    // started if it answers `Play`, if it reports `PLAYING` whoever caused it,
+    // or if it reports `TRANSITIONING` — that is a television preparing, not
+    // one refusing. Only "still not started when the budget runs out" is a
+    // failed load.
+    let mut playing = false;
+    let mut starting = false;
+    let mut refusal: Option<String> = None;
+    let deadline = std::time::Instant::now() + PLAY_BUDGET;
+    loop {
+        match soap(&client, &control, AVTRANSPORT, "Play", "<Speed>1</Speed>").await {
+            Ok(_) => {
+                playing = true;
+                break;
+            }
+            // Printed unconditionally, like a failed Cast LOAD: the renderer
+            // names its own reason, and collapsing every one of them into
+            // `load_failed` is what made this failure take a wire log to tell
+            // apart from a file the television cannot decode.
+            Err(e) => {
+                eprintln!("[dlna] {e}");
+                refusal = Some(e);
+            }
+        }
+        if let Ok(info) = soap(&client, &control, AVTRANSPORT, "GetTransportInfo", "").await {
+            match tag(&info, "CurrentTransportState").unwrap_or("") {
+                "PLAYING" => {
+                    playing = true;
+                    break;
+                }
+                "TRANSITIONING" => starting = true,
+                _ => {}
+            }
+        }
+        if std::time::Instant::now() >= deadline {
             break;
         }
-        tokio::time::sleep(Duration::from_millis(1200)).await;
+        tokio::time::sleep(PLAY_RETRY).await;
     }
-    if !played {
+    if !playing && !starting {
         set_state(&state, |s| {
             s.state = "error".into();
             s.error = Some("load_failed".into());
         });
-        return Err("renderer never accepted Play".into());
+        return Err(refusal.unwrap_or_else(|| "renderer never accepted Play".into()));
     }
     if position > 1.0 {
         let args = format!("<Unit>REL_TIME</Unit><Target>{}</Target>", hms(position));
-        let _ = soap(&client, &control, AVTRANSPORT, "Seek", &args).await;
+        // Best-effort, and worth saying why it may do nothing: a renderer that
+        // is only `TRANSITIONING` has not read the container's index yet, so it
+        // has no way to turn a time into an offset and answers accordingly.
+        // Losing the resume point is a far smaller failure than refusing the
+        // load over it, which is why this stays a nudge — but a silent one is
+        // indistinguishable from a television that ignores seeks altogether.
+        if let Err(e) = soap(&client, &control, AVTRANSPORT, "Seek", &args).await {
+            eprintln!("[dlna] {e}");
+        }
     }
     // **Not "playing" — "buffering".** A renderer accepting `Play` says nothing
     // about it managing to decode what it fetched, and claiming playback here
