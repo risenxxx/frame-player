@@ -499,3 +499,80 @@ jobs:
           [ -n "$bucket" ] || { echo "R2_BUCKET_UPDATES is not set" >&2; exit 1; }
           scripts/r2-retain.sh --kind updates --bucket "$bucket" \
             --endpoint "$endpoint" --keep 5 --apply | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The Homebrew cask lives in a repository of its own (risenxxx/homebrew-tap),
+      # so it has to be told about a release that has already happened. It points
+      # at the GitHub Release asset rather than at R2 precisely because of the
+      # sweep above: R2 keeps five versions, a release keeps its files forever,
+      # and a cask whose download 404s is worse than one that is a version behind.
+      #
+      # Last in the job, and that placement follows the same rule as the sweep's:
+      # a step must not stand in front of something more important than itself.
+      # A stale tap is an install channel that hands out the previous version;
+      # a missing release is an artifact nobody can obtain. So this fails loudly
+      # but only after both of those have happened, and re-running it is one
+      # commit to a one-file repository.
+      - name: Bump the Homebrew cask
+        env:
+          # A deploy key rather than a personal token: it cannot expire, and it
+          # reaches exactly one repository by construction rather than by the
+          # scope somebody remembered to set. Absent, the step says so and passes
+          # — the rule every other credential here follows, so that a fork with
+          # no access to this tap still cuts a release.
+          TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_DEPLOY_KEY:-}" ]; then
+            echo "HOMEBREW_TAP_DEPLOY_KEY is not set — the Homebrew cask was not bumped." \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          version="${{ needs.check-version.outputs.version }}"
+          # By name, never by glob — the notarisation steps' rule, for the reason
+          # it was written there: a glob matching nothing degrades into an empty
+          # argument, and one matching two files picks whichever sorts first.
+          dmg="dist/FramePlayer_${version}_aarch64.dmg"
+          [ -f "$dmg" ] || { echo "no dmg at $dmg" >&2; ls -la dist >&2; exit 1; }
+          sha="$(sha256sum "$dmg" | cut -d' ' -f1)"
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$TAP_DEPLOY_KEY" > ~/.ssh/tap_key
+          chmod 600 ~/.ssh/tap_key
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          # IdentitiesOnly, or ssh offers the runner's other keys first and the
+          # tap refuses the one that would have worked.
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_key -o IdentitiesOnly=yes"
+
+          git clone --depth 1 git@github.com:risenxxx/homebrew-tap.git tap
+          cask=tap/Casks/frame-player.rb
+
+          # One anchored line per field, each required to match exactly once —
+          # set-version.mjs's rule and the same failure it prevents: a
+          # substitution that silently matched nothing would publish a cask
+          # carrying the new version number over the previous release's checksum,
+          # which Homebrew reports as a corrupt download rather than as a stale
+          # formula.
+          for field in version sha256; do
+            case $field in
+              version) value=$version ;;
+              sha256) value=$sha ;;
+            esac
+            n=$(grep -c "^  $field \"" "$cask" || true)
+            [ "$n" = 1 ] || { echo "expected one '$field' line in the cask, found $n" >&2; exit 1; }
+            sed -i "s|^  $field \".*\"|  $field \"$value\"|" "$cask"
+          done
+          grep -E "^  (version|sha256) " "$cask"
+
+          cd tap
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Casks/frame-player.rb
+          # A re-run of a release that already bumped the tap is not a failure.
+          if git diff --cached --quiet; then
+            echo "The Homebrew cask is already at $version." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git commit -m "frame-player $version"
+          git push
+          echo "Bumped the Homebrew cask to $version." | tee -a "$GITHUB_STEP_SUMMARY"
