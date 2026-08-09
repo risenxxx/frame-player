@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { SAMPLE_WINDOW, estimateOffset, offsetUncertainty, pushSample, sampleOf } from './clock';
+import {
+  SAMPLE_WINDOW,
+  estimateOffset,
+  offsetUncertainty,
+  pushSample,
+  relayClock,
+  sampleOf,
+} from './clock';
 
 // The clock offset is the number the whole shared timeline is stated in, and
 // being wrong about it is silent: every viewer sits at the wrong position while
@@ -107,5 +114,27 @@ describe('offsetUncertainty', () => {
 
   it('is unbounded before anything has been measured', () => {
     expect(offsetUncertainty([])).toBe(Infinity);
+  });
+});
+
+describe('relayClock', () => {
+  it('is always a whole number of milliseconds', () => {
+    // Not tidiness: `at` is an int64 on the relay, and Go refuses to unmarshal
+    // a fractional number into one — the whole message fails to decode and
+    // comes back as `bad_message`, which the client used to treat as fatal. So
+    // every publish was refused and the viewer was thrown out of the room, on a
+    // real network, at the moment the clock estimate settled.
+    for (const offset of [0, 12.5, -12.5, 0.1, -0.9, 1234.567]) {
+      const at = relayClock(1_700_000_000_000, offset);
+      expect(Number.isInteger(at)).toBe(true);
+    }
+  });
+
+  it('is still the clock it claims to be', () => {
+    expect(relayClock(1000, 250)).toBe(1250);
+    expect(relayClock(1000, -250)).toBe(750);
+    // Half a millisecond of rounding is three orders of magnitude below the
+    // drift correction's own deadband, so nothing downstream can notice.
+    expect(Math.abs(relayClock(1000, 12.5) - 1012.5)).toBeLessThanOrEqual(0.5);
   });
 });

@@ -361,3 +361,62 @@ func TestASlowMemberCostsOnlyThemselves(t *testing.T) {
 		t.Error("the healthy member lost messages because of the slow one")
 	}
 }
+
+// The badge that would not go away.
+//
+// Everything else that changes the member list is an event somebody caused, and
+// broadcasts where it happens. `readyGrace` expiring is a clock reaching a
+// number — and in a room with nothing playing there is not even a timeline
+// change to carry the correction, so the sweeper is the only thing that can say
+// so. Reported from a real session: a member sat at "loading" for as long as the
+// room was looked at, and only moved when somebody flipped an unrelated switch.
+func TestAMemberAgeingOutOfTheGraceIsAnnounced(t *testing.T) {
+	now := time.Now()
+	h := testHub()
+	r := newRoom("ABC123", now)
+	watcher, stuck := testClient(h, "watcher"), testClient(h, "stuck")
+	if _, err := r.join(watcher, 16, now); err != nil {
+		t.Fatal(err)
+	}
+	r.setReady(watcher.id, true, now)
+	if _, err := r.join(stuck, 16, now); err != nil {
+		t.Fatal(err)
+	}
+	// Nothing is playing: the room cannot freeze, so a broadcast tied to the
+	// timeline would never happen.
+	if r.snapshot().Content != nil {
+		t.Fatal("this test needs an idle room")
+	}
+	drainOf(t, watcher, "members")
+
+	r.tick(now.Add(readyGrace + time.Second))
+
+	last := drainOf(t, watcher, "members")
+	if len(last) == 0 {
+		t.Fatal("nobody was told the room had stopped waiting")
+	}
+	waiting, _ := last[len(last)-1]["waiting"].([]any)
+	if len(waiting) != 0 {
+		t.Errorf("waiting = %v, want empty", waiting)
+	}
+	for _, m := range last[len(last)-1]["members"].([]any) {
+		if !m.(map[string]any)["ready"].(bool) {
+			t.Errorf("a member is still reported as loading: %v", m)
+		}
+	}
+}
+
+// ...and the other half: the sweeper must not chatter. A room where nothing has
+// changed sends nothing, or every idle room broadcasts to everybody every 15
+// seconds for ever.
+func TestASettledRoomIsNotSweptIntoBroadcasting(t *testing.T) {
+	now := time.Now()
+	r, a, _ := roomWithTwo(t, now)
+	drainOf(t, a, "members")
+	for i := range 5 {
+		r.tick(now.Add(time.Duration(i) * time.Second))
+	}
+	if got := drainOf(t, a, "members"); len(got) != 0 {
+		t.Errorf("a settled room broadcast %d times", len(got))
+	}
+}

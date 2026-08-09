@@ -90,6 +90,25 @@ export function offsetUncertainty(samples: readonly Sample[]): number {
   return Math.min(...samples.map((s) => s.rtt)) / 2;
 }
 
+/**
+ * The relay's clock as this machine sees it, in **whole** milliseconds.
+ *
+ * The rounding is the whole point of this function existing. `at` is an `int64`
+ * on the relay, and Go refuses to unmarshal `1786313164655.5` into one — the
+ * *entire message* fails to decode and comes back as `bad_message`. The offset
+ * is a median of estimates, so it is fractional almost always: half of all
+ * round trips take an odd number of milliseconds, and an even sample window
+ * averages its two middle values.
+ *
+ * It reached a viewer because it cannot happen on loopback, where the offset is
+ * an integer zero — so it passed every local test and waited for a real
+ * network, where it refused every publish and threw the viewer out of the room
+ * mid-film.
+ */
+export function relayClock(localNow: number, offset: number): number {
+  return Math.round(localNow + offset);
+}
+
 function median(sorted: readonly number[]): number {
   const n = sorted.length;
   if (n === 0) return 0;

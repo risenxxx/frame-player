@@ -38,20 +38,20 @@
   let { onclose }: Props = $props();
 
   let name = $state(displayName());
-  /// A code an invitation link brought, if there was one. Taken here and
-  /// cleared at once: the invitation has been delivered the moment the field
-  /// holds it, and leaving it set would re-raise this dialog every time the
+  /// A code an invitation link brought, if there was one. Read and cleared
+  /// before the field exists: the invitation has been delivered the moment it
+  /// is in hand, and leaving it set would re-raise this dialog every time the
   /// viewer closed it.
-  let code = $state(takeInvite());
+  const invited = invite.code;
+  invite.code = '';
 
-  function takeInvite(): string {
-    const pending = invite.code;
-    invite.code = '';
-    return pending;
-  }
+  let code = $state(invited);
   let copied = $state(false);
 
   const canJoin = $derived(normalizeCode(code).length === CODE_LENGTH);
+  /// How the viewer got here, not what is currently typed — so a code entered
+  /// by hand does not reorder the form under the cursor at its sixth character.
+  const fromInvite = invited !== '';
 
   /// A link a friend can actually be sent. The relay serves a page at `/j/<code>`
   /// which offers `frameplayer://join/<code>` — a bare custom-scheme link is
@@ -64,7 +64,7 @@
     return `${withScheme.replace(/^ws/, 'http')}/j/${wire.room}`;
   });
 
-  const waitingNames = $derived(wire.waitingFor.map((m) => m.name || t('sync.you')));
+  const waitingNames = $derived(wire.waitingFor.map((m) => m.name || t('sync.anon')));
 
   function persist() {
     setDisplayName(name);
@@ -152,12 +152,16 @@
         <div class="room-sub">{t('sync.nothing_hint')}</div>
       {/if}
       {#if sync.opening}<div class="room-sub">{t('sync.opening')}</div>{/if}
+      <!-- A failure has to stand, not fade: a viewer whose window is empty
+           while the room plays on needs to know it was tried and why it did
+           not work, and an OSD is gone before they open this panel. -->
+      {#if sync.failed}<div class="link-error">{t('sync.open_failed')}</div>{/if}
     </div>
 
     <ul class="room-people">
       {#each wire.members as member (member.id)}
         <li class="room-person">
-          <span class="room-name">{member.name || t('sync.you')}</span>
+          <span class="room-name">{member.name || t('sync.anon')}</span>
           {#if member.id === wire.host}<span class="room-badge">{t('sync.host_badge')}</span>{/if}
           {#if member.id === wire.me}<span class="room-badge">{t('sync.you')}</span>{/if}
           {#if !member.ready}<span class="room-badge loading">{t('sync.loading_badge')}</span>{/if}
@@ -199,51 +203,133 @@
       >
     </div>
   {:else}
-    <!-- ---- getting in ---- -->
-    <p class="setting-hint">{t('sync.lead')}</p>
+    <!-- ---- getting in ----
+
+         A sign-in form's shape, because it is a sign-in form's problem: one
+         action with no prerequisite, one that needs something you were sent,
+         and a rule separating them. The order flips when a code is already in
+         hand — arriving from an invitation link, the button you want is the one
+         that uses it, and making the viewer find it below a divider would be
+         the form arguing with the reason it was opened. -->
+    <p class="setting-hint room-lead">{t('sync.lead')}</p>
 
     <label class="room-field">
       <span class="setting-label">{t('sync.name_label')}</span>
-      <input class="link-input" bind:value={name} placeholder={t('sync.name_ph')} maxlength="32" />
+      <input
+        class="link-input room-input"
+        bind:value={name}
+        placeholder={t('sync.name_ph')}
+        maxlength="32"
+      />
     </label>
 
-    <label class="room-field">
-      <span class="setting-label">{t('sync.join_label')}</span>
-      <div class="room-join">
-        <!-- svelte-ignore a11y_autofocus -->
-        <input
-          class="link-input room-code-input"
-          bind:value={code}
-          placeholder={t('sync.code_ph')}
-          spellcheck="false"
-          autocapitalize="characters"
-          autofocus
-          onkeydown={(e) => {
-            if (e.key === 'Enter') join();
-          }}
-        />
-        <button class="btn-outline" disabled={!canJoin} onclick={join}>
-          {t('sync.go')}
-        </button>
-      </div>
-    </label>
+    {#if fromInvite}
+      {@render joinBlock(true)}
+      <div class="room-or">{t('sync.or')}</div>
+      {@render createButton(false)}
+    {:else}
+      {@render createButton(true)}
+      <div class="room-or">{t('sync.or')}</div>
+      {@render joinBlock(false)}
+    {/if}
 
     {#if wire.error}
       <p class="link-error">{t(`sync.err_${wire.error}` as 'sync.err_no_room')}</p>
     {/if}
-
-    <div class="link-actions">
-      <button class="primary" disabled={wire.phase === 'connecting'} onclick={create}>
-        {wire.phase === 'connecting' ? t('sync.connecting') : t('sync.create')}
-      </button>
-    </div>
   {/if}
 </Dialog>
 
+{#snippet createButton(primary: boolean)}
+  <button
+    class="room-wide"
+    class:primary
+    class:btn-outline={!primary}
+    disabled={wire.phase === 'connecting'}
+    onclick={create}
+  >
+    {wire.phase === 'connecting' ? t('sync.connecting') : t('sync.create')}
+  </button>
+{/snippet}
+
+{#snippet joinBlock(primary: boolean)}
+  <label class="room-field">
+    <span class="setting-label">{t('sync.join_label')}</span>
+    <div class="room-join">
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        class="link-input room-input room-code-input"
+        bind:value={code}
+        placeholder={t('sync.code_ph')}
+        spellcheck="false"
+        autocapitalize="characters"
+        autofocus
+        onkeydown={(e) => {
+          if (e.key === 'Enter') join();
+        }}
+      />
+      <button class="room-go" class:primary class:btn-outline={!primary} disabled={!canJoin} onclick={join}>
+        {t('sync.go')}
+      </button>
+    </div>
+  </label>
+{/snippet}
+
+
 <style>
+  .room-lead {
+    margin: 0 0 14px;
+  }
+
   .room-field {
     display: block;
     margin-top: 12px;
+  }
+
+  /* The shared `.link-input` carries its own vertical margin, which is right in
+     a stack of fields and wrong inside a row — and an explicit height is what
+     makes the button beside it match. Both boxes are border boxes (the reset in
+     app.css), so this is the outer height of each and does not depend on either
+     one's font: `.link-input` is 13px and `.btn-outline` is 15px, which is
+     exactly why the button stood ~2px taller than the field it sat next to. */
+  .room-input {
+    margin: 0;
+    height: 38px;
+  }
+
+  .room-wide {
+    display: block;
+    width: 100%;
+    text-align: center;
+    margin-top: 14px;
+  }
+
+  /* The rule with a word in it, which is what says these are alternatives
+     rather than steps. `::before`/`::after` rather than a bordered box, so the
+     line meets the text at its own height whatever the label says. */
+  .room-or {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0 4px;
+    color: #7a7a88;
+    font-size: 12px;
+  }
+
+  .room-or::before,
+  .room-or::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .room-go {
+    flex: none;
+    height: 38px;
+    /* `.primary` and `.btn-outline` both carry generous horizontal padding for
+       a standalone button; beside a field the label is one word and the button
+       should not out-measure the input it belongs to. */
+    padding: 0 18px;
   }
 
   .room-field .setting-label {

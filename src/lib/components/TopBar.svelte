@@ -195,8 +195,8 @@
   <div
     class="roomchip"
     class:below={!!torrentChip}
-    class:hidden={idle && !wire.waiting.length}
-    class:waiting={wire.waiting.length > 0}
+    class:hidden={idle && !wire.waiting.length && !sync.opening && !sync.failed}
+    class:waiting={wire.waiting.length > 0 || sync.opening || sync.failed}
   >
     <div class="roomchip-line">
       <svg class="roomchip-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -210,10 +210,14 @@
         />
       </svg>
       <span>
-        {#if sync.holdingUp}
+        {#if sync.failed}
+          {t('sync.open_failed')}
+        {:else if sync.opening}
+          {t('sync.opening')}
+        {:else if sync.holdingUp}
           {t('sync.waiting_you')}
         {:else if wire.waiting.length === 1}
-          {t('sync.waiting_one', { name: wire.waitingFor[0]?.name || t('sync.you') })}
+          {t('sync.waiting_one', { name: wire.waitingFor[0]?.name || t('sync.anon') })}
         {:else if wire.waiting.length > 1}
           {t('sync.waiting_many', { count: wire.waiting.length })}
         {:else}

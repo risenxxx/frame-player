@@ -18,6 +18,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,17 @@ type room struct {
 	// Zero while anyone is here; the moment the last member left otherwise.
 	// The hub sweeps on it.
 	emptySince time.Time
+
+	// What the last `members` broadcast said the room was waiting for.
+	//
+	// Everything else that changes the member list is an event somebody caused,
+	// and broadcasts where it happens. `readyGrace` expiring is not: it is a
+	// clock reaching a number, with no message to hang a broadcast off. So the
+	// sweeper compares against this and tells the room when the answer has
+	// changed — without it a member who never reported stayed "loading" on
+	// everybody's screen for ever, and in a room with nothing playing there was
+	// not even a timeline change to carry the correction.
+	lastWaiting string
 }
 
 func newRoom(code string, now time.Time) *room {
@@ -281,14 +293,22 @@ func (r *room) tick(now time.Time) {
 	// Idempotent, so there is nothing to check first: it changes the room only
 	// when somebody has just aged past the grace.
 	r.reconcileReadyLocked(now)
-	if r.rev != before {
+	// Compared against what was last *said*, not against what the timeline did.
+	// A room with nothing playing has no timeline to change, and that is exactly
+	// where the stale badge never went away.
+	if r.rev != before || waitingKey(r.waitingLocked(now)) != r.lastWaiting {
 		r.broadcastMembersLocked(now)
 	}
 }
 
+func waitingKey(ids []string) string { return strings.Join(ids, ",") }
+
 // ---- sending ----------------------------------------------------------------
 
 func (r *room) broadcastMembersLocked(now time.Time) {
+	// Recorded on every path, not only the sweeper's, or the comparison in `tick`
+	// would be against whatever the last tick happened to see.
+	r.lastWaiting = waitingKey(r.waitingLocked(now))
 	r.sendAllLocked(wire.MembersMsg{
 		T:        "members",
 		Members:  r.membersLocked(now),

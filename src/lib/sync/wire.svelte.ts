@@ -34,7 +34,14 @@ import {
   type ServerMsg,
   type Timeline,
 } from './protocol';
-import { estimateOffset, offsetUncertainty, pushSample, sampleOf, type Sample } from './clock';
+import {
+  estimateOffset,
+  offsetUncertainty,
+  pushSample,
+  relayClock,
+  sampleOf,
+  type Sample,
+} from './clock';
 
 /**
  * The relay this build points at by default.
@@ -240,9 +247,10 @@ let lastReady = false;
 let lastReason = '';
 let lastPublished: Timeline | null = null;
 
-/// The relay's clock, as well as we can tell.
+/// The relay's clock, as well as we can tell. Whole milliseconds — see
+/// `relayClock`, which is where the reason lives and where it is tested.
 export function serverNow(): number {
-  return Date.now() + offset;
+  return relayClock(Date.now(), offset);
 }
 
 /// Where the room says playback should be, right now.
@@ -455,12 +463,20 @@ function handle(msg: ServerMsg) {
     }
     case 'error': {
       const code: SyncError = isErrorCode(msg.code) ? msg.code : 'bad_message';
-      // `not_allowed` is a refusal of one gesture in a room we are still in;
-      // everything else means we never got in, or must not stay.
-      if (code === 'not_allowed') {
+      // Always logged, with whatever the relay said. This is the one class of
+      // failure a viewer cannot diagnose and a developer cannot reproduce from
+      // a description — and it cost a real session: a fractional `at` made every
+      // publish undecodable, and all the player could say was that the server
+      // had not understood something.
+      console.warn(`[sync] relay refused: ${msg.code}`, msg.message);
+      // **A refusal while in a room is about one message, never about the
+      // session.** It used to end it: any error at all called `fail`, so a
+      // single malformed publish threw the viewer back to the join dialog
+      // mid-film, with an error under the code field about a code that had
+      // been perfectly fine. Before we are in, an error *is* the answer to the
+      // attempt; after, whether the session survives is the socket's to decide.
+      if (wire.on) {
         wire.error = code;
-        // The relay follows it with the room's real timeline, so nothing has to
-        // be undone here.
         break;
       }
       fail(code);

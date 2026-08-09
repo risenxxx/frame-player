@@ -72,6 +72,12 @@ class Sync {
   match = $state<MatchVerdict>('unknown');
   /// Fetching whatever the room switched to.
   opening = $state(false);
+  /// We tried to open what the room is watching and could not — a magnet that
+  /// would not resolve, a file that is not in the torrent. Kept as state rather
+  /// than announced once and forgotten: an OSD fades, and the viewer is left
+  /// looking at a room that is playing something while their own window sits
+  /// empty with nothing to explain it. The panel and the chip both read this.
+  failed = $state(false);
 
   /// This player is holding the room up.
   get holdingUp(): boolean {
@@ -161,11 +167,24 @@ function onTimeline(next: Timeline, fromSelf: boolean) {
 }
 
 function onRoom() {
+  // **Joining a room while something is already playing has to say so**, and
+  // the absence of this was the bug that made the feature look broken end to
+  // end: `syncNoteFileLoaded` only fires when a file *loads*, so somebody who
+  // opened a film and then created a room published nothing at all. Everybody
+  // who joined landed in a room watching nothing, with no way to guess that the
+  // host was three minutes into an episode — and, because a guest with no file
+  // open is deliberately not-ready, they also held the room frozen for ever
+  // while doing it.
+  //
+  // Only when the room has nothing: if it is already watching something, that
+  // is what this player should be opening, not overwriting.
+  if (wire.on && !wire.timeline.content && player.hasFile) void shareWhatIsPlaying();
   if (!wire.on) {
     // Leaving a room must not leave the film running at a corrected speed.
     restoreSpeed();
     sync.unopenable = null;
     sync.opening = false;
+    sync.failed = false;
     openedFor = null;
   }
 }
@@ -187,6 +206,7 @@ async function openContent(ref: ContentRef | null) {
   const run = opens.begin();
   openedFor = ref;
   sync.unopenable = null;
+  sync.failed = false;
 
   if (!ref) return;
   if (ref.kind === 'file' || ref.kind === 'hidden') {
@@ -211,6 +231,7 @@ async function openContent(ref: ContentRef | null) {
         videos.find((f) => f.path === ref.file) ??
         null;
       if (!file) {
+        sync.failed = true;
         showOsd(t('sync.no_such_file'));
         return;
       }
@@ -220,7 +241,10 @@ async function openContent(ref: ContentRef | null) {
     }
     loadedAt = performance.now();
   } catch (e) {
-    if (!run.stale) showOsd(t('sync.open_failed'));
+    if (!run.stale) {
+      sync.failed = true;
+      showOsd(t('sync.open_failed'));
+    }
     console.warn('[sync] could not open what the room is watching:', e);
   } finally {
     if (!run.stale) sync.opening = false;
@@ -322,6 +346,18 @@ function restoreSpeed() {
  */
 export async function syncNoteFileLoaded() {
   loadedAt = performance.now();
+  await shareWhatIsPlaying();
+}
+
+/**
+ * Tell the room what this player has open.
+ *
+ * Separate from `syncNoteFileLoaded` because the other caller — joining a room
+ * that is watching nothing — must not stamp `loadedAt`: that suppresses the
+ * reconciler for a second and a half, and a `members` message is not a reason
+ * to stop keeping in step.
+ */
+async function shareWhatIsPlaying() {
   if (!wire.on) return;
   const src = player.filePath;
   const ref = await contentOf(src, {

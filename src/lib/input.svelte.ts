@@ -411,6 +411,26 @@ function takeOffer(e: KeyboardEvent) {
 }
 
 export function onKeydown(e: KeyboardEvent) {
+  // **A key pressed in a text field belongs to the field.** One rule here
+  // rather than a `stopPropagation` on each input, for the same reason
+  // `WHEEL_SURFACES` is one list: the per-input version is invisible until the
+  // one input missing from it is found by hand — which is exactly how it was
+  // found. A room code could not be typed at all, because `KeyF`, `KeyM`,
+  // `KeyS`, `KeyZ` and the rest ran their actions and then `preventDefault`
+  // swallowed the character, leaving paste as the only way to fill the field.
+  // The link box and the subtitle search escaped it only because each of them
+  // had grown its own guard.
+  //
+  // Escape still belongs to the player: it unwinds the surface stack, which is
+  // what a viewer expects from a field inside a dialog. Enter does not — there
+  // it is the field's own, and the dialogs that submit on it say so themselves.
+  if (inTextField(e)) {
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      closeTopmost();
+    }
+    return;
+  }
   // e.code is the physical key, so hotkeys work in any keyboard layout — and
   // that is what the editor stores, so the property survives a rebind.
   const action = actionFor(chordOf(e));
