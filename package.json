@@ -1,6 +1,6 @@
 {
   "name": "frameplayer",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "A video player for Windows and macOS built on Tauri 2 and libmpv: local files, links and live torrent streaming in one window, frame-accurate seeking, and an unusual amount of attention to detail",
   "type": "module",
   "private": true,

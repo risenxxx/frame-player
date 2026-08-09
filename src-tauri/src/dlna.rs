@@ -9,10 +9,22 @@
 //! Sink list, which is the API whose absence forced the per-cell probing in
 //! casting.md.
 //!
-//! This module is deliberately recon-shaped: no XML crate (the descriptions are
-//! read with string slicing), no control beyond the two queries below. If the
-//! branch proves out, parsing gets a real dependency and the transport gets a
-//! ladder of its own.
+//! **The branch proved out and this is a shipping transport** — the second half
+//! of the file is the command surface the frontend drives. What survives from
+//! the reconnaissance is the parsing: there is still no XML crate, because what
+//! is wanted out of these documents is a dozen leaf elements and a service list,
+//! and a real parser is a dependency plus a licensing entry for that. The cost
+//! of the decision is paid in [`open_tag_end`] and [`unescape`], which handle
+//! the shapes vendors actually emit — attributes, namespace prefixes, empty
+//! elements, entities — and in the fixtures under `mod tests`, which are the
+//! only place a device we do not own can be reproduced. If the string scanning
+//! ever has to grow a third special case, that is the signal to take the
+//! dependency instead.
+//!
+//! Everything here is written for the general renderer rather than for the one
+//! television it was measured on: the MIME spelling, the `Seek` unit and the
+//! resolution of relative control URLs are all negotiated or derived from what
+//! the device said, not assumed.
 //!
 //! Run it against the LAN with `FP_DLNA_PROBE=1 npm run tauri:macos` — it has to
 //! run inside the app rather than from `cargo test`, because on macOS 15+ a
@@ -171,35 +183,292 @@ pub(crate) fn header(text: &str, name: &str) -> Option<String> {
     })
 }
 
-/// The text between the first `<tag>` and its `</tag>`, if any.
+/// Just past the `>` of the first opening `<name …>`.
+///
+/// **Matching on the literal `<name>` is what makes a parser vendor-specific.**
+/// Three shapes are legal and all of them appear in the field: an attribute
+/// (`<friendlyName xml:lang="en">`), a namespace prefix (`<av:CurrentTransportState>`
+/// — the UPnP schema says out-arguments are unqualified and not every renderer
+/// obeys), and the empty element `<friendlyName/>`. So the tag name is compared
+/// as a *local* name against everything up to the first whitespace, and an empty
+/// element is skipped rather than mistaken for content.
+///
+/// The delimiter check is what keeps `deviceType` from answering a search for
+/// `device`; the old `format!("<{name}>")` got that right by accident and a
+/// bare `starts_with` would not.
+fn open_tag_end(xml: &str, name: &str) -> Option<usize> {
+    let mut from = 0usize;
+    while let Some(rel) = xml[from..].find('<') {
+        let lt = from + rel;
+        from = lt + 1;
+        let Some(gt_rel) = xml[lt + 1..].find('>') else {
+            break;
+        };
+        let gt = lt + 1 + gt_rel;
+        let inner = &xml[lt + 1..gt];
+        // Closing tags, the declaration, comments and doctypes.
+        if inner.starts_with(['/', '?', '!']) {
+            continue;
+        }
+        // An empty element has no content to return; keep looking rather than
+        // reporting the tag absent, in case a real one follows.
+        if inner.ends_with('/') {
+            continue;
+        }
+        let head = inner.split_whitespace().next().unwrap_or("");
+        if head.rsplit(':').next().unwrap_or(head) == name {
+            return Some(gt + 1);
+        }
+    }
+    None
+}
+
+/// Where the first matching `</name>` begins, by local name.
+fn close_tag_start(xml: &str, name: &str) -> Option<usize> {
+    let mut from = 0usize;
+    while let Some(rel) = xml[from..].find("</") {
+        let lt = from + rel;
+        from = lt + 2;
+        let Some(gt_rel) = xml[lt + 2..].find('>') else {
+            break;
+        };
+        let inner = xml[lt + 2..lt + 2 + gt_rel].trim();
+        if inner.rsplit(':').next().unwrap_or(inner) == name {
+            return Some(lt);
+        }
+    }
+    None
+}
+
+/// The text between the first `<tag>` and its `</tag>`, if any. Still raw —
+/// call [`unescape`] on anything destined for a screen.
 pub(crate) fn tag<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
-    let open = format!("<{name}>");
-    let close = format!("</{name}>");
-    let start = xml.find(&open)? + open.len();
-    let end = xml[start..].find(&close)? + start;
+    let start = open_tag_end(xml, name)?;
+    let end = close_tag_start(&xml[start..], name)? + start;
     Some(xml[start..end].trim())
 }
 
-/// Resolve a description's relative `controlURL` against its LOCATION.
-pub(crate) fn absolute(location: &str, url: &str) -> String {
+/// Every `<name …>` in the document, each as a slice running from just past its
+/// opening tag to the end. The caller narrows further; this only replaces
+/// `split("<name>")`, which cannot see an attribute or a prefix.
+pub(crate) fn chunks<'a>(xml: &'a str, name: &str) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    let mut from = 0usize;
+    while let Some(rel) = open_tag_end(&xml[from..], name) {
+        from += rel;
+        out.push(&xml[from..]);
+    }
+    out
+}
+
+/// XML text, decoded. Without this a television called "Living Room &amp; Kitchen"
+/// is listed under its markup — the picker is the one place these strings are
+/// read by a person.
+pub(crate) fn unescape(s: &str) -> String {
+    if !s.contains('&') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 1..];
+        // Bounded: an unescaped `&` in somebody's device name must not swallow
+        // the rest of the string looking for a semicolon that never comes.
+        let semi = after.find(';').filter(|&n| n > 0 && n <= 10);
+        let decoded = semi.and_then(|n| match &after[..n] {
+            "amp" => Some('&'),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            num => num
+                .strip_prefix('#')
+                .and_then(|n| match n.strip_prefix(['x', 'X']) {
+                    Some(hex) => u32::from_str_radix(hex, 16).ok(),
+                    None => n.parse::<u32>().ok(),
+                })
+                .and_then(char::from_u32),
+        });
+        match (decoded, semi) {
+            (Some(c), Some(n)) => {
+                out.push(c);
+                rest = &after[n + 1..];
+            }
+            _ => {
+                out.push('&');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Escape for an XML **text node**. Attribute values additionally need `"`,
+/// which [`escape_attr`] adds; nothing here may escape more than that, because
+/// the result is escaped a second time on its way into `CurrentURIMetaData` and
+/// every extra entity survives both rounds.
+fn escape_text(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+fn escape_attr(s: &str) -> String {
+    escape_text(s).replace('"', "&quot;")
+}
+
+/// One client for every UPnP conversation, built once.
+///
+/// **reqwest sends no `User-Agent` at all by default** — the trap the tracker
+/// announce already paid for, where a WAF answered 403 without one and 200 with
+/// a single letter. Renderers are the same kind of surface: some sniff the
+/// header, and the UPnP spec asks for `<OS>/<version> UPnP/1.0 <product>/<version>`
+/// besides. Sharing one client also keeps the connection pool alive across the
+/// poll's several SOAP calls a second, instead of a TCP handshake per action.
+pub(crate) fn http() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent(format!(
+                "{}/1.0 UPnP/1.0 FramePlayer/{}",
+                std::env::consts::OS,
+                env!("CARGO_PKG_VERSION")
+            ))
+            .build()
+            .unwrap_or_default()
+    })
+}
+
+/// Resolve a description's relative `controlURL` against its base — the
+/// device's `URLBase` when it declares one, its LOCATION otherwise.
+///
+/// **A path-relative URL resolves against the base's directory, not its
+/// origin.** This used to force every relative URL to the root, which for a
+/// description served from `/dmr/description.xml` turns `upnp/control` into
+/// `/upnp/control` — a 404 on any device that writes its control URLs that way.
+/// Absolute-path URLs (`/upnp/control/...`) are what most vendors emit and are
+/// unaffected; the test below pins both forms.
+pub(crate) fn absolute(base: &str, url: &str) -> String {
     if url.starts_with("http://") || url.starts_with("https://") {
         return url.to_string();
     }
-    let Some(scheme_end) = location.find("://") else {
+    let Some(scheme_end) = base.find("://") else {
         return url.to_string();
     };
-    let after = &location[scheme_end + 3..];
-    let host_end = after.find('/').map(|i| i + scheme_end + 3).unwrap_or(location.len());
-    let origin = &location[..host_end];
+    let after = &base[scheme_end + 3..];
+    let host_end = after.find('/').map(|i| i + scheme_end + 3).unwrap_or(base.len());
+    let origin = &base[..host_end];
+    // A scheme-relative URL keeps the base's scheme and nothing else.
+    if let Some(rest) = url.strip_prefix("//") {
+        return format!("{}//{rest}", &base[..scheme_end + 1]);
+    }
     if url.starts_with('/') {
-        format!("{origin}{url}")
-    } else {
-        format!("{origin}/{url}")
+        return format!("{origin}{url}");
+    }
+    // Everything after the origin, up to and including the last separator.
+    let dir_end = base[host_end..]
+        .rfind('/')
+        .map(|i| host_end + i + 1)
+        .unwrap_or(host_end);
+    format!("{}{}{url}", &base[..dir_end], if dir_end == host_end { "/" } else { "" })
+}
+
+/// The host out of a `http://host:port/path` LOCATION, IPv6 literals included.
+///
+/// Splitting on `:` and taking the first field reads `http://[fe80::1]:8080/x`
+/// as the host `[fe80`, which then fails to parse as an address and reports the
+/// device as unreachable rather than as one we do not serve.
+pub(crate) fn host_of(location: &str) -> String {
+    let Some(after) = location.split("://").nth(1) else {
+        return String::new();
+    };
+    let hostport = after.split('/').next().unwrap_or("");
+    match hostport.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or("").to_string(),
+        None => hostport.split(':').next().unwrap_or("").to_string(),
     }
 }
 
-/// Fetch and read a device description. Services are found by splitting on
-/// `<service>` rather than parsed properly — recon, see the module note.
+/// The part of a description that belongs to the MediaRenderer.
+///
+/// **A description may hold more than one device.** The spec lets a root device
+/// embed others in a `<deviceList>`, and combined server+renderer boxes do
+/// exactly that — so walking every `<service>` in the document and keeping the
+/// last match per type binds our control URLs to whichever device happens to
+/// come last. A MediaServer has a ConnectionManager too, and its
+/// `GetProtocolInfo` answers with the formats it can *serve*, which is a
+/// different question from what the screen can decode.
+///
+/// A device's own `serviceList` precedes its `deviceList` in a well-formed
+/// description, so cutting the chunk at the nested list leaves exactly this
+/// device's services and identity.
+///
+/// Narrowing only happens on a positive identification: with no MediaRenderer
+/// anywhere the whole document is returned, which is what this always did.
+/// Note that the opposite rule holds in upnp.rs — an InternetGatewayDevice
+/// keeps its WAN services two levels down, so there the whole-document walk is
+/// the correct reading and must stay.
+fn renderer_device(xml: &str) -> &str {
+    for chunk in chunks(xml, "device") {
+        let own = match chunk.find("<deviceList") {
+            Some(i) => &chunk[..i],
+            None => chunk,
+        };
+        if tag(own, "deviceType").is_some_and(|t| t.contains("MediaRenderer")) {
+            return own;
+        }
+    }
+    xml
+}
+
+/// Read a device description. Kept separate from the fetch so every vendor
+/// shape this has to survive can be pinned by a test.
+fn parse_description(location: &str, xml: &str) -> Renderer {
+    // **`URLBase` outranks the LOCATION for relative URLs.** UPnP 1.1 deprecates
+    // it and plenty of shipping devices still send it, sometimes pointing at a
+    // different port than the one the description came from — resolve against
+    // the location there and every control URL is silently wrong.
+    let base = tag(xml, "URLBase")
+        .map(unescape)
+        .filter(|b| !b.is_empty())
+        .unwrap_or_else(|| location.to_string());
+    let scope = renderer_device(xml);
+
+    let udn = tag(scope, "UDN").unwrap_or("").trim_start_matches("uuid:").to_string();
+    let mut r = Renderer {
+        udn,
+        location: location.to_string(),
+        friendly_name: tag(scope, "friendlyName").map(unescape).unwrap_or_else(|| "?".into()),
+        manufacturer: tag(scope, "manufacturer").map(unescape).unwrap_or_else(|| "?".into()),
+        model: tag(scope, "modelName").map(unescape).unwrap_or_else(|| "?".into()),
+        device_type: tag(scope, "deviceType").unwrap_or("?").to_string(),
+        ..Default::default()
+    };
+    let services = tag(scope, "serviceList").unwrap_or(scope);
+    for chunk in chunks(services, "service") {
+        let Some(service_type) = tag(chunk, "serviceType") else {
+            continue;
+        };
+        let Some(control) = tag(chunk, "controlURL") else {
+            continue;
+        };
+        let url = absolute(&base, &unescape(control));
+        // `contains` rather than an equality test on purpose: AVTransport:1,
+        // :2 and :3 are all live, and a renderer that answers on a later
+        // version is not one we should refuse to talk to.
+        if service_type.contains("AVTransport") {
+            r.avtransport = Some(url);
+            r.avtransport_scpd = tag(chunk, "SCPDURL").map(|u| absolute(&base, &unescape(u)));
+        } else if service_type.contains("ConnectionManager") {
+            r.connection_manager = Some(url);
+        } else if service_type.contains("RenderingControl") {
+            r.rendering_control = Some(url);
+        }
+    }
+    r
+}
+
+/// Fetch and read a device description.
 async fn describe(client: &reqwest::Client, location: &str) -> Option<Renderer> {
     let xml = client
         .get(location)
@@ -210,35 +479,7 @@ async fn describe(client: &reqwest::Client, location: &str) -> Option<Renderer> 
         .text()
         .await
         .ok()?;
-
-    let udn = tag(&xml, "UDN").unwrap_or("").trim_start_matches("uuid:").to_string();
-    let mut r = Renderer {
-        udn,
-        location: location.to_string(),
-        friendly_name: tag(&xml, "friendlyName").unwrap_or("?").to_string(),
-        manufacturer: tag(&xml, "manufacturer").unwrap_or("?").to_string(),
-        model: tag(&xml, "modelName").unwrap_or("?").to_string(),
-        device_type: tag(&xml, "deviceType").unwrap_or("?").to_string(),
-        ..Default::default()
-    };
-    for chunk in xml.split("<service>").skip(1) {
-        let Some(service_type) = tag(chunk, "serviceType") else {
-            continue;
-        };
-        let Some(control) = tag(chunk, "controlURL") else {
-            continue;
-        };
-        let url = absolute(location, control);
-        if service_type.contains("AVTransport") {
-            r.avtransport = Some(url);
-            r.avtransport_scpd = tag(chunk, "SCPDURL").map(|u| absolute(location, u));
-        } else if service_type.contains("ConnectionManager") {
-            r.connection_manager = Some(url);
-        } else if service_type.contains("RenderingControl") {
-            r.rendering_control = Some(url);
-        }
-    }
-    Some(r)
+    Some(parse_description(location, &xml))
 }
 
 /// `GetProtocolInfo` — the renderer's own list of what it will accept, which is
@@ -317,15 +558,27 @@ fn media_duration(path: &std::path::Path) -> Option<f64> {
 /// and answers a sender `Seek` with "not available", no matter what the HTTP
 /// responses later advertise. The three things it reads are the DLNA flags in
 /// the fourth protocolInfo field, `size`, and `duration`.
+///
+/// **The escaping is two rounds and the inner one was missing.** The DIDL is a
+/// document in its own right, embedded as *text* inside `CurrentURIMetaData`,
+/// so a title has to be escaped for the DIDL and the whole DIDL escaped again
+/// for the SOAP envelope. Escaping once means the receiver unescapes once and
+/// its DIDL parser then meets a bare `&` — which is not valid XML, so any film
+/// with an ampersand in its name ("Tom & Jerry" is not an edge case) produced
+/// metadata that a strict renderer rejects outright and a lenient one silently
+/// mangles. The `<`/`>` half is the same story for a name in angle brackets.
 fn didl(url: &str, mime: &str, title: &str, size: u64, duration: Option<f64>) -> String {
     let flags = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000";
     let duration_attr = duration
         .map(|d| format!(r#" duration="{}""#, didl_duration(d)))
         .unwrap_or_default();
     let item = format!(
-        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="-1" restricted="1"><dc:title>{title}</dc:title><upnp:class>object.item.videoItem</upnp:class><res protocolInfo="http-get:*:{mime}:{flags}" size="{size}"{duration_attr}>{url}</res></item></DIDL-Lite>"#
+        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="-1" restricted="1"><dc:title>{}</dc:title><upnp:class>object.item.videoItem</upnp:class><res protocolInfo="{}" size="{size}"{duration_attr}>{}</res></item></DIDL-Lite>"#,
+        escape_text(title),
+        escape_attr(&format!("http-get:*:{mime}:{flags}")),
+        escape_text(url),
     );
-    item.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    escape_text(&item)
 }
 
 /// Print what the network has. Called at startup only under `FP_DLNA_PROBE=1`.
@@ -337,10 +590,10 @@ pub async fn probe() {
         return;
     }
 
-    let client = reqwest::Client::new();
+    let client = http();
     let mut renderers = 0;
     for location in &locations {
-        let Some(r) = describe(&client, location).await else {
+        let Some(r) = describe(client, location).await else {
             eprintln!("[dlna] {location}: description unreadable");
             continue;
         };
@@ -356,7 +609,7 @@ pub async fn probe() {
             renderers += 1;
         }
         if let Some(cm) = &r.connection_manager {
-            match protocol_info(&client, cm).await {
+            match protocol_info(client, cm).await {
                 Some(sink) => {
                     let formats = summarize_sink(&sink);
                     eprintln!("[dlna]     accepts {} distinct MIME types:", formats.len());
@@ -384,6 +637,82 @@ fn summarize_sink(sink: &str) -> BTreeMap<String, usize> {
     out
 }
 
+/// The MIME spellings one container is advertised under, in the order we would
+/// rather send them.
+///
+/// **There is no single right answer per container, and the device is the one
+/// who decides.** Renderers announce what they take in `GetProtocolInfo`, and
+/// the spellings differ by vendor — Matroska appears as `video/x-matroska` and
+/// as `video/x-mkv`, AVI has four live forms, MPEG-TS three. Sending a name the
+/// device does not list earns UPnP 714 "illegal MIME type" from a strict one.
+///
+/// Kept in step with `DLNA_MIME` in `src/lib/cast.svelte.ts`, which answers the
+/// neighbouring question — whether to *offer* the device at all. A divergence
+/// costs a worse guess rather than a failure: [`negotiate_mime`] falls back to
+/// the first spelling here, so the frontend saying yes and this table saying
+/// nothing can no longer produce `application/octet-stream` on the wire.
+fn mime_candidates(ext: &str) -> &'static [&'static str] {
+    match ext {
+        "mkv" => &["video/x-matroska", "video/x-mkv", "video/mkv"],
+        "mp4" | "m4v" => &["video/mp4"],
+        "mov" => &["video/quicktime", "video/mp4"],
+        "avi" => &["video/avi", "video/x-msvideo", "video/x-ms-avi", "video/msvideo"],
+        "ts" | "m2ts" | "mts" => &[
+            "video/mp2t",
+            "video/mp2ts",
+            "video/vnd.dlna.mpeg-tts",
+            "video/x-mpegts",
+        ],
+        "mpg" | "mpeg" | "mpe" | "vob" => &["video/mpeg"],
+        "webm" => &["video/webm"],
+        "wmv" => &["video/x-ms-wmv"],
+        "asf" => &["video/x-ms-asf"],
+        "flv" => &["video/x-flv"],
+        "3gp" => &["video/3gpp"],
+        "ogv" => &["video/ogg"],
+        "mp3" => &["audio/mpeg"],
+        "m4a" | "aac" => &["audio/mp4", "audio/aac"],
+        "flac" => &["audio/flac", "audio/x-flac"],
+        "ogg" | "oga" | "opus" => &["audio/ogg"],
+        "wav" => &["audio/wav", "audio/x-wav"],
+        _ => &[],
+    }
+}
+
+/// The extension of whatever the URL or path ends in, lower-cased, with any
+/// query or fragment removed.
+fn extension_of(source: &str) -> String {
+    let path = source.split(['?', '#']).next().unwrap_or(source);
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    match name.rsplit_once('.') {
+        Some((_, ext)) if !ext.is_empty() && ext.len() <= 5 => ext.to_ascii_lowercase(),
+        _ => String::new(),
+    }
+}
+
+/// The spelling to put on the wire: what the renderer advertised if it
+/// advertised any of them, our own preference otherwise.
+///
+/// The fallback is the interesting half. `cast_mime` answers
+/// `application/octet-stream` for every container Cast never carries — AVI,
+/// MPEG-TS, WMV, MPEG — while the frontend was perfectly willing to offer such
+/// a file to a renderer that lists `video/x-msvideo`. So the load went out
+/// naming a type no device accepts, and the failure looked like the television
+/// refusing the file.
+fn negotiate_mime(advertised: &[String], ext: &str, wanted: &str) -> String {
+    let candidates = mime_candidates(ext);
+    if let Some(m) = candidates
+        .iter()
+        .find(|c| advertised.iter().any(|a| a.eq_ignore_ascii_case(c)))
+    {
+        return (*m).to_string();
+    }
+    if candidates.is_empty() || candidates.iter().any(|c| c.eq_ignore_ascii_case(wanted)) {
+        return wanted.to_string();
+    }
+    candidates[0].to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,8 +721,218 @@ mod tests {
     fn control_urls_resolve_against_the_location() {
         let loc = "http://192.0.2.48:9197/dmr/description.xml";
         assert_eq!(absolute(loc, "/upnp/control/AVTransport1"), "http://192.0.2.48:9197/upnp/control/AVTransport1");
-        assert_eq!(absolute(loc, "upnp/control"), "http://192.0.2.48:9197/upnp/control");
+        // Path-relative resolves against the description's *directory*. This
+        // case used to assert `/upnp/control`, which is what the code did and
+        // not what RFC 3986 says — a device writing its control URLs this way
+        // was being sent to a path that does not exist. The test documented the
+        // bug rather than the contract.
+        assert_eq!(absolute(loc, "upnp/control"), "http://192.0.2.48:9197/dmr/upnp/control");
+        assert_eq!(absolute("http://192.0.2.48:9197/", "ctl"), "http://192.0.2.48:9197/ctl");
+        assert_eq!(absolute("http://192.0.2.48:9197", "ctl"), "http://192.0.2.48:9197/ctl");
+        assert_eq!(absolute(loc, "//other:80/x"), "http://other:80/x");
         assert_eq!(absolute(loc, "http://other/x"), "http://other/x");
+    }
+
+    #[test]
+    fn tags_survive_attributes_prefixes_and_empty_elements() {
+        // Every one of these is legal and at least one vendor emits it.
+        assert_eq!(tag(r#"<friendlyName xml:lang="en">TV</friendlyName>"#, "friendlyName"), Some("TV"));
+        assert_eq!(tag("<av:CurrentTransportState>PLAYING</av:CurrentTransportState>", "CurrentTransportState"), Some("PLAYING"));
+        assert_eq!(tag("<x>a</x><Sink>b</Sink>", "Sink"), Some("b"));
+        // An empty element carries nothing; the next real one wins.
+        assert_eq!(tag("<UDN/><UDN>uuid:1</UDN>", "UDN"), Some("uuid:1"));
+        assert_eq!(tag("<UDN/>", "UDN"), None);
+        // The delimiter check: a longer name must not answer a shorter search.
+        assert_eq!(tag("<deviceType>x</deviceType>", "device"), None);
+        assert_eq!(tag("<modelNumber>1</modelNumber>", "modelName"), None);
+        // Declarations, comments and doctypes are not elements.
+        assert_eq!(tag(r#"<?xml version="1.0"?><!-- c --><name>n</name>"#, "name"), Some("n"));
+        // A prefixed close tag against an unprefixed open one, and vice versa.
+        assert_eq!(tag("<name>n</u:name>", "name"), Some("n"));
+    }
+
+    #[test]
+    fn chunks_are_one_per_opening_tag() {
+        let xml = "<service><a>1</a></service><service ><a>2</a></service>";
+        let c = chunks(xml, "service");
+        assert_eq!(c.len(), 2);
+        assert_eq!(tag(c[0], "a"), Some("1"));
+        assert_eq!(tag(c[1], "a"), Some("2"));
+        assert!(chunks("<serviceList></serviceList>", "service").is_empty());
+    }
+
+    #[test]
+    fn entities_are_decoded() {
+        assert_eq!(unescape("Living Room &amp; Kitchen"), "Living Room & Kitchen");
+        assert_eq!(unescape("&lt;a&gt; &quot;b&quot; &apos;c&apos;"), "<a> \"b\" 'c'");
+        assert_eq!(unescape("&#65;&#x42;"), "AB");
+        assert_eq!(unescape("plain"), "plain");
+        // An unescaped ampersand is left alone rather than eating the rest.
+        assert_eq!(unescape("R&D and more"), "R&D and more");
+        assert_eq!(unescape("&notanentity;"), "&notanentity;");
+    }
+
+    /// A combined MediaServer + MediaRenderer, which is what the whole-document
+    /// walk got wrong: the server's ConnectionManager came last and won.
+    const COMBINED: &str = r#"<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <URLBase>http://192.0.2.9:2870/</URLBase>
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>
+    <friendlyName>Salon &amp; Kitchen</friendlyName>
+    <manufacturer>ACME</manufacturer>
+    <modelName>Q80</modelName>
+    <UDN>uuid:renderer-1</UDN>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:AVTransport:3</serviceType>
+        <controlURL>/rcr/AVTransport/ctl</controlURL>
+        <SCPDURL>/rcr/AVTransport/scpd.xml</SCPDURL>
+      </service>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+        <controlURL>/rcr/CM/ctl</controlURL>
+      </service>
+    </serviceList>
+    <deviceList>
+      <device>
+        <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+        <UDN>uuid:server-1</UDN>
+        <serviceList>
+          <service>
+            <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+            <controlURL>/srv/CM/ctl</controlURL>
+          </service>
+        </serviceList>
+      </device>
+    </deviceList>
+  </device>
+</root>"#;
+
+    #[test]
+    fn services_come_from_the_renderer_not_its_embedded_server() {
+        let r = parse_description("http://192.0.2.9:9197/desc.xml", COMBINED);
+        assert_eq!(r.udn, "renderer-1");
+        // Decoded, not shown as markup.
+        assert_eq!(r.friendly_name, "Salon & Kitchen");
+        // URLBase outranks the LOCATION: note the port is 2870, not 9197.
+        assert_eq!(r.avtransport.as_deref(), Some("http://192.0.2.9:2870/rcr/AVTransport/ctl"));
+        assert_eq!(r.connection_manager.as_deref(), Some("http://192.0.2.9:2870/rcr/CM/ctl"));
+        assert_eq!(r.avtransport_scpd.as_deref(), Some("http://192.0.2.9:2870/rcr/AVTransport/scpd.xml"));
+    }
+
+    #[test]
+    fn a_plain_renderer_is_unaffected_by_the_narrowing() {
+        let xml = r#"<root><device>
+            <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>
+            <friendlyName>Plain</friendlyName><UDN>uuid:p</UDN>
+            <serviceList><service>
+              <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+              <controlURL>/AVTransport/control</controlURL>
+            </service></serviceList></device></root>"#;
+        let r = parse_description("http://192.0.2.5:7676/dmr", xml);
+        assert_eq!(r.avtransport.as_deref(), Some("http://192.0.2.5:7676/AVTransport/control"));
+    }
+
+    /// The shape the narrowing actually exists for: the **root** device is the
+    /// MediaServer and the renderer is embedded under it. Reading the document
+    /// as a whole takes the server's identity and the server's `serviceList`,
+    /// which has no AVTransport in it — so `collect_renderers` drops the
+    /// television entirely and it never reaches the picker.
+    ///
+    /// Worth knowing why the `COMBINED` fixture above does not catch this on its
+    /// own: there the renderer comes first, so the first `<serviceList>` in the
+    /// document is already the right one and the bug hides. Order is the whole
+    /// difference, which is exactly the kind of thing one device vendor gets
+    /// right and the next does not.
+    #[test]
+    fn a_renderer_embedded_under_a_server_is_still_found() {
+        let xml = r#"<root><device>
+            <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+            <friendlyName>Box (server)</friendlyName><UDN>uuid:server-1</UDN>
+            <serviceList><service>
+              <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+              <controlURL>/srv/CD/ctl</controlURL>
+            </service></serviceList>
+            <deviceList><device>
+              <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>
+              <friendlyName>Box (screen)</friendlyName><UDN>uuid:renderer-2</UDN>
+              <serviceList><service>
+                <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+                <controlURL>/rcr/AVT/ctl</controlURL>
+              </service></serviceList>
+            </device></deviceList></device></root>"#;
+        let r = parse_description("http://192.0.2.7:80/d.xml", xml);
+        assert_eq!(r.avtransport.as_deref(), Some("http://192.0.2.7:80/rcr/AVT/ctl"));
+        assert_eq!(r.udn, "renderer-2");
+        assert_eq!(r.friendly_name, "Box (screen)");
+        assert!(r.device_type.contains("MediaRenderer"), "{}", r.device_type);
+    }
+
+    /// No device declares itself a MediaRenderer: the whole document stays in
+    /// scope, which is what this did before the narrowing existed. Being wrong
+    /// in the other direction would silently drop such a device from the picker.
+    #[test]
+    fn an_unrecognised_device_keeps_the_old_whole_document_scope() {
+        let xml = r#"<root><device>
+            <deviceType>urn:vendor-com:device:Box:1</deviceType>
+            <UDN>uuid:v</UDN>
+            <deviceList><device><serviceList><service>
+              <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+              <controlURL>/x/ctl</controlURL>
+            </service></serviceList></device></deviceList></device></root>"#;
+        let r = parse_description("http://192.0.2.6:80/d.xml", xml);
+        assert_eq!(r.avtransport.as_deref(), Some("http://192.0.2.6:80/x/ctl"));
+    }
+
+    #[test]
+    fn hosts_survive_ipv6_literals() {
+        assert_eq!(host_of("http://192.0.2.48:9197/dmr/d.xml"), "192.0.2.48");
+        assert_eq!(host_of("http://192.0.2.48/d.xml"), "192.0.2.48");
+        assert_eq!(host_of("http://[2001:db8::1]:8080/d.xml"), "2001:db8::1");
+        assert_eq!(host_of("nonsense"), "");
+    }
+
+    #[test]
+    fn mime_follows_what_the_renderer_advertises() {
+        let advertised: Vec<String> = ["video/x-mkv", "video/x-msvideo", "video/mp4"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        // The device's own spelling wins over our preferred one.
+        assert_eq!(negotiate_mime(&advertised, "mkv", "video/x-matroska"), "video/x-mkv");
+        // The regression this exists for: AVI reached the wire as octet-stream.
+        assert_eq!(negotiate_mime(&advertised, "avi", "application/octet-stream"), "video/x-msvideo");
+        // Nothing advertised for the container: our first spelling, never the
+        // octet-stream fallback, which no renderer accepts.
+        assert_eq!(negotiate_mime(&[], "avi", "application/octet-stream"), "video/avi");
+        // A container we have no opinion about keeps the caller's answer.
+        assert_eq!(negotiate_mime(&[], "xyz", "application/octet-stream"), "application/octet-stream");
+        // Case is not a difference.
+        let shouty = vec!["VIDEO/X-MATROSKA".to_string()];
+        assert_eq!(negotiate_mime(&shouty, "mkv", "video/x-matroska"), "video/x-matroska");
+    }
+
+    #[test]
+    fn extensions_ignore_the_query_and_the_directory() {
+        assert_eq!(extension_of("/a/b/The.Movie.2024.MKV"), "mkv");
+        assert_eq!(extension_of("http://h:1/c/tok/ep1.mkv"), "mkv");
+        assert_eq!(extension_of("http://h:1/c/tok/ep1.mkv?x=1#y"), "mkv");
+        assert_eq!(extension_of(r"E:\Films\a.avi"), "avi");
+        assert_eq!(extension_of("/a/no-extension"), "");
+        // A dotted directory name must not be read as an extension.
+        assert_eq!(extension_of("/a.b/movie"), "");
+    }
+
+    #[test]
+    fn didl_escapes_twice_so_the_receiver_sees_valid_xml() {
+        let x = didl("http://h/f.mkv", "video/x-matroska", "Tom & Jerry <2>", 42, None);
+        // What the receiver un-escapes once and hands to its DIDL parser.
+        let inner = x.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&");
+        assert!(inner.contains("<dc:title>Tom &amp; Jerry &lt;2&gt;</dc:title>"), "{inner}");
+        // Un-escaping a second time, as the DIDL parser does, gives the name back.
+        let title = inner.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&");
+        assert!(title.contains("<dc:title>Tom & Jerry <2></dc:title>"), "{title}");
     }
 
     #[test]
@@ -486,6 +1025,13 @@ struct DlnaState {
     /// — the same "jumps and returns" the chapter list used to show, from the
     /// other end.
     seek_target: Option<(f64, std::time::Instant)>,
+    /// Which `Seek` unit this renderer answered to, once one has. `None` means
+    /// the ladder in [`seek_to`] has not been walked yet.
+    seek_unit: Option<&'static str>,
+    /// Whether the renderer has ever reported `PLAYING` this session. Until it
+    /// has, a `TransportStatus` of `ERROR_OCCURRED` is a failed load; after it
+    /// has, it is noise from a device that recovered.
+    saw_playing: bool,
 }
 
 /// How long an optimistic state outranks the renderer's own report. Long
@@ -565,32 +1111,71 @@ fn parse_hms(text: &str) -> Option<f64> {
     Some(secs)
 }
 
+/// The `Seek` units worth trying, in order of preference.
+///
+/// **`REL_TIME` is not universal.** It is what the measured television takes
+/// and what most renderers declare, but `ABS_TIME` is the only mode some
+/// devices implement — and a renderer that declares both may still refuse one
+/// of them, which is why this is a runtime ladder rather than a reading of the
+/// SCPD's `A_ARG_TYPE_SeekMode` list. The byte modes are deliberately absent:
+/// `X_DLNA_REL_BYTE` would need an offset we cannot compute from a timestamp
+/// without the container index the television is holding.
+const SEEK_UNITS: [&str; 2] = ["REL_TIME", "ABS_TIME"];
+
+/// Seek, learning which unit this device speaks and then keeping to it.
+///
+/// The cost of the ladder is one extra round trip on the first seek of a
+/// session, and only on a device that refuses the preferred unit; the cost of
+/// not having it is a seekbar that silently does nothing on every renderer
+/// outside the one this was measured against.
+async fn seek_to(
+    client: &reqwest::Client,
+    control: &str,
+    state: &Arc<Mutex<DlnaState>>,
+    target: f64,
+) -> Result<(), String> {
+    let known = state.lock().unwrap_or_else(|p| p.into_inner()).seek_unit;
+    let units: Vec<&'static str> = match known {
+        Some(u) => vec![u],
+        None => SEEK_UNITS.to_vec(),
+    };
+    let mut last = None;
+    for unit in units {
+        let args = format!("<Unit>{unit}</Unit><Target>{}</Target>", hms(target));
+        match soap(client, control, AVTRANSPORT, "Seek", &args).await {
+            Ok(_) => {
+                set_state(state, |s| s.seek_unit = Some(unit));
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("[dlna] {e}");
+                last = Some(e);
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| "Seek: no unit accepted".into()))
+}
+
 /// Collect renderers once. Devices that cannot be pushed to are dropped here
 /// rather than shown and refused later.
 async fn collect_renderers(timeout: Duration) -> Vec<DlnaDeviceInfo> {
-    let client = reqwest::Client::new();
+    let client = http();
     let mut out = Vec::new();
     for location in ssdp_search(timeout).await {
-        let Some(r) = describe(&client, &location).await else {
+        let Some(r) = describe(client, &location).await else {
             continue;
         };
         let Some(control) = r.avtransport.clone() else {
             continue;
         };
         let mimes = match &r.connection_manager {
-            Some(cm) => protocol_info(&client, cm)
+            Some(cm) => protocol_info(client, cm)
                 .await
                 .map(|sink| summarize_sink(&sink).keys().cloned().collect())
                 .unwrap_or_default(),
             None => Vec::new(),
         };
-        let ip = location
-            .split("://")
-            .nth(1)
-            .and_then(|rest| rest.split('/').next())
-            .and_then(|hp| hp.split(':').next())
-            .unwrap_or("")
-            .to_string();
+        let ip = host_of(&location);
         out.push(DlnaDeviceInfo {
             id: if r.udn.is_empty() { location.clone() } else { r.udn.clone() },
             name: r.friendly_name,
@@ -682,7 +1267,7 @@ pub fn dlna_connect(
     // mean running a callback HTTP server and renewing subscriptions, for a
     // position that arrives once a second either way.
     let poll = tauri::async_runtime::spawn(async move {
-        let client = reqwest::Client::new();
+        let client = http();
         loop {
             tokio::time::sleep(Duration::from_millis(900)).await;
             let loaded = {
@@ -692,12 +1277,33 @@ pub fn dlna_connect(
             if !loaded {
                 continue;
             }
-            if let Ok(info) = soap(&client, &control, AVTRANSPORT, "GetTransportInfo", "").await {
+            if let Ok(info) = soap(client, &control, AVTRANSPORT, "GetTransportInfo", "").await {
                 if crate::cast::cast_debug() {
                     eprintln!("[dlna] GetTransportInfo -> {}", info.replace('\n', " "));
                 }
                 let transport = tag(&info, "CurrentTransportState").unwrap_or("").to_string();
+                // **A renderer that failed says so, and we were not listening.**
+                // `CurrentTransportStatus` goes to `ERROR_OCCURRED` when the
+                // device gave up on the stream — which it reports in the same
+                // breath as a transport state of `STOPPED` or even `PLAYING`,
+                // so the state alone cannot tell a failure from somebody
+                // pressing stop. Read before the first `PLAYING` it is a load
+                // that died, and saying so beats waiting out the frontend's
+                // "fetched and never played" timeout; read afterwards it is a
+                // device that stumbled and recovered, and acting on it would
+                // tear down a session that is still watchable.
+                let failed = tag(&info, "CurrentTransportStatus")
+                    .is_some_and(|s| s.eq_ignore_ascii_case("ERROR_OCCURRED"));
                 set_state(&poll_state, |s| {
+                    if transport == "PLAYING" {
+                        s.saw_playing = true;
+                    }
+                    if failed && !s.saw_playing {
+                        s.state = "error".into();
+                        s.error = Some("load_failed".into());
+                        s.settle_until = None;
+                        return;
+                    }
                     if s.settle_until.map(|t| t > std::time::Instant::now()).unwrap_or(false) {
                         return;
                     }
@@ -721,8 +1327,15 @@ pub fn dlna_connect(
                     };
                 });
             }
-            if let Ok(pos) = soap(&client, &control, AVTRANSPORT, "GetPositionInfo", "").await {
-                let time = tag(&pos, "RelTime").and_then(parse_hms);
+            if let Ok(pos) = soap(client, &control, AVTRANSPORT, "GetPositionInfo", "").await {
+                // **`RelTime` is optional and plenty of renderers answer it with
+                // the literal `NOT_IMPLEMENTED`**, which parses as nothing and
+                // leaves the seekbar frozen at zero for the whole film. `AbsTime`
+                // carries the same number on a single-track stream, so it is the
+                // fallback rather than a second feature.
+                let time = tag(&pos, "RelTime")
+                    .and_then(parse_hms)
+                    .or_else(|| tag(&pos, "AbsTime").and_then(parse_hms));
                 let dur = tag(&pos, "TrackDuration").and_then(parse_hms);
                 set_state(&poll_state, |s| {
                     if let Some(t) = time {
@@ -765,7 +1378,7 @@ pub fn dlna_connect(
                 // fixed` does. Leaving a stale value there would show a slider
                 // that moves and changes nothing.
                 let args = "<Channel>Master</Channel>";
-                let reading = match soap(&client, rc, RENDERING_CONTROL, "GetVolume", args).await {
+                let reading = match soap(client, rc, RENDERING_CONTROL, "GetVolume", args).await {
                     Ok(v) => {
                         if crate::cast::cast_debug() {
                             eprintln!("[dlna] GetVolume -> {}", v.replace('\n', " "));
@@ -817,9 +1430,10 @@ pub async fn dlna_load(
     title: Option<String>,
     hidden: bool,
 ) -> Result<(), String> {
-    let ip = {
+    let (ip, advertised) = {
         let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
-        inner.session.as_ref().ok_or("not connected")?.device.ip.clone()
+        let device = &inner.session.as_ref().ok_or("not connected")?.device;
+        (device.ip.clone(), device.mimes.clone())
     };
     let file = std::path::PathBuf::from(&path);
     if !file.is_file() {
@@ -827,10 +1441,17 @@ pub async fn dlna_load(
     }
     let ip: std::net::IpAddr = ip.parse().map_err(|_| "bad device address".to_string())?;
     let url = crate::cast::serve_one_file(&cast_service, ip, &file, hidden).await?;
-    let mime = crate::cast::cast_mime_for(&file);
+    // `cast_mime_for` answers for the Cast ladder, where anything but MP4 and
+    // WebM is prepared first — so it says `application/octet-stream` for the
+    // containers only this transport ever carries. Ask the renderer instead.
+    let mime = negotiate_mime(
+        &advertised,
+        &extension_of(&path),
+        crate::cast::cast_mime_for(&file),
+    );
     let size = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
     let duration = media_duration(&file);
-    load_url(&service, url, mime.to_string(), size, duration, position, title).await
+    load_url(&service, url, mime, size, duration, position, title).await
 }
 
 /// The same load for a URL somebody else registered — the torrent stream, where
@@ -859,11 +1480,18 @@ async fn load_url(
     position: f64,
     title: Option<String>,
 ) -> Result<(), String> {
-    let (control, state) = {
+    let (control, state, advertised) = {
         let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
         let session = inner.session.as_ref().ok_or("not connected")?;
-        (session.device.control_url.clone(), session.state.clone())
+        (
+            session.device.control_url.clone(),
+            session.state.clone(),
+            session.device.mimes.clone(),
+        )
     };
+    // The torrent path arrives with a MIME the frontend picked from its own
+    // table; the renderer's list still gets the last word on how to spell it.
+    let mime = negotiate_mime(&advertised, &extension_of(&url), &mime);
     set_state(&state, |s| {
         s.state = "loading".into();
         s.error = None;
@@ -874,20 +1502,24 @@ async fn load_url(
         }
     });
 
-    let client = reqwest::Client::new();
+    let client = http();
     // **Stop before Set, always.** A renderer that is already playing refuses
     // a new URI outright — measured: UPnP **701 "Transition not available"** —
     // and it will be playing more often than not: the previous session, a
     // session this player did not end cleanly, or another sender on the same
     // television. The Stop is best-effort by design; on an idle renderer it is
     // a no-op, and its failure says nothing about whether the load will work.
-    let _ = soap(&client, &control, AVTRANSPORT, "Stop", "").await;
+    let _ = soap(client, &control, AVTRANSPORT, "Stop", "").await;
     let name = title.unwrap_or_else(|| "Frame Player".into());
+    // The URL is percent-encoded by the server that issued it, so nothing in it
+    // needs escaping today; escaping anyway is what keeps that a property of
+    // this call rather than of whoever registered the file.
     let args = format!(
-        "<CurrentURI>{url}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>",
+        "<CurrentURI>{}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>",
+        escape_text(&url),
         didl(&url, &mime, &name, size, duration)
     );
-    if let Err(e) = soap(&client, &control, AVTRANSPORT, "SetAVTransportURI", &args).await {
+    if let Err(e) = soap(client, &control, AVTRANSPORT, "SetAVTransportURI", &args).await {
         eprintln!("[dlna] {e}");
         set_state(&state, |s| {
             s.state = "error".into();
@@ -920,7 +1552,7 @@ async fn load_url(
     let mut refusal: Option<String> = None;
     let deadline = std::time::Instant::now() + PLAY_BUDGET;
     loop {
-        match soap(&client, &control, AVTRANSPORT, "Play", "<Speed>1</Speed>").await {
+        match soap(client, &control, AVTRANSPORT, "Play", "<Speed>1</Speed>").await {
             Ok(_) => {
                 playing = true;
                 break;
@@ -934,7 +1566,7 @@ async fn load_url(
                 refusal = Some(e);
             }
         }
-        if let Ok(info) = soap(&client, &control, AVTRANSPORT, "GetTransportInfo", "").await {
+        if let Ok(info) = soap(client, &control, AVTRANSPORT, "GetTransportInfo", "").await {
             match tag(&info, "CurrentTransportState").unwrap_or("") {
                 "PLAYING" => {
                     playing = true;
@@ -942,6 +1574,14 @@ async fn load_url(
                 }
                 "TRANSITIONING" => starting = true,
                 _ => {}
+            }
+            // The device saying outright that it could not take the stream —
+            // no reason to spend the rest of the budget asking again.
+            if tag(&info, "CurrentTransportStatus")
+                .is_some_and(|s| s.eq_ignore_ascii_case("ERROR_OCCURRED"))
+            {
+                refusal = Some("renderer reported ERROR_OCCURRED".into());
+                break;
             }
         }
         if std::time::Instant::now() >= deadline {
@@ -957,16 +1597,19 @@ async fn load_url(
         return Err(refusal.unwrap_or_else(|| "renderer never accepted Play".into()));
     }
     if position > 1.0 {
-        let args = format!("<Unit>REL_TIME</Unit><Target>{}</Target>", hms(position));
         // Best-effort, and worth saying why it may do nothing: a renderer that
         // is only `TRANSITIONING` has not read the container's index yet, so it
         // has no way to turn a time into an offset and answers accordingly.
         // Losing the resume point is a far smaller failure than refusing the
         // load over it, which is why this stays a nudge — but a silent one is
         // indistinguishable from a television that ignores seeks altogether.
-        if let Err(e) = soap(&client, &control, AVTRANSPORT, "Seek", &args).await {
-            eprintln!("[dlna] {e}");
-        }
+        //
+        // Deliberately *not* where the seek unit gets learned: a refusal here
+        // usually means "too early", not "wrong unit", and recording ABS_TIME
+        // from it would pin the whole session to the fallback. `seek_to` only
+        // remembers what succeeded, so a failure at this point leaves the
+        // ladder untouched for the viewer's first real seek.
+        let _ = seek_to(client, &control, &state, position).await;
     }
     // **Not "playing" — "buffering".** A renderer accepting `Play` says nothing
     // about it managing to decode what it fetched, and claiming playback here
@@ -1029,7 +1672,7 @@ pub async fn dlna_control(
             session.state.clone(),
         )
     };
-    let client = reqwest::Client::new();
+    let client = http();
     match action.as_str() {
         // **The optimism has to be armed before the round trip, not after it.**
         // A SOAP call to the television takes a few hundred milliseconds, and
@@ -1043,9 +1686,9 @@ pub async fn dlna_control(
             let playing = action == "play";
             let previous = arm(&state, if playing { "playing" } else { "paused" });
             let call = if playing {
-                soap(&client, &control, AVTRANSPORT, "Play", "<Speed>1</Speed>").await
+                soap(client, &control, AVTRANSPORT, "Play", "<Speed>1</Speed>").await
             } else {
-                soap(&client, &control, AVTRANSPORT, "Pause", "").await
+                soap(client, &control, AVTRANSPORT, "Pause", "").await
             };
             if let Err(e) = call {
                 set_state(&state, |s| {
@@ -1069,7 +1712,6 @@ pub async fn dlna_control(
                 s.reported_at = Some(std::time::Instant::now());
                 s.settle_until = Some(std::time::Instant::now() + SETTLE);
             });
-            let args = format!("<Unit>REL_TIME</Unit><Target>{}</Target>", hms(target));
             if was_paused {
                 // **This renderer refuses to seek while paused** — measured,
                 // UPnP 501 "Action Failed" — so the standard controller remedy
@@ -1081,11 +1723,11 @@ pub async fn dlna_control(
                 // alternative is a seekbar that refuses to work whenever the
                 // film is paused, which is when a viewer most often reaches for
                 // it.
-                let _ = soap(&client, &control, AVTRANSPORT, "Play", "<Speed>1</Speed>").await;
+                let _ = soap(client, &control, AVTRANSPORT, "Play", "<Speed>1</Speed>").await;
                 tokio::time::sleep(Duration::from_millis(150)).await;
-                let seeked = soap(&client, &control, AVTRANSPORT, "Seek", &args).await;
+                let seeked = seek_to(client, &control, &state, target).await;
                 tokio::time::sleep(Duration::from_millis(150)).await;
-                let _ = soap(&client, &control, AVTRANSPORT, "Pause", "").await;
+                let _ = soap(client, &control, AVTRANSPORT, "Pause", "").await;
                 set_state(&state, |s| {
                     s.state = "paused".into();
                     s.settle_until = Some(std::time::Instant::now() + SETTLE);
@@ -1095,14 +1737,14 @@ pub async fn dlna_control(
                 });
                 seeked?;
             } else {
-                soap(&client, &control, AVTRANSPORT, "Seek", &args).await?;
+                seek_to(client, &control, &state, target).await?;
             }
         }
         "volume" => {
             let rc = rendering.ok_or("device has no volume control")?;
             let level = (value.unwrap_or(0.0).clamp(0.0, 1.0) * 100.0).round() as u32;
             let args = format!("<Channel>Master</Channel><DesiredVolume>{level}</DesiredVolume>");
-            if let Err(e) = soap(&client, &rc, RENDERING_CONTROL, "SetVolume", &args).await {
+            if let Err(e) = soap(client, &rc, RENDERING_CONTROL, "SetVolume", &args).await {
                 // Refused (606 on the measured television): stop claiming the control exists,
                 // so the slider disables itself on the next poll instead of
                 // moving without effect.
@@ -1118,7 +1760,7 @@ pub async fn dlna_control(
                 "<Channel>Master</Channel><DesiredMute>{}</DesiredMute>",
                 if on { 1 } else { 0 }
             );
-            soap(&client, &rc, RENDERING_CONTROL, "SetMute", &args).await?;
+            soap(client, &rc, RENDERING_CONTROL, "SetMute", &args).await?;
         }
         _ => return Err(format!("unknown action {action}")),
     }
@@ -1148,8 +1790,8 @@ pub async fn dlna_disconnect(
         let s = session.state.lock().unwrap_or_else(|p| p.into_inner());
         s.time
     };
-    let client = reqwest::Client::new();
-    let _ = soap(&client, &session.device.control_url, AVTRANSPORT, "Stop", "").await;
+    let client = http();
+    let _ = soap(client, &session.device.control_url, AVTRANSPORT, "Stop", "").await;
     Ok(last)
 }
 
@@ -1339,8 +1981,8 @@ pub async fn cast_diagnose(
         return out;
     };
 
-    let client = reqwest::Client::new();
-    let Some(renderer) = describe(&client, &location).await else {
+    let client = http();
+    let Some(renderer) = describe(client, &location).await else {
         out.push(line("dlna_description", "fail", location.clone()));
         return out;
     };
@@ -1351,7 +1993,7 @@ pub async fn cast_diagnose(
     }
 
     if let Some(cm) = &renderer.connection_manager {
-        match protocol_info(&client, cm).await {
+        match protocol_info(client, cm).await {
             Some(sink) => {
                 let mimes = summarize_sink(&sink);
                 let video: Vec<&String> = mimes.keys().filter(|m| m.starts_with("video/")).collect();
@@ -1389,7 +2031,7 @@ pub async fn cast_diagnose(
     }
     if let Some(rc) = &renderer.rendering_control {
         let args = "<Channel>Master</Channel>";
-        match soap(&client, rc, RENDERING_CONTROL, "GetVolume", args).await {
+        match soap(client, rc, RENDERING_CONTROL, "GetVolume", args).await {
             Ok(v) => {
                 let level = tag(&v, "CurrentVolume").unwrap_or("?").to_string();
                 out.push(line(

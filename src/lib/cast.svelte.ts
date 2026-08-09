@@ -338,33 +338,59 @@ export function setDeviceTransport(device: TvDevice, transport: Transport | 'aut
   cast.profileRevision++;
 }
 
-/// Container MIME as a DLNA renderer's Sink list spells it. Only what the
-/// prepare ladder already knows about; anything unlisted is not offered to
-/// DLNA, which is the safe direction — the Cast rung still applies.
+/// Container MIME as a DLNA renderer's Sink list spells it. Anything unlisted is
+/// not offered to DLNA, which is the safe direction — the Cast rung still
+/// applies.
+///
+/// **This table decides whether a device is offered; `mime_candidates` in
+/// `src-tauri/src/dlna.rs` decides what is then put on the wire. Keep the two in
+/// step** — a spelling missing here is a television that quietly reads as
+/// incapable, which is the failure that never produces an error to look at. The
+/// entries are per-vendor variants of one container, not different formats:
+/// Matroska is advertised as three names in the field and MPEG-TS as four.
 const DLNA_MIME: Record<string, string[]> = {
-  mkv: ['video/x-matroska'],
+  mkv: ['video/x-matroska', 'video/x-mkv', 'video/mkv'],
   mp4: ['video/mp4'],
   m4v: ['video/mp4'],
   mov: ['video/quicktime', 'video/mp4'],
-  avi: ['video/avi', 'video/x-msvideo', 'video/x-ms-avi'],
-  ts: ['video/mp2t', 'video/mp2ts', 'video/vnd.dlna.mpeg-tts'],
-  m2ts: ['video/mp2t', 'video/mp2ts', 'video/vnd.dlna.mpeg-tts'],
+  avi: ['video/avi', 'video/x-msvideo', 'video/x-ms-avi', 'video/msvideo'],
+  ts: ['video/mp2t', 'video/mp2ts', 'video/vnd.dlna.mpeg-tts', 'video/x-mpegts'],
+  m2ts: ['video/mp2t', 'video/mp2ts', 'video/vnd.dlna.mpeg-tts', 'video/x-mpegts'],
+  mts: ['video/mp2t', 'video/mp2ts', 'video/vnd.dlna.mpeg-tts', 'video/x-mpegts'],
   mpg: ['video/mpeg'],
   mpeg: ['video/mpeg'],
+  vob: ['video/mpeg'],
   webm: ['video/webm'],
   wmv: ['video/x-ms-wmv'],
+  asf: ['video/x-ms-asf'],
+  flv: ['video/x-flv'],
+  '3gp': ['video/3gpp'],
+  ogv: ['video/ogg'],
 };
 
 function extensionOf(path: string): string {
-  return path.split(/[?#]/)[0].split('.').pop()?.toLowerCase() ?? '';
+  // The basename first, or a dotted *directory* becomes the extension.
+  const name = path.split(/[?#]/)[0].split(/[/\\]/).pop() ?? '';
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
 /// Whether this renderer says it takes the open file as it is.
+///
+/// Matched case-insensitively: a MIME type is case-insensitive by RFC and at
+/// least the negotiation on the Rust side already treats it that way, so a
+/// device that shouts its Sink list must not read as one that cannot play.
 export function dlnaTakesFile(device: TvDevice, path: string | null): boolean {
   if (!device.dlna || !path) return false;
-  const wanted = DLNA_MIME[extensionOf(path)];
-  if (!wanted) return false;
-  return wanted.some((m) => device.dlna!.mimes.includes(m));
+  return mimeAdvertised(device.dlna.mimes, extensionOf(path)) !== null;
+}
+
+/// The renderer's own spelling for this container, or `null` if it lists none.
+function mimeAdvertised(advertised: string[], ext: string): string | null {
+  const wanted = DLNA_MIME[ext];
+  if (!wanted) return null;
+  const have = advertised.map((m) => m.toLowerCase());
+  return wanted.find((m) => have.includes(m)) ?? null;
 }
 
 export function deviceIsVideoCapable(device: TvDevice): boolean {
@@ -447,7 +473,7 @@ export function deviceSummary(device: TvDevice): string {
   // row must not offer the prepare its verdict would otherwise claim.
   if (cast.plan?.streaming) {
     const ext = cast.plan.container;
-    const dlnaTakes = device.dlna?.mimes.some((m) => (DLNA_MIME[ext] ?? []).includes(m)) ?? false;
+    const dlnaTakes = !!device.dlna && mimeAdvertised(device.dlna.mimes, ext) !== null;
     // A Chromecast can stream one too, but only a file that needs no repacking
     // — the verdict is already computed for this file, so no second probe.
     const castTakes = !!device.cast && cast.plan.verdict.kind === 'direct';
@@ -963,8 +989,8 @@ async function castTorrentStream(
   // MKV. A Chromecast takes it only if the file needs no repacking at all,
   // because there is nothing to repack: half a film remuxed is half a film.
   const renderer = device.dlna;
-  const dlnaTakes =
-    !!renderer && (DLNA_MIME[stream.ext] ?? []).some((m) => renderer.mimes.includes(m));
+  const rendererMime = renderer ? mimeAdvertised(renderer.mimes, stream.ext) : null;
+  const dlnaTakes = rendererMime !== null;
   const castTakes =
     !dlnaTakes && !!device.cast && (await castVerdict(stream.name)).kind === 'direct';
   if (!dlnaTakes && !castTakes) {
@@ -1044,7 +1070,10 @@ async function castTorrentStream(
         position: player.timePos,
         title: hidden ? null : player.displayTitle,
         duration: player.duration,
-        mime: DLNA_MIME[stream.ext]?.[0] ?? 'video/mp4',
+        // The renderer's own spelling, which is why `dlnaTakes` is true at all.
+        // Rust negotiates again against the same Sink list, so this is the
+        // agreed answer rather than a guess it has to correct.
+        mime: rendererMime ?? 'video/mp4',
         // The renderer decides seekability from the metadata before it fetches
         // a byte, and size is one of the three things it reads.
         size: fileSize,

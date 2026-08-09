@@ -32,7 +32,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-use crate::dlna::{absolute, header, ssdp_sockets, tag, SSDP_ADDR};
+use crate::dlna::{absolute, chunks, header, http, ssdp_sockets, tag, SSDP_ADDR};
 
 /// An Internet Gateway Device announces itself under one of these, and the
 /// connection service that owns port mappings is one of the two below. Both
@@ -72,7 +72,7 @@ pub async fn check(port: u16) -> PortStatus {
             ..Default::default()
         };
     }
-    let client = reqwest::Client::new();
+    let client = http();
     let mut last_error = None;
 
     let gateways = search().await;
@@ -83,15 +83,22 @@ pub async fn check(port: u16) -> PortStatus {
     eprintln!("[upnp] {} gateway(s) answered for port {port}", gateways.len());
 
     for location in gateways {
-        let Some(xml) = fetch(&client, &location).await else {
+        let Some(xml) = fetch(client, &location).await else {
             continue;
         };
-        // Services are found by splitting on `<service>` rather than parsed
+        // Services are found by scanning for `<service>` rather than parsed
         // properly, exactly as the renderer description is read in dlna.rs: the
         // one thing wanted out of this document is a control URL next to a
         // service type, and a real XML parser for that is a dependency to carry
         // for one field.
-        for chunk in xml.split("<service>").skip(1) {
+        //
+        // **The whole document is the right scope here, and it is the wrong one
+        // there.** An InternetGatewayDevice keeps the service that owns port
+        // mappings two levels down — root → WANDevice → WANConnectionDevice —
+        // so narrowing to the root device's own `serviceList`, which is what
+        // `renderer_device` does for a MediaRenderer, would find nothing at all.
+        // The two modules read the same shape of document for opposite reasons.
+        for chunk in chunks(&xml, "service") {
             let Some(kind) = tag(chunk, "serviceType") else {
                 continue;
             };
@@ -102,7 +109,7 @@ pub async fn check(port: u16) -> PortStatus {
                 continue;
             };
             let control = absolute(&location, control);
-            match mapping(&client, &control, kind, port).await {
+            match mapping(client, &control, kind, port).await {
                 Ok(Some(client_addr)) => {
                     return PortStatus {
                         state: "mapped".into(),
