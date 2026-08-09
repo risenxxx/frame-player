@@ -18,6 +18,7 @@
 
   import { flipAxis, shiftAxis } from '$lib/floating';
   import { t } from '$lib/i18n.svelte';
+  import { wire } from '$lib/sync/wire.svelte';
   import { hint } from '$lib/keys.svelte';
   import { showOsd } from '$lib/osd.svelte';
   import { IS_MAC } from '$lib/platform';
@@ -47,6 +48,7 @@
       backToStart: () => void;
       toggleInfo: () => void;
       openSettings: () => void;
+      openRoom: () => void;
       toggleFullscreen: () => void;
       cycleLoop: () => void;
       cycleAbLoop: () => void;
@@ -253,6 +255,14 @@
   </button>
   {@render submenuHead('window', t('ctx.window'), false)}
   <div class="menu-sep"></div>
+  <!-- Top level rather than under a submenu: it has no group (there is one
+       thing you do with it) and, once a room is on, it is the only way back to
+       the panel that says who is in it. `active` for the same reason the loop
+       and mini rows carry it — a menu that shows state is how you find out you
+       are still in a room. -->
+  <button class="menu-item" class:active={wire.on} onclick={() => { close(); actions.openRoom(); }}>
+    {t('sync.menu')}
+  </button>
   <button class="menu-item" onclick={() => { close(); actions.openSettings(); }}>
     {t('ctx.settings')}
   </button>

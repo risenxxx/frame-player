@@ -17,5 +17,34 @@
     <array>
         <string>_googlecast._tcp</string>
     </array>
+
+    <!--
+      `frameplayer://join/<code>` — an invitation to a shared viewing.
+
+      Declared here by hand rather than left to the deep-link plugin's own
+      build step, which writes `CFBundleURLTypes` only for the *mobile* half of
+      its configuration; the desktop half is the bundler's, and this file is
+      already the place this project states what it wants merged into the
+      bundle's Info.plist. Explicit beats a behaviour that would have to be
+      re-verified after every toolchain bump, and the failure it prevents is a
+      silent one: an unregistered scheme makes a link do nothing at all.
+
+      Windows needs nothing here — there the scheme is a registry key the
+      plugin writes at runtime (`register_all`), which is why that call is
+      unconditional on startup.
+    -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>app.frameplayer</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>frameplayer</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

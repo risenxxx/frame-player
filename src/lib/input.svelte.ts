@@ -32,6 +32,7 @@ import { openFileDialog, openLinkDialog } from './open.svelte';
 import { closeTopmost, dismissTopmostOnClick, overlays, toggleInfo } from './overlays.svelte';
 import {
   advance,
+  changeSpeed,
   nudgeVolume,
   openEntry,
   playback,
@@ -42,14 +43,7 @@ import {
   toggleMute,
   togglePause,
 } from './playback.svelte';
-import {
-  DELAY_STEP,
-  changeSpeed,
-  clearAbLoop,
-  cycleAbLoop,
-  cycleLoop,
-  player,
-} from './player.svelte';
+import { DELAY_STEP, clearAbLoop, cycleAbLoop, cycleLoop, player } from './player.svelte';
 import { copyScreenshot, saveScreenshot } from './screenshot';
 import { scrubBy } from './seek.svelte';
 import { stepBy } from './step-engine.svelte';

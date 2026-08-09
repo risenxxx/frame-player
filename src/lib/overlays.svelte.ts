@@ -30,6 +30,10 @@ class Overlays {
   ctxAt = $state<{ x: number; y: number } | null>(null);
   settings = $state(false);
   info = $state(false);
+  /// Watching together: getting into a room, and the room you are in. A sheet
+  /// like the settings rather than an OSC menu, because it is read rather than
+  /// pointed at — and because it holds a text field.
+  room = $state(false);
   /// The third-party notices. Opened from the settings footer, so it is a layer
   /// *above* the sheet rather than a replacement for it — Escape has to give the
   /// settings back rather than close everything.
@@ -41,7 +45,7 @@ class Overlays {
   trackMenu = $derived(this.menu === 'audio' || this.menu === 'sub' ? this.menu : null);
 
   /// Something is over the video, so the chrome must not fade out from under it.
-  any = $derived(this.menu !== null || this.settings || this.licenses);
+  any = $derived(this.menu !== null || this.settings || this.licenses || this.room);
 }
 
 export const overlays = new Overlays();
@@ -55,7 +59,7 @@ export const overlays = new Overlays();
 export function initOverlays() {
   $effect(() => {
     chrome.overlayOpen = overlays.any;
-    chrome.sheetOpen = overlays.settings || overlays.licenses;
+    chrome.sheetOpen = overlays.settings || overlays.licenses || overlays.room;
   });
 }
 
@@ -105,6 +109,10 @@ export function closeTopmost() {
   }
   if (overlays.info) {
     overlays.info = false;
+    return;
+  }
+  if (overlays.room) {
+    overlays.room = false;
     return;
   }
   if (overlays.licenses) {

@@ -1,0 +1,51 @@
+# The watch-together wire, as a field list — the one contract two languages have
+# to keep.
+#
+# `server/protocol.go` and `src/lib/sync/protocol.ts` are the same messages
+# written twice, and a rename on one side costs nothing anywhere: JSON decoding
+# does not complain about a field it did not find, it leaves a zero. What that
+# buys you is a room where somebody presses pause and nothing happens, with no
+# error on either machine — the worst shape a bug can have, because both halves
+# look healthy.
+#
+# So both test suites read THIS file:
+#
+#   - Go marshals a fully populated value of each message and compares the keys
+#     it actually produced against the line below.
+#   - TypeScript compares a `satisfies` -checked list of field names, which the
+#     compiler already forces to match the interface, against the same line.
+#
+# A field added, removed or renamed on either side therefore turns that side red
+# until this file is updated — and updating it turns the *other* side red until
+# it agrees. That is the whole mechanism; there is nothing else keeping the two
+# in step.
+#
+# Format: <message> TAB <field,field,…>. Order does not matter and is compared
+# as a set. Blank lines and `#` lines are ignored.
+#
+# Note that `server:timeline` is a Timeline *flattened* next to `t` rather than
+# nested under a key — Go embeds the struct, TypeScript spreads it. That is
+# deliberate (a receiver should not have to reach through a wrapper for the
+# thing every message is about) and it is exactly the kind of decision that
+# would otherwise be re-litigated differently on each side.
+
+# The shared timeline. `at`, `rev` and `by` are the relay's to fill in.
+timeline	content,paused,position,speed,at,rev,by
+
+# One participant, as everyone else sees them.
+member	id,name,ready
+
+# client → relay
+client:hello	t,ver,room,name
+client:timeline	t,timeline
+client:ready	t,ready,reason
+client:mode	t,hostOnly
+client:ping	t,c
+client:bye	t
+
+# relay → client
+server:welcome	t,ver,room,me,host,hostOnly,members,timeline,waiting,now
+server:timeline	t,content,paused,position,speed,at,rev,by
+server:members	t,members,host,hostOnly,waiting
+server:pong	t,c,s
+server:error	t,code,message

@@ -54,6 +54,7 @@
   import { castCacheCapGb, setCastCacheCapGb } from '$lib/cast.svelte';
   import { showOsd } from '$lib/osd.svelte';
   import { syncMenuChecks } from '$lib/window-prefs.svelte';
+  import { DEFAULT_RELAY, relayUrl, setRelayUrl } from '$lib/sync/wire.svelte';
   import { fmtSize } from '$lib/units';
 
   interface Props {
@@ -390,6 +391,20 @@
     { id: 'keys', label: t('set.tab_keys') },
   ]);
 
+  // ---- Watching together ----
+  // Written on `change` rather than on every keystroke: a half-typed host is a
+  // host, and storing it means the room dialog would try to open it if the
+  // viewer left the sheet without blurring the field.
+  let relayVal = $state(relayUrl());
+
+  function saveRelay(next: string) {
+    setRelayUrl(next);
+    // Read back rather than kept: `setRelayUrl` trims and drops a trailing
+    // slash, and an empty entry falls back to the default — so the field has to
+    // show what will actually be used, not what was typed.
+    relayVal = relayUrl();
+  }
+
   // ---- The TV (casting) tab ----
   let castCapVal = $state(castCacheCapGb());
   let castCacheBytes = $state<number | null>(null);
@@ -716,6 +731,35 @@
           English
         </button>
       </div>
+    </div>
+
+    <!-- Watching together needs a server both ends agree on, and this is where
+         it lives rather than in the room dialog: practically nobody runs their
+         own, so a field on the way into every room was asking a question with
+         one answer. The room dialog points here when the address turns out to
+         be wrong, which is the only moment it matters.
+
+         Placed with the language rather than inside the history block below,
+         even though "which server learns what I watch" is a fair privacy
+         question: history, excluded folders and clearing them are one story
+         read top to bottom, and a text field in the middle of it breaks the
+         run.
+
+         Empty means the default — `setRelayUrl` removes the key rather than
+         storing a blank — so the placeholder is the address itself and
+         clearing the field restores it instead of turning the feature off. -->
+    <div class="setting">
+      <div class="setting-label">{t('sync.relay_label')}</div>
+      <div class="setting-hint">{t('sync.relay_hint')}</div>
+      <input
+        class="link-input"
+        value={relayVal}
+        placeholder={DEFAULT_RELAY}
+        spellcheck="false"
+        autocapitalize="off"
+        aria-label={t('sync.relay_label')}
+        onchange={(e) => saveRelay(e.currentTarget.value)}
+      />
     </div>
 
     <div class="setting">

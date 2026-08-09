@@ -28,8 +28,25 @@
  * the import graph (it is imported here, never the other way round; going the
  * other way is a cycle through `step-engine`).
  *
- * Dependency direction, as everywhere: this reads `player` and `cast`, and
- * neither of them may read it.
+ * **The same verbs are where a shared room is told what happened**, and that is
+ * the whole of "watching together picks up new features by design". A verb is
+ * already the mandated route for a button, a menu row, a hotkey and a gesture —
+ * that is why it exists — so publishing from here means a control added next
+ * year is shared without anybody remembering to share it. What guards the
+ * *other* direction, an action that must never leave this machine, is
+ * `SYNC_BEHAVIOR` at the bottom: a `Record<ActionId, …>`, so a new action does
+ * not compile until somebody has said which kind it is. Exactly the device
+ * `CAST_BEHAVIOR` already is, for exactly the same failure — every casting bug
+ * this module exists for was an omission.
+ *
+ * Applying what *arrives* is deliberately not here. It goes to mpv directly,
+ * from `sync/apply.svelte.ts`, and it must: a remote timeline is not a viewer's
+ * gesture, so it may not raise an OSD, pause a drag, or be published back. Same
+ * distinction the player already draws between `applyProperty` sweeping a stale
+ * mirror and the `property` hook acting on a real event.
+ *
+ * Dependency direction, as everywhere: this reads `player`, `cast` and the sync
+ * *leaf*, and none of them may read it.
  */
 
 import { command } from 'tauri-plugin-libmpv-api';
@@ -45,12 +62,14 @@ import {
   castToggleMute,
   castTogglePause,
 } from './cast.svelte';
+import { publishState, wire } from './sync/wire.svelte';
 import { formatTime } from './format';
 import { t } from './i18n.svelte';
 import type { ActionId } from './keys.svelte';
 import { showOsd } from './osd.svelte';
 import {
   type Chapter,
+  changeSpeed as mpvChangeSpeed,
   chapterAt,
   chapterTitle,
   jumpChapter,
@@ -171,25 +190,51 @@ export const playback = new Playback();
 // ---- Verbs ------------------------------------------------------------------
 // Each of these is the whole of a decision that used to be made at every call
 // site. A caller says what the viewer asked for; who answers is not its
-// business.
+// business — and, when a room is watching, who else hears about it is not its
+// business either.
+
+/**
+ * Tell the room where this gesture put the film.
+ *
+ * Every caller passes what it *intends*, never what the mirrors currently say:
+ * an mpv command is asynchronous, so at the moment a verb runs `player.paused`
+ * and `player.timePos` still describe the state the gesture is about to leave.
+ * Publishing those would send the room the previous position — and, since the
+ * relay stamps whatever arrives, would then drag everybody back to it.
+ */
+function share(next: { paused?: boolean; position?: number; speed?: number }) {
+  if (!wire.on) return;
+  publishState(
+    next.paused ?? playback.paused,
+    clampPosition(next.position ?? playback.position),
+    next.speed ?? player.speed,
+  );
+}
+
+function clampPosition(pos: number): number {
+  const end = playback.duration;
+  return Math.max(0, end > 0 ? Math.min(end, pos) : pos);
+}
 
 export function togglePause() {
-  if (cast.remote) {
-    castTogglePause();
-    return;
-  }
-  void togglePlayback();
+  if (refusedByRoom()) return;
+  const paused = !playback.paused;
+  if (cast.remote) castTogglePause();
+  else void togglePlayback();
+  share({ paused });
 }
 
 /// Relative seek. `precise` is a local concept — it asks for an exact seek
 /// where the coarse step may land on a keyframe — and the television has no
 /// such distinction, so it is simply ignored there.
 export function seekBy(delta: number, precise = false) {
-  if (cast.remote) {
-    castSeekBy(delta);
-    return;
-  }
-  seekRelative(delta, precise);
+  if (refusedByRoom()) return;
+  if (cast.remote) castSeekBy(delta);
+  else seekRelative(delta, precise);
+  // The intended landing rather than the observed one: a coarse arrow may land
+  // on a keyframe up to a GOP away, and telling the room about *that* would
+  // make everyone else's position depend on this machine's codec.
+  share({ position: playback.position + delta });
 }
 
 /// A jump to a fraction of the file: the digit keys, Home and End. Local
@@ -199,16 +244,16 @@ export function seekBy(delta: number, precise = false) {
 /// End stops a few seconds short on the television rather than landing on the
 /// last frame, which a receiver reads as the file being over.
 export function seekFraction(percent: number) {
+  if (refusedByRoom()) return;
   if (!cast.remote) {
     seekPercent(percent);
+    share({ position: (playback.duration * Math.min(100, Math.max(0, percent))) / 100 });
     return;
   }
   const total = cast.duration;
-  if (percent >= 100) {
-    castSeek(Math.max(0, total - 5));
-    return;
-  }
-  castSeek((total * percent) / 100);
+  const target = percent >= 100 ? Math.max(0, total - 5) : (total * percent) / 100;
+  castSeek(target);
+  share({ position: target });
 }
 
 /// Go to a chapter by its entry in the list.
@@ -221,18 +266,24 @@ export function seekFraction(percent: number) {
 /// raised here because `seekChapter` raises its own and the two paths owe the
 /// viewer the same feedback.
 export function jumpToChapter(chapter: Chapter) {
+  if (refusedByRoom()) return;
   if (!cast.remote) {
     seekChapter(chapter.index);
-    return;
+  } else {
+    castSeek(chapter.time);
+    showOsd(chapterTitle(chapter), { sub: formatTime(chapter.time) });
   }
-  castSeek(chapter.time);
-  showOsd(chapterTitle(chapter), { sub: formatTime(chapter.time) });
+  // The chapter's timestamp, not its index. Ordered chapters (MKV) can put the
+  // content in another file entirely, so an index means something only to a
+  // player holding this exact release — and the room may not be.
+  share({ position: chapter.time });
 }
 
 /// Previous/next chapter, clamped at both ends: mpv's own `add chapter ±1`
 /// walks off into the neighbouring playlist entry, and "previous chapter"
 /// opening the previous episode is not what the key says.
 export function stepChapter(dir: 1 | -1) {
+  if (refusedByRoom()) return;
   if (!cast.remote) {
     jumpChapter(dir);
     return;
@@ -257,6 +308,7 @@ export function stepChapter(dir: 1 | -1) {
 /// three places (the buttons said `active`, the keys said `remote`), which is
 /// exactly the drift a verb exists to end.
 export function advance(dir: 1 | -1) {
+  if (refusedByRoom()) return;
   if (cast.active) {
     void castAdvance(dir);
     return;
@@ -266,6 +318,7 @@ export function advance(dir: 1 | -1) {
 
 /// Open a specific queue entry — the panel's rows, and Enter on the end screen.
 export function openEntry(entry: PlaylistEntry) {
+  if (refusedByRoom()) return;
   if (cast.active) {
     void castFollow(entry);
     return;
@@ -312,6 +365,25 @@ export function toggleMute() {
     return;
   }
   mpvToggleMute();
+}
+
+/**
+ * Playback speed — a verb rather than a straight call into `player` because it
+ * is one of the four things a room shares.
+ *
+ * The roadmap's rule is "sync the timeline, not the presentation", and speed is
+ * on the timeline side of that line: it decides where everybody will be in ten
+ * seconds. Volume, tracks and subtitle appearance are on the other.
+ *
+ * Note this deliberately publishes the speed the *viewer* asked for. Drift
+ * correction also writes mpv's `speed`, and it must not come through here —
+ * that is this machine catching up with the room, not a change to what the room
+ * is doing, and publishing it would have every peer chasing every other peer.
+ */
+export function changeSpeed(factor: number) {
+  if (refusedByRoom()) return;
+  const next = mpvChangeSpeed(factor);
+  share({ speed: next });
 }
 
 // ---- Hotkeys while a television owns playback -------------------------------
@@ -375,6 +447,76 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
   copy_frame: 'screenshot',
 };
 
+// ---- Hotkeys while a room is watching along ---------------------------------
+
+/**
+ * What every hotkey action means to a shared room.
+ *
+ * The same device as `CAST_BEHAVIOR`, and it is the answer to the request this
+ * feature was built under: that actions be picked up by a shared session **by
+ * design** rather than by somebody remembering. A `Record<ActionId, …>` makes a
+ * new action a compile error until it has been classified, and the verbs above
+ * make the classification true — `shared` needs no wiring here, because the verb
+ * that implements it has already told the room.
+ *
+ * - `'shared'` — it moves the timeline, and the verb publishes. Includes the
+ *   ones that move it by changing the *file*: `apply` publishes the new content
+ *   when it loads, so the queue keys need nothing of their own.
+ * - `'personal'` — it is about this machine. Volume, tracks, subtitle delays,
+ *   zoom, the window, saving a frame. Sharing any of them would be sharing the
+ *   presentation, which is precisely what the roadmap's rule says not to do:
+ *   *sync the timeline, not the presentation*.
+ * - `'solo'` — it would make the shared timeline mean two different things at
+ *   once, so it is refused out loud while a room is on. Only the A–B loop
+ *   qualifies: it holds playback inside a segment, which drift correction would
+ *   fight once a second for as long as the loop lasts.
+ *
+ * Frame stepping is deliberately `personal` rather than `solo`: it moves the
+ * position by a frame, which is an order of magnitude under the drift threshold,
+ * and it is done on a paused film that the room has paused too. Repeat mode is
+ * `personal` for a subtler reason — a viewer whose file loops while the room
+ * moves on ends up on different content, and that heals itself, because
+ * `apply` opens whatever the room is watching.
+ */
+const SYNC_BEHAVIOR: Record<ActionId, 'shared' | 'personal' | 'solo'> = {
+  pause: 'shared',
+  seek_back: 'shared',
+  seek_fwd: 'shared',
+  seek_back_precise: 'shared',
+  seek_fwd_precise: 'shared',
+  seek_back_10: 'shared',
+  seek_fwd_10: 'shared',
+  seek_start: 'shared',
+  seek_end: 'shared',
+  chapter_prev: 'shared',
+  chapter_next: 'shared',
+  playlist_prev: 'shared',
+  playlist_next: 'shared',
+  speed_down: 'shared',
+  speed_up: 'shared',
+  ab_loop: 'solo',
+  ab_clear: 'solo',
+  frame_prev: 'personal',
+  frame_next: 'personal',
+  loop: 'personal',
+  volume_up: 'personal',
+  volume_down: 'personal',
+  mute: 'personal',
+  audio_delay_down: 'personal',
+  audio_delay_up: 'personal',
+  sub_delay_down: 'personal',
+  sub_delay_up: 'personal',
+  fullscreen: 'personal',
+  mini: 'personal',
+  info: 'personal',
+  reset_zoom: 'personal',
+  open_file: 'personal',
+  open_link: 'personal',
+  screenshot: 'personal',
+  screenshot_subs: 'personal',
+  copy_frame: 'personal',
+};
+
 /**
  * Refuse an action the session cannot carry. Returns true when it was dealt
  * with here and the ordinary dispatch must not also run.
@@ -382,10 +524,34 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
  * Phrased as a capability check rather than as "are we casting", so a feature
  * that becomes available on some devices and not others — the volume already
  * is one — needs no new branch here.
+ *
+ * Two sessions can be running at once (a television *and* a room), so both
+ * tables are consulted. The casting one goes first because it is the one that
+ * would act on a player nobody is watching, which is the worse failure.
  */
 export function refusedBySession(id: ActionId): boolean {
   const how = CAST_BEHAVIOR[id];
-  if (how === 'local' || playback.can[how]) return false;
-  showOsd(t('cast.not_while_casting'));
+  if (how !== 'local' && !playback.can[how]) {
+    showOsd(t('cast.not_while_casting'));
+    return true;
+  }
+  if (wire.on && SYNC_BEHAVIOR[id] === 'solo') {
+    showOsd(t('sync.not_in_room'));
+    return true;
+  }
+  return false;
+}
+
+/**
+ * The viewer asked for something shared but the room has handed control to its
+ * host. Returns true when the gesture was refused and must not run locally.
+ *
+ * Checked at the *gesture*, not inside `share`: acting locally and then not
+ * telling anybody is the one outcome worse than refusing, because the viewer
+ * ends up somewhere else in the film with nothing on screen to say why.
+ */
+export function refusedByRoom(): boolean {
+  if (!wire.on || wire.mayDrive) return false;
+  showOsd(t('sync.host_only'));
   return true;
 }

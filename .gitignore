@@ -28,4 +28,13 @@ src-tauri/ffmpeg-macos/
 /test.mp4
 
 # Session handoff between machines: carries LAN details and personal file
-# paths, so it must never be committed. Transfer it out of band, like
+# paths, so it must never be committed. Transfer it out of band, like a note in
+# a password manager.
+#
+# The pattern itself was missing until now — the comment was here and the line
+# it describes was not, so the one file the repository rules say must never be
+# committed was not in fact ignored.
+HANDOFF.md
+
+# `go build ./...` inside server/ writes the binary next to its source.
+server/relay

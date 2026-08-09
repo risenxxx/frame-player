@@ -19,6 +19,7 @@
   import StartScreen from '$lib/components/StartScreen.svelte';
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import LicensesDialog from '$lib/components/LicensesDialog.svelte';
+  import RoomDialog from '$lib/components/RoomDialog.svelte';
   import ContextMenu from '$lib/components/ContextMenu.svelte';
   import TopBar from '$lib/components/TopBar.svelte';
   import StepOverlay from '$lib/components/StepOverlay.svelte';
@@ -39,6 +40,8 @@
   import TorrentPickDialog from '$lib/components/TorrentPickDialog.svelte';
   import TorrentUpdateDialog from '$lib/components/TorrentUpdateDialog.svelte';
   import { blockContextMenu, inTextField } from '$lib/dom';
+  import { initSync, syncNoteFileLoaded } from '$lib/sync/apply.svelte';
+  import { initDeepLinks, invite } from '$lib/sync/link.svelte';
   import {
     initSeek,
     resetSeekProbe,
@@ -484,6 +487,11 @@
     // awaited and not on the critical path: the module's 500 ms default is right
     // on both platforms if the call is slow or fails.
     void loadDoubleClickInterval();
+    // Invitations to a shared viewing. Not awaited, for the same reason: a link
+    // that opened the player is picked up by `getCurrent` inside, and the
+    // dialog it raises is a decision the viewer has to make anyway — nothing
+    // before the first frame depends on it.
+    void initDeepLinks();
     // "Open with" file and the post-update resume: both are learned BEFORE the
     // window is shown — if a file is on its way, the start screen must not
     // flash in front of the video (a black background holds until it loads).
@@ -979,6 +987,9 @@
     // Releases the knob, clears mpv's sticky `start`, and seeks only if the
     // load did not already begin at the resume point.
     applyResume();
+    // Last, and deliberately: it reads the title and the duration, which are
+    // what the room shows, and both are worth more once the rest has run.
+    void syncNoteFileLoaded();
   }
 
   // Poll a torrent's peers and rate while one is playing, and stop the moment
@@ -1009,6 +1020,20 @@
   // a standing effect, not a one-shot, because external subtitles arrive after
   // `file-loaded`.
   initTracks();
+  // Watching together: applies what arrives from the room, keeps this player
+  // in step with it, and reports whether it is ready to be played to. Started
+  // from here like every other module's standing effects, and for the same
+  // reason — a `$effect` at a module's top level throws `effect_orphan`.
+  initSync();
+  // An invitation is *offered*, never obeyed: a custom scheme is a surface any
+  // page on the internet can aim at, and a link that silently pulled a viewer
+  // out of their film and into a stranger's room would be a far worse bargain
+  // than one extra click. The dialog is also where the room server's address
+  // is set, which a link naming an unfamiliar relay is exactly the reason to
+  // look at.
+  $effect(() => {
+    if (invite.code) overlays.room = true;
+  });
 
   async function loadFile(path: string) {
     await loadFiles([path]);
@@ -1291,6 +1316,7 @@
         backToStart: () => void backToStart(),
         toggleInfo: () => toggleInfo(player.hasFile),
         openSettings: () => (overlays.settings = true),
+        openRoom: () => (overlays.room = true),
         toggleFullscreen: () => void toggleFullscreen(),
         cycleLoop,
         cycleAbLoop,
@@ -1364,6 +1390,10 @@
     {/if}
 
 
+
+  {#if overlays.room}
+    <RoomDialog onclose={() => (overlays.room = false)} />
+  {/if}
 
   {#if overlays.settings}
     <SettingsDialog

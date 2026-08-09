@@ -6,11 +6,17 @@
 # of mistake the compiler does not (see the notes at the top of each script), and
 # a gate nobody runs is a comment.
 #
-# Node only, and deliberately so: the Rust half needs libmpv and the FFmpeg SDK,
-# which `release.yml` either downloads (Windows) or builds from source (macOS,
-# ~an hour cold) — that is a separate job with its own caches, not something to
-# bolt on here. `cargo check` and `clippy` are therefore NOT covered by this
-# workflow; run them locally per the note in CLAUDE.md.
+# The Rust half is deliberately absent: it needs libmpv and the FFmpeg SDK, which
+# `release.yml` either downloads (Windows) or builds from source (macOS, ~an hour
+# cold) — that is a separate job with its own caches, not something to bolt on
+# here. `cargo check` and `clippy` are therefore NOT covered by this workflow;
+# run them locally per the note in CLAUDE.md.
+#
+# The watch-together relay IS covered, because it costs nothing to: it is Go with
+# one dependency and no native libraries at all. That matters for more than the
+# relay's own tests — `shared/sync-protocol.txt` is a contract between two
+# languages, and a contract only one side of which runs on every push is a
+# contract with one signature.
 name: Checks
 
 on:
@@ -39,3 +45,31 @@ jobs:
       # a CSS rule whose markup went to another component. Then the unit tests.
       - name: Gates
         run: npm run gates
+
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: server/go.sum
+
+      # `-race` because the relay's whole shape is concurrent — a room's lock, a
+      # per-member outbox, a sweeper — and a data race there is exactly the kind
+      # of bug that shows up as one viewer's timeline being wrong once a week.
+      #
+      # `-count=1` is belt and braces: the protocol test disables its own caching
+      # (the fixture lives outside the Go module, so the build cache does not
+      # track it — see the note in `protocol_test.go`), and a fresh runner has no
+      # cache anyway. It costs nothing and it stops a future edit to that test
+      # from silently re-enabling the trap.
+      - name: Relay
+        working-directory: server
+        run: |
+          go vet ./...
+          go build ./...
+          go test -race -count=1 ./...

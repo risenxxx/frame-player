@@ -111,6 +111,52 @@ fn fold(mut hash: u64, buf: &[u8]) -> u64 {
     hash
 }
 
+/// A local file's identity, for somebody else's copy of it.
+///
+/// The second caller of `movie_hash`, and it is here rather than in a module of
+/// its own because there is exactly one right answer to "is this the same
+/// release" and a second implementation of it would be a second answer. Watching
+/// together cannot send a film, so all it can do is say *which* film precisely
+/// enough that a viewer opening their own copy is told whether it lines up — and
+/// that is what this hash is for: it identifies a release, where a title is a
+/// guess about which rip somebody has.
+///
+/// Hexadecimal rather than a number because a `u64` does not survive JSON: past
+/// 2^53 it comes back rounded, and a rounded hash is a hash that matches nothing.
+///
+/// **The same privacy gate as `subs_search`.** A release hash plus a size names
+/// what is being watched as surely as a path does, and here it goes to other
+/// people rather than to a service — so a file under a privacy root refuses,
+/// and the frontend has already refused for its own reasons (`contentOf`
+/// publishes `hidden` and never asks). Two gates on one path is the shape the
+/// rest of this feature already has.
+#[derive(serde::Serialize)]
+pub struct ReleaseId {
+    /// The OpenSubtitles hash, lower-case hex, zero-padded to 16 characters.
+    hash: String,
+    size: u64,
+}
+
+#[tauri::command]
+pub async fn release_hash(path: String) -> Result<ReleaseId, String> {
+    if path.contains("://") {
+        return Err("not a local file".into());
+    }
+    if crate::thumb_service::is_private(&path) {
+        return Err("private".into());
+    }
+    let p = PathBuf::from(&path);
+    let size = std::fs::metadata(&p).map_err(|e| e.to_string())?.len();
+    let hash = tauri::async_runtime::spawn_blocking(move || movie_hash(&p))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    Ok(ReleaseId {
+        hash: format!("{hash:016x}"),
+        size,
+    })
+}
+
 #[derive(serde::Serialize)]
 pub struct SubtitleHit {
     file_id: i64,

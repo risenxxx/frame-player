@@ -44,6 +44,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["frameplayer"]
+      }
+    },
     "updater": {
       "endpoints": ["https://updates.frameplayer.app/latest.json"],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY4MEU1NDc4NUJDOTY1ODgKUldTSVpjbGJlRlFPYUh2L3cveS9qNW1oeTJMb0wvVmdGb1d5RkVPOG9kOFQ2Q2VZRnFXYm4rM1EK",

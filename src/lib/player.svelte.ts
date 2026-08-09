@@ -766,10 +766,14 @@ export function cycleLoop() {
   showOsd(t(next === 'off' ? 'osd.loop_off' : next === 'all' ? 'osd.loop_all' : 'osd.loop_one'));
 }
 
-export function changeSpeed(factor: number) {
+/// Returns what it settled on, so a caller that has to report the change —
+/// `playback.changeSpeed`, which tells a shared room — does not have to repeat
+/// the clamping and rounding and end up disagreeing with what mpv was given.
+export function changeSpeed(factor: number): number {
   const next = Math.round(Math.max(0.25, Math.min(4, player.speed * factor)) * 100) / 100;
   void setProperty('speed', next);
   showOsd(t('osd.speed', { value: next }), { progress: (next - 0.25) / 3.75 });
+  return next;
 }
 
 // ---- Subtitle / audio delay ----------------------------------------------

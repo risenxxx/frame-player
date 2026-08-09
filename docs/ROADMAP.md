@@ -37,8 +37,10 @@ nothing about watching a film.
 | 21 | Torrent streaming — piece priority from playback, buffered bands on the seekbar, season as a queue |
 | 25 | Content languages beyond the two interface languages |
 | 26 | Casting to a television — Google Cast and DLNA, including torrents |
+| 32 | Watching together — a shared timeline over a small relay, with torrents picked up by the other players automatically |
 
-Details for the larger ones: [torrents.md](torrents.md), [casting.md](casting.md).
+Details for the larger ones: [torrents.md](torrents.md), [casting.md](casting.md),
+[watch-together.md](watch-together.md).
 
 Everything not listed — seekbar thumbnails, resume, watch history, zoom and pan,
 window preferences, HDR handling, the updater, media keys, the macOS menu bar —
@@ -135,24 +137,6 @@ dead tracker announce, not a slow swarm — see the tracker section of
 No firm plans. Each of these is either large, dependent on somebody else's
 platform, or of unproven value — kept here with the reasoning so the next
 evaluation does not start from zero.
-
-### Watch together
-
-A room on a small relay that syncs position, pause, speed and which file is
-playing; no media through the server. The protocol is the easy half. The work is
-that every gesture guard in the player — dragging, scrubbing, settling,
-advancing — is a place a remote event can land badly, and that drift must be
-corrected by nudging speed rather than by seeking, which on a slow file costs
-nearly two seconds and desynchronises worse than the drift did.
-
-Rule of thumb if it is ever built: **sync the timeline, not the presentation.**
-Position, pause, speed and the playing file are shared; tracks, subtitle
-appearance, volume and window state stay personal.
-
-It pairs naturally with torrents, because an infohash plus an index identifies
-content exactly where local files would have to be matched by size and a partial
-hash. The asymmetry is what keeps it here: torrents pay off for one person
-immediately, this only once somebody else installs the player.
 
 ### Shell integration on Windows: thumbnails and the preview pane
 

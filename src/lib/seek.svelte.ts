@@ -18,6 +18,16 @@
  *     seek lands, or the knob springs back and then forward again.
  *   - The drag pauses and the scrub does not. They are different gestures: see
  *     `beginDragPause` and `scrubBy`.
+ *   - **A shared room hears about a gesture when it ends, never while it runs.**
+ *     Exactly the release-only rule the cast seekbar already keeps, and for a
+ *     related reason: a drag is a stream of positions, and every one of them
+ *     would be a seek on somebody else's machine — dozens of them, each costing
+ *     that machine a decode from a keyframe. The two places a gesture *ends* are
+ *     `onSeekUp` and `endScrub`, and they are the only two that publish.
+ *
+ * The room check is written out here rather than borrowed from `playback`'s
+ * `refusedByRoom`, and that is the import graph rather than taste: `playback`
+ * imports this module, so reaching back for it would be a cycle.
  */
 
 import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
@@ -27,6 +37,7 @@ import { formatTime } from './format';
 import { t } from './i18n.svelte';
 import { osdSeq, showOsd } from './osd.svelte';
 import { player, waitPlaybackSettled } from './player.svelte';
+import { publishState, wire } from './sync/wire.svelte';
 import { requestThumb, thumbs } from './thumbs.svelte';
 
 /**
@@ -148,8 +159,24 @@ export function wantExact(isPreview: boolean): boolean {
   return !fileSlowSeek || !isPreview;
 }
 
+/// The room has handed control to its host and this viewer is not it. Refused at
+/// the *start* of the gesture: letting the drag run and then not telling anybody
+/// would leave this player somewhere else in the film with nothing to say why.
+function roomRefuses(): boolean {
+  if (!wire.on || wire.mayDrive) return false;
+  showOsd(t('sync.host_only'));
+  return true;
+}
+
+/// Tell the room where a finished gesture left the film.
+function shareSeek(position: number) {
+  if (!wire.on) return;
+  publishState(player.paused, Math.max(0, position), player.speed);
+}
+
 export function onSeekDown(e: PointerEvent) {
   if (!player.hasFile || player.duration <= 0) return;
+  if (roomRefuses()) return;
   if (hooks.stepMode()) hooks.cancelStep();
   (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   seek.dragging = true;
@@ -258,6 +285,7 @@ export function onSeekUp(e: PointerEvent) {
     seek.dragging = false;
     clearTimeout(dragSettleTimer);
     castSeek(seek.value);
+    shareSeek(seek.value);
     if (seek.wrapEl && !seek.wrapEl.matches(':hover')) seek.hoverTime = null;
     return;
   }
@@ -284,6 +312,11 @@ export function onSeekUp(e: PointerEvent) {
   // frame".
   const alreadyThere =
     dragShownExact && dragShownAt !== null && Math.abs(dragShownAt - seek.value) < SAME_POS;
+  // The room hears the released position, not the landed one, and it hears it
+  // now rather than in the `finally` below: `seek.settling` is still true there,
+  // and the reconciler stands down while it is — so publishing inside it would
+  // announce the seek and then immediately refuse to act on the answer.
+  shareSeek(seek.value);
   void (alreadyThere ? Promise.resolve() : issueSeek(seek.value, true)).finally(() => {
     seek.settling = false;
     if (dragResume) {
@@ -477,6 +510,7 @@ export function scheduleScrubEnd() {
 
 export function scrubBy(deltaSeconds: number) {
   if (!player.hasFile || player.duration <= 0) return;
+  if (roomRefuses()) return;
   const base = scrubTarget ?? player.timePos;
   const range = scrubRange();
   scrubTarget = Math.min(range.max, Math.max(range.min, base + deltaSeconds));
@@ -539,6 +573,10 @@ function pumpScrubSeek() {
 
 export function endScrub() {
   if (!seek.scrubbing) return;
+  // The other of the two places a gesture ends. Read before `scrubTarget` is
+  // cleared below, and before `scrubbing` goes false — the fingers stopping is
+  // what the room is being told about.
+  if (scrubTarget !== null) shareSeek(scrubTarget);
   // The frame blink from architecture.md came from MIXING modes (keyframe
   // previews plus an exact tail); here the whole gesture is uniform, and
   // pumpScrubSeek does not replay a target already reached.

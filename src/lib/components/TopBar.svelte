@@ -12,6 +12,9 @@
   import { withKey } from '$lib/keys.svelte';
   import { IS_MAC } from '$lib/platform';
   import { player } from '$lib/player.svelte';
+  import { sync } from '$lib/sync/apply.svelte';
+  import { formatCode } from '$lib/sync/protocol';
+  import { wire } from '$lib/sync/wire.svelte';
   import type { TorrentStatus } from '$lib/torrent.svelte';
 
   interface Props {
@@ -175,6 +178,49 @@
         <span style="width: {(torrentChip.file_done / torrentChip.file_size) * 100}%"></span>
       </div>
     {/if}
+  </div>
+{/if}
+
+<!-- Watching together, and the one thing about it that must survive the UI
+     going idle: whether the room is waiting for somebody. That is exactly when
+     it happens — a torrent runs out of pieces while nobody is touching the
+     keyboard — and it is the difference between "the film stopped" and "the
+     film is waiting for Anna". Outside `.topbar` for the same reason the
+     torrent readout and the skip button are.
+
+     Stacked below the torrent chip rather than beside it: both are top-right
+     (top-left is where `.osd` appears, and it would cover either outright), and
+     when a torrent is feeding a shared room both are legitimately up. -->
+{#if wire.on}
+  <div
+    class="roomchip"
+    class:below={!!torrentChip}
+    class:hidden={idle && !wire.waiting.length}
+    class:waiting={wire.waiting.length > 0}
+  >
+    <div class="roomchip-line">
+      <svg class="roomchip-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M6 7.2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm5.2.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2ZM1.8 13c0-2.1 1.9-3.4 4.2-3.4S10.2 10.9 10.2 13m1.2-3.2c1.7.2 3 1.2 3 2.9"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+      <span>
+        {#if sync.holdingUp}
+          {t('sync.waiting_you')}
+        {:else if wire.waiting.length === 1}
+          {t('sync.waiting_one', { name: wire.waitingFor[0]?.name || t('sync.you') })}
+        {:else if wire.waiting.length > 1}
+          {t('sync.waiting_many', { count: wire.waiting.length })}
+        {:else}
+          {t('sync.room')} {formatCode(wire.room)}
+        {/if}
+      </span>
+    </div>
   </div>
 {/if}
 
@@ -345,6 +391,67 @@
        the same reason `.seekfill` is white. */
     background: rgba(255, 255, 255, 0.75);
     transition: width 0.3s ease;
+  }
+
+  /* Same box as `.torchip` and deliberately so — two readouts in one corner
+     that did not match would read as two unrelated bugs. Only the position and
+     the "why it stays up" rule differ. */
+  .roomchip {
+    position: absolute;
+    top: 58px;
+    right: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 7px 11px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 9px;
+    background: rgba(16, 16, 22, 0.82);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    color: #d6d6de;
+    font-size: 11.5px;
+    /* A readout, not a control: the gotcha the top bar's gradient already
+       taught once is that anything over the video which eats clicks reads as
+       the player ignoring you. */
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  /* The torrent chip's own height plus the gap between them. A fixed number
+     rather than a flex column, because the two are siblings of the page root
+     and only one of them is ever conditional on the other. */
+  .roomchip.below {
+    top: 106px;
+  }
+
+  .roomchip.hidden {
+    opacity: 0;
+  }
+
+  /* Waiting is the state that outlives idle, and it says so in more than words:
+     the accent is what the rest of the player uses for "look here". */
+  .roomchip.waiting {
+    color: #e8e8ec;
+    border-color: rgba(129, 140, 248, 0.45);
+  }
+
+  .roomchip-line {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    white-space: nowrap;
+  }
+
+  .roomchip-icon {
+    flex: none;
+    width: 13px;
+    height: 13px;
+    color: #8f8f9c;
+  }
+
+  .roomchip.waiting .roomchip-icon {
+    color: #818cf8;
+    animation: torchip-pulse 1.4s ease-in-out infinite;
   }
 
   /* With no video the gradient is pointless — there is nothing to darken. It

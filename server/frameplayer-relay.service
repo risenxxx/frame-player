@@ -1,0 +1,40 @@
+# systemd unit for running the relay straight from a binary, without Docker.
+#
+#   go build -trimpath -ldflags "-s -w" -o /usr/local/bin/frameplayer-relay ./server
+#   install -m644 server/frameplayer-relay.service /etc/systemd/system/
+#   systemctl enable --now frameplayer-relay
+#
+# Put a TLS terminator in front of it (Caddy, nginx) and set RELAY_TRUST_PROXY so
+# the join rate limit keys on the real address rather than on the proxy's.
+
+[Unit]
+Description=Frame Player watch-together relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/frameplayer-relay
+Environment=RELAY_ADDR=127.0.0.1:8080
+# Environment=RELAY_PUBLIC_URL=https://relay.frameplayer.app
+# Environment=RELAY_TRUST_PROXY=1
+Restart=always
+RestartSec=2
+
+# The relay keeps everything in memory and writes nothing, so it can be locked
+# down to almost nothing. If any of these ever has to be relaxed, that is the
+# signal that the relay has started keeping state it should not.
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

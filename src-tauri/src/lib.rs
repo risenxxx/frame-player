@@ -882,6 +882,26 @@ fn point_vulkan_at_bundled_driver() {
     }
 }
 
+
+/// Forward a custom-scheme link that arrived in argv to the running window.
+///
+/// The deep-link plugin emits `deep-link://new-url` itself for the paths it
+/// owns — the macOS Apple Event, and the first launch on Windows — but not for
+/// a link that reaches an *already running* instance, because on Windows that
+/// is a second process whose argv single-instance forwards. Emitting the same
+/// event keeps the frontend with one subscription rather than two code paths
+/// for one link.
+fn deliver_deep_links(app: &tauri::AppHandle, args: &[String]) {
+    let urls: Vec<String> = args
+        .iter()
+        .filter(|a| a.starts_with("frameplayer://"))
+        .cloned()
+        .collect();
+    if !urls.is_empty() {
+        let _ = app.emit("deep-link://new-url", urls);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "macos")]
@@ -896,7 +916,18 @@ pub fn run() {
                 let _ = win.set_focus();
             }
             deliver_files(app, pick_file_args(&args));
+            // A `frameplayer://join/<code>` link on Windows arrives as the argv
+            // of a *second* launch, which single-instance forwards here. On
+            // macOS the same link is an Apple Event and the deep-link plugin
+            // picks it up itself, so this half is Windows-shaped by nature —
+            // `pick_file_args` above already ignores it, since it keeps only
+            // arguments that exist on disk.
+            deliver_deep_links(app, &args);
         }))
+        // After single-instance, which is what the plugin's own documentation
+        // asks for: on Windows a link opens a second process, and that process
+        // has to hand over and exit rather than register itself as the handler.
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -991,6 +1022,7 @@ pub fn run() {
             opensubtitles::subs_logout,
             opensubtitles::subs_account,
             opensubtitles::subs_delete_file,
+            opensubtitles::release_hash,
             screenshot::screenshot_dir,
             screenshot::screenshot_clip_path,
             screenshot::screenshot_to_clipboard,
