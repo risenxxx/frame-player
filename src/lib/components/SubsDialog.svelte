@@ -5,6 +5,7 @@
   /// `$lib/subs.svelte.ts`, because two other places reach into them: the track
   /// menu removes a downloaded subtitle, and the page opens this panel.
   import Dialog from '$lib/components/Dialog.svelte';
+  import ScrollFade from '$lib/components/ScrollFade.svelte';
   import { t } from '$lib/i18n.svelte';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import {
@@ -133,6 +134,7 @@
             </button>
           </div>
         {/each}
+        <ScrollFade />
       </div>
     {:else if !subs.busy}
       <div class="setting-hint">{t('subs.empty')}</div>

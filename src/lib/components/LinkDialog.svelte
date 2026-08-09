@@ -3,6 +3,7 @@
   /// a .torrent *file*, which is the one thing a box that takes text cannot
   /// accept and the reason torrent support used to be invisible here.
   import Dialog from '$lib/components/Dialog.svelte';
+  import ScrollFade from '$lib/components/ScrollFade.svelte';
   import { displayName, readableLink } from '$lib/format';
   import { t } from '$lib/i18n.svelte';
   import { torrent } from '$lib/torrent.svelte';
@@ -101,6 +102,7 @@
           </button>
         </div>
       {/each}
+      <ScrollFade />
     </div>
   {/if}
   <div class="link-actions">

@@ -18,6 +18,7 @@
   /// `class={sheetClass}` passed in from outside would leave `.link-dialog`
   /// looking unused and it would be dropped from the bundle.
   import type { Snippet } from 'svelte';
+  import ScrollFade from '$lib/components/ScrollFade.svelte';
   import { blockContextMenu } from '$lib/dom';
   import { t } from '$lib/i18n.svelte';
 
@@ -90,6 +91,11 @@
       </button>
     </div>
     {@render children()}
+    <!-- The sheet is its own scroll container, so this belongs here rather
+         than in each of the seven bodies — and it stays off entirely for the
+         ones that fit. It is last on purpose: the contract is "final child of
+         the box that scrolls". -->
+    <ScrollFade />
   </div>
 </div>
 

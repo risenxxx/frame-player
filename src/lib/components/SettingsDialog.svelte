@@ -18,6 +18,7 @@
   import { command, getProperty } from 'tauri-plugin-libmpv-api';
 
   import Dialog from '$lib/components/Dialog.svelte';
+  import ScrollFade from '$lib/components/ScrollFade.svelte';
   import { IS_MAC } from '$lib/platform';
   import { locale, setLocale, t, type Locale } from '$lib/i18n.svelte';
   import {
@@ -1032,6 +1033,7 @@
               {:else}
                 <div class="folders-empty">{t('vset.lang_none')}</div>
               {/each}
+              <ScrollFade />
             </div>
           </div>
         {/if}

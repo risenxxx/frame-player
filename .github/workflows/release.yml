@@ -289,6 +289,19 @@ jobs:
       contents: write
 
     steps:
+      # This job used to consist of downloaded artifacts and nothing else, which
+      # is why it had no checkout — and then the retention sweep below started
+      # calling a script from the repository and the job died with a 127 *after*
+      # the upload, i.e. with the release already published and only the pruning
+      # missing.
+      #
+      # **It has to come first.** `actions/checkout` clears the workspace before
+      # cloning, so run after the download it would delete `dist` — the artifacts
+      # this job exists to publish — and the failure would look like the build
+      # producing nothing.
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -344,8 +357,6 @@ jobs:
           # pruned version stay on its GitHub Release, so nothing becomes
           # unobtainable; the `.app.tar.gz` is the updater's payload and is only
           # ever fetched for the version `latest.json` names.
-          scripts/r2-retain.sh --kind updates --bucket "$bucket" --endpoint "$endpoint" \
-                               --keep 5 --apply
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -373,3 +384,25 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/latest.json
+
+      # Last, and a step of its own. It used to sit at the end of the upload,
+      # which put the least important thing in this job in front of the most
+      # important one: a missing script killed that step, so the release was
+      # never created even though every artifact had already been uploaded and
+      # latest.json was live. Housekeeping must not be able to do that. It still
+      # fails loudly rather than being swallowed — pruning that quietly stopped
+      # working is how the bucket reached nine gigabytes in the first place.
+      - name: Prune old releases from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          set -euo pipefail
+          endpoint="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          bucket="${{ vars.R2_BUCKET_UPDATES }}"
+          [ -n "$bucket" ] || { echo "R2_BUCKET_UPDATES is not set" >&2; exit 1; }
+          scripts/r2-retain.sh --kind updates --bucket "$bucket" \
+            --endpoint "$endpoint" --keep 5 --apply | tee -a "$GITHUB_STEP_SUMMARY"

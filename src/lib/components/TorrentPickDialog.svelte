@@ -4,6 +4,7 @@
   /// The rest still become queue entries, which is free: nothing is downloaded
   /// until mpv reads one (see torrent.rs).
   import Dialog from '$lib/components/Dialog.svelte';
+  import ScrollFade from '$lib/components/ScrollFade.svelte';
   import { displayName, formatTime } from '$lib/format';
   import { t } from '$lib/i18n.svelte';
   import { torrentVideos, type TorrentFile, type TorrentInfo } from '$lib/torrent.svelte';
@@ -48,6 +49,7 @@
         <span class="torrent-file-size">{fmtSize(file.size)}</span>
       </button>
     {/each}
+    <ScrollFade />
   </div>
 </Dialog>
 
