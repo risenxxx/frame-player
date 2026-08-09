@@ -12,11 +12,25 @@
  * here are also the contract that copy has to keep.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The purge paths talk to Rust (thumbnails on disk) and to the folder picker.
+// Neither is what is under test here — what is, is that every store keyed by a
+// video is emptied — so both are stubbed at the module boundary rather than
+// worked around inside the test.
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => undefined) }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => '/Private') }));
+
+import { invoke } from '@tauri-apps/api/core';
+
+const invoked = invoke as unknown as ReturnType<typeof vi.fn>;
 
 import {
+  addExcludedFolder,
+  clearHistory,
   history,
   isPrivatePath,
+  purgeTorrentHistory,
   persistPosition,
   positionsLoad,
   rememberTitle,
@@ -201,5 +215,136 @@ describe('a corrupt store', () => {
     // ...and a write over it still works.
     persistPosition('/f/a.mkv', 20, 3600);
     expect(positionsLoad()['/f/a.mkv']).toBeDefined();
+  });
+});
+
+/**
+ * Forgetting, and the three ways to ask for it.
+ *
+ * These are the tests with the same shape as the privacy ones and the same cost
+ * of being wrong: what is left behind is invisible. The start screen shows
+ * nothing about a purged folder whether or not its titles are still in
+ * localStorage, so the only way to find out is to look — which is what this
+ * does, by writing into every store and then reading all of them back.
+ *
+ * The store list is deliberately restated here rather than imported. A test
+ * that walked the same registry the code walks would pass for a store the
+ * registry has forgotten, which is the one failure worth catching.
+ */
+describe('purging', () => {
+  const STORES = {
+    positions: 'frameplayer.positions',
+    tracks: 'frameplayer.tracks',
+    folderTracks: 'frameplayer.tracks.folder',
+    titles: 'frameplayer.titles',
+    subs: 'frameplayer.subs',
+    resume: 'frameplayer.resume',
+    links: 'frameplayer.links',
+  };
+
+  /// Write one entry about a file into every store that holds one.
+  function seedFile(path: string, folder: string) {
+    localStorage.setItem(STORES.positions, JSON.stringify({ [path]: { pos: 60, dur: 600 } }));
+    localStorage.setItem(STORES.tracks, JSON.stringify({ [path]: { ts: 1 } }));
+    localStorage.setItem(STORES.folderTracks, JSON.stringify({ [folder]: { ts: 1 } }));
+    localStorage.setItem(STORES.titles, JSON.stringify({ [path]: 'A Film' }));
+    localStorage.setItem(STORES.subs, JSON.stringify([`${path}.ru.srt`]));
+    localStorage.setItem(STORES.resume, JSON.stringify({ path, pos: 60 }));
+  }
+
+  const leftovers = () =>
+    Object.entries(STORES)
+      .filter(([name]) => name !== 'links')
+      .filter(([, key]) => {
+        const raw = localStorage.getItem(key);
+        if (raw === null) return false;
+        const value = JSON.parse(raw);
+        return Array.isArray(value) ? value.length > 0 : Object.keys(value ?? {}).length > 0;
+      })
+      .map(([name]) => name);
+
+  it('leaves nothing behind when a folder is excluded', async () => {
+    seedFile('/Private/a.mkv', '/Private');
+    await addExcludedFolder();
+    expect(leftovers()).toEqual([]);
+  });
+
+  it('adds the folder to the list before deleting, so a racing write is refused', async () => {
+    // The position timer fires every ~5 s and the purge ends in a round trip to
+    // Rust, so a write genuinely does land in the middle of this — which is the
+    // only moment the ordering can be observed at all. The thumbnail call is the
+    // seam: it happens after the stores are emptied, so a write arriving there
+    // survives unless the folder is *already* excluded and `persistPosition`
+    // refuses it. Ordered the other way this entry comes back for good.
+    seedFile('/Private/a.mkv', '/Private');
+    invoked.mockImplementationOnce(async () => {
+      persistPosition('/Private/a.mkv', 600, 3600);
+    });
+    await addExcludedFolder();
+    expect(history.prefs.excluded).toContain('/Private');
+    expect(leftovers()).toEqual([]);
+  });
+
+  it('leaves a neighbouring folder with a similar name alone', async () => {
+    localStorage.setItem(
+      STORES.titles,
+      JSON.stringify({ '/Private/a.mkv': 'gone', '/Private2/b.mkv': 'kept' }),
+    );
+    await addExcludedFolder();
+    expect(JSON.parse(localStorage.getItem(STORES.titles)!)).toEqual({ '/Private2/b.mkv': 'kept' });
+  });
+
+  it('leaves nothing behind when the history is cleared', async () => {
+    // The bug this pins: `clearHistory` named three keys by hand and cleared
+    // three of six. The titles store survived — and keyed by source id, which
+    // for a local file is the path, that store on its own is a list of
+    // everything ever watched.
+    seedFile('/Films/a.mkv', '/Films');
+    localStorage.setItem(STORES.links, JSON.stringify(['https://x.test/v']));
+    await clearHistory();
+    expect(leftovers()).toEqual([]);
+    expect(localStorage.getItem(STORES.links)).toBe(null);
+  });
+
+  describe('purgeTorrentHistory', () => {
+    const HASH = 'ABCDEF0123456789abcdef0123456789abcdef01';
+    const id = (i: number) => `torrent:${HASH.toLowerCase()}/${i}`;
+
+    beforeEach(() => {
+      localStorage.setItem(
+        STORES.positions,
+        JSON.stringify({ [id(0)]: { pos: 1 }, [id(1)]: { pos: 2 }, '/Films/a.mkv': { pos: 3 } }),
+      );
+      localStorage.setItem(STORES.titles, JSON.stringify({ [id(0)]: 'S01E01', '/Films/a.mkv': 'A' }));
+    });
+
+    it('takes every episode of the torrent and nothing else', () => {
+      purgeTorrentHistory(HASH);
+      expect(positionsLoad()).toEqual({ '/Films/a.mkv': { pos: 3 } });
+      expect(JSON.parse(localStorage.getItem(STORES.titles)!)).toEqual({ '/Films/a.mkv': 'A' });
+    });
+
+    it('matches the hash whatever case either side arrives in', () => {
+      // Both sides, and they fail differently. The *argument* is upper-case
+      // whenever it comes from a folder name in the older layout, which is the
+      // mismatch that once cost a torrent its "continue watching" line. The
+      // *stored id* is lower-case everywhere the current code writes one
+      // (`torrentId` and `parseTorrentUrl` both normalize), so that half is
+      // defence against a store this build did not write — an entry left by an
+      // older version, or edited by hand. Cheap, and the alternative is an
+      // orphan nothing can ever delete.
+      localStorage.setItem(
+        STORES.positions,
+        JSON.stringify({ [`torrent:${HASH.toUpperCase()}/0`]: { pos: 1 }, '/Films/a.mkv': { pos: 3 } }),
+      );
+      purgeTorrentHistory(HASH.toUpperCase());
+      expect(Object.keys(positionsLoad())).toEqual(['/Films/a.mkv']);
+    });
+
+    it('does not touch the path-keyed stores, which cannot hold a torrent', () => {
+      localStorage.setItem(STORES.resume, JSON.stringify({ path: '/Films/a.mkv', pos: 60 }));
+      purgeTorrentHistory(HASH);
+      expect(localStorage.getItem(STORES.resume)).not.toBe(null);
+    });
   });
 });

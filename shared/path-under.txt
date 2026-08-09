@@ -1,0 +1,65 @@
+# Is a path inside a folder? — the one contract two languages have to keep.
+#
+# `pathUnder` in src/lib/format.ts and `path_under` in
+# src-tauri/src/thumb_service.rs are the same rule written twice, because the
+# check has to hold on both sides of the app: JS refuses to *record* anything
+# about a file in an excluded folder, Rust refuses to keep its thumbnails and to
+# send its hash to OpenSubtitles. A disagreement between them is a leak, and it
+# is the quiet kind — the start screen looks clean while the disk is not, and
+# nobody finds out until the folder is taken off the list and everything comes
+# back.
+#
+# It has already happened once: the JS copy compared separators literally while
+# the Rust copy normalized them, so a root spelled `E:\Films` did not match
+# `E:/Films/a.mkv` and that folder was silently recorded after all.
+#
+# Both test suites read THIS file, so a case added here has to pass in both or
+# one of them goes red. Adding a case is the cheapest way to pin a rule that
+# neither language can check for the other.
+#
+# Format: <path> TAB <root> TAB yes|no. Blank lines and `#` lines are ignored.
+# Paths must not contain tabs (no test case needs one, and neither parser has to
+# grow an escape for it).
+
+# A folder contains itself and what is under it.
+/Movies/a.mkv	/Movies	yes
+/Movies	/Movies	yes
+/Movies/nested/deep/a.mkv	/Movies	yes
+
+# ...and only on a component boundary. A prefix match here would hide files
+# from a folder the viewer never excluded.
+/Movies2/a.mkv	/Movies	no
+/MoviesArchive/a.mkv	/Movies	no
+/Mov/a.mkv	/Movies	no
+
+# Case is ignored: macOS and Windows file systems are case-insensitive by
+# default, so two spellings of one folder are one folder.
+/movies/a.mkv	/Movies	yes
+/MOVIES/A.MKV	/movies	yes
+
+# Separator direction is ignored, on BOTH sides. The two strings come from
+# different places and on Windows routinely disagree — this is the case the JS
+# copy used to get wrong.
+E:\Films\a.mkv	E:/Films	yes
+E:/Films/a.mkv	E:\Films	yes
+e:\films\a.mkv	E:\Films	yes
+E:\Films2\a.mkv	E:\Films	no
+
+# A trailing separator on the root is trimmed rather than taken literally: a
+# folder picker returns one on some platforms and not others.
+/Movies/a.mkv	/Movies/	yes
+/Movies/a.mkv	/Movies//	yes
+E:\Films\a.mkv	E:\Films\	yes
+
+# An empty root matches nothing. `/` collapses to empty once trimmed, so a root
+# shaped like "everything" must not behave like it — turning the whole history
+# off is a flag of its own, and a root that matched every path would make the
+# two mean different things in the two languages.
+/Movies/a.mkv	/	no
+/Movies/a.mkv		no
+
+# A URL is not under any folder. Torrent and network sources are excluded by
+# other means (the `all` flag, or never being recorded at all); what matters
+# here is that a folder root never claims one by accident.
+https://example.test/v	/Movies	no
+http://127.0.0.1:9000/t/abc/0/ep.mkv	/Movies	no

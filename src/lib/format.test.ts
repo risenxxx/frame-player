@@ -12,6 +12,11 @@
 
 import { describe, expect, it } from 'vitest';
 
+// Vite's `?raw`, not `node:fs`: the file becomes a module dependency, so the
+// test re-runs when a vector is added, and it needs no `@types/node` for what
+// is one string.
+import VECTORS_RAW from '../../shared/path-under.txt?raw';
+
 import {
   baseName,
   displayName,
@@ -19,7 +24,9 @@ import {
   fileStem,
   formatTime,
   parseEpisode,
+  pathUnder,
   readableLink,
+  samePath,
   shotStamp,
 } from './format';
 
@@ -176,5 +183,70 @@ describe('shotStamp', () => {
     expect(shotStamp(-1)).toBe('00-00-00.000');
     // Lexicographic order is playback order — the whole point of the format.
     expect(shotStamp(59) < shotStamp(61)).toBe(true);
+  });
+});
+
+/**
+ * The two path comparisons, and the vectors the Rust twin also reads.
+ *
+ * `pathUnder` decides whether a privacy root applies, which makes it the
+ * highest-cost predicate in the codebase to get wrong: matching too much hides
+ * files the viewer never excluded, matching too little is a leak that shows
+ * nothing on screen. Its Rust copy (`path_under` in thumb_service.rs) decides
+ * the same thing for thumbnails on disk and for the hash sent to OpenSubtitles,
+ * and the two have already disagreed once — the JS side compared separators
+ * literally, so a root spelled `E:\Films` silently failed to match
+ * `E:/Films/a.mkv`.
+ *
+ * So the cases live in `shared/path-under.txt` and both suites read that file.
+ * Restating them here would be a third copy of the thing whose copies are the
+ * problem.
+ */
+describe('path comparison', () => {
+  interface Vector {
+    path: string;
+    root: string;
+    want: boolean;
+    n: number;
+  }
+
+  const VECTORS: Vector[] = VECTORS_RAW.split('\n').flatMap((raw, i): Vector[] => {
+    const n = i + 1;
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) return [];
+    const parts = line.split('\t');
+    if (parts.length !== 3) throw new Error(`line ${n}: expected <path> TAB <root> TAB yes|no`);
+    const [path, root, want] = parts;
+    if (want !== 'yes' && want !== 'no') throw new Error(`line ${n}: expected yes|no, got ${want}`);
+    return [{ path, root, want: want === 'yes', n }];
+  });
+
+  // A vectors file that parsed to nothing — moved, renamed, or reformatted so
+  // every line looks like a comment — would otherwise pass in silence, which is
+  // the one way a shared contract can quietly stop being one. Mirrored in the
+  // Rust test, and a floor rather than an exact count so adding a case does not
+  // mean editing two test files to let it in.
+  it('reads the shared vectors', () => {
+    expect(VECTORS.length).toBeGreaterThanOrEqual(15);
+  });
+
+  for (const v of VECTORS) {
+    it(`line ${v.n}: pathUnder(${v.path || '""'}, ${v.root || '""'}) === ${v.want}`, () => {
+      expect(pathUnder(v.path, v.root)).toBe(v.want);
+    });
+  }
+
+  describe('samePath', () => {
+    it('ignores case and separator direction, on both sides', () => {
+      expect(samePath('E:/Videos/ep1.mkv', 'e:\\videos\\EP1.MKV')).toBe(true);
+    });
+
+    it('is not fooled by a shared prefix', () => {
+      expect(samePath('/a/ep1.mkv', '/a/ep10.mkv')).toBe(false);
+    });
+
+    it('does not treat a folder as the file inside it', () => {
+      expect(samePath('/a', '/a/b.mkv')).toBe(false);
+    });
   });
 });

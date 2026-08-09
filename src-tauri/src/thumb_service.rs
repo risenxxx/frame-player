@@ -890,32 +890,53 @@ pub fn thumb_start(
 mod tests {
     use super::*;
 
-    /// The privacy predicate, and the only test here that needs no fixture.
+    /// The privacy predicate, against the vectors the JS twin also reads.
     ///
-    /// It is mirrored in JS (`pathUnder` in history.svelte.ts) and the two must
-    /// agree: this is the copy that decides whether a thumbnail lands on disk
-    /// for a file inside an excluded folder, so a disagreement is a leak with
-    /// nothing on screen to show for it. The JS side has the same cases.
+    /// `shared/path-under.txt` is the contract, not this file: `path_under` here
+    /// and `pathUnder` in src/lib/format.ts are one rule written in two
+    /// languages, and a disagreement between them is a leak with nothing on
+    /// screen to show for it — this is the copy that decides whether a thumbnail
+    /// lands on disk for a file inside an excluded folder. Reading the cases
+    /// from a shared file rather than restating them is what makes "change one,
+    /// change the other" enforceable: a case added there fails on whichever side
+    /// does not already agree.
+    ///
+    /// `include_str!` rather than a runtime read, so the vectors travel with the
+    /// binary and rustc rebuilds the test when they change.
     #[test]
-    fn path_under_matches_on_a_component_boundary() {
-        assert!(path_under("/Movies/a.mkv", "/Movies"));
-        assert!(path_under("/Movies", "/Movies"));
-        // A prefix is not a parent: /Movies2 is a different folder.
-        assert!(!path_under("/Movies2/a.mkv", "/Movies"));
-        assert!(!path_under("/MoviesArchive/a.mkv", "/Movies"));
-
-        // Case, and the slash direction, on either side: the root comes from an
-        // OS folder picker and the path from mpv, and on Windows they disagree.
-        assert!(path_under("e:\\films\\a.mkv", "E:\\Films"));
-        assert!(path_under("E:/Films/a.mkv", "E:\\Films"));
-        assert!(path_under("E:\\Films\\a.mkv", "E:/Films"));
-        assert!(!path_under("E:\\Films2\\a.mkv", "E:\\Films"));
-
-        // A trailing separator on the root is noise; an empty root matches
-        // nothing, because "history off" is a separate flag and not a `/` root.
-        assert!(path_under("/Movies/a.mkv", "/Movies/"));
-        assert!(!path_under("/Movies/a.mkv", "/"));
-        assert!(!path_under("/Movies/a.mkv", ""));
+    fn path_under_agrees_with_the_shared_vectors() {
+        let vectors = include_str!("../../shared/path-under.txt");
+        let mut checked = 0;
+        for (n, line) in vectors.lines().enumerate() {
+            let line = line.trim_end_matches(['\r', '\n']);
+            if line.trim().is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut parts = line.split('\t');
+            let (Some(path), Some(root), Some(want), None) =
+                (parts.next(), parts.next(), parts.next(), parts.next())
+            else {
+                panic!("line {}: expected <path> TAB <root> TAB yes|no, got {line:?}", n + 1);
+            };
+            let want = match want.trim() {
+                "yes" => true,
+                "no" => false,
+                other => panic!("line {}: expected yes|no, got {other:?}", n + 1),
+            };
+            assert_eq!(
+                path_under(path, root),
+                want,
+                "line {}: path_under({path:?}, {root:?})",
+                n + 1,
+            );
+            checked += 1;
+        }
+        // A vectors file that parsed to nothing — moved, renamed, or reformatted
+        // so every line looks like a comment — would otherwise pass in silence,
+        // which is the one way a shared contract can quietly stop being one. A
+        // floor rather than an exact count, so adding a case does not mean
+        // editing two test files to let it in.
+        assert!(checked >= 15, "only {checked} vectors parsed — did the file move?");
     }
 
     /// FP_TEST_VIDEO=<path> cargo test container_title_smoke -- --nocapture

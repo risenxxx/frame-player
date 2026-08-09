@@ -23,6 +23,54 @@ export function baseName(path: string): string {
   return path.split(/[\\/]/).pop() || path;
 }
 
+/**
+ * One spelling of a path, for comparing two of them.
+ *
+ * Case and separator direction are both normalized, and neither is optional.
+ * The two sides of any comparison in this player come from *different places* —
+ * a folder chosen in the OS dialog, whatever mpv reports as `path`, a directory
+ * read in Rust — and on Windows they disagree about the slash: one mixed
+ * `E:/Videos\ep1.mkv` is enough to lose a whole queue.
+ *
+ * Deliberately not `resolve`/`realpath`: this is a string comparison and must
+ * stay one. Both callers compare identifiers they were given rather than asking
+ * the file system anything, and a symlink two viewers reach by different names
+ * is not a case either of them has to answer.
+ *
+ * The rule is mirrored in Rust (`path_under` in thumb_service.rs). The two are
+ * pinned to one another by `shared/path-under.txt`, which both test suites read.
+ */
+export function normalizePath(path: string): string {
+  return path.toLowerCase().replace(/\\/g, '/');
+}
+
+/**
+ * The same file, however the two names were spelled?
+ *
+ * Used to find an opened file inside a directory listing. Getting it wrong is
+ * silent: `findIndex` answers −1 and the folder queue is simply never built.
+ */
+export function samePath(a: string, b: string): boolean {
+  return normalizePath(a) === normalizePath(b);
+}
+
+/**
+ * Is `path` inside `root`?
+ *
+ * Matching is on a **component boundary**, so `/Movies` does not swallow
+ * `/Movies2` — this decides whether a privacy root applies, and a root that
+ * matches too much hides files the viewer never excluded while one that matches
+ * too little is a leak. An empty root (which is what `/` collapses to once its
+ * trailing separators are trimmed) matches nothing at all: "everything is
+ * private" is a separate flag, never a root shaped like one.
+ */
+export function pathUnder(path: string, root: string): boolean {
+  const r = normalizePath(root).replace(/\/+$/, '');
+  if (r === '') return false;
+  const p = normalizePath(path);
+  return p === r || p.startsWith(`${r}/`);
+}
+
 /** Lower-case extension without the dot; empty for a dotfile or no extension. */
 export function extensionOf(path: string): string {
   const name = baseName(path);

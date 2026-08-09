@@ -11,7 +11,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 
-import { baseName, displayName } from './format';
+import { baseName, displayName, pathUnder } from './format';
 import { t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
 import { type Attempt, latest } from './latest';
@@ -682,14 +682,24 @@ export function forgetRecent(path: string) {
   history.recent = history.recent.filter((r) => r.path !== path);
 }
 
+/**
+ * Forget everything, on request.
+ *
+ * Driven by the same list as the two selective purges, and that is a fix rather
+ * than tidying: this used to name three keys by hand and cleared three of the
+ * six. What survived was the remembered titles — keyed by source id, which for a
+ * local file *is* the path, so that store on its own is a list of everything
+ * ever watched — along with the per-folder track memory and the paths of every
+ * subtitle the player had downloaded.
+ */
 export async function clearHistory() {
   forgetLinks();
-  try {
-    localStorage.removeItem(POSITIONS_KEY);
-    localStorage.removeItem(RESUME_KEY);
-    localStorage.removeItem(TRACKS_KEY);
-  } catch {
-    // not critical
+  for (const store of IDENTIFIED_STORES) {
+    try {
+      localStorage.removeItem(store.key);
+    } catch (e) {
+      console.warn(`clearing ${store.key} failed:`, e);
+    }
   }
   await invoke('clear_thumb_cache').catch(() => {});
   for (const r of history.recent) if (r.poster) URL.revokeObjectURL(r.poster);
@@ -697,22 +707,130 @@ export async function clearHistory() {
   showOsd(t('osd.history_cleared'));
 }
 
-/// Is `path` inside `root`? The same rule `isPrivatePath` applies to each of
-/// the excluded folders, extracted because purging needs it against one folder
-/// rather than against the whole list. Mirrored in Rust (`path_under`).
-function pathUnder(path: string, root: string): boolean {
-  // Separators are normalized on **both** sides, not merely accepted on the
-  // path's. The two strings come from different places — a folder picked in the
-  // OS dialog, against whatever mpv reports as `path` — and on Windows they
-  // disagree about the direction of the slash: `samePath` in playlist.svelte.ts
-  // normalizes for exactly this reason, where the cost of missing is a queue
-  // that silently does not build. Here the cost is a privacy root that does not
-  // match, which is a leak, so it is the one place that must not be laxer.
-  const norm = (s: string) => s.toLowerCase().replace(/\\/g, '/');
-  const r = norm(root).replace(/\/+$/, '');
-  if (r === '') return false;
-  const p = norm(path);
-  return p === r || p.startsWith(`${r}/`);
+// ---- The stores, as a list rather than as three lists ---------------------
+
+/**
+ * Every localStorage store that holds something about a *particular video*, and
+ * where inside it that video's identity sits.
+ *
+ * Three separate operations have to walk this set — excluding a folder,
+ * forgetting a torrent, and clearing the history outright — and each of them
+ * used to enumerate the stores by hand. Three hand-written lists of the same
+ * thing is one list too many even before they disagree, and they did: **`clear
+ * history` cleared three of the six**, leaving the remembered titles (which for
+ * a local file are keyed by the path, so that store *is* a list of everything
+ * watched), the per-folder track memory, and the downloaded-subtitle paths
+ * sitting in localStorage after the viewer had asked for all of it to go.
+ *
+ * The identity is not always the key. Positions carry `src` beside it because
+ * the two answer different questions — the id is "which video", `src` is "how
+ * do I open it" — and they only coincide for a local file.
+ *
+ * `frameplayer.links` is deliberately absent: a URL has no folder and no
+ * position, so nothing in it can belong to one. It is cleared by name in
+ * `clearHistory` alongside these. `frameplayer.history` is the preferences
+ * themselves, which are not about a video at all.
+ */
+interface IdentifiedStore {
+  key: string;
+  /** Drop every entry whose identity matches. Never throws for one bad store. */
+  purge(matches: (id: string) => boolean): void;
+}
+
+function jsonAt(key: string, fallback: string): unknown {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? fallback);
+  } catch {
+    return JSON.parse(fallback);
+  }
+}
+
+/// A `Record<identity, entry>`. `identityOf` exists for the one store whose key
+/// is not the whole answer.
+function mapStore(
+  key: string,
+  identityOf: (id: string, entry: unknown) => string = (id) => id,
+): IdentifiedStore {
+  return {
+    key,
+    purge(matches) {
+      const map = jsonAt(key, '{}') as Record<string, unknown>;
+      let hit = false;
+      for (const [id, entry] of Object.entries(map)) {
+        if (!matches(identityOf(id, entry))) continue;
+        delete map[id];
+        hit = true;
+      }
+      if (hit) localStorage.setItem(key, JSON.stringify(map));
+    },
+  };
+}
+
+/// A bare list of paths.
+function listStore(key: string): IdentifiedStore {
+  return {
+    key,
+    purge(matches) {
+      const list = jsonAt(key, '[]');
+      if (!Array.isArray(list)) return;
+      const kept = list.filter((p: unknown) => typeof p !== 'string' || !matches(p));
+      if (kept.length !== list.length) localStorage.setItem(key, JSON.stringify(kept));
+    },
+  };
+}
+
+/// One object about one video, which is dropped whole or not at all.
+function singleStore(key: string, field: string): IdentifiedStore {
+  return {
+    key,
+    purge(matches) {
+      const raw = localStorage.getItem(key);
+      if (raw === null) return;
+      let value: unknown;
+      try {
+        value = JSON.parse(raw);
+      } catch {
+        // Unreadable: it cannot be shown to be safe, so it goes.
+        localStorage.removeItem(key);
+        return;
+      }
+      const id = (value as Record<string, unknown> | null)?.[field];
+      if (typeof id === 'string' && matches(id)) localStorage.removeItem(key);
+    },
+  };
+}
+
+const IDENTIFIED_STORES: IdentifiedStore[] = [
+  mapStore(POSITIONS_KEY, (id, entry) => (entry as { src?: string } | null)?.src ?? id),
+  mapStore(TRACKS_KEY),
+  // Keyed by the folder rather than the file, which the predicates handle for
+  // free: a folder is under itself, and a torrent id is not a folder.
+  mapStore(FOLDER_TRACKS_KEY),
+  mapStore(TITLES_KEY),
+  listStore(DOWNLOADED_SUBS_KEY),
+  // The snapshot restores itself after an update, unasked — a video the viewer
+  // has excluded must not be what comes back.
+  singleStore(RESUME_KEY, 'path'),
+];
+
+/**
+ * Drop everything the stores hold about videos whose identity `matches`.
+ *
+ * The predicate is the only thing that differs between excluding a folder and
+ * forgetting a torrent, which is the whole point: a store added to the list
+ * above is covered by both without either being edited, and a predicate that
+ * has nothing to say about a store simply matches none of its entries.
+ */
+function purgeStores(matches: (id: string) => boolean) {
+  for (const store of IDENTIFIED_STORES) {
+    try {
+      store.purge(matches);
+    } catch (e) {
+      // One unreadable store must not stop the others: a purge that silently
+      // did half its work is the failure this is guarding against.
+      console.warn(`purging ${store.key} failed:`, e);
+    }
+  }
 }
 
 /**
@@ -724,47 +842,11 @@ function pathUnder(path: string, root: string): boolean {
  * That is the wrong half of a privacy control — the start screen was clean
  * while the disk was not.
  *
- * Every store keyed by a path is purged here. `frameplayer.links` is not: a URL
- * has no folder, so nothing in it can belong to one. The thumbnails are Rust's
- * to delete, because their cache is addressed by a hash of the path.
+ * The thumbnails are Rust's to delete, because their cache is addressed by a
+ * hash of the path.
  */
 async function purgeFolder(dir: string) {
-  try {
-    const positions = positionsLoad();
-    for (const [id, entry] of Object.entries(positions)) {
-      if (pathUnder(entry.src ?? id, dir)) delete positions[id];
-    }
-    localStorage.setItem(POSITIONS_KEY, JSON.stringify(positions));
-
-    // Remembered tracks and delays, in both scopes: the per-file one is keyed
-    // by source id, the per-folder one by the folder itself.
-    for (const key of [TRACKS_KEY, FOLDER_TRACKS_KEY]) {
-      const map = entriesLoad(key);
-      for (const id of Object.keys(map)) if (pathUnder(id, dir)) delete map[id];
-      localStorage.setItem(key, JSON.stringify(map));
-    }
-
-    const titles = JSON.parse(localStorage.getItem(TITLES_KEY) ?? '{}');
-    for (const id of Object.keys(titles)) if (pathUnder(id, dir)) delete titles[id];
-    localStorage.setItem(TITLES_KEY, JSON.stringify(titles));
-
-    localStorage.setItem(
-      DOWNLOADED_SUBS_KEY,
-      JSON.stringify(downloadedSubs().filter((p) => !pathUnder(p, dir))),
-    );
-
-    // The snapshot restores itself after an update, unasked — a video from an
-    // excluded folder must not be what comes back.
-    try {
-      const raw = localStorage.getItem(RESUME_KEY);
-      const snapshot = raw ? JSON.parse(raw) : null;
-      if (snapshot?.path && pathUnder(snapshot.path, dir)) localStorage.removeItem(RESUME_KEY);
-    } catch {
-      localStorage.removeItem(RESUME_KEY);
-    }
-  } catch (e) {
-    console.warn('purging the excluded folder failed:', e);
-  }
+  purgeStores((id) => pathUnder(id, dir));
   await invoke('forget_thumbs_under', { folder: dir }).catch((e) => {
     console.warn('purging cached thumbnails failed:', e);
   });
@@ -777,29 +859,16 @@ async function purgeFolder(dir: string) {
  * this is the history half, kept here because it is the only module that knows
  * which stores exist and how they are keyed. Every one of them files a torrent
  * under `torrent:<hash>/<index>` (see `sourceId`), so a prefix match over the
- * id is the whole rule — the path-shaped `pathUnder` used by `purgeFolder` has
- * nothing to say about a source that never had a path.
+ * identity is the whole rule — where excluding a folder asks the same stores a
+ * path-shaped question, this asks an id-shaped one and the stores do not care
+ * which. The path-keyed ones (the folder track scope, the downloaded subtitles,
+ * the resume snapshot) simply match nothing, which is the right answer: a
+ * torrent has no folder, and its snapshot holds a loopback URL.
  */
 export function purgeTorrentHistory(infoHash: string) {
   const prefix = `torrent:${infoHash.toLowerCase()}/`;
   const mine = (id: string) => id.toLowerCase().startsWith(prefix);
-  try {
-    const positions = positionsLoad();
-    for (const id of Object.keys(positions)) if (mine(id)) delete positions[id];
-    localStorage.setItem(POSITIONS_KEY, JSON.stringify(positions));
-
-    // Only the per-source scope: a torrent gets no per-folder track memory,
-    // because it has no folder (see `rememberTrack`).
-    const tracks = entriesLoad(TRACKS_KEY);
-    for (const id of Object.keys(tracks)) if (mine(id)) delete tracks[id];
-    localStorage.setItem(TRACKS_KEY, JSON.stringify(tracks));
-
-    const titles = JSON.parse(localStorage.getItem(TITLES_KEY) ?? '{}');
-    for (const id of Object.keys(titles)) if (mine(id)) delete titles[id];
-    localStorage.setItem(TITLES_KEY, JSON.stringify(titles));
-  } catch (e) {
-    console.warn('purging the torrent history failed:', e);
-  }
+  purgeStores(mine);
   for (const item of history.recent) {
     if (mine(item.id) && item.poster) URL.revokeObjectURL(item.poster);
   }

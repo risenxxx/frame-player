@@ -18,7 +18,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 
-import { baseName, displayName, extensionOf } from './format';
+import { baseName, displayName, extensionOf, samePath } from './format';
 import { latest } from './latest';
 import { VIDEO_EXTENSIONS, isNetworkSource, player, readList } from './player.svelte';
 
@@ -268,20 +268,6 @@ export function dropPosters() {
 
 // ---- Building a queue from the folder -------------------------------------
 
-/// Path comparison for "is this the file we just opened".
-///
-/// Case-insensitive, like the privacy roots in history.svelte.ts and for the
-/// same reason: Windows and macOS both hand back paths whose case does not
-/// match what was asked for. **And separator-insensitive**, because the two
-/// sides of this comparison come from different places — one from a stored
-/// record or mpv's `path`, the other from a directory read in Rust — and on
-/// Windows a mixed `E:/Videos\ep1.mkv` costs the whole queue: `findIndex`
-/// answers −1, `queueAround` returns without a word, and the player looks like
-/// it decided this folder has no other episodes.
-function samePath(a: string, b: string): boolean {
-  return a.toLowerCase().replace(/\\/g, '/') === b.toLowerCase().replace(/\\/g, '/');
-}
-
 /**
  * Put `entries` around the one at `at`, which is already loading.
  *
@@ -333,6 +319,11 @@ export async function queueFolder(openedPath: string) {
   if (videos.length < 2) return;
 
   videos.sort((a, b) => naturalOrder.compare(baseName(a), baseName(b)));
+  // `samePath`, never `===`: the two sides come from different places — a
+  // stored record or mpv's `path` against a directory read in Rust — and on
+  // Windows one mixed `E:/Videos\ep1.mkv` costs the whole queue in silence.
+  // `findIndex` answers −1, the caller returns without a word, and the player
+  // looks like it decided this folder holds no other episodes.
   const at = videos.findIndex((p) => samePath(p, openedPath));
   if (at < 0) {
     // The folder was read and the file we just opened is not in it — a path
