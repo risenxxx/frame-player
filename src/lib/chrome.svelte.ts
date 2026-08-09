@@ -20,7 +20,7 @@ import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { tick } from 'svelte';
 
-import { cast } from './cast.svelte';
+import { playback } from './playback.svelte';
 import { IS_MAC } from './platform';
 import { flushPosition } from './history.svelte';
 import { player } from './player.svelte';
@@ -93,7 +93,7 @@ class Chrome {
       // While casting the window is a remote control and a status display —
       // there is no picture being watched under the chrome, so hiding it buys
       // nothing and hiding the controls of a remote is actively wrong.
-      !cast.active,
+      !playback.session,
   );
 }
 

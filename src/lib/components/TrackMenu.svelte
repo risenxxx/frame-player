@@ -2,8 +2,8 @@
   /// The audio and subtitle track menus. They share their whole body — the list
   /// plus the delay stepper — which the chapter menu does not, so one component
   /// serves both and `kind` narrows it.
-  import { cast } from '$lib/cast.svelte';
   import { t } from '$lib/i18n.svelte';
+  import { playback } from '$lib/playback.svelte';
   import { delayIsZero, formatDelay, player, type Track } from '$lib/player.svelte';
   import { openSubsDialog, removeSubtitle } from '$lib/subs.svelte';
 
@@ -37,7 +37,7 @@
        absence is a decision, not a gap). The list would otherwise keep
        showing this player's selection, which is a claim we cannot back:
        a switch made on the TV's own remote never reaches us. -->
-  {#if cast.transport === 'dlna' && cast.remote}
+  {#if !playback.can.trackChoice}
     <div class="cast-hint">{t('cast.tracks_on_tv')}</div>
   {/if}
   {#each kind === 'audio' ? player.audioTracks : player.subTracks as track (track.id)}

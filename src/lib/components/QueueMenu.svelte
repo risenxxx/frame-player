@@ -8,10 +8,10 @@
   import { tick } from 'svelte';
   import { command } from 'tauri-plugin-libmpv-api';
 
-  import { cast, castFollow } from '$lib/cast.svelte';
   import { t } from '$lib/i18n.svelte';
+  import { openEntry } from '$lib/playback.svelte';
   import { player } from '$lib/player.svelte';
-  import { loadPlaylist, playEntry, playlist } from '$lib/playlist.svelte';
+  import { loadPlaylist, playlist } from '$lib/playlist.svelte';
 
   interface Props {
     close: () => void;
@@ -131,8 +131,7 @@ function queueRowShift(index: number): number {
           // the flag the pointer handlers leave behind.
           if (dragArmed) return;
           close();
-          if (cast.active) void castFollow(entry);
-          else void playEntry(entry);
+          openEntry(entry);
         }}
       >
         <span class="chapter-name">{entry.title}</span>

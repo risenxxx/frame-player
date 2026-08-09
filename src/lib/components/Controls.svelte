@@ -6,11 +6,17 @@
   /// down and the row becomes one column — written on this element rather than
   /// as `.player.mini .controls`, since the player root is the page's and a
   /// scoped selector cannot reach across that boundary.
-  import { command } from 'tauri-plugin-libmpv-api';
-
-  import { cast, castAdvance, castSetVolume, castToggleMute, castTogglePause } from '$lib/cast.svelte';
+  import { cast } from '$lib/cast.svelte';
   import { t } from '$lib/i18n.svelte';
   import { hintPair, withKey } from '$lib/keys.svelte';
+  import {
+    VOLUME_SCALE,
+    advance,
+    playback,
+    setVolume,
+    toggleMute,
+    togglePause,
+  } from '$lib/playback.svelte';
   import { LOOP_LABEL, isNetworkSource, player } from '$lib/player.svelte';
   import { playlist } from '$lib/playlist.svelte';
   import { parseTorrentUrl } from '$lib/source';
@@ -20,27 +26,17 @@
     fullscreen: boolean;
     openMenu: 'audio' | 'sub' | 'chapter' | 'queue' | 'cast' | null;
     onToggleMenu: (kind: 'audio' | 'sub' | 'chapter' | 'queue' | 'cast') => void;
-    onTogglePause: () => void;
-    onToggleMute: () => void;
-    onSetVolume: (v: number) => void;
     onCycleLoop: () => void;
     onToggleFullscreen: () => void;
   }
 
-  let {
-    mini,
-    fullscreen,
-    openMenu,
-    onToggleMenu,
-    onTogglePause,
-    onToggleMute,
-    onSetVolume,
-    onCycleLoop,
-    onToggleFullscreen,
-  }: Props = $props();
+  let { mini, fullscreen, openMenu, onToggleMenu, onCycleLoop, onToggleFullscreen }: Props =
+    $props();
 
   const hasFile = $derived(player.hasFile);
-  const VOLUME_MAX = 100;
+  /// Rounded once: the readout, the tooltip and the label are the same number
+  /// and must not disagree by a unit at a rounding boundary.
+  const volume = $derived(Math.round(playback.volume));
 </script>
 
 <div class="controls" class:mini>
@@ -52,51 +48,49 @@
   <button
     data-tip={withKey(t('osc.sound'), 'mute')}
     aria-label={t('osc.sound')}
-    disabled={cast.remote && !cast.volumeAdjustable}
-    onclick={() => (cast.remote ? castToggleMute() : onToggleMute())}
+    disabled={!playback.can.volume}
+    onclick={toggleMute}
   >
-    {#if cast.remote ? cast.muted : player.muted || player.volume === 0}
+    {#if playback.muted}
       <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16.5 12A4.5 4.5 0 0 0 14 8v2.2l2.5 2.5v-.7zM19 12a7 7 0 0 1-1.2 3.9l1.5 1.5A9 9 0 0 0 21 12a9 9 0 0 0-7-8.8v2.1A7 7 0 0 1 19 12zM4.3 3L3 4.3 7.7 9H3v6h4l5 5v-6.7l4.3 4.2a6.9 6.9 0 0 1-2.3 1.2v2.1a9 9 0 0 0 3.7-1.8L20 21.7 21.3 20 4.3 3zM12 4L9.9 6.1 12 8.2V4z"/></svg>
     {:else}
       <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
     {/if}
   </button>
-  <!-- While casting the bar is the TV's volume — the receiver's own 0..1
-       shown as percent, with no amplification range: 100 is the device's
-       ceiling, not a point on the way to 150. -->
+  <!-- One bar for both transports: `playback` speaks a single 0..VOLUME_SCALE
+       scale, so nothing here has to know whose volume it is showing. While
+       casting that is the receiver's own 0..1 with no amplification range —
+       100 is the device's ceiling, not a point on the way to 150. -->
   <input
     class="volumebar"
     type="range"
     min="0"
-    max={cast.remote ? 100 : VOLUME_MAX}
+    max={VOLUME_SCALE}
     step="1"
-    disabled={cast.remote && !cast.volumeAdjustable}
-    value={cast.remote ? Math.round(cast.volume * 100) : player.volume}
-    oninput={(e) =>
-      cast.remote
-        ? castSetVolume(Number(e.currentTarget.value) / 100)
-        : onSetVolume(Number(e.currentTarget.value))}
+    disabled={!playback.can.volume}
+    value={volume}
+    oninput={(e) => setVolume(Number(e.currentTarget.value))}
     onchange={(e) => e.currentTarget.blur()}
-    style="--progress: {cast.remote ? cast.volume * 100 : (player.volume / VOLUME_MAX) * 100}%"
-    data-tip={t('osd.volume', { value: Math.round(cast.remote ? cast.volume * 100 : player.volume) })}
-    aria-label={t('osd.volume', { value: Math.round(cast.remote ? cast.volume * 100 : player.volume) })}
+    style="--progress: {(volume / VOLUME_SCALE) * 100}%"
+    data-tip={t('osd.volume', { value: volume })}
+    aria-label={t('osd.volume', { value: volume })}
   />
-  {#if player.speed !== 1 && !cast.remote}
+  {#if player.speed !== 1 && playback.can.speed}
     <span class="speed" data-tip={t('osc.speed')} aria-label={t('osc.speed')}>{player.speed}×</span>
   {/if}
   </div>
   <div class="cluster cl-center">
-  <button data-tip={withKey(t('osc.prev'), 'playlist_prev')} aria-label={t('osc.prev')} disabled={player.playlistPos <= 0} onclick={() => (cast.active ? void castAdvance(-1) : void command('playlist-prev', []))}>
+  <button data-tip={withKey(t('osc.prev'), 'playlist_prev')} aria-label={t('osc.prev')} disabled={player.playlistPos <= 0} onclick={() => advance(-1)}>
     <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
   </button>
-  <button class="play" data-tip={withKey(t('osc.play'), 'pause')} aria-label={t('osc.play')} disabled={!hasFile} onclick={() => (cast.remote ? castTogglePause() : void onTogglePause())}>
-    {#if cast.remote ? cast.paused : player.paused || player.eofReached}
+  <button class="play" data-tip={withKey(t('osc.play'), 'pause')} aria-label={t('osc.play')} disabled={!hasFile} onclick={togglePause}>
+    {#if playback.paused}
       <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
     {:else}
       <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
     {/if}
   </button>
-  <button data-tip={withKey(t('osc.next'), 'playlist_next')} aria-label={t('osc.next')} disabled={player.playlistPos >= player.playlistCount - 1} onclick={() => (cast.active ? void castAdvance(1) : void command('playlist-next', []))}>
+  <button data-tip={withKey(t('osc.next'), 'playlist_next')} aria-label={t('osc.next')} disabled={player.playlistPos >= player.playlistCount - 1} onclick={() => advance(1)}>
     <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
   </button>
   </div>

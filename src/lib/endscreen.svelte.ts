@@ -20,10 +20,10 @@
  * has to import a dialog.
  */
 
-import { cast, castFollow, castSeek } from './cast.svelte';
 import { chrome } from './chrome.svelte';
-import { chapterAt, player, seekChapter, skipKind } from './player.svelte';
-import { ADVANCE_MS, ensurePoster, neighbour, playEntry, playlist } from './playlist.svelte';
+import { jumpToChapter, openEntry, playback } from './playback.svelte';
+import { chapterAt, player, skipKind } from './player.svelte';
+import { ADVANCE_MS, ensurePoster, neighbour, playlist } from './playlist.svelte';
 import { step } from './step-engine.svelte';
 
 /// Fetch the poster this many seconds before the end, so the card is not blank
@@ -70,9 +70,8 @@ class EndOfFile {
     // **Whose clock.** While casting, the local player is parked paused on the
     // frame it handed over, so every one of these readings is frozen and the
     // button never appears — until something moves mpv, and then it appears at
-    // the wrong moment. The television's position is the one the viewer is
-    // watching, so it is the one the offer is measured against.
-    const now = cast.remote ? cast.time : player.timePos;
+    // the wrong moment. `playback.position` is whoever is actually playing.
+    const now = playback.position;
     // From the position rather than the `chapter` mirror: the mirror lags a
     // seek, and the elapsed time below has to be measured against the same
     // chapter the button would skip.
@@ -106,7 +105,7 @@ class EndOfFile {
     const entry = after && !sameFile ? after : null;
     if (!chapter && !entry) return null;
     // The last chapter ends where the file does.
-    const ends = chapter ? chapter.time : cast.remote ? cast.duration : player.duration;
+    const ends = chapter ? chapter.time : playback.duration;
     if (ends <= here.time) return null;
     const span = Math.min(ends - here.time, SKIP_MAX_WINDOW);
     const left = here.time + span - now;
@@ -145,15 +144,11 @@ export function takeSkip() {
   const hint = endOfFile.hint;
   if (!hint) return;
   endOfFile.skipUsed = hint.from;
-  // Both halves follow the session: a chapter jump is a remote seek, and the
-  // next episode goes to the television rather than starting here.
-  if (hint.chapter) {
-    if (cast.remote) castSeek(hint.chapter.time);
-    else seekChapter(hint.chapter.index);
-  } else if (hint.entry) {
-    if (cast.remote) void castFollow(hint.entry);
-    else void playEntry(hint.entry);
-  }
+  // Both halves follow the session by themselves: a chapter jump becomes a
+  // remote seek and the next episode goes to the television rather than
+  // starting here, without this having to know which.
+  if (hint.chapter) jumpToChapter(hint.chapter);
+  else if (hint.entry) openEntry(hint.entry);
 }
 
 export function cancelAdvance() {
@@ -183,7 +178,7 @@ export function onReachedEnd() {
     // Re-read rather than closing over `next`: the countdown outlives several
     // frames, and the queue can be edited from the panel while it runs.
     const target = neighbour(1);
-    if (target) void playEntry(target);
+    if (target) openEntry(target);
   }, ADVANCE_MS);
 }
 
@@ -231,8 +226,11 @@ export function noteLocalPosition() {
  */
 export function initEndScreen() {
   $effect(() => {
-    if (!cast.remote) return;
-    if (endOfFile.skipUsed >= 0 && chapterAt(cast.time)?.index !== endOfFile.skipUsed) {
+    // The early return is load-bearing rather than tidy: without it the effect
+    // would read `playback.position` on the local path too, subscribe to
+    // `time-pos` and duplicate `noteLocalPosition` ten times a second.
+    if (!playback.remote) return;
+    if (endOfFile.skipUsed >= 0 && chapterAt(playback.position)?.index !== endOfFile.skipUsed) {
       endOfFile.skipUsed = -1;
     }
   });

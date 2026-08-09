@@ -27,6 +27,7 @@ import { command } from 'tauri-plugin-libmpv-api';
 
 import { baseName, displayName, extensionOf } from './format';
 import { history, positionsLoad } from './history.svelte';
+import { latest } from './latest';
 import { SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, player } from './player.svelte';
 import { magnetFor, parseTorrentUrl, torrentId } from './source';
 
@@ -162,7 +163,7 @@ export interface PortStatus {
 /// Guards a probe that outlives the panel that asked for it — an SSDP search
 /// plus a SOAP round trip is seconds, and the settings sheet can be closed and
 /// reopened inside one.
-let portSeq = 0;
+const portProbes = latest();
 
 /**
  * Ask the router whether the port is actually forwarded.
@@ -174,18 +175,18 @@ let portSeq = 0;
  * separate things on screen.
  */
 export async function refreshPortStatus() {
-  const seq = ++portSeq;
+  const run = portProbes.begin();
   torrent.portChecking = torrentPrefs.portForward;
   try {
     const status = await invoke<PortStatus>('torrent_port_status', {
       on: torrentPrefs.portForward,
     });
-    if (seq !== portSeq) return;
+    if (run.stale) return;
     torrent.portStatus = status;
   } catch {
-    if (seq === portSeq) torrent.portStatus = null;
+    if (!run.stale) torrent.portStatus = null;
   } finally {
-    if (seq === portSeq) torrent.portChecking = false;
+    if (!run.stale) torrent.portChecking = false;
   }
 }
 
@@ -464,7 +465,7 @@ let bufferTimer: ReturnType<typeof setInterval> | undefined;
 /// `torrent.status` back, and since the file is gone nothing will ever clear it
 /// again: the readout stays on screen over the start screen, permanently. The
 /// same guard `loadTracks()` carries, for the same reason.
-let pollSeq = 0;
+const polls = latest();
 
 /**
  * Follow whatever the player is playing.
@@ -485,7 +486,7 @@ let pollSeq = 0;
 export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
   $effect(() => {
     const ref = player.filePath ? parseTorrentUrl(player.filePath) : null;
-    const seq = ++pollSeq;
+    const run = polls.begin();
     clearInterval(timer);
     timer = undefined;
 
@@ -501,7 +502,7 @@ export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
           infoHash: ref.infoHash,
           index: ref.index,
         });
-        if (seq !== pollSeq) return;
+        if (run.stale) return;
         torrent.status = status;
         // The episode being watched is fully here, so the swarm is idle as far
         // as this file goes — the moment to get the next one ready, and the only
@@ -531,7 +532,7 @@ export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
             .catch(() => {});
         }
       } catch {
-        if (seq === pollSeq) torrent.status = null;
+        if (!run.stale) torrent.status = null;
       }
     };
     const readBuffered = async () => {
@@ -540,9 +541,9 @@ export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
           infoHash: ref.infoHash,
           index: ref.index,
         });
-        if (seq === pollSeq) torrent.buffered = bands;
+        if (!run.stale) torrent.buffered = bands;
       } catch {
-        if (seq === pollSeq) torrent.buffered = [];
+        if (!run.stale) torrent.buffered = [];
       }
     };
 

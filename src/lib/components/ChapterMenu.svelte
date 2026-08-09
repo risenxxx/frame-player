@@ -2,17 +2,16 @@
   /// The chapter list.
   import { tick } from 'svelte';
 
-  import { cast, castSeek } from '$lib/cast.svelte';
   import { formatTime } from '$lib/format';
   import { t } from '$lib/i18n.svelte';
+  import { jumpToChapter, playback } from '$lib/playback.svelte';
   import { chapterTitle, player } from '$lib/player.svelte';
 
   interface Props {
     close: () => void;
-    onSeekChapter: (index: number) => void;
   }
 
-  let { close, onSeekChapter }: Props = $props();
+  let { close }: Props = $props();
 
   let el = $state<HTMLDivElement | undefined>();
 
@@ -32,17 +31,10 @@
   {#each player.chapters as chapter (chapter.index)}
     <button
       class="menu-item chapter-item"
-      class:sel={chapter.index === player.chapterIndex}
+      class:sel={chapter.index === playback.chapterIndex}
       onclick={() => {
         close();
-        // While the television owns playback, `chapter` is a property of
-        // the paused local player: setting it moves mpv, the knob jumps
-        // to the new time and the next status report drags it back — the
-        // seek never leaves this machine. The chapter list is local
-        // knowledge about the same file, so the jump is a remote seek to
-        // its timestamp, exactly as the chapter *keys* already did.
-        if (cast.remote) castSeek(chapter.time);
-        else onSeekChapter(chapter.index);
+        jumpToChapter(chapter);
       }}
     >
       <span class="chapter-name">{chapterTitle(chapter)}</span>

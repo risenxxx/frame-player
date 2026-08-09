@@ -6,8 +6,14 @@
  * remote**. Playback keys drive the television, the wheel is its volume, and
  * the local-only concepts — the frame, the zoom, the loop, the speed, the
  * delays — refuse out loud rather than silently acting on a player nobody is
- * watching. Every one of those was a separate bug when the routing was decided
- * per call site.
+ * watching.
+ *
+ * That rule is no longer *spelled* here, which is the point: it lives in
+ * `playback.svelte.ts`, whose verbs route themselves and whose table says, for
+ * every action, whether a session can carry it. This file went back to
+ * deciding *which* thing the viewer asked for; who answers is not its business.
+ * The one branch it keeps is the click, because there the two transports want
+ * genuinely different gestures rather than the same gesture aimed elsewhere.
  *
  * It needs no hooks into the page, and that is what the surrounding modules are
  * for: the overlay stack (`overlays`), the shell (`chrome`), the opening flow
@@ -17,53 +23,40 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { command } from 'tauri-plugin-libmpv-api';
 
-import {
-  cast,
-  castAdvance,
-  castNudgeVolume,
-  castSeek,
-  castSeekBy,
-  castToggleMute,
-  castTogglePause,
-} from './cast.svelte';
 import { chrome, exitFullscreen, pokeUi, toggleFullscreen } from './chrome.svelte';
 import { inTextField } from './dom';
 import { cancelAdvance, endOfFile, takeSkip } from './endscreen.svelte';
-import { formatTime } from './format';
-import { t } from './i18n.svelte';
 import { actionFor, chordOf, isDigitJump, type ActionId } from './keys.svelte';
 import { openFileDialog, openLinkDialog } from './open.svelte';
 import { closeTopmost, dismissTopmostOnClick, overlays, toggleInfo } from './overlays.svelte';
-import { showOsd } from './osd.svelte';
+import {
+  advance,
+  nudgeVolume,
+  openEntry,
+  playback,
+  refusedBySession,
+  seekBy,
+  seekFraction,
+  stepChapter,
+  toggleMute,
+  togglePause,
+} from './playback.svelte';
 import {
   DELAY_STEP,
   changeSpeed,
-  chapterTitle,
   clearAbLoop,
   cycleAbLoop,
   cycleLoop,
-  jumpChapter,
   player,
-  setVolume,
-  toggleMute,
 } from './player.svelte';
-import { playEntry } from './playlist.svelte';
 import { copyScreenshot, saveScreenshot } from './screenshot';
-import { scrubBy, seekPercent, seekRelative } from './seek.svelte';
-import { stepBy, togglePlayback } from './step-engine.svelte';
+import { scrubBy } from './seek.svelte';
+import { stepBy } from './step-engine.svelte';
 import { nudgeDelayHere } from './tracks.svelte';
 import { mini, toggleMini } from './window-prefs.svelte';
 import { isZoomed, panBy, resetZoom, zoomAt } from './zoom.svelte';
 import { IS_MAC } from './platform';
-
-/// The OSD every volume change raises. Here rather than in `osd.svelte.ts`
-/// because it is the *volume*'s presentation, and both the wheel and the keys
-/// want the same one.
-export function osdVolume(v: number) {
-  showOsd(t('osd.volume', { value: v }), { progress: Math.min(1, v / 100) });
-}
 
 /// Set once from the system rather than guessed: the cast click path waits it
 /// out, and a constant would be wrong on a machine where the interval was
@@ -188,15 +181,15 @@ export function onVideoClick(e: MouseEvent) {
   // click waits out the *system's own* double-click interval (never a guessed
   // constant — the reason `double_click_time` exists) and the double click
   // cancels it outright.
-  if (cast.remote) {
+  if (playback.remote) {
     clearCastClick();
     castClickTimer = setTimeout(() => {
       castClickTimer = null;
-      castTogglePause();
+      togglePause();
     }, doubleClickMs);
     return;
   }
-  void togglePlayback();
+  togglePause();
 }
 
 /// The casting screen's click: the same deferral as the video area, without
@@ -207,7 +200,7 @@ export function onCastScreenClick() {
   clearCastClick();
   castClickTimer = setTimeout(() => {
     castClickTimer = null;
-    castTogglePause();
+    togglePause();
   }, doubleClickMs);
 }
 
@@ -283,53 +276,53 @@ export function onWheel(e: WheelEvent) {
     // preventDefault regardless of where the pointer is: without it the
     // webview zooms the whole UI, which there is no way back from.
     e.preventDefault();
-    if (player.hasFile && !onSurface && !cast.remote) zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 0.1 : -0.1);
+    if (player.hasFile && !onSurface && playback.can.zoom) {
+      zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 0.1 : -0.1);
+    }
     return;
   }
   if (onSurface) return;
   // deltaMode: 0 — pixels, 1 — lines, 2 — pages.
   const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
 
-  // While casting the wheel drives the TV: vertical is its volume (the
-  // receiver's own 0..1), and there is no scrub — keyframe previews are a
-  // local concept and every landing would cost the TV seconds of buffering.
-  if (cast.remote) {
-    const px = e.deltaY * scale;
-    wheelAccum += IS_MAC ? px : -px;
-    const steps = Math.trunc(wheelAccum / PX_PER_VOLUME_UNIT);
-    if (!steps) return;
-    wheelAccum -= steps * PX_PER_VOLUME_UNIT;
-    castNudgeVolume(steps * 0.02);
-    return;
-  }
+  // While casting the wheel drives the TV: vertical is its volume, and there
+  // is no scrub — keyframe previews are a local concept and every landing
+  // would cost the TV seconds of buffering. So the axis machinery is skipped
+  // entirely (there is nothing for the horizontal one to do) and the vertical
+  // fall-through below does the volume for both transports.
+  //
+  // It did not always: this branch used to nudge by `steps * 0.02`, i.e. two
+  // units where the local path moves one and where both key steps move five —
+  // a scale nobody chose, arrived at by writing the same gesture twice.
+  if (!playback.remote) {
+    // The axis is picked once at the start of the gesture and held to its end.
+    clearTimeout(wheelAxisTimer);
+    wheelAxisTimer = setTimeout(() => {
+      wheelAxis = null;
+      wheelAccum = 0;
+      wheelSeekAccum = 0;
+    }, WHEEL_AXIS_RESET_MS);
+    if (wheelAxis === null) {
+      const ax = Math.abs(e.deltaX);
+      const ay = Math.abs(e.deltaY);
+      // While the motion is too small, do not pick an axis: the first events of
+      // a gesture are almost always noisy and can point the wrong way.
+      if (Math.max(ax, ay) < 2) return;
+      wheelAxis = ax > ay ? 'x' : 'y';
+    }
 
-  // The axis is picked once at the start of the gesture and held to its end.
-  clearTimeout(wheelAxisTimer);
-  wheelAxisTimer = setTimeout(() => {
-    wheelAxis = null;
-    wheelAccum = 0;
-    wheelSeekAccum = 0;
-  }, WHEEL_AXIS_RESET_MS);
-  if (wheelAxis === null) {
-    const ax = Math.abs(e.deltaX);
-    const ay = Math.abs(e.deltaY);
-    // While the motion is too small, do not pick an axis: the first events of
-    // a gesture are almost always noisy and can point the wrong way.
-    if (Math.max(ax, ay) < 2) return;
-    wheelAxis = ax > ay ? 'x' : 'y';
-  }
-
-  if (wheelAxis === 'x') {
-    if (!player.hasFile || player.duration <= 0) return;
-    // On macOS the sign is inverted for the same reason as for volume: the
-    // system already applied "natural scrolling" to the event, so a rightward
-    // gesture arrives as deltaX < 0 while it feels like "forward".
-    wheelSeekAccum += IS_MAC ? -e.deltaX * scale : e.deltaX * scale;
-    const secs = Math.trunc(wheelSeekAccum / PX_PER_SEEK_SECOND);
-    if (!secs) return;
-    wheelSeekAccum -= secs * PX_PER_SEEK_SECOND;
-    scrubBy(secs);
-    return;
+    if (wheelAxis === 'x') {
+      if (!player.hasFile || player.duration <= 0) return;
+      // On macOS the sign is inverted for the same reason as for volume: the
+      // system already applied "natural scrolling" to the event, so a rightward
+      // gesture arrives as deltaX < 0 while it feels like "forward".
+      wheelSeekAccum += IS_MAC ? -e.deltaX * scale : e.deltaX * scale;
+      const secs = Math.trunc(wheelSeekAccum / PX_PER_SEEK_SECOND);
+      if (!secs) return;
+      wheelSeekAccum -= secs * PX_PER_SEEK_SECOND;
+      scrubBy(secs);
+      return;
+    }
   }
 
   const px = e.deltaY * scale;
@@ -340,7 +333,7 @@ export function onWheel(e: WheelEvent) {
   const steps = Math.trunc(wheelAccum / PX_PER_VOLUME_UNIT);
   if (!steps) return;
   wheelAccum -= steps * PX_PER_VOLUME_UNIT;
-  osdVolume(setVolume(player.volume + steps));
+  nudgeVolume(steps);
 }
 
 /// Every hotkey action, by id. The chord that reached it is deliberately not
@@ -349,95 +342,43 @@ export function onWheel(e: WheelEvent) {
 /// would have to mean rebinding a key *and* a modifier convention. So the old
 /// overloads (Shift+S, Shift+Z, Shift+A, the three things the arrows did) are
 /// rows of their own, and this switch has no branches in it.
-/// While casting the window is a remote: playback keys drive the TV, and
-/// the local-only concepts — the frame, the zoom, the loop, the speed, the
-/// delays — say so instead of silently acting on a player nobody is
-/// watching. Returns true when the action was consumed.
-function runCastAction(id: ActionId): boolean {
-  switch (id) {
-    case 'pause': castTogglePause(); return true;
-    case 'seek_back': castSeekBy(-5); return true;
-    case 'seek_fwd': castSeekBy(5); return true;
-    case 'seek_back_precise': castSeekBy(-1); return true;
-    case 'seek_fwd_precise': castSeekBy(1); return true;
-    case 'seek_back_10': castSeekBy(-10); return true;
-    case 'seek_fwd_10': castSeekBy(10); return true;
-    case 'seek_start': castSeek(0); return true;
-    case 'seek_end': castSeek(Math.max(0, cast.duration - 5)); return true;
-    case 'volume_up': castNudgeVolume(0.05); return true;
-    case 'volume_down': castNudgeVolume(-0.05); return true;
-    case 'mute': castToggleMute(); return true;
-    case 'chapter_prev':
-    case 'chapter_next': {
-      // The chapter list is local knowledge about the same file; the jump is
-      // a remote seek, never mpv's `chapter` property — that would move the
-      // paused local player out from under the session.
-      const list = player.chapters;
-      if (!list.length) return true;
-      const current = list.filter((c) => c.time <= cast.time + 0.5).length - 1;
-      const target = id === 'chapter_next' ? current + 1 : current - 1;
-      if (target >= list.length) return true;
-      const chapter = list[Math.max(0, target)];
-      castSeek(chapter.time);
-      showOsd(chapterTitle(chapter), { sub: formatTime(chapter.time) });
-      return true;
-    }
-    case 'playlist_prev':
-    case 'playlist_next':
-      // The session follows the queue: the local player opens the neighbour
-      // and the television is handed it, without dropping the session.
-      void castAdvance(id === 'playlist_next' ? 1 : -1);
-      return true;
-    case 'frame_prev':
-    case 'frame_next':
-    case 'speed_down':
-    case 'speed_up':
-    case 'loop':
-    case 'ab_loop':
-    case 'ab_clear':
-    case 'screenshot':
-    case 'screenshot_subs':
-    case 'copy_frame':
-    case 'mini':
-    case 'audio_delay_down':
-    case 'audio_delay_up':
-    case 'sub_delay_down':
-    case 'sub_delay_up':
-    case 'reset_zoom':
-      showOsd(t('cast.not_while_casting'));
-      return true;
-    default:
-      return false;
-  }
-}
+///
+/// **Including no casting branches.** It used to open with a second switch that
+/// re-implemented a dozen of these against the television, and the local-only
+/// ones with a list of `case`s falling through to one popup — a shape where
+/// forgetting a row is silent and where the two halves could disagree about
+/// what an action means. Now every line below either calls a `playback` verb,
+/// which routes itself, or is genuinely about this window; what a session
+/// cannot carry is refused by `refusedBySession` from a table the compiler
+/// forces to be complete.
+/// One key step of the volume, on the scale both transports speak.
+const VOLUME_KEY_STEP = 5;
 
 export function runAction(id: ActionId) {
-  // `remote`, not `active`: while the prepare rung runs, local playback is
-  // still what the viewer sees, and the keys must keep driving it.
-  if (cast.remote && runCastAction(id)) return;
+  if (refusedBySession(id)) return;
   switch (id) {
-    case 'pause': void togglePlayback(); break;
-    case 'seek_back': seekRelative(-5); break;
-    case 'seek_fwd': seekRelative(5); break;
-    case 'seek_back_precise': seekRelative(-1, true); break;
-    case 'seek_fwd_precise': seekRelative(1, true); break;
-    case 'seek_back_10': seekRelative(-10); break;
-    case 'seek_fwd_10': seekRelative(10); break;
-    case 'seek_start': seekPercent(0); break;
-    case 'seek_end': seekPercent(100); break;
+    case 'pause': togglePause(); break;
+    case 'seek_back': seekBy(-5); break;
+    case 'seek_fwd': seekBy(5); break;
+    case 'seek_back_precise': seekBy(-1, true); break;
+    case 'seek_fwd_precise': seekBy(1, true); break;
+    case 'seek_back_10': seekBy(-10); break;
+    case 'seek_fwd_10': seekBy(10); break;
+    case 'seek_start': seekFraction(0); break;
+    case 'seek_end': seekFraction(100); break;
     case 'frame_prev': void stepBy(-1); break;
     case 'frame_next': void stepBy(1); break;
-    case 'chapter_prev': jumpChapter(-1); break;
-    case 'chapter_next': jumpChapter(1); break;
-    case 'playlist_prev': void command('playlist-prev', []); break;
-    case 'playlist_next': void command('playlist-next', []); break;
+    case 'chapter_prev': stepChapter(-1); break;
+    case 'chapter_next': stepChapter(1); break;
+    case 'playlist_prev': advance(-1); break;
+    case 'playlist_next': advance(1); break;
     case 'speed_down': changeSpeed(1 / 1.25); break;
     case 'speed_up': changeSpeed(1.25); break;
     case 'loop': cycleLoop(); break;
     case 'ab_loop': cycleAbLoop(); break;
     case 'ab_clear': clearAbLoop(); break;
-    case 'volume_up': osdVolume(setVolume(player.volume + 5)); break;
-    case 'volume_down': osdVolume(setVolume(player.volume - 5)); break;
+    case 'volume_up': nudgeVolume(VOLUME_KEY_STEP); break;
+    case 'volume_down': nudgeVolume(-VOLUME_KEY_STEP); break;
     case 'mute': toggleMute(); break;
     case 'audio_delay_down': nudgeDelayHere('audio', -DELAY_STEP); break;
     case 'audio_delay_up': nudgeDelayHere('audio', DELAY_STEP); break;
@@ -471,7 +412,7 @@ function takeOffer(e: KeyboardEvent) {
   } else if (endOfFile.ended && endOfFile.next) {
     e.preventDefault();
     cancelAdvance();
-    void playEntry(endOfFile.next);
+    openEntry(endOfFile.next);
   }
 }
 
@@ -496,8 +437,13 @@ export function onKeydown(e: KeyboardEvent) {
   // The reserved families, which have no row in the editor. Digits and Enter
   // are quiet; Escape closes something, and the OSC coming back is how the
   // player says it did.
+  // **Through the verb, which is how this stopped being the fifth missed
+  // site.** A digit jump has no row in the editor, so it never appeared in the
+  // casting switch either — and while a television was playing, pressing 5
+  // seeked the paused local player, silently and with nothing on screen to say
+  // so.
   if (isDigitJump(e)) {
-    seekPercent(Number(e.code.slice(5)) * 10);
+    seekFraction(Number(e.code.slice(5)) * 10);
     return;
   }
   if (e.code === 'Enter' || e.code === 'NumpadEnter') {

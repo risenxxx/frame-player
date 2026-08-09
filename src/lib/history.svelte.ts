@@ -14,6 +14,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { baseName, displayName } from './format';
 import { t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
+import { type Attempt, latest } from './latest';
 import { isNetworkSource, player, type TrackWish } from './player.svelte';
 import { parseTorrentUrl, sourceId } from './source';
 
@@ -519,9 +520,9 @@ export function dropResumeSnapshot() {
   localStorage.removeItem(RESUME_KEY);
 }
 
-/// Bumped on every call: the list reloads on every return to the start screen,
-/// and posters from the previous pass must not append themselves to it.
-let recentSeq = 0;
+/// The list reloads on every return to the start screen, and posters from the
+/// previous pass must not append themselves to it.
+const recentReads = latest();
 
 /**
  * Builds the "continue watching" list and pulls in posters. Entries whose file
@@ -551,7 +552,7 @@ async function posterSource(item: RecentItem): Promise<string | null> {
 }
 
 export async function loadRecent() {
-  const seq = ++recentSeq;
+  const run = recentReads.begin();
   // Blobs from the previous list live until explicitly revoked — otherwise
   // every return to the start screen would leak a handful of URLs.
   for (const r of history.recent) if (r.poster) URL.revokeObjectURL(r.poster);
@@ -590,7 +591,7 @@ export async function loadRecent() {
     const ok = await invoke<boolean[]>('paths_exist', { paths: locals }).catch(
       () => locals.map(() => true),
     );
-    if (seq !== recentSeq) return;
+    if (run.stale) return;
     locals.forEach((p, i) => {
       if (ok[i]) alive.add(p);
     });
@@ -603,7 +604,7 @@ export async function loadRecent() {
   // screen at its final size from the first frame instead of appearing a beat
   // later and pushing everything below it down. Awaiting the posters instead
   // would mean holding the window for a dozen keyframe decodes.
-  void loadPosters(seq);
+  void loadPosters(run);
 }
 
 /**
@@ -618,12 +619,14 @@ export async function loadRecent() {
  * gone is decided by the existence check in `loadRecent`; this loop only decides
  * whether there is a picture.
  *
- * Not awaited by `loadRecent`, and the `seq` guard is what makes that safe: a
- * second call supersedes this one mid-flight.
+ * Not awaited by `loadRecent`, and the attempt guard is what makes that safe: a
+ * second call supersedes this one mid-flight. It is the caller's attempt that
+ * is passed in, not a new one — this loop is the tail of that same pass, and
+ * beginning another here would let two lists fill each other's posters in.
  */
-async function loadPosters(seq: number) {
+async function loadPosters(run: Attempt) {
   for (const item of history.recent) {
-    if (seq !== recentSeq) return;
+    if (run.stale) return;
     // **A torrent episode has a poster too, and finding it costs no session.**
     // Its stored path is a loopback URL, so this loop used to skip it and the
     // card showed the link mark for ever. The file is on disk under the info
@@ -642,7 +645,7 @@ async function loadPosters(seq: number) {
     try {
       const buf =
         saved ?? (await invoke<ArrayBuffer>('poster_frame', { path: source!, pos: item.pos }));
-      if (seq !== recentSeq) return;
+      if (run.stale) return;
       if (buf.byteLength > 8) {
         const url = URL.createObjectURL(new Blob([new Uint8Array(buf, 8)], { type: 'image/jpeg' }));
         // The entry may have been removed by hand while we decoded.

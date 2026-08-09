@@ -23,12 +23,14 @@ import {
   observeProperties,
   setProperty,
   type MpvConfig,
+  type MpvEventFromProperties,
   type MpvObservableProperty,
 } from 'tauri-plugin-libmpv-api';
 
 import { baseName, displayName, extensionOf, formatTime } from './format';
 import { t } from './i18n.svelte';
 import { LANG_ALIASES } from './languages';
+import { latest } from './latest';
 import { showOsd } from './osd.svelte';
 import { IS_MAC } from './platform';
 
@@ -196,6 +198,83 @@ const OBSERVED = [
 ] as const satisfies ReadonlyArray<MpvObservableProperty>;
 
 export type ObservedName = (typeof OBSERVED)[number][0];
+
+/// One property-change report, narrowed to what `OBSERVED` can produce — so the
+/// switch in `applyProperty` gets `data` typed per property rather than as
+/// `unknown`.
+type PropertyChange = MpvEventFromProperties<(typeof OBSERVED)[number]>;
+
+/**
+ * Which mirrors the 1 s sweep re-reads, and it is a `Record<ObservedName, …>`
+ * on purpose: **a newly observed property is a compile error here until
+ * somebody says whether losing its event is survivable.**
+ *
+ * That question has a bad answer often enough to be worth forcing. mpv's event
+ * queue overflows and drops property changes (gotcha 3), and the mirrors split
+ * cleanly in two: the ones something re-reports anyway — a position, a
+ * buffering percentage, anything mpv sends again on the next file — and the
+ * ones that are simply *set* and then stand. A dropped event of the second kind
+ * does not heal on the next tick; it stays wrong until the viewer touches the
+ * thing again, which for a check mark in a menu can be never.
+ *
+ * `playlist-pos` is the one that proved it, and it was left out of a
+ * hand-written list, which is why this is no longer a hand-written list.
+ */
+const RESYNC: Record<ObservedName, boolean> = {
+  pause: true,
+  volume: true,
+  mute: true,
+  speed: true,
+  'vo-configured': true,
+  'eof-reached': true,
+  'sub-delay': true,
+  'audio-delay': true,
+  chapter: true,
+  // Everything about *neighbours* is computed from this — the end screen's two
+  // cards, the auto-advance, the skip button's "next episode" offer — and while
+  // it is wrong, "the next entry" resolves to the file already playing.
+  'playlist-pos': true,
+  'playlist-count': true,
+  // The A–B marks and the picture geometry are pure "set once and stand". The
+  // picture is the sharper case: `setPicture` writes the property and does *not*
+  // write the mirror, so these three depend entirely on the event coming back —
+  // lose it and the context menu ticks the value the film had before.
+  'ab-loop-a': true,
+  'ab-loop-b': true,
+  'video-rotate': true,
+  'video-aspect-override': true,
+  panscan: true,
+  // A stall is entered and left by one event each, and it is the *leaving* one
+  // that matters: `player.stalled` puts "waiting for data" in the top bar, so a
+  // dropped `false` leaves that sentence standing over playing video with
+  // nothing left to take it down.
+  'paused-for-cache': true,
+
+  // Re-reported by mpv on its own, so a dropped one costs a tick at most.
+  'time-pos': false,
+  duration: false,
+  'cache-buffering-state': false,
+  'dwidth': false,
+  'dheight': false,
+  // The identity of what is open. Deliberately NOT swept, and the reason is the
+  // sweep's own shape rather than the value's: `resyncState` writes mirrors
+  // without calling the `property` hook, and for these three the hook is where
+  // the actual work lives — flushing the position, dropping posters, releasing
+  // a torrent, resetting the seek probe, recording the title. Re-reading them
+  // here would move the mirror and leave every one of those undone, which is a
+  // worse state than the stale one it was meant to repair.
+  filename: false,
+  path: false,
+  'media-title': false,
+  // Ours, written to mpv and never read back: reading it would make `all` on a
+  // one-entry playlist look like `one` and flip the button under the viewer.
+  'loop-file': false,
+  // Not mirrors at all — these are triggers for a list re-read, and sweeping
+  // them would re-read the track and chapter lists once a second. A queue
+  // overflow calls `loadTracks`/`loadChapters` directly instead.
+  'track-list/count': false,
+  'chapter-list/count': false,
+};
 
 class Player {
   ready = $state(false);
@@ -483,41 +562,13 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
   applyNormalize(loadNormalize());
 
   unlisteners.push(
-    await observeProperties(OBSERVED, ({ name, data }) => {
-      switch (name) {
-        case 'pause': player.paused = data; break;
-        case 'time-pos': player.timePos = data ?? 0; break;
-        case 'duration': player.duration = data ?? 0; break;
-        case 'filename': player.filename = data; break;
-        case 'path': player.filePath = data; break;
-        case 'media-title': player.mediaTitle = data; break;
-        case 'volume': player.volume = data; break;
-        case 'mute': player.muted = data; break;
-        case 'speed': player.speed = data; break;
-        case 'sub-delay': player.subDelay = data ?? 0; break;
-        case 'audio-delay': player.audioDelay = data ?? 0; break;
-        // The mode is ours; mpv is only told about it. Reading it back would
-        // make `all` on a one-entry playlist (which also sets loop-file) look
-        // like `one` and flip the button under the viewer.
-        case 'loop-file': break;
-        case 'eof-reached': player.eofReached = data ?? false; break;
-        case 'playlist-pos': player.playlistPos = data; break;
-        case 'playlist-count': player.playlistCount = data; break;
-        case 'dwidth': player.videoW = data ?? 0; break;
-        case 'dheight': player.videoH = data ?? 0; break;
-        case 'vo-configured': player.voConfigured = data; break;
-        case 'track-list/count': void loadTracks(); break;
-        case 'chapter-list/count': void loadChapters(); break;
-        case 'chapter': player.chapterIndex = data ?? -1; break;
-        case 'cache-buffering-state': player.cacheBuffering = data; break;
-        case 'paused-for-cache': player.stalled = data ?? false; break;
-        case 'ab-loop-a': player.loopA = parseAbPoint(data); break;
-        case 'ab-loop-b': player.loopB = parseAbPoint(data); break;
-        case 'video-rotate': player.videoRotate = data ?? 0; break;
-        case 'video-aspect-override': player.aspectOverride = data ?? -2; break;
-        case 'panscan': player.panscan = data ?? 0; break;
-      }
-      hooks.property?.(name, data as never);
+    await observeProperties(OBSERVED, (ev) => {
+      applyProperty(ev);
+      // Outside `applyProperty`, and that is the whole reason the two paths can
+      // share it: this hook is where the *page* acts on a change — flushing a
+      // position, releasing a torrent, resetting the seek probe — and the 1 s
+      // sweep must move a stale mirror without pretending the event happened.
+      hooks.property?.(ev.name, ev.data as never);
     }),
   );
 
@@ -556,37 +607,81 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
 }
 
 /**
- * Re-reads the mirrors that a dropped property-change could have left stale.
- * Called on a timer and after a queue overflow; deliberately swallows errors,
- * because between files some properties simply do not exist.
+ * Write one property-change into its mirror.
+ *
+ * **Both paths into the mirrors go through here**: the observer, and the 1 s
+ * sweep below. They used to be two hand-written copies of the same mapping, and
+ * that is the shape the `playlist-pos` bug had — not a wrong line, a missing
+ * one, in the copy nobody reads while writing the other.
+ */
+function applyProperty(ev: PropertyChange) {
+  switch (ev.name) {
+    case 'pause': player.paused = ev.data; break;
+    case 'time-pos': player.timePos = ev.data ?? 0; break;
+    case 'duration': player.duration = ev.data ?? 0; break;
+    case 'filename': player.filename = ev.data; break;
+    case 'path': player.filePath = ev.data; break;
+    case 'media-title': player.mediaTitle = ev.data; break;
+    case 'volume': player.volume = ev.data; break;
+    case 'mute': player.muted = ev.data; break;
+    case 'speed': player.speed = ev.data; break;
+    case 'sub-delay': player.subDelay = ev.data ?? 0; break;
+    case 'audio-delay': player.audioDelay = ev.data ?? 0; break;
+    // The mode is ours; mpv is only told about it. Reading it back would
+    // make `all` on a one-entry playlist (which also sets loop-file) look
+    // like `one` and flip the button under the viewer.
+    case 'loop-file': break;
+    case 'eof-reached': player.eofReached = ev.data ?? false; break;
+    case 'playlist-pos': player.playlistPos = ev.data; break;
+    case 'playlist-count': player.playlistCount = ev.data; break;
+    case 'dwidth': player.videoW = ev.data ?? 0; break;
+    case 'dheight': player.videoH = ev.data ?? 0; break;
+    case 'vo-configured': player.voConfigured = ev.data; break;
+    case 'track-list/count': void loadTracks(); break;
+    case 'chapter-list/count': void loadChapters(); break;
+    case 'chapter': player.chapterIndex = ev.data ?? -1; break;
+    case 'cache-buffering-state': player.cacheBuffering = ev.data; break;
+    case 'paused-for-cache': player.stalled = ev.data ?? false; break;
+    case 'ab-loop-a': player.loopA = parseAbPoint(ev.data); break;
+    case 'ab-loop-b': player.loopB = parseAbPoint(ev.data); break;
+    case 'video-rotate': player.videoRotate = ev.data ?? 0; break;
+    case 'video-aspect-override': player.aspectOverride = ev.data ?? -2; break;
+    case 'panscan': player.panscan = ev.data ?? 0; break;
+  }
+}
+
+/**
+ * Re-read the mirrors a dropped property-change could have left stale.
+ *
+ * Called on a timer and after a queue overflow. What it sweeps is `RESYNC`, and
+ * where it puts the value is `applyProperty` — so neither the set nor the
+ * assignment is written twice, and the two ways to get this wrong (forget a
+ * property, or mirror it into the wrong field) are both gone.
+ *
+ * One property failing no longer ends the sweep. It used to: the reads sat in a
+ * single `try`, so an unavailable property early in the list — routine between
+ * files — silently skipped every mirror after it.
  */
 export async function resyncState() {
   if (!player.ready) return;
-  try {
-    player.paused = (await getProperty('pause', 'flag')) ?? player.paused;
-    player.voConfigured =
-      (await getProperty('vo-configured', 'flag')) ?? player.voConfigured;
-    player.eofReached = (await getProperty('eof-reached', 'flag').catch(() => null)) ?? false;
-    player.volume = (await getProperty('volume', 'double')) ?? player.volume;
-    player.muted = (await getProperty('mute', 'flag')) ?? player.muted;
-    player.speed = (await getProperty('speed', 'double')) ?? player.speed;
-    player.subDelay = (await getProperty('sub-delay', 'double').catch(() => null)) ?? player.subDelay;
-    player.audioDelay =
-      (await getProperty('audio-delay', 'double').catch(() => null)) ?? player.audioDelay;
-    player.chapterIndex = (await getProperty('chapter', 'int64').catch(() => null)) ?? -1;
-    // Where we are in the queue was the one mirror left out of this sweep, and
-    // it is the one everything about *neighbours* is computed from — the end
-    // screen's two cards, the auto-advance, and the skip button's "next
-    // episode" offer. A dropped `playlist-pos` event therefore does not heal on
-    // the next tick like the others: it stays wrong until something else moves
-    // the playhead, and while it is wrong "the next entry" resolves to the file
-    // already playing.
-    player.playlistPos =
-      (await getProperty('playlist-pos', 'int64').catch(() => null)) ?? player.playlistPos;
-    player.playlistCount =
-      (await getProperty('playlist-count', 'int64').catch(() => null)) ?? player.playlistCount;
-  } catch {
-    // between files some properties are unavailable — no harm done
+  for (const [name, format, missing] of OBSERVED) {
+    if (!RESYNC[name]) continue;
+    let data: unknown;
+    try {
+      data = await getProperty(name, format);
+    } catch {
+      // Unavailable. A property declared `none` says so with a null and its
+      // own fallback below is the right answer (an absent `chapter` really is
+      // "no chapter"); anything else keeps what it had rather than being told
+      // the file has no volume.
+      if (missing !== 'none') continue;
+      data = null;
+    }
+    // The pair is correlated by construction — `format` came off the same row
+    // as `name` — but that is not something the checker can follow across a
+    // union of tuples, so the correlation is asserted once, here, instead of
+    // being re-stated per property in a table that could drift.
+    applyProperty({ event: 'property-change', id: 0, name, data } as PropertyChange);
   }
 }
 
@@ -767,10 +862,10 @@ export async function readList<T>(
 /// track-list/count change, opening the menu, switching a track), and the
 /// counter changes several times in a row as tracks keep appearing. Without the
 /// marker an earlier read can finish last and overwrite a fresh list.
-let tracksSeq = 0;
+const trackReads = latest();
 
 export async function loadTracks() {
-  const seq = ++tracksSeq;
+  const run = trackReads.begin();
   try {
     const count = (await getProperty('track-list/count', 'int64')) ?? 0;
     const audio: Track[] = [];
@@ -815,11 +910,11 @@ export async function loadTracks() {
         channels,
       });
     }
-    if (seq !== tracksSeq) return;
+    if (run.stale) return;
     player.audioTracks = audio;
     player.subTracks = subs;
   } catch {
-    if (seq !== tracksSeq) return;
+    if (run.stale) return;
     player.audioTracks = [];
     player.subTracks = [];
   }
@@ -1142,10 +1237,10 @@ export function resetPicture() {
 
 // ---- Chapters -------------------------------------------------------------
 
-/// Same role as `tracksSeq`: `chapter-list` is not final at `file-loaded` for
+/// Same role as `trackReads`: `chapter-list` is not final at `file-loaded` for
 /// every container, so there are several reasons to start a read, and a slow
 /// earlier one must not finish last and overwrite a fresh list.
-let chaptersSeq = 0;
+const chapterReads = latest();
 
 /// mpv's placeholder for a chapter with no title in the container.
 ///
@@ -1158,7 +1253,7 @@ let chaptersSeq = 0;
 const MPV_UNNAMED = '(unnamed)';
 
 export async function loadChapters() {
-  const seq = ++chaptersSeq;
+  const run = chapterReads.begin();
   const list = await readList('chapter-list', async (base, index) => {
     // A chapter without a time is not navigable, and mpv does not produce one —
     // but the read can also fail simply because the file went away underneath.
@@ -1168,7 +1263,7 @@ export async function loadChapters() {
     const title = !raw || raw === MPV_UNNAMED ? null : raw;
     return { index, time, title } satisfies Chapter;
   }).catch(() => [] as Chapter[]);
-  if (seq !== chaptersSeq) return;
+  if (run.stale) return;
   player.chapters = list;
 }
 

@@ -142,6 +142,7 @@
   import { checkForUpdate, installUpdate, updater } from '$lib/updater.svelte';
   import { openSubsDialog, removeSubtitle, subs } from '$lib/subs.svelte';
   import { LOOP_LABEL } from '$lib/player.svelte';
+  import { playback } from '$lib/playback.svelte';
   import { flipAxis, shiftAxis } from '$lib/floating';
   import { locale, setLocale, t, type Locale } from '$lib/i18n.svelte';
   import {
@@ -173,11 +174,8 @@
     resetAbLoop,
     resetPicture,
     resyncState,
-    seekChapter,
     setPicture,
-    setVolume,
     cycleLoop,
-    toggleMute,
     type ObservedName,
   } from '$lib/player.svelte';
   import {
@@ -1040,15 +1038,13 @@
     lastTaskbarUpdate = performance.now();
     const win = getCurrentWindow();
     // **While casting the position lives on the television.** mpv sits paused
-    // on the file it handed over, so reading its mirrors here pins the bar to
-    // the moment of the handoff and paints it "paused" for the whole session —
+    // on the file it handed over, so reading its mirrors here pinned the bar to
+    // the moment of the handoff and painted it "paused" for the whole session —
     // `player.paused` being true is what makes the handover work in the first
-    // place. Same rule as the seekbar, the chapter list and the skip button:
-    // while `cast.remote`, the position is `cast.time`.
-    const remote = cast.remote;
-    const time = remote ? cast.time : player.timePos;
-    const total = remote ? cast.duration : player.duration;
-    const paused = remote ? cast.state === 'paused' : player.paused;
+    // place. `playback` is the answer to that for every reader at once.
+    const time = playback.position;
+    const total = playback.duration;
+    const paused = playback.paused;
     if (!hasFile || total <= 0) {
       void win.setProgressBar({ status: ProgressBarStatus.None }).catch(() => {});
       return;
@@ -1444,10 +1440,7 @@
         onRemove={(index) => void removeFromQueue(index)}
       />
     {:else if overlays.menu === 'chapter'}
-      <ChapterMenu
-        close={() => (overlays.menu = null)}
-        onSeekChapter={seekChapter}
-      />
+      <ChapterMenu close={() => (overlays.menu = null)} />
     {:else if overlays.menu === 'cast'}
       <CastMenu
         close={() => (overlays.menu = null)}
@@ -1479,9 +1472,6 @@
       fullscreen={chrome.fullscreen}
       openMenu={overlays.menu}
       onToggleMenu={toggleMenu}
-      onTogglePause={() => void togglePlayback()}
-      onToggleMute={toggleMute}
-      onSetVolume={setVolume}
       onCycleLoop={cycleLoop}
       onToggleFullscreen={() => void toggleFullscreen()}
     />

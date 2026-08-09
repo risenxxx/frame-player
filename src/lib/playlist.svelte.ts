@@ -19,6 +19,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 
 import { baseName, displayName, extensionOf } from './format';
+import { latest } from './latest';
 import { VIDEO_EXTENSIONS, isNetworkSource, player, readList } from './player.svelte';
 
 export interface PlaylistEntry {
@@ -93,10 +94,10 @@ export function setPlaylistPref(key: 'queueFolder' | 'autoAdvance', value: boole
 
 /// Same guard as the track and chapter lists: a read is dozens of sequential
 /// round-trips, and several things ask for one.
-let entriesSeq = 0;
+const queueReads = latest();
 
 export async function loadPlaylist() {
-  const seq = ++entriesSeq;
+  const run = queueReads.begin();
   const list = await readList('playlist', async (base, index) => {
     const path = await getStr(`${base}/filename`);
     if (!path) return null;
@@ -115,7 +116,7 @@ export async function loadPlaylist() {
       named: !!known,
     } satisfies PlaylistEntry;
   }).catch(() => [] as PlaylistEntry[]);
-  if (seq !== entriesSeq) return;
+  if (run.stale) return;
   playlist.entries = list;
   scheduleTitleRead();
 }
