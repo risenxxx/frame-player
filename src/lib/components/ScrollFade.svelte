@@ -39,6 +39,8 @@
   let el = $state<HTMLDivElement | undefined>();
   /// False whenever the box fits, which is what keeps the fade off entirely.
   let more = $state(false);
+  /// Suppresses the transition for one update — see `instant` below.
+  let instant = $state(false);
 
   /// A pixel or two of slack, for the reason the recents rail carries the same:
   /// `scrollHeight` and the sum of the fractional row heights do not always
@@ -56,17 +58,56 @@
     el.style.marginTop = Number.isFinite(gap) && gap ? `${-gap}px` : '';
 
     let raf = 0;
+    let clear = 0;
+    /// **Only a scroll earns the transition.** A fade that grows in over 140ms
+    /// is right when it answers the viewer's own gesture — they are dragging
+    /// the content and the hint arrives with it. It is wrong for everything
+    /// else, because then nobody is moving anything and a shadow creeping up
+    /// from the bottom edge a beat after the content landed reads as a flicker
+    /// rather than as an answer: switching from a settings tab that fits to one
+    /// that scrolls is the case that shows it, and opening the sheet on such a
+    /// tab is the same thing at mount. So the mount and every content or size
+    /// change land at their final value in the frame the content itself paints,
+    /// and only the viewer's own scrolling is animated.
+    ///
+    /// Set before the measure rather than inside it, so `instant` and `more`
+    /// are written in one synchronous block and reach the DOM in one flush —
+    /// the transition has to be off *at the moment* the opacity changes, and a
+    /// class arriving a flush later would animate the very change it exists to
+    /// suppress.
+    let jump = true;
     const measure = () => {
       raf = 0;
+      /// Read into a local before anything else, and every decision below is
+      /// made on **that** rather than on `instant`. Writing a `$state` from an
+      /// effect is fine; *reading* one back subscribes the effect to what it
+      /// just wrote, and this effect then re-runs, re-registers its observers,
+      /// takes the `ResizeObserver`'s initial callback again — which re-arms
+      /// `jump` — and does it all again next frame. Nothing reports that: it
+      /// costs no error, no warning and no visible symptom beyond the flag
+      /// never clearing, so the transition was silently dead everywhere.
+      /// Measured on the idle probe: 95 class writes in 1.5s against zero
+      /// mutations in the container.
+      const now = jump;
+      jump = false;
+      instant = now;
       more = box.scrollHeight - box.scrollTop - box.clientHeight > EDGE;
+      /// Given back on the next frame, by which time the value is committed —
+      /// restoring a transition never animates anything retroactively.
+      if (now) {
+        cancelAnimationFrame(clear);
+        clear = requestAnimationFrame(() => (instant = false));
+      }
     };
-    const schedule = () => {
+    const schedule = (animated: boolean) => {
+      if (!animated) jump = true;
       if (!raf) raf = requestAnimationFrame(measure);
     };
+    const onScroll = () => schedule(true);
 
     measure();
-    box.addEventListener('scroll', schedule, { passive: true });
-    const ro = new ResizeObserver(schedule);
+    box.addEventListener('scroll', onScroll, { passive: true });
+    const ro = new ResizeObserver(() => schedule(false));
     ro.observe(box);
     /// The container resizing is not enough on its own, and the case that
     /// proves it is the subtitle panel: results arrive into a box with a
@@ -74,12 +115,13 @@
     /// changes and no `ResizeObserver` fires. Attributes are deliberately not
     /// observed — this element's own `on` class lives inside `box`, and
     /// watching attributes would make every toggle schedule another measure.
-    const mo = new MutationObserver(schedule);
+    const mo = new MutationObserver(() => schedule(false));
     mo.observe(box, { childList: true, subtree: true, characterData: true });
 
     return () => {
       if (raf) cancelAnimationFrame(raf);
-      box.removeEventListener('scroll', schedule);
+      if (clear) cancelAnimationFrame(clear);
+      box.removeEventListener('scroll', onScroll);
       ro.disconnect();
       mo.disconnect();
     };
@@ -90,7 +132,7 @@
      screen reader already knows from the scroll container itself, so
      announcing it here would be the same fact twice — and as a live region it
      would be that fact again on every scroll. -->
-<div class="scrollfade" class:on={more} bind:this={el} aria-hidden="true">
+<div class="scrollfade" class:on={more} class:instant bind:this={el} aria-hidden="true">
   <span class="scrollfade-paint"></span>
   <svg class="scrollfade-arrow" viewBox="0 0 16 16">
     <path
@@ -129,6 +171,13 @@
 
   .scrollfade.on {
     opacity: 1;
+  }
+
+  /* Written to win rather than left to source order, which is the rule this
+     project has now paid for twice: two classes of equal weight are decided by
+     whichever rule sits later in the built stylesheet. */
+  .scrollfade.instant {
+    transition: none;
   }
 
   /* Opacity rather than color for the three-strength reason the torrent list's

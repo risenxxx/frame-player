@@ -30,6 +30,9 @@ const row = (hash: string | null): TorrentOnDisk => ({
   folder: hash ?? 'x',
   size: 0,
   info_hash: hash,
+  // What the disk says it is called, which nothing here depends on: a resume
+  // point is looked up by hash and index alone.
+  name: null,
 });
 
 beforeEach(() => localStorage.clear());

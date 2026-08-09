@@ -156,6 +156,20 @@ pub struct TorrentOnDisk {
     /// Set when `folder` is a well-formed info hash.
     pub info_hash: Option<String>,
     pub size: u64,
+    /// The torrent's own name, read from the metadata cached beside the data.
+    ///
+    /// The frontend's store answers this too, and better — it also knows how
+    /// many videos are inside — but it is *localStorage*, which is per webview
+    /// and can legitimately not be the one that opened this torrent: two builds
+    /// of the player share `app_cache_dir` and therefore this directory, while
+    /// keeping separate stores. Then a season downloaded by one shows up in the
+    /// other as a nameless row it cannot open, which reads as corruption rather
+    /// than as two windows onto one cache.
+    ///
+    /// So the disk names itself. It is the same metadata that already makes
+    /// reopening cost no DHT lookup, which is what makes the row openable as
+    /// well as readable — everything needed is the info hash plus these bytes.
+    pub name: Option<String>,
 }
 
 /// What the player shows while a torrent is feeding it.
@@ -308,6 +322,9 @@ impl TorrentService {
         let session_dir = dir.join(SESSION_DIR);
         std::fs::create_dir_all(&session_dir)
             .map_err(|e| format!("cannot create the session store: {e}"))?;
+        // Before the session, never after: what it removes are torrents the
+        // session is about to restore.
+        prune_orphaned_store(&session_dir);
         let session = Session::new_with_opts(
             dir,
             SessionOptions {
@@ -884,9 +901,11 @@ impl TorrentService {
                 continue;
             }
             let info_hash = is_info_hash(&folder).then(|| folder.to_ascii_lowercase());
+            let name = info_hash.as_deref().and_then(|h| cached_name(dir, h));
             out.push(TorrentOnDisk {
                 size: dir_size(&entry.path()),
                 info_hash,
+                name,
                 folder,
             });
         }
@@ -976,19 +995,43 @@ impl TorrentService {
 
         if is_info_hash(folder) {
             let hash = folder.to_ascii_lowercase();
-            let (session, handle) = {
+            let session = {
                 let mut inner = self.inner.lock().await;
-                let session = inner.session.clone();
-                (session, inner.torrents.remove(&hash))
+                inner.torrents.remove(&hash);
+                inner.session.clone()
             };
-            if let (Some(session), Some(entry)) = (session, handle) {
+            if let Some(session) = session {
+                // **By hash, never by the handle we happen to be holding.** This
+                // used to look the torrent up in `inner.torrents`, which is
+                // filled by `add` alone — so it covered a torrent opened in
+                // *this* run and nothing else. A torrent the session restored
+                // from its own store was invisible to it, and deleting one
+                // therefore removed the directory and our record of it while
+                // leaving librqbit's: the next session restored it, and
+                // restoring **recreates the folder** (see `prune_orphaned_store`
+                // for why), so it came back as a nameless zero-byte row on the
+                // start screen. `Session::delete` resolves a hash against its
+                // own db, which holds restored torrents too.
+                //
                 // `delete_files: false` — the directory is ours to remove below,
                 // and doing it here would depend on librqbit agreeing with us
                 // about which files belong to this torrent.
-                let _ = session
-                    .delete(librqbit::api::TorrentIdOrHash::Id(entry.handle.id()), false)
-                    .await;
+                if let Ok(id) = librqbit::api::TorrentIdOrHash::parse(&hash) {
+                    let _ = session.delete(id, false).await;
+                }
             }
+            // The cached metadata describes a torrent that is being thrown away.
+            // Left behind it is a couple of hundred kilobytes per deleted
+            // torrent, in a directory whose whole point is that its size is
+            // accounted for.
+            //
+            // When there is no session at all — the common case, since the
+            // session is lazy and deleting from the start screen rarely follows
+            // opening something — the store entry is left for
+            // `prune_orphaned_store` to collect the next time one is built. It
+            // has to run there anyway, so doing it twice would be two places
+            // that must agree about librqbit's file format instead of one.
+            let _ = std::fs::remove_file(meta_path(dir, &hash));
         }
 
         let size = dir_size(&path);
@@ -1212,6 +1255,107 @@ async fn pause_restored(session: &Arc<Session>) {
             }
         }
     }
+}
+
+/// The torrent's own name, out of the metadata cached beside its data.
+///
+/// Cheap enough to do for every row of the storage list: the parse borrows from
+/// the buffer rather than copying it, and the bulk of a `.torrent` is the piece
+/// hashes, which are one byte string it never looks inside. Measured warm on a
+/// 227 KB file (a ten-episode 4K season): **0.16 ms**, and a torrent cache holds
+/// a handful of entries, not hundreds.
+///
+/// A file that will not parse gives no name and no error — it is a cache, the
+/// row still measures and deletes, and `add` already falls back to the magnet
+/// when these bytes turn out to be unusable.
+fn cached_name(dir: &std::path::Path, info_hash: &str) -> Option<String> {
+    let bytes = std::fs::read(meta_path(dir, info_hash)).ok()?;
+    let meta = librqbit::torrent_from_bytes::<librqbit::ByteBuf>(&bytes).ok()?;
+    let name = meta.info.name?;
+    let name = String::from_utf8_lossy(&name).trim().to_string();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Forget the torrents in librqbit's store whose data folder is gone.
+///
+/// **A restore recreates the folder**, which is what makes a stale entry visible
+/// rather than merely untidy: every restored torrent goes through
+/// `Initializing`, and that calls `FileStorage::init`, which is
+/// `create_dir_all` plus `create(true)` on every file of the torrent, with the
+/// selected ones getting their full length back through `ensure_file_length`.
+/// So a torrent whose directory was deleted comes back as an empty copy of
+/// itself — a folder named by its info hash, nothing allocated inside it, and
+/// nothing left on our side to name it with, since the magnet was forgotten
+/// along with the data. That is the "Unnamed torrent · No link saved · 0 MB"
+/// row, and it came back after every restart because the store still listed it
+/// and nothing ever took it out.
+///
+/// A missing folder is unambiguous evidence and not a guess: every folder here
+/// is ours, inside the cache directory, and a torrent still in the store has its
+/// own recreated the moment it is restored. So this covers every way one can go
+/// — `forget` with no session to delete from, `torrent_clear_cache`, and a
+/// viewer emptying the cache in Finder — where a fix in `forget` alone covers
+/// only the first.
+///
+/// The store's shape is read as plain JSON rather than through librqbit's own
+/// types, which are private: `{"torrents": {<id>: {info_hash, output_folder,
+/// …}}}` beside one `<hash>.torrent` and one `<hash>.bitv` per entry, all three
+/// of which its `delete` removes together. Anything unparseable is left exactly
+/// as it is — the cost of skipping is a ghost row, the cost of guessing wrong is
+/// somebody's downloaded season.
+fn prune_orphaned_store(session_dir: &std::path::Path) {
+    let db_path = session_dir.join("session.json");
+    let Ok(text) = std::fs::read_to_string(&db_path) else {
+        return;
+    };
+    let Ok(mut db) = serde_json::from_str::<serde_json::Value>(&text) else {
+        eprintln!("[torrent] the session store did not parse; leaving it alone");
+        return;
+    };
+    let Some(torrents) = db.get_mut("torrents").and_then(|t| t.as_object_mut()) else {
+        return;
+    };
+
+    let mut dropped = Vec::new();
+    torrents.retain(|_, t| {
+        // An entry that does not say where its data is cannot be judged, so it
+        // stays. Ours all carry it — `add` sets `output_folder` explicitly.
+        let Some(folder) = t.get("output_folder").and_then(|f| f.as_str()) else {
+            return true;
+        };
+        if std::path::Path::new(folder).is_dir() {
+            return true;
+        }
+        if let Some(hash) = t.get("info_hash").and_then(|h| h.as_str()) {
+            dropped.push(hash.to_ascii_lowercase());
+        }
+        false
+    });
+    if dropped.is_empty() {
+        return;
+    }
+
+    // Written the way librqbit writes it — temp file, then rename — because a
+    // half-written store is one every torrent on this machine is restored from.
+    let tmp = db_path.with_extension("json.pruning");
+    let Ok(bytes) = serde_json::to_vec(&db) else {
+        return;
+    };
+    if std::fs::write(&tmp, bytes).is_err() || std::fs::rename(&tmp, &db_path).is_err() {
+        eprintln!("[torrent] could not rewrite the session store");
+        let _ = std::fs::remove_file(&tmp);
+        return;
+    }
+    for hash in &dropped {
+        // The resume data and the metadata librqbit keeps beside the store; the
+        // copy in `.meta` is ours and `forget` removes it there.
+        let _ = std::fs::remove_file(session_dir.join(format!("{hash}.torrent")));
+        let _ = std::fs::remove_file(session_dir.join(format!("{hash}.bitv")));
+    }
+    eprintln!(
+        "[torrent] dropped {} torrent(s) from the session store: the data is gone",
+        dropped.len()
+    );
 }
 
 /// Where the cached torrent metadata for an info hash lives.
@@ -1960,6 +2104,180 @@ mod tests {
         });
     }
 
+    /// A deleted torrent must not come back — and it did, once per restart.
+    ///
+    /// The whole failure in one test, offline: seed the store by adding a
+    /// torrent, delete its data the way `forget` does when there is no session
+    /// to delete from, then build another session over the same store. Without
+    /// `prune_orphaned_store` the restore recreates the folder and every file in
+    /// it, which the start screen then lists as a nameless zero-byte torrent
+    /// with no magnet — the frontend dropped the magnet when the viewer deleted
+    /// it, and it is not coming back.
+    #[test]
+    fn deleted_torrent_does_not_come_back() {
+        tauri::async_runtime::block_on(async {
+            let base = std::env::temp_dir().join("frameplayer-ghost-test");
+            let _ = std::fs::remove_dir_all(&base);
+            let stage = base.join("stage");
+            std::fs::create_dir_all(&stage).unwrap();
+            std::fs::write(stage.join("clip.mkv"), vec![7u8; 300_000]).unwrap();
+            let created = librqbit::create_torrent(
+                &stage,
+                librqbit::CreateTorrentOptions {
+                    name: Some("ghost"),
+                    piece_length: Some(65536),
+                },
+            )
+            .await
+            .unwrap();
+            let hash = created.info_hash().as_string();
+            std::fs::rename(&stage, base.join(&hash)).unwrap();
+            let meta = meta_path(&base, &hash);
+            std::fs::create_dir_all(meta.parent().unwrap()).unwrap();
+            std::fs::write(&meta, created.as_bytes().unwrap()).unwrap();
+            let magnet = format!("magnet:?xt=urn:btih:{hash}");
+
+            // First run: opened once, which is what puts it in the store.
+            let first = Arc::new(TorrentService::default());
+            first.add(base.clone(), magnet.clone(), false).await.unwrap();
+            first.shutdown_session().await;
+            let store = base.join(SESSION_DIR).join("session.json");
+            assert!(
+                std::fs::read_to_string(&store).unwrap().contains(&hash),
+                "the store did not record the torrent, so this proves nothing"
+            );
+
+            // Deleted from the start screen in a later run, where the session
+            // had never been built — so `forget` finds no session and only the
+            // directory goes.
+            let second = Arc::new(TorrentService::default());
+            second.forget(&base, &hash).await.unwrap();
+            assert!(!base.join(&hash).exists());
+            assert!(!meta.exists(), "the cached metadata outlived the torrent");
+
+            // The next session is where it used to reappear.
+            let third = Arc::new(TorrentService::default());
+            third.ensure_started(base.clone(), false).await.unwrap();
+            assert!(
+                !base.join(&hash).is_dir(),
+                "the deleted torrent was restored and its folder recreated"
+            );
+            assert!(
+                !std::fs::read_to_string(&store).unwrap().contains(&hash),
+                "the deleted torrent is still in the session store"
+            );
+            assert!(!base.join(SESSION_DIR).join(format!("{hash}.bitv")).exists());
+            third.shutdown_session().await;
+
+            let _ = std::fs::remove_dir_all(&base);
+        });
+    }
+
+    /// A torrent on this disk names itself, with no record on our side.
+    ///
+    /// What the start screen used to show for one it had not opened *itself* was
+    /// "Unnamed torrent · No link saved", and the row's button was dead — even
+    /// though the folder is the info hash and the metadata is cached right
+    /// beside it. That is not a rare state: the record lives in localStorage,
+    /// which is per webview, while this directory is per identifier, so two
+    /// builds of the player share the data and not the names.
+    #[test]
+    fn disk_names_itself() {
+        tauri::async_runtime::block_on(async {
+            let base = std::env::temp_dir().join("frameplayer-naming-test");
+            let _ = std::fs::remove_dir_all(&base);
+            let stage = base.join("stage");
+            std::fs::create_dir_all(&stage).unwrap();
+            std::fs::write(stage.join("clip.mkv"), vec![1u8; 200_000]).unwrap();
+            let created = librqbit::create_torrent(
+                &stage,
+                librqbit::CreateTorrentOptions {
+                    name: Some("The Show S01 [1080p]"),
+                    piece_length: Some(65536),
+                },
+            )
+            .await
+            .unwrap();
+            let hash = created.info_hash().as_string();
+            std::fs::rename(&stage, base.join(&hash)).unwrap();
+
+            let service = Arc::new(TorrentService::default());
+            let unnamed = service.list(&base);
+            assert_eq!(unnamed.len(), 1);
+            assert_eq!(
+                unnamed[0].name, None,
+                "a name was produced with no metadata to produce it from"
+            );
+
+            // The cache `add` writes for its own sake — no session, no swarm,
+            // and now the row can be read as well as measured.
+            let meta = meta_path(&base, &hash);
+            std::fs::create_dir_all(meta.parent().unwrap()).unwrap();
+            std::fs::write(&meta, created.as_bytes().unwrap()).unwrap();
+            let named = service.list(&base);
+            assert_eq!(named[0].name.as_deref(), Some("The Show S01 [1080p]"));
+            assert_eq!(named[0].info_hash.as_deref(), Some(hash.as_str()));
+
+            let _ = std::fs::remove_dir_all(&base);
+        });
+    }
+
+    /// The other half: with a session running, deleting takes the torrent out
+    /// of its store there and then, rather than leaving it for the next start.
+    ///
+    /// The case is a torrent the session **restored** — which is every torrent
+    /// on disk that has not been opened yet this run, and therefore the one the
+    /// old code missed: it looked the hash up in `inner.torrents`, where only
+    /// `add` puts anything.
+    #[test]
+    fn forget_removes_a_restored_torrent_from_the_store() {
+        tauri::async_runtime::block_on(async {
+            let base = std::env::temp_dir().join("frameplayer-forget-test");
+            let _ = std::fs::remove_dir_all(&base);
+            let stage = base.join("stage");
+            std::fs::create_dir_all(&stage).unwrap();
+            std::fs::write(stage.join("clip.mkv"), vec![3u8; 300_000]).unwrap();
+            let created = librqbit::create_torrent(
+                &stage,
+                librqbit::CreateTorrentOptions {
+                    name: Some("forget"),
+                    piece_length: Some(65536),
+                },
+            )
+            .await
+            .unwrap();
+            let hash = created.info_hash().as_string();
+            std::fs::rename(&stage, base.join(&hash)).unwrap();
+            // The metadata cache, so the add resolves from disk and this test
+            // needs no swarm.
+            let meta = meta_path(&base, &hash);
+            std::fs::create_dir_all(meta.parent().unwrap()).unwrap();
+            std::fs::write(&meta, created.as_bytes().unwrap()).unwrap();
+
+            let first = Arc::new(TorrentService::default());
+            first
+                .add(base.clone(), format!("magnet:?xt=urn:btih:{hash}"), false)
+                .await
+                .unwrap();
+            first.shutdown_session().await;
+
+            // A later run that opens some other torrent, so the session exists
+            // and this one is in it only because it was restored.
+            let second = Arc::new(TorrentService::default());
+            second.ensure_started(base.clone(), false).await.unwrap();
+            second.forget(&base, &hash).await.unwrap();
+
+            let store = base.join(SESSION_DIR).join("session.json");
+            assert!(
+                !std::fs::read_to_string(&store).unwrap().contains(&hash),
+                "a restored torrent was deleted from disk but not from the store"
+            );
+            second.shutdown_session().await;
+
+            let _ = std::fs::remove_dir_all(&base);
+        });
+    }
+
     /// The identity the frontend reads back out of the URL. If this shape
     /// changes, `parseTorrentUrl` in source.ts changes with it.
     #[test]
@@ -2058,3 +2376,4 @@ pub fn torrent_offline_file(
         complete,
     })
 }
+

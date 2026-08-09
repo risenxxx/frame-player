@@ -531,15 +531,21 @@ export async function refreshTorrents() {
  *
  * The picker is still what happens when there is nothing to continue: a torrent
  * opened but never watched, or one whose positions have aged out.
+ *
+ * What it opens with is `row.magnet`, which is the remembered one where there is
+ * one and a magnet built from the folder's own info hash where there is not —
+ * see `listTorrents`. Opening it then records it, so a row that arrived on this
+ * disk without our knowing it names itself from the second time onwards.
  */
 export async function openRememberedTorrent(row: TorrentRow) {
-  if (!row.known || opening.rowOpening) return;
+  if (!row.magnet || opening.rowOpening) return;
+  const magnet = row.magnet;
   const resume = torrentResume(row);
   opening.rowOpening = row.folder;
   opening.box.torrentError = null;
   try {
-    const info = await addTorrent(row.known.magnet);
-    rememberTorrent(info, row.known.magnet);
+    const info = await addTorrent(magnet);
+    rememberTorrent(info, magnet);
     const videos = torrentVideos(info);
     if (!videos.length) {
       opening.box.torrentError = t('torrent.no_video');

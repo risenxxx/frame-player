@@ -237,6 +237,13 @@ jobs:
           # environment: Tauri would then notarise the .app itself, in an order
           # decided by the bundler, and the disk image — which it does not build
           # — would still need doing separately. One script does both, below.
+          #
+          # **So this step logs "Warn skipping app notarization, no APPLE_ID …
+          # environment variables found", and that line is this decision rather
+          # than a fault.** The thing it would otherwise do is the part that has
+          # to happen after the build: the updater archive is written during it,
+          # so a ticket stapled by the bundler may or may not reach the archive
+          # depending on internals we do not control.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
 
       - name: Save built app (macOS)

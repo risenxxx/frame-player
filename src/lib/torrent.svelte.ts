@@ -28,7 +28,7 @@ import { command } from 'tauri-plugin-libmpv-api';
 import { baseName, displayName, extensionOf } from './format';
 import { history, positionsLoad } from './history.svelte';
 import { SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, player } from './player.svelte';
-import { parseTorrentUrl, torrentId } from './source';
+import { magnetFor, parseTorrentUrl, torrentId } from './source';
 
 export interface TorrentFile {
   index: number;
@@ -474,22 +474,45 @@ export interface TorrentOnDisk {
   folder: string;
   info_hash: string | null;
   size: number;
+  /// The torrent's own name, read from the metadata cached beside its data.
+  /// Present for anything opened by a build that cached it, whichever build
+  /// that was — see `cached_name` in torrent.rs.
+  name: string | null;
 }
 
 /// One row of the start screen's torrent list: what disk says, plus what we
 /// remembered about it, plus where the viewer left off.
 export interface TorrentRow extends TorrentOnDisk {
   known: RememberedTorrent | null;
-  /// Best display name: the torrent's own, else the folder — which for anything
-  /// this build wrote is an info hash, hence the fallback label in the UI.
+  /// Best display name: what we remembered, else what the disk says about
+  /// itself, else the folder — which for anything this build wrote is an info
+  /// hash, hence the fallback label in the UI.
   name: string | null;
+  /// The magnet to reopen this row with, or null when there is nothing to go
+  /// on and it can only be measured and deleted.
+  ///
+  /// **A remembered magnet is the better answer but not the only one.** The
+  /// info hash *is* the torrent's identity, and the metadata cached beside the
+  /// data is what makes reopening from a bare one cost no lookup — so a row
+  /// whose record is missing is still openable, and opening it records it
+  /// again. That matters because the record lives in localStorage, which is
+  /// per webview: two builds of the player share this cache directory and not
+  /// their stores, so each of them used to show the other's torrents as
+  /// nameless rows with a dead button.
+  magnet: string | null;
 }
 
 export async function listTorrents(): Promise<TorrentRow[]> {
   const disk = await invoke<TorrentOnDisk[]>('torrent_list').catch(() => [] as TorrentOnDisk[]);
   return disk.map((d) => {
     const known = d.info_hash ? rememberedTorrent(d.info_hash) : null;
-    return { ...d, known, name: known?.name ?? (d.info_hash ? null : d.folder) };
+    const name = known?.name ?? d.name ?? (d.info_hash ? null : d.folder);
+    return {
+      ...d,
+      known,
+      name,
+      magnet: known?.magnet ?? (d.info_hash ? magnetFor(d.info_hash, name) : null),
+    };
   });
 }
 
@@ -670,7 +693,16 @@ export async function updateTorrent(
 
   // Before the add, or the new torrent creates an empty folder of its own and
   // there is nothing left to hand over.
-  await invoke('torrent_relocate', { oldHash: old.infoHash, newHash }).catch(() => {});
+  //
+  // A failure here is not fatal — the update still works, it just re-downloads
+  // what was already on disk — but it is not nothing either: the old folder
+  // stays while the line below forgets its magnet, which is exactly how a row
+  // ends up nameless and undeletable-by-anything-but-its-size. So it is said out
+  // loud rather than swallowed, since "target exists" and "nothing to move" are
+  // the two answers that explain the leftover.
+  await invoke('torrent_relocate', { oldHash: old.infoHash, newHash }).catch((e) =>
+    console.warn('[torrent] handing the old data over failed:', e),
+  );
 
   const info = await addTorrent(magnet);
   const moved = migratePositions(old.infoHash, info);

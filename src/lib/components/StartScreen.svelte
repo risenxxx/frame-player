@@ -276,10 +276,14 @@
           {@const resume = torrentResume(row)}
           {@const opening = torrentOpening === row.folder}
           <div class="torrow" class:busy={torrentBusy === row.folder}>
+            <!-- Openable on the magnet, which the info hash supplies when
+                 nothing was remembered — a torrent on this disk that our own
+                 store has never heard of is still this torrent. Only a folder
+                 from the older name-based layout has nothing to open with. -->
             <button
               class="torrow-open"
-              disabled={!row.known || opening}
-              data-tip={row.known
+              disabled={!row.magnet || opening}
+              data-tip={row.magnet
                 ? resume
                   ? t('start.torrent_continue_tip', { name: resume.name })
                   : t('start.torrent_open')
