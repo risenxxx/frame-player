@@ -165,6 +165,50 @@ a network problem and was not.
 A third leg was needed for the same failure: announces must carry a real
 listening port, or trackers refuse them outright.
 
+**An announce must send a User-Agent.** The HTTP client used underneath sends
+none at all by default, and the filtering layer several trackers sit behind
+refuses a request without one. Measured with a byte-identical query: 403 without
+the header, 200 with it. The value does not matter — a single letter passes — so
+this is a presence check rather than a client whitelist.
+
+**Seeder and leecher counts must be optional in the response.** They are listed
+in the specification and real trackers omit them, and required they made the
+whole response fail to parse — which throws away *every peer in it*. Nothing
+reads either number.
+
+Those last two are worth reading together with what hid them for so long. The
+DHT covers for a broken tracker until it doesn't, and whether it does is a
+property of the individual torrent, not of the client: two releases of the same
+film, one downloading at 3 MB/s and one not fetching a byte in five minutes with
+two dozen seeders listed. The working one's peers came from the DHT entirely;
+the other's DHT records were the same machines on stale ports — one host
+appearing eight times, none of the ports the one the tracker was handing out.
+
+The diagnostic that separates them is not "how many peers" but **where they came
+from**, which is why the probe reports peers *seen* against peers *live* against
+bytes, with per-peer attempt and error counters. Peers seen and never live means
+the addresses are wrong, which means no tracker — not a dead swarm.
+
+A third leg of the same failure is not the client's but ours, and it is the one
+that decides whether a magnet can be opened for the first time at all. A torrent
+is added **paused** — that is what makes "what is in this torrent" cost no
+download — and the client underneath ties the *announced port* to whether the
+torrent is started, so the announce that fetches the metadata goes out claiming
+port zero. A tracker reads that as a client which cannot accept connections and
+answers accordingly: measured on one info hash, 1 peer against 26. Metadata was
+therefore left to the DHT alone, and for a torrent whose DHT records have gone
+stale that means it never resolves — three fresh opens of the 24-seeder release,
+three ninety-second timeouts.
+
+The fix keeps the paused add and asks the magnet's own trackers once, directly,
+handing the addresses over as the starting peers. Resolution went from a timeout
+to under a second. It is a head start and never a prerequisite: a tracker that
+fails, times out, or is UDP-only costs nothing, because the DHT runs regardless.
+And the response is *scanned* for the peer list rather than deserialized —
+strictness is what caused the bug above, so the only check is that the length is
+a whole number of six-byte records, and anything else means "no peers" rather
+than wrong addresses.
+
 ## Known limits
 
 **Cold seeks cost downloading.** A jump into a region nobody has fetched waits

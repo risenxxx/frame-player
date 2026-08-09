@@ -377,6 +377,18 @@ async function prefetchNext(infoHash: string, index: number) {
 let timer: ReturnType<typeof setInterval> | undefined;
 let bufferTimer: ReturnType<typeof setInterval> | undefined;
 
+/// Which run of the effect below owns the readout.
+///
+/// **A poll already in flight outlives the file it was asking about**, and that
+/// is not a rare race: a status read is a round trip into Rust and the timer
+/// fires every second, so closing a film catches one in the air often enough to
+/// be reported as ordinary behavior. Clearing the interval does nothing to a
+/// promise that has already been sent — it resolves afterwards, writes
+/// `torrent.status` back, and since the file is gone nothing will ever clear it
+/// again: the readout stays on screen over the start screen, permanently. The
+/// same guard `loadTracks()` carries, for the same reason.
+let pollSeq = 0;
+
 /**
  * Follow whatever the player is playing.
  *
@@ -396,6 +408,7 @@ let bufferTimer: ReturnType<typeof setInterval> | undefined;
 export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
   $effect(() => {
     const ref = player.filePath ? parseTorrentUrl(player.filePath) : null;
+    const seq = ++pollSeq;
     clearInterval(timer);
     timer = undefined;
 
@@ -411,6 +424,7 @@ export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
           infoHash: ref.infoHash,
           index: ref.index,
         });
+        if (seq !== pollSeq) return;
         torrent.status = status;
         // The episode being watched is fully here, so the swarm is idle as far
         // as this file goes — the moment to get the next one ready, and the only
@@ -440,17 +454,18 @@ export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
             .catch(() => {});
         }
       } catch {
-        torrent.status = null;
+        if (seq === pollSeq) torrent.status = null;
       }
     };
     const readBuffered = async () => {
       try {
-        torrent.buffered = await invoke<[number, number][]>('torrent_buffered', {
+        const bands = await invoke<[number, number][]>('torrent_buffered', {
           infoHash: ref.infoHash,
           index: ref.index,
         });
+        if (seq === pollSeq) torrent.buffered = bands;
       } catch {
-        torrent.buffered = [];
+        if (seq === pollSeq) torrent.buffered = [];
       }
     };
 

@@ -94,6 +94,42 @@ Small.
 Preparing a compatible copy can fill the disk, and the failure surfaces as a
 generic encoder error. Check first and say so.
 
+### 31. Fetch in the background, watch when it is ready
+
+A slow swarm is not a broken one, and the player has exactly one answer for both
+today: sit on the loading overlay and count peers. When the rate is such that
+playback cannot keep up — a torrent with two distant seeders at 40 KB/s is
+ordinary, not pathological — the useful offer is the opposite of streaming:
+go back to the start screen, leave the torrent fetching, and say when there is
+enough to start.
+
+The pieces already exist. `torrent_prefetch` is exactly "fetch this file with
+nobody reading it", bounded to one file and already used for the next episode.
+`torrent_buffered` is the map, and the start-screen row already polls and prints
+a line. So the work is the *rule* and the *offer*, not the mechanism:
+
+- **When to offer.** Not a timer: a stall that clears in eight seconds must not
+  raise a dialog. The signal is a rate that cannot sustain playback — the file's
+  own bitrate is knowable (`file-size / duration`) and the swarm's rate is in the
+  status — held for long enough that it is the swarm rather than a cold seek.
+- **What "ready" means.** A percentage is the wrong measure, because a lead that
+  is enough for a 2 Mbit rip is nothing for a 4K remux. It is a *time* lead:
+  contiguous bytes from the start, divided by the bitrate, against the remaining
+  download at the observed rate. That is the same arithmetic the cast rung's
+  `STREAM_LEAD_BYTES` makes by hand, and it should be shared rather than copied.
+- **Where it says so.** The torrent row on the start screen is already the place
+  a season is picked up from, and it already carries a line under the name. A
+  fetching torrent belongs there, with its rate and its estimate, and it becomes
+  clickable when the lead is there.
+- **What it must not become.** A resident BitTorrent client. One file at a time,
+  only ever a file the viewer asked for, and it stops when the app does — the
+  same three bounds `prefetch` is written under.
+
+Worth doing on its own merits and *not* as a workaround: the bug that prompted
+it (a rutracker release with 24 seeders that would not download at all) was a
+dead tracker announce, not a slow swarm — see the tracker section of
+`torrents.md` and `src-tauri/vendor/README.md`.
+
 ## Under consideration
 
 No firm plans. Each of these is either large, dependent on somebody else's

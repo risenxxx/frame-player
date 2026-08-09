@@ -21,6 +21,14 @@ use crate::tracker_comms_udp;
 use crate::tracker_comms_udp::UdpTrackerClient;
 use librqbit_core::hash_id::Id20;
 
+/// What HTTP announces identify themselves as.
+///
+/// Names the BitTorrent engine rather than the application, because that is
+/// what the peer id already says (`-rQ…`) and a tracker that logs both should
+/// see one answer. No version: it would go stale the day librqbit is bumped,
+/// and nothing reads it — presence is the whole requirement.
+const USER_AGENT: &str = "rqbit";
+
 pub struct TrackerComms {
     info_hash: Id20,
     peer_id: Id20,
@@ -241,7 +249,18 @@ impl TrackerComms {
 
     async fn tracker_one_request_http(&self, tracker_url: Url) -> anyhow::Result<u64> {
         debug!(url = %tracker_url, "calling tracker over http");
-        let response: reqwest::Response = self.reqwest_client.get(tracker_url).send().await?;
+        let response: reqwest::Response = self
+            .reqwest_client
+            .get(tracker_url)
+            // A request with NO User-Agent at all is refused outright by the
+            // WAF several trackers sit behind — rutracker answers 403 — and
+            // reqwest sends none by default, so every HTTP announce was
+            // silently worthless. Measured: identical query, 403 without the
+            // header and 200 with it, and the value does not matter (a single
+            // letter passes); only its presence does. See vendor/README.md.
+            .header(reqwest::header::USER_AGENT, USER_AGENT)
+            .send()
+            .await?;
         if !response.status().is_success() {
             anyhow::bail!("tracker responded with {:?}", response.status());
         }

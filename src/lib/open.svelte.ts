@@ -222,8 +222,25 @@ let loadFailTimer: ReturnType<typeof setTimeout> | undefined;
 
 // ---- The link box ---------------------------------------------------------
 
+/**
+ * Raise the link box, empty.
+ *
+ * **Opening it deliberately is a fresh start, and that is not the same as the
+ * box surviving a close.** The field and its message are kept across a close on
+ * purpose — a link that fails reopens the dialog with the text still in it and
+ * an explanation of what went wrong, which is what makes the yt-dlp button
+ * usable — but those paths raise the dialog themselves (`reportLoadFailure`,
+ * `openTorrent`'s failure) and never come through here. What comes through here
+ * is somebody choosing to open a link, and finding the previous one still typed
+ * is wrong twice over: it has to be cleared by hand before anything can be
+ * pasted, and while the field is non-empty the recents list below it is hidden,
+ * so the one place the previous links are offered disappears. A stale error line
+ * from a torrent that failed an hour ago goes with it.
+ */
 export async function openLinkDialog() {
+  opening.box.value = '';
   opening.box.failed = false;
+  opening.box.torrentError = null;
   opening.box.recent = recentLinks();
   for (const url of opening.box.recent) {
     const known = titleFor(url);
@@ -418,6 +435,11 @@ export async function openTorrent(source: string) {
       await playTorrentFile(info, videos[0]);
       return;
     }
+    // The box has done its job, exactly as it has when a torrent turns out to
+    // hold one film — `playTorrentFile` closes it there. Left open, it sits
+    // *under* the file picker and comes back when the picker is dismissed,
+    // still holding the magnet that produced it.
+    opening.linkOpen = false;
     opening.pick = info;
   } catch (e) {
     // The one failure worth naming: a swarm that never answered is a fact about

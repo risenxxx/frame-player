@@ -30,6 +30,31 @@ answers 403). The patch remembers the original query and re-appends it to
 every request. Upstream fixed this in the 9.x line only; this is that fix
 backported.
 
+## librqbit-tracker-comms 3.0.0 — send a User-Agent
+
+`src/tracker_comms.rs`, `tracker_one_request_http`. librqbit announces through
+a default `reqwest::Client`, which sends **no `User-Agent` header at all**, and
+the WAF several trackers sit behind refuses such a request outright: measured
+against rutracker with a byte-identical query, **403 without the header and 200
+with it**, and the value does not matter (a single letter passes) — only its
+presence does. The patch sets `rqbit`, matching what the peer id already says.
+
+## librqbit-tracker-comms 3.0.0 — `complete`/`incomplete` are optional
+
+`src/tracker_comms_http.rs`, `TrackerResponse`. Upstream requires both fields.
+BEP 3 lists them, but they are seeder/leecher *statistics* and real trackers
+omit them — rutracker answers `d8:intervali3595e12:min intervali3595e5:peers
+180:…e` and nothing more. Required, the whole response fails to deserialize and
+**every peer in it is discarded**, leaving the DHT as the sole peer source. The
+failure is invisible from outside: the announce is a clean 200, the error is one
+level below it, and the torrent merely sits at "connecting to the swarm" with
+twenty seeders showing on the tracker page. Nothing reads either field.
+
+Both of these were found together: a rutracker release with 24 seeders that
+would not download at all, next to another that did — the second one was living
+on DHT peers alone. `FP_TEST_SWARM=<magnet> cargo test --lib swarm_probe` is the
+diagnostic that separated the two (peers seen vs peers connected vs bytes).
+
 ## Maintenance
 
 `[patch.crates-io]` overrides *every* version of these crates in the

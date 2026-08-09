@@ -46,6 +46,7 @@
 //! upstream accessor or our own tracking of what the stream has served.
 
 use std::collections::{HashMap, HashSet};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -83,6 +84,14 @@ const RESOLVE_TIMEOUT: Duration = Duration::from_secs(90);
 /// being watched: a nine-episode season is several seconds of it even when only
 /// one episode is selected.
 const INIT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How long one seeding announce may take before it is written off, and how
+/// many of a magnet's trackers are asked. Both bounds exist so a dead tracker
+/// cannot add to a wait that is already up to `RESOLVE_TIMEOUT` — this is a head
+/// start, never a prerequisite. They run concurrently, so the cost is one
+/// timeout, not four.
+const SEED_ANNOUNCE_TIMEOUT: Duration = Duration::from_secs(6);
+const SEED_ANNOUNCE_TRACKERS: usize = 4;
 
 /// Read size for one body chunk. Matches librqbit's own streaming handler; a
 /// piece is typically 1–16 MB, so this is well inside one and the reader blocks
@@ -500,8 +509,12 @@ impl TorrentService {
                 .map(|id| id.as_string()),
         };
 
-        let opts = || AddTorrentOptions {
+        let opts = |initial_peers: Option<Vec<SocketAddr>>| AddTorrentOptions {
             paused: true,
+            // Only ever set on the path that has to fetch metadata from the
+            // swarm — see `announce_peers` for why librqbit's own announce
+            // cannot find them there.
+            initial_peers,
             // Reuse whatever of this torrent is already in the cache directory.
             // Without it, re-opening a magnet watched yesterday errors on the
             // existing files instead of continuing from them.
@@ -543,7 +556,7 @@ impl TorrentService {
         if let Some(bytes) = cached {
             match tokio::time::timeout(
                 RESOLVE_TIMEOUT,
-                session.add_torrent(AddTorrent::from_bytes(bytes), Some(opts())),
+                session.add_torrent(AddTorrent::from_bytes(bytes), Some(opts(None))),
             )
             .await
             {
@@ -562,7 +575,17 @@ impl TorrentService {
                     Some(bytes) => AddTorrent::from_bytes(bytes),
                     None => AddTorrent::from_url(source.as_str()),
                 };
-                tokio::time::timeout(RESOLVE_TIMEOUT, session.add_torrent(what, Some(opts())))
+                // Only when the metadata has to come from the swarm: a
+                // `.torrent` file already *is* the metadata, and a cached copy
+                // was just tried above.
+                let seed = match (&what, hinted_hash.as_deref()) {
+                    (AddTorrent::Url(_), Some(hash)) => {
+                        let port = session.tcp_listen_port().unwrap_or(0);
+                        Some(announce_peers(&source, hash, port).await)
+                    }
+                    _ => None,
+                };
+                tokio::time::timeout(RESOLVE_TIMEOUT, session.add_torrent(what, Some(opts(seed))))
                     .await
                     .map_err(|_| "resolve_timeout".to_string())?
                     .map_err(|e| format!("{e:#}"))?
@@ -1161,6 +1184,161 @@ impl TorrentService {
     }
 }
 
+/// Ask a magnet's own trackers who is in the swarm, so resolving it has
+/// somewhere to start.
+///
+/// **A torrent is added paused — and upstream ties the *announced port* to
+/// whether it is started.** `make_peer_rx` passes `None` for the port unless the
+/// torrent is running, and a tracker asked from port 0 treats the caller as
+/// unable to accept connections and answers with almost nothing: measured
+/// against rutracker on one info hash, **1 peer from port 0 against 26 from a
+/// real one**. Adding paused is not negotiable here (it is the whole reason
+/// "what is in this torrent" costs no download), so metadata is left to the DHT
+/// alone — and a torrent whose DHT records have gone stale then never resolves
+/// at all. Measured on a release with 24 live seeders: three fresh opens, three
+/// 90-second timeouts, while the same torrent streams at 800 KB/s the moment it
+/// has metadata.
+///
+/// So the swarm is asked directly, once, and the addresses are handed over as
+/// `initial_peers`. Best effort in every direction — a tracker that fails,
+/// answers something unparseable or is not HTTP costs nothing, because the DHT
+/// is running regardless and this only ever *adds* somewhere to look.
+///
+/// The peer id is a throwaway rather than the session's, which is private. The
+/// cost is that a tracker may briefly list two ids from this address; they
+/// expire, and a client that restarts does the same thing.
+async fn announce_peers(magnet: &str, info_hash: &str, port: u16) -> Vec<SocketAddr> {
+    let (Some(hash), Ok(parsed)) = (hex_bytes(info_hash), librqbit::Magnet::parse(magnet)) else {
+        return Vec::new();
+    };
+    let urls: Vec<String> = parsed
+        .trackers
+        .iter()
+        .filter(|t| t.starts_with("http://") || t.starts_with("https://"))
+        .take(SEED_ANNOUNCE_TRACKERS)
+        .cloned()
+        .collect();
+    if urls.is_empty() {
+        return Vec::new();
+    }
+
+    let peer_id = format!("-rQ0000-{:012x}", rand::random::<u64>() & 0xffff_ffff_ffff);
+    let client = reqwest::Client::new();
+    let asked = urls.len();
+    let results = futures_util::future::join_all(
+        urls.iter()
+            .map(|url| announce_one(&client, url, &hash, peer_id.as_bytes(), port)),
+    )
+    .await;
+
+    let mut seen = HashSet::new();
+    let peers: Vec<SocketAddr> = results
+        .into_iter()
+        .flatten()
+        .filter(|a| seen.insert(*a))
+        .collect();
+    eprintln!(
+        "[torrent] seeding the resolve with {} peer(s) from {asked} tracker(s)",
+        peers.len()
+    );
+    peers
+}
+
+async fn announce_one(
+    client: &reqwest::Client,
+    url: &str,
+    info_hash: &[u8],
+    peer_id: &[u8],
+    port: u16,
+) -> Vec<SocketAddr> {
+    // The announce URL's own query is kept and re-appended, exactly as the
+    // vendored tracker client does it: rutracker's `?magnet` marker and a
+    // private tracker's passkey live there, and replacing the query is a 403.
+    let (base, base_query) = match url.split_once('?') {
+        Some((base, query)) => (base, Some(query)),
+        None => (url, None),
+    };
+    let mut target = format!(
+        "{base}?info_hash={}&peer_id={}&event=started&port={port}\
+         &uploaded=0&downloaded=0&left=1&compact=1&no_peer_id=1&numwant=200",
+        urlencode_bytes(info_hash),
+        urlencode_bytes(peer_id),
+    );
+    if let Some(q) = base_query {
+        target.push('&');
+        target.push_str(q);
+    }
+
+    let req = client
+        .get(&target)
+        // Without it the WAF in front of several trackers answers 403 — the
+        // same header the vendored announce had to grow, for the same reason.
+        .header(reqwest::header::USER_AGENT, "rqbit")
+        .send();
+    let body = match tokio::time::timeout(SEED_ANNOUNCE_TIMEOUT, req).await {
+        Ok(Ok(res)) if res.status().is_success() => res.bytes().await.ok(),
+        Ok(Ok(res)) => {
+            eprintln!("[torrent] {base} answered {}", res.status());
+            None
+        }
+        Ok(Err(e)) => {
+            eprintln!("[torrent] {base} failed: {e}");
+            None
+        }
+        Err(_) => {
+            eprintln!("[torrent] {base} timed out");
+            None
+        }
+    };
+    body.map(|b| compact_peers(&b)).unwrap_or_default()
+}
+
+/// The `peers` field of an announce response, compact form only.
+///
+/// Scanned rather than deserialized, because this wants one field out of a
+/// dictionary whose other keys vary by tracker and are of no interest — and
+/// because a strict parser is exactly what made librqbit discard whole
+/// responses over two absent statistics (see vendor/README.md). The length being
+/// a non-zero multiple of six is the sanity check: the dictionary form of
+/// `peers` fails it, and so does a stray match inside binary data.
+fn compact_peers(body: &[u8]) -> Vec<SocketAddr> {
+    const KEY: &[u8] = b"5:peers";
+    let Some(at) = body.windows(KEY.len()).position(|w| w == KEY) else {
+        return Vec::new();
+    };
+    let rest = &body[at + KEY.len()..];
+    let Some(colon) = rest.iter().position(|b| *b == b':') else {
+        return Vec::new();
+    };
+    let Ok(len) = std::str::from_utf8(&rest[..colon]).unwrap_or("").parse::<usize>() else {
+        return Vec::new();
+    };
+    if len == 0 || len % 6 != 0 || rest.len() < colon + 1 + len {
+        return Vec::new();
+    }
+    rest[colon + 1..colon + 1 + len]
+        .chunks_exact(6)
+        .map(|c| {
+            SocketAddr::V4(SocketAddrV4::new(
+                Ipv4Addr::new(c[0], c[1], c[2], c[3]),
+                u16::from_be_bytes([c[4], c[5]]),
+            ))
+        })
+        // Port zero is not an address anything can be reached at.
+        .filter(|a| a.port() != 0)
+        .collect()
+}
+
+fn hex_bytes(s: &str) -> Option<Vec<u8>> {
+    if !is_info_hash(s) {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
+}
+
 /// The piece bitmap out of `Api::api_dump_haves`.
 ///
 /// The string is a `BitSlice` debug print — a header naming the type, its
@@ -1402,8 +1580,12 @@ fn stream_url(port: u16, info_hash: &str, index: usize, path: &str) -> String {
 /// a dependency: this escapes one file name for one loopback URL. `pub(crate)`
 /// because cast.rs builds its URLs the same way.
 pub(crate) fn urlencode(s: &str) -> String {
+    urlencode_bytes(s.as_bytes())
+}
+
+fn urlencode_bytes(s: &[u8]) -> String {
     let mut out = String::with_capacity(s.len());
-    for b in s.as_bytes() {
+    for b in s {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(*b as char)
@@ -1706,6 +1888,9 @@ mod tests {
     /// the container's own view of the stream — chapters included, which is the
     /// metadata most likely to be wrong in a rip and the hardest to attribute by
     /// eye.
+    ///
+    /// Its sibling `swarm_probe` answers the other half — *why* a torrent is not
+    /// downloading, which this one can only report as a read that never returns.
     #[test]
     fn sintel_smoke() {
         let Ok(arg) = std::env::var("FP_TEST_MAGNET") else {
@@ -1844,6 +2029,189 @@ mod tests {
                 }
             }
         });
+    }
+
+    /// Watch a swarm for a minute: peers found, peers connected, rate, pieces.
+    ///
+    /// ```bash
+    /// FP_TEST_SWARM='magnet:?xt=…' cargo test --lib torrent::tests::swarm_probe -- --nocapture
+    /// ```
+    ///
+    /// `sintel_smoke` proves a torrent streams; this one exists for when it does
+    /// not, because the two things that answer "why" — how many peers the tracker
+    /// and the DHT actually produced, and how many of them we are talking to —
+    /// are invisible from a read that simply never returns. A swarm the tracker
+    /// says has twenty seeders and a client that sits at one connected peer is a
+    /// different problem from an empty swarm, and they look identical in the UI.
+    ///
+    /// Off by default and network-bound, like `sintel_smoke`.
+    #[test]
+    fn swarm_probe() {
+        let Ok(magnet) = std::env::var("FP_TEST_SWARM") else {
+            return;
+        };
+        tauri::async_runtime::block_on(async {
+            let dir = std::env::temp_dir().join("frameplayer-swarm-probe");
+            std::fs::create_dir_all(&dir).unwrap();
+            let service = Arc::new(TorrentService::default());
+
+            let info = service
+                .add(dir, magnet, false)
+                .await
+                .expect("resolve failed");
+            let file = info
+                .files
+                .iter()
+                .max_by_key(|f| f.size)
+                .expect("no files")
+                .clone();
+            println!(
+                "{:?}\n  [{}] {} ({} bytes)",
+                info.name, file.index, file.path, file.size
+            );
+
+            // Started the way playback starts it: one Range request for the head,
+            // left running. Selecting the file is the request's own doing.
+            let url = file.url.clone();
+            tauri::async_runtime::spawn(async move {
+                match reqwest::Client::new()
+                    .get(&url)
+                    .header("Range", "bytes=0-1048575")
+                    .send()
+                    .await
+                {
+                    Ok(r) => {
+                        let status = r.status();
+                        let n = r.bytes().await.map(|b| b.len()).unwrap_or(0);
+                        println!("  [read] {status} {n} bytes");
+                    }
+                    Err(e) => println!("  [read] failed: {e}"),
+                }
+            });
+
+            let (session, handle) = {
+                let inner = service.inner.lock().await;
+                (
+                    inner.session.clone().unwrap(),
+                    inner.torrents[&info.info_hash].handle.clone(),
+                )
+            };
+            let api = librqbit::Api::new(session, None);
+            let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
+
+            for i in 0..60 {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let s = service.status(&info.info_hash, file.index).await;
+                let bands = service.buffered(&info.info_hash, file.index).await;
+                let agg = handle
+                    .stats()
+                    .live
+                    .map(|l| {
+                        let p = l.snapshot.peer_stats;
+                        format!(
+                            "queued={} connecting={} live={} dead={} not_needed={}",
+                            p.queued, p.connecting, p.live, p.dead, p.not_needed
+                        )
+                    })
+                    .unwrap_or_default();
+                println!(
+                    "{i:>3}s state={:<12} seen={:<4} down={:>8.1} KB/s file={}/{} bands={} {agg} err={:?}",
+                    s.state,
+                    s.peers_seen,
+                    s.down_bps / 1024.0,
+                    s.file_done,
+                    s.file_size,
+                    bands.len(),
+                    s.error
+                );
+            }
+
+            // Per-peer counters: which of the seen peers were tried, how often
+            // they errored, and whether any chunk ever arrived from them.
+            // `PeerStatsFilter` is not exported, but it is `Deserialize` and
+            // the call site pins the type — so it is built from JSON rather than
+            // named. The alternative is no per-peer view at all.
+            let filter = serde_json::from_str(r#"{"state":"All"}"#).unwrap();
+            if let Ok(snap) = api.api_peer_stats(id, filter) {
+                println!("\n--- per peer ---");
+                for (addr, st) in &snap.peers {
+                    let c = &st.counters;
+                    println!(
+                        "  {addr:<24} {:<12} attempts={} conns={} errors={} chunks={} bytes={}",
+                        st.state,
+                        c.connection_attempts,
+                        c.connections,
+                        c.errors,
+                        c.fetched_chunks,
+                        c.fetched_bytes
+                    );
+                }
+            }
+        });
+    }
+
+    /// The one field wanted out of an announce response, and the reason it is
+    /// scanned rather than deserialized: a strict parser is exactly what made
+    /// librqbit throw whole responses away (see vendor/README.md). A wrong
+    /// answer here is silent — no peers, and a magnet that never resolves.
+    #[test]
+    fn announce_peers_parsing() {
+        // Verbatim shape from rutracker: no `complete`, no `incomplete`.
+        let mut real = b"d8:intervali3595e12:min intervali3595e5:peers12:".to_vec();
+        real.extend_from_slice(&[93, 100, 177, 140, 0x7F, 0xA1]);
+        real.extend_from_slice(&[5, 77, 195, 179, 0xA7, 0x30]);
+        real.push(b'e');
+        assert_eq!(
+            compact_peers(&real),
+            vec![
+                "93.100.177.140:32673".parse::<SocketAddr>().unwrap(),
+                "5.77.195.179:42800".parse::<SocketAddr>().unwrap(),
+            ]
+        );
+
+        // A port of zero is not somewhere anything can be reached.
+        let mut zero = b"d5:peers6:".to_vec();
+        zero.extend_from_slice(&[1, 2, 3, 4, 0, 0]);
+        zero.push(b'e');
+        assert_eq!(compact_peers(&zero), Vec::<SocketAddr>::new());
+
+        // Everything that is not a compact list degrades to "no peers" rather
+        // than to garbage addresses: the dictionary form, a truncated body, a
+        // length that is not a whole number of records, and no field at all.
+        assert!(compact_peers(b"d5:peersld2:ip9:127.0.0.1eee").is_empty());
+        assert!(compact_peers(b"d5:peers12:abc").is_empty());
+        assert!(compact_peers(b"d5:peers7:abcdefge").is_empty());
+        assert!(compact_peers(b"d8:intervali60ee").is_empty());
+        assert!(compact_peers(b"").is_empty());
+    }
+
+    /// The info hash reaches the announce as raw bytes, and half of them are
+    /// not printable. Getting the decode wrong asks the tracker about a
+    /// different torrent, which answers cheerfully with nothing.
+    #[test]
+    fn info_hash_bytes() {
+        assert_eq!(
+            hex_bytes("378032034812493fd0e8a83e746323800a24078f").unwrap(),
+            vec![
+                0x37, 0x80, 0x32, 0x03, 0x48, 0x12, 0x49, 0x3F, 0xD0, 0xE8, 0xA8, 0x3E, 0x74,
+                0x63, 0x23, 0x80, 0x0A, 0x24, 0x07, 0x8F
+            ]
+        );
+        // Upper case is the same torrent; anything that is not a hash is none.
+        assert_eq!(
+            hex_bytes("4C0DD90150D41A5B647AA78EA828B2942C43AF45"),
+            hex_bytes("4c0dd90150d41a5b647aa78ea828b2942c43af45")
+        );
+        assert!(hex_bytes("").is_none());
+        assert!(hex_bytes("not a hash").is_none());
+        assert!(hex_bytes("378032034812493fd0e8a83e746323800a24078").is_none());
+
+        // And the bytes have to survive being put in a URL: `%3F` is a `?` in
+        // the middle of an info hash, and unescaped it would truncate the query.
+        assert_eq!(
+            urlencode_bytes(&hex_bytes("378032034812493fd0e8a83e746323800a24078f").unwrap()),
+            "7%802%03H%12I%3F%D0%E8%A8%3Etc%23%80%0A%24%07%8F"
+        );
     }
 
     /// Which directory names count as ours. The folder is the info hash (see

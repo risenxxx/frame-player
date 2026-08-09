@@ -147,21 +147,35 @@ fn parse_compact_peers(b: &[u8]) -> Vec<SocketAddrV4> {
     ips
 }
 
+/// The announce response.
+///
+/// **`complete` and `incomplete` are optional here, and upstream they are not.**
+/// BEP 3 lists them, but they are seeder/leecher counts — statistics — and real
+/// trackers omit them: rutracker answers `d8:intervali3595e12:min
+/// intervali3595e5:peers180:…e` and nothing else. Required, they made the whole
+/// response fail to deserialize, which discards **every peer in it** and leaves
+/// the DHT as the only source — silently, because the announce itself was a
+/// clean 200 and the failure is one level down. That is the difference between a
+/// torrent that streams and one that sits at "connecting to the swarm" with
+/// twenty seeders on the tracker page. Nothing reads either field.
 #[derive(Deserialize, Debug)]
 pub struct TrackerResponse<'a> {
     #[allow(dead_code)]
-    #[serde(rename = "warning message", borrow)]
+    #[serde(rename = "warning message", borrow, default)]
     pub warning_message: Option<ByteBuf<'a>>,
     #[allow(dead_code)]
-    pub complete: u64,
+    #[serde(default)]
+    pub complete: Option<u64>,
     pub interval: u64,
     #[allow(dead_code)]
-    #[serde(rename = "min interval")]
+    #[serde(rename = "min interval", default)]
     pub min_interval: Option<u64>,
     #[allow(dead_code)]
+    #[serde(default)]
     pub tracker_id: Option<ByteBuf<'a>>,
     #[allow(dead_code)]
-    pub incomplete: u64,
+    #[serde(default)]
+    pub incomplete: Option<u64>,
     pub peers: Peers,
 }
 

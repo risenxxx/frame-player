@@ -311,6 +311,14 @@
     // The position is flushed first so the card this file is about to appear on
     // carries the moment it was actually left at, not the previous write.
     flushPosition();
+    // And the torrent is let go here rather than left to the `filename === null`
+    // handler, for the same reason the picker is raised here: this path *knows*
+    // it is leaving, while that one is inferring it from an event that may be
+    // dropped (a queue overflow costs property changes — see the mirrors' 1 s
+    // resync). Getting it wrong leaves the swarm running and the download
+    // readout standing over the start screen, which is exactly what it looked
+    // like. Idempotent: the handler's own call finds nothing left to release.
+    if (torrent.info) void releaseTorrent();
     enterStartScreen();
     await command('stop').catch((e) => console.warn('stop failed:', e));
   }
