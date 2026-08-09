@@ -98,6 +98,8 @@ files from
 | Windows | `FramePlayer_<version>_x64-setup.exe` | Windows 10/11, x64 |
 | macOS | `FramePlayer_<version>_aarch64.dmg` | Apple Silicon |
 
+macOS is also a `brew install --cask` away — see [macOS](#macos) below.
+
 The macOS build is signed with an Apple Developer ID and notarised, so it opens
 like any other application. **The Windows build is not signed**, and stops the
 first launch with a SmartScreen warning — that is a fact about a certificate
@@ -124,10 +126,33 @@ by hand. Updates applied from inside the player do not go through it.
 
 ### macOS
 
-Open the disk image and drag **Frame Player** to *Applications*. That is all —
-the bundle is signed with an Apple Developer ID and notarised, and the ticket is
-stapled to both the image and the app, so Gatekeeper clears it without asking
-and without needing the network.
+With [Homebrew](https://brew.sh):
+
+```bash
+brew install --cask risenxxx/tap/frame-player
+```
+
+The fully qualified name taps the repository on the way past, so that is the
+whole installation; afterwards the cask answers to `frame-player` alone.
+
+Or open the disk image and drag **Frame Player** to *Applications*. Either way
+that is all — the bundle is signed with an Apple Developer ID and notarised, and
+the ticket is stapled to both the image and the app, so Gatekeeper clears it
+without asking and without needing the network.
+
+The cask is in [a tap of its own](https://github.com/risenxxx/homebrew-tap)
+rather than in `homebrew-cask`, whose casks have to clear a popularity bar this
+project has not reached; it is bumped by the release workflow, so it names the
+current version within a minute of one being published. It declares the player
+as self-updating, which means `brew upgrade` deliberately leaves it alone: the
+player fetches its own signed updates, and Homebrew is the way in and the way
+out rather than the update channel. It also declares the build as Apple Silicon
+only, so an Intel machine is refused with a reason instead of receiving an
+application it cannot run.
+
+`brew uninstall --cask frame-player` removes the player and leaves watch
+positions, remembered tracks and the thumbnail cache where they are; adding
+`--zap` removes those too.
 
 A build you produce yourself from this repository is a different matter: with no
 certificate it is signed ad-hoc, which seals the bundle but certifies nothing.
@@ -369,6 +394,14 @@ notarised as part of that run. The Windows installer is not code-signed yet, so
 it still shows a SmartScreen warning on first run; [Install](#install) has the
 way past it. The updater signature is a separate thing and is always verified,
 on both platforms.
+
+The last step of the run bumps the [Homebrew cask](https://github.com/risenxxx/homebrew-tap)
+to the release that has just been published. It is last because a stale tap
+hands out the previous version while a missing release is an artifact nobody can
+obtain, and a step must not stand in front of something more important than
+itself. The cask points at the GitHub Release asset rather than at R2, which
+keeps only the five newest versions — a download that 404s is worse than a
+version behind.
 
 ## License
 

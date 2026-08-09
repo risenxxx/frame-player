@@ -106,6 +106,46 @@ icons, which a headless machine has no session for — it passes silently and
 ships an image that opens as a plain folder. The image is therefore built in a
 separate step by a tool that writes the layout directly.
 
+### Homebrew
+
+The package manager's own repository of graphical applications will not take
+this one yet: its casks have to clear a popularity bar, measured in stars and
+forks, that a project with a handful of either does not reach. A tap of one's
+own has no such requirement and is a public repository holding a single file.
+
+It does have to be a *separate* repository, or very nearly. The one-argument
+form of the tap command expands to a fixed repository name, so a cask living in
+the application's own repository can only be reached by the two-argument form
+with a full URL — which is the instruction people copy wrong, and which makes
+every user's routine update fetch the whole application repository for the sake
+of one file. The separate repository also keeps the release automation's write
+access pointed at a repository containing nothing but that file, rather than at
+the branch holding the code.
+
+**The two update mechanisms do not fight, and the cask says so.** Marking the
+application as self-updating is what tells the package manager to leave it
+alone: an upgrade run skips it entirely unless explicitly told to be greedy. So
+the package manager is the way in and the way out, the player's own signed
+updater is the update channel, and the only visible consequence is that the
+recorded version goes stale — which is how every self-updating application in
+that repository behaves.
+
+Two things the cask has to get right that are properties of this project rather
+than of packaging. It points at the **release asset, not the object store**: the
+store keeps five versions and the release keeps its files forever, and a
+download that no longer exists is worse than a version that is merely old. And
+it declares the build **Apple Silicon only**, since that is the only macOS
+target built — without the declaration an Intel machine installs an application
+it cannot launch, with it the refusal names a reason.
+
+Keeping the cask current is the last step of the release run, placed there under
+the same rule as the storage sweep: a step must not stand in front of something
+more important than itself. A tap that failed to bump hands out the previous
+version; a release that was never created is an artifact nobody can obtain. Its
+credential is a deploy key rather than a personal token — it cannot expire, and
+it reaches exactly one repository by construction instead of by the scope
+somebody remembered to set.
+
 ## Windows
 
 ### SmartScreen reputation
