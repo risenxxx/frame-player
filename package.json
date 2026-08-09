@@ -1,6 +1,6 @@
 {
   "name": "frameplayer",
-  "version": "0.33.0",
+  "version": "1.0.0",
   "description": "A video player for Windows and macOS built on Tauri 2 and libmpv: local files, links and live torrent streaming in one window, frame-accurate seeking, and an unusual amount of attention to detail",
   "type": "module",
   "private": true,
@@ -21,7 +21,7 @@
     "tauri": "tauri",
     "set-version": "node scripts/set-version.mjs",
     "tauri:macos": "env FFMPEG_DIR=\"$PWD/src-tauri/ffmpeg-macos\" LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib tauri dev",
-    "tauri:macos:build": "env FFMPEG_DIR=\"$PWD/src-tauri/ffmpeg-macos\" LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib tauri build",
+    "tauri:macos:build": "scripts/macos-build.sh",
     "tauri:macos:dmg": "scripts/build-dmg.sh",
     "fetch-libs": "powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1"
   },

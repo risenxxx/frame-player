@@ -6,8 +6,8 @@
   "bundle": {
     "targets": ["app"],
     "macOS": {
-      "signingIdentity": "-",
-      "hardenedRuntime": false
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist"
     },
     "resources": {
       "ffmpeg/bin/*.dll": null,

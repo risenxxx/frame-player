@@ -98,13 +98,13 @@ files from
 | Windows | `FramePlayer_<version>_x64-setup.exe` | Windows 10/11, x64 |
 | macOS | `FramePlayer_<version>_aarch64.dmg` | Apple Silicon |
 
-**Neither build is signed with a certificate the operating system trusts yet**,
-so both stop the first launch with a warning. That is a fact about a
-certificate — an Apple Developer ID costs $99 a year and a Windows one more —
-rather than about the binaries, which are built in the open from this repository
-by [the release workflow](.github/workflows/release.yml). Updates are a separate
-mechanism and *are* verified: every package is signed with the project's own key
-and the player refuses one whose signature does not match.
+The macOS build is signed with an Apple Developer ID and notarised, so it opens
+like any other application. **The Windows build is not signed**, and stops the
+first launch with a SmartScreen warning — that is a fact about a certificate
+rather than about the binary, which is built in the open from this repository by
+[the release workflow](.github/workflows/release.yml). Updates are a separate
+mechanism and are verified on both platforms: every package is signed with the
+project's own key and the player refuses one whose signature does not match.
 
 Once installed, the player updates itself — it checks for a new version at
 startup and every six hours, and the update reopens the current video where it
@@ -124,24 +124,16 @@ by hand. Updates applied from inside the player do not go through it.
 
 ### macOS
 
-1. Open the disk image and drag **Frame Player** to *Applications*.
-2. Launch it once. macOS refuses, saying it cannot verify the app is free of
-   malware — dismiss the dialog.
-3. Open **System Settings → Privacy & Security** and scroll to the *Security*
-   section: the blocked app is listed there with an **Open Anyway** button.
-   Click it and confirm with Touch ID or your password.
-4. Launch the app again and confirm once more. Every launch after that is
-   ordinary.
+Open the disk image and drag **Frame Player** to *Applications*. That is all —
+the bundle is signed with an Apple Developer ID and notarised, and the ticket is
+stapled to both the image and the app, so Gatekeeper clears it without asking
+and without needing the network.
 
-**Right-click → Open no longer works on macOS 15 (Sequoia) and later** — Apple
-removed that shortcut, so System Settings is the only route left. From a
-terminal, `xattr -d com.apple.quarantine "/Applications/Frame Player.app"`
-does the same thing in one step.
-
-The app bundle carries an *ad-hoc* signature, and that is deliberate rather than
-cosmetic: it seals the bundle, which keeps Gatekeeper's refusal on the path that
-offers an **Open Anyway** button. Unsealed, the same unsigned app is reported as
-damaged, with no button and no way past it except the terminal.
+A build you produce yourself from this repository is a different matter: with no
+certificate it is signed ad-hoc, which seals the bundle but certifies nothing.
+macOS then refuses the first launch with an **Open Anyway** button in *System
+Settings → Privacy & Security* — the path that has a way out, as opposed to the
+*"is damaged"* refusal an unsealed binary gets, which has none.
 
 ## Features
 
@@ -372,10 +364,11 @@ Windows and macOS artifacts are built, signed with the updater key, uploaded
 together with `latest.json` to Cloudflare R2 and published as a GitHub Release.
 Installed players pick the update up automatically.
 
-Neither platform is code-signed with a real certificate yet — the Windows
-installer is unsigned and the macOS bundle carries an ad-hoc signature, so both
-show an OS warning on first run; [Install](#install) has the way past each. The
-updater signature is a separate thing and is always verified.
+The macOS bundle and its disk image are signed with an Apple Developer ID and
+notarised as part of that run. The Windows installer is not code-signed yet, so
+it still shows a SmartScreen warning on first run; [Install](#install) has the
+way past it. The updater signature is a separate thing and is always verified,
+on both platforms.
 
 ## License
 

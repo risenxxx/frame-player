@@ -6,10 +6,69 @@ store listing would cost.
 
 ## macOS
 
-### The bundle must be sealed, even by nothing
+The build is signed with a Developer ID and notarised. What follows is why the
+interim arrangement looked the way it did, and — more usefully — the three
+things that made turning notarisation on cost a day rather than an afternoon.
 
-Gatekeeper has **two distinct rejection paths** and they produce different
-interfaces:
+### The chain, and why its order is not free
+
+Sign the native libraries → build → notarise the app → staple → repack the
+updater archive → build the disk image → sign, notarise and staple that.
+
+Two of those placements are load-bearing. The **libraries are signed before the
+build**, because they reach the bundle as declared resources: copied in,
+carrying whatever signature they already had, which is the ad-hoc one applied
+when their load commands were rewritten. Notarisation inspects every Mach-O file
+in the bundle and refuses an ad-hoc one on identity, so they have to be right
+before they are copied; signing them inside the finished bundle would break its
+seal and force the image and the updater archive to be rebuilt around a
+signature that had just been replaced.
+
+The **updater archive is repacked after stapling**, because the bundler writes
+it during the build — before the ticket exists. Left alone, the disk image that
+first-time users download is notarised while every automatic update carries an
+unstapled bundle. That failure reaches only existing users, weeks later, which
+is the worst shape a release bug can have.
+
+### The hardened runtime is the hard part, not the certificate
+
+Notarisation requires the hardened runtime, and the hardened runtime is two
+separate restrictions. Both were measured against a probe that loads the bundled
+media library with the zoom/pan script under each candidate signature.
+
+**Executable memory.** The scripting runtime is a JIT, and the hardened runtime
+kills a process that executes a page it did not sign. The entitlement whose name
+matches the problem — *allow JIT* — **does not fix it**: it authorises a
+specific system call for mapping JIT memory, and this build of the runtime does
+not use it. The process dies with a bad-access exception, "Invalid Page", inside
+a private executable region. The blunter entitlement, which permits unsigned
+executable memory outright, is what works, and it is the only one shipped.
+
+**Library validation.** The hardened runtime also requires every library the
+process loads to carry the same team identifier as the process. With a real
+certificate that is satisfied for nothing, since the same identity signs the
+libraries. With an ad-hoc signature it cannot be satisfied at all — ad-hoc code
+has no team identifier — so the app dies at launch on the first library. The
+conclusion is that **the hardened runtime is only turned on when there is a
+certificate to pair it with**; a build from a clean checkout with no Apple
+account still produces a working, ad-hoc-sealed app.
+
+Three traps sit around that, each of which costs an hour on its own:
+
+- Turning the hardened runtime *off* in configuration does not turn it off. The
+  bundler signs with it whenever an entitlements file is named, whatever the
+  flag says, so the override has to clear both. (Verified against the signing
+  tool directly: entitlements without the runtime option produce a plain ad-hoc
+  signature, so this is the bundler's doing, not the tool's.)
+- A probe that loads the libraries dynamically survives every one of these
+  failures. Testing the library set in isolation proves nothing about the
+  bundle; only launching the bundle does.
+- Deep signature verification passes on the broken bundle, in silence. The
+  symptom is a crash dialog offering to send a report to Apple.
+
+### Gatekeeper's two paths, which still decide the unsigned case
+
+They produce different interfaces:
 
 | verdict | what the user sees |
 |---|---|
@@ -23,23 +82,14 @@ only workaround is removing the quarantine attribute from a terminal. That is
 not a thing to ask of anyone.
 
 An **ad-hoc signature** fixes it. It certifies nothing, but it seals the bundle,
-which moves the refusal to the second path. Paired with hardened runtime turned
-**off**: the bundler defaults it on, it is only needed for notarisation, and
-without entitlements it breaks the Lua runtime mpv uses for the zoom/pan script.
+which moves the refusal to the second path — and since macOS 15, right-click →
+Open no longer bypasses Gatekeeper, so Privacy & Security is the only route
+left and anything describing that build has to say so.
 
-Two things to know about the result: the signature covers the inner binary, then
-the bundle, and only then are the disk image and the update archive built — so
-both artifacts inherit the seal. And since macOS 15, right-click → Open no
-longer bypasses Gatekeeper; Privacy & Security is the only route, so the release
-notes have to say so.
-
-### A real Developer ID
-
-A paid developer membership plus notarisation removes the warning entirely. It
-also brings hardened runtime — required for notarisation — which means
-entitlements for the JIT the Lua runtime needs, and a notarisation step in
-continuous integration (submit, wait, staple). That is a subscription and a
-pipeline change rather than code.
+This is no longer what the releases carry, but it is still what anyone building
+from the repository gets, and it is the reason the ad-hoc path is maintained
+rather than merely tolerated: the alternative for them is not a warning, it is
+an application the interface offers no way to open.
 
 ### Private API
 

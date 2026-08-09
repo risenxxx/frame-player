@@ -3,36 +3,56 @@
   Entitlements for the hardened runtime, which notarisation requires and which
   the player does not otherwise want.
 
-  One entry, and it is not optional: mpv's scripting runtime is LuaJIT, and
+  One entry, and it is not optional: mpv's scripting runtime is LuaJIT 2.1, and
   `lua/zoompan.lua` is what makes zoom and pan land in a single frame (there is
   no way to set several mpv properties atomically from outside — see gotcha 4 in
-  CLAUDE.md). The hardened runtime forbids mapping writable-executable memory
-  unless the process says it needs to, so without this LuaJIT cannot generate
-  code and the script dies.
+  CLAUDE.md). The hardened runtime kills a process that executes a page it did
+  not sign, and a JIT writes exactly such pages.
+
+  Measured rather than reasoned about, because the obvious key is the wrong one.
+  A probe that loads the bundled libmpv with zoompan.lua, signed four ways and
+  run under the hardened runtime:
+
+    (nothing)                          SIGKILL — EXC_BAD_ACCESS, "Invalid Page",
+                                       CODESIGNING, faulting address inside a
+                                       private VM_ALLOCATE region mapped r-x
+    allow-jit                          SIGKILL — identical
+    allow-unsigned-executable-memory   runs; the script loads
+    both                               runs
+
+  So `com.apple.security.cs.allow-jit` — the entitlement whose name matches the
+  problem — does not fix it, and is not here. It authorises `MAP_JIT`, and this
+  LuaJIT does not use it: it maps executable memory the ordinary way, which is
+  what the blunter key covers. Adding both would lift one restriction for
+  nothing.
 
   Deliberately nothing else. Every entitlement is a restriction lifted, and the
   hardened runtime does not restrict what this application actually does —
   networking, file access and spawning the bundled ffmpeg are all unaffected by
   it (those belong to the App Sandbox, which is not in use here).
 
-  Two that are NOT here and should only be added against a reproduced failure:
-
-    com.apple.security.cs.allow-unsigned-executable-memory
-        The blunter version of allow-jit, for a LuaJIT built without Apple
-        Silicon's MAP_JIT support. Try it only if zoom/pan still fails with
-        allow-jit alone.
+  One that is NOT here, and the reason is the same as why `macos-build.sh`
+  turns the hardened runtime on only for a signed build:
 
     com.apple.security.cs.disable-library-validation
-        Would let the bundle load libraries signed by somebody else — which is
-        exactly what the 35 dylibs in Resources are today, since
-        bundle-macos-libs.sh signs them ad-hoc. The fix is to sign them with the
-        same Developer ID rather than to stop checking: notarisation rejects an
-        ad-hoc-signed Mach-O inside the bundle regardless of this entitlement,
-        so disabling validation buys nothing and costs the guarantee.
+        Not needed, because the ~35 dylibs in Resources are signed with the same
+        Developer ID as the binary that loads them — which is exactly what
+        library validation asks for.
+
+        It is needed for an *ad-hoc* build, and cannot help it: ad-hoc code has
+        no Team ID, so there is nothing for the check to match and dyld refuses
+        the first library at launch ("mapping process and mapped file
+        (non-platform) have different Team IDs"). That is why the ad-hoc
+        fallback drops the hardened runtime instead of lifting this restriction
+        for every user of a signed build.
+
+        Note the probe above does not see any of this — it `dlopen`s the
+        libraries, and the app links them. A library set that loads in isolation
+        says nothing about the bundle; only launching the bundle does.
 -->
 <plist version="1.0">
   <dict>
-    <key>com.apple.security.cs.allow-jit</key>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
   </dict>
 </plist>

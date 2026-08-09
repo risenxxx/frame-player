@@ -182,24 +182,84 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
           FP_OPENSUBTITLES_KEY: ${{ secrets.FP_OPENSUBTITLES_KEY }}
 
-      # There is no Apple Developer ID here, hence bundle.macOS.signingIdentity =
-      # "-", an ad-hoc signature. It certifies nothing, but it does seal the
-      # bundle (Contents/_CodeSignature). Without it the binary carried only the
-      # linker's signature (adhoc, linker-signed, Sealed Resources=none) and
-      # Gatekeeper refused it down the "signature is invalid" path — the user saw
-      # "the file is damaged" with no Open Anyway button, and the only way past it
-      # was xattr from a terminal. Sealed, the refusal goes down the policy path,
-      # which does have the button. hardenedRuntime is off deliberately (Tauri
-      # defaults it to true): it is only needed for notarisation, and without
-      # entitlements it would break LuaJIT (zoompan.lua). TAURI_SIGNING_* is the
-      # updater signature and has nothing to do with Apple code signing.
-      - name: Build Tauri app (macOS)
+      # --- macOS signing -------------------------------------------------------
+      # Imports the Developer ID and signs the native library set. Both halves
+      # have to happen before the build: the keychain because the build step
+      # signs the app with the same identity, and the libraries because Tauri
+      # copies them in as resources without touching their signatures — see the
+      # script's header for why re-signing them afterwards is the wrong shape.
+      #
+      # With no certificate configured this is a no-op and everything below
+      # falls back to the ad-hoc signature the project shipped for its first
+      # thirty releases: sealed but uncertified, which Gatekeeper stops with an
+      # Open Anyway button rather than the "file is damaged" dead end.
+      - name: Sign native libraries (macOS)
         if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: scripts/macos-sign.sh
+
+      # The one artefact worth carrying between runs. Everything else this job
+      # needs is already reused — the library set is fetched prebuilt from R2 and
+      # cargo's dependency cache is restored above — but the app itself is a
+      # ten-minute compile that a notarisation failure would otherwise repeat for
+      # nothing, since Apple's verdict says nothing about the code being wrong.
+      #
+      # Keyed on the commit, so it can only ever serve the build of the very
+      # sources being released; a re-run of a failed job restores it and goes
+      # straight to the part that failed. Saved immediately after the build and
+      # before notarisation, so what comes back is always a pre-ticket bundle
+      # (stapling it twice would be harmless anyway — the operation is idempotent).
+      - name: Restore built app (macOS)
+        if: runner.os == 'macOS'
+        id: app-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: src-tauri/target/release/bundle/macos
+          key: mac-app-${{ github.sha }}-${{ needs.check-version.outputs.version }}
+
+      # FP_OPENSUBTITLES_KEY is baked in with option_env!, so it is an input to
+      # the binary the cache above holds. Rotating it between a failed run and
+      # its re-run would leave the old key in the restored app — the one way this
+      # cache can be wrong, and the fix is to push a commit rather than re-run.
+      - name: Build Tauri app (macOS)
+        if: runner.os == 'macOS' && steps.app-cache.outputs.cache-hit != 'true'
         run: npm run tauri:macos:build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
           FP_OPENSUBTITLES_KEY: ${{ secrets.FP_OPENSUBTITLES_KEY }}
+          # Signs the bundle with the Developer ID, applies the hardened runtime
+          # and the JIT entitlement from tauri.macos.conf.json, and stops there.
+          # The notarisation credentials are deliberately NOT in this step's
+          # environment: Tauri would then notarise the .app itself, in an order
+          # decided by the bundler, and the disk image — which it does not build
+          # — would still need doing separately. One script does both, below.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+
+      - name: Save built app (macOS)
+        if: runner.os == 'macOS' && steps.app-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: src-tauri/target/release/bundle/macos
+          key: mac-app-${{ github.sha }}-${{ needs.check-version.outputs.version }}
+
+      # Before the disk image, so the image is built around a bundle that already
+      # carries its ticket. This step also repacks the updater archive, which
+      # Tauri wrote during the build and which is therefore a copy of the app
+      # from before the ticket existed.
+      - name: Notarise the app (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: scripts/macos-notarize.sh "src-tauri/target/release/bundle/macos/Frame Player.app"
 
       # Tauri lays out its dmg with bundle_dmg.sh, which places the icons by
       # driving Finder over AppleScript. A headless runner has no Finder session:
@@ -216,6 +276,31 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/dmgvenv"
           "$RUNNER_TEMP/dmgvenv/bin/pip" install --quiet dmgbuild
           DMGBUILD="$RUNNER_TEMP/dmgvenv/bin/dmgbuild" scripts/build-dmg.sh
+
+      # The image gets a ticket of its own. The app inside it already has one,
+      # which is what decides whether the player launches — but the image is
+      # what the user downloads, and an unnotarised one is refused on the way to
+      # opening it, so the app's ticket never gets a chance to matter.
+      - name: Notarise the DMG (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          # By name, never by glob. `build-dmg.sh` derives this name from the
+          # version, and a leftover image from an earlier build sorts before it
+          # as often as not — measured locally, a glob picked a stale 0.16.1
+          # image over the 0.33.0 one that had just been written, and Apple duly
+          # rejected 93 paths inside an app nobody was shipping. On a clean
+          # runner there is only ever one file, which is exactly what makes this
+          # the kind of bug that waits.
+          version="${{ needs.check-version.outputs.version }}"
+          dmg="src-tauri/target/release/bundle/dmg/Frame Player_${version}_aarch64.dmg"
+          [ -f "$dmg" ] || { echo "no dmg at $dmg" >&2; ls -la src-tauri/target/release/bundle/dmg/ >&2; exit 1; }
+          scripts/macos-notarize.sh "$dmg"
 
       # --- Stage -------------------------------------------------------------
       # Each platform stages its own files plus a manifest fragment,
@@ -251,14 +336,18 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           version="${{ needs.check-version.outputs.version }}"
-          # The names Tauri generates contain a space ("Frame Player_..."), so
-          # collect them into an array with a glob rather than parsing ls.
-          shopt -s nullglob
-          dmgs=(src-tauri/target/release/bundle/dmg/*.dmg)
+          # The image is named, not globbed — and it has to be the same one the
+          # notarisation step chose, or a release ships an image without a
+          # ticket while a different one carries it. `build-dmg.sh` builds this
+          # name out of the version, so both steps derive it the same way.
+          dmg="src-tauri/target/release/bundle/dmg/Frame Player_${version}_aarch64.dmg"
+          [ -f "$dmg" ] || { echo "no dmg at $dmg" >&2; exit 1; }
           # The macOS updater installs the .app.tar.gz, not the .dmg — the dmg
-          # is only for the first, manual install.
+          # is only for the first, manual install. This one keeps its glob: the
+          # bundle directory holds exactly one, named after the product rather
+          # than the version, and `macos-notarize.sh` rewrites it in place.
+          shopt -s nullglob
           tgzs=(src-tauri/target/release/bundle/macos/*.app.tar.gz)
-          dmg="${dmgs[0]}"
           tgz="${tgzs[0]}"
           dmg_name="FramePlayer_${version}_aarch64.dmg"
           tgz_name="FramePlayer_${version}_aarch64.app.tar.gz"
@@ -375,11 +464,8 @@ jobs:
             The player updates automatically: when a new version is released,
             an update button appears in the app.
 
-            **macOS**: the build is not signed with an Apple Developer ID, so
-            Gatekeeper stops the first launch. Try to open the app once, then go
-            to **System Settings → Privacy & Security** — the blocked app is
-            listed there with an **Open Anyway** button. Every launch after that
-            is normal. (Right-click → Open no longer works on macOS 15 and up.)
+            The macOS build is signed with an Apple Developer ID and notarised,
+            so it opens the way any other application does.
           files: |
             dist/*.exe
             dist/*.dmg
