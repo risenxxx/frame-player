@@ -30,7 +30,7 @@
 # would otherwise be re-litigated differently on each side.
 
 # The shared timeline. `at`, `rev` and `by` are the relay's to fill in.
-timeline	content,paused,position,speed,at,rev,by
+timeline	content,tracks,paused,position,speed,at,rev,by
 
 # One participant, as everyone else sees them.
 member	id,name,ready
@@ -45,7 +45,7 @@ client:bye	t
 
 # relay → client
 server:welcome	t,ver,room,me,host,hostOnly,members,timeline,waiting,now
-server:timeline	t,content,paused,position,speed,at,rev,by
+server:timeline	t,content,tracks,paused,position,speed,at,rev,by
 server:members	t,members,host,hostOnly,waiting
 server:pong	t,c,s
 server:error	t,code,message

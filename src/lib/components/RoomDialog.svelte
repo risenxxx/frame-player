@@ -213,15 +213,24 @@
          the form arguing with the reason it was opened. -->
     <p class="setting-hint room-lead">{t('sync.lead')}</p>
 
-    <label class="room-field">
-      <span class="setting-label">{t('sync.name_label')}</span>
-      <input
-        class="link-input room-input"
-        bind:value={name}
-        placeholder={t('sync.name_ph')}
-        maxlength="32"
-      />
-    </label>
+    <!-- Who you are, in a block of its own.
+         It used to sit bare above the primary button, and that is exactly how it
+         read: as the first field of "create a room" — so somebody joining by
+         code skipped it and arrived nameless. It applies to both paths, so it
+         is separated from both: its own surface, its own hint saying so, and a
+         gap before the choice begins. -->
+    <div class="room-me">
+      <label class="room-me-field">
+        <span class="setting-label">{t('sync.name_label')}</span>
+        <input
+          class="link-input room-input"
+          bind:value={name}
+          placeholder={t('sync.name_ph')}
+          maxlength="32"
+        />
+      </label>
+      <p class="setting-hint room-me-hint">{t('sync.name_hint')}</p>
+    </div>
 
     {#if fromInvite}
       {@render joinBlock(true)}
@@ -278,6 +287,26 @@
 <style>
   .room-lead {
     margin: 0 0 14px;
+  }
+
+  .room-me {
+    padding: 11px 12px 9px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .room-me-field {
+    display: block;
+  }
+
+  .room-me-field .setting-label {
+    display: block;
+    margin-bottom: 5px;
+  }
+
+  .room-me-hint {
+    margin: 6px 0 0;
   }
 
   .room-field {

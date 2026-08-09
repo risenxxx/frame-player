@@ -54,7 +54,8 @@
   import { castCacheCapGb, setCastCacheCapGb } from '$lib/cast.svelte';
   import { showOsd } from '$lib/osd.svelte';
   import { syncMenuChecks } from '$lib/window-prefs.svelte';
-  import { DEFAULT_RELAY, relayUrl, setRelayUrl } from '$lib/sync/wire.svelte';
+  import type { TrackKind } from '$lib/sync/protocol';
+  import { DEFAULT_RELAY, relayUrl, setRelayUrl, setSyncPref, syncPrefs } from '$lib/sync/wire.svelte';
   import { fmtSize } from '$lib/units';
 
   interface Props {
@@ -761,6 +762,15 @@
         onchange={(e) => saveRelay(e.currentTarget.value)}
       />
     </div>
+
+    <!-- What a shared session carries beyond the timeline. Both switches are
+         symmetric — each governs sending *and* taking, because publishing a
+         choice you refuse to accept back would push a preference on a room
+         while opting out of it yourself. The defaults are the asymmetry:
+         a room listens to one soundtrack, but one viewer needing subtitles and
+         another not is the ordinary case. -->
+    {@render syncToggle('audio', t('sync.share_audio'), t('sync.share_audio_hint'))}
+    {@render syncToggle('sub', t('sync.share_subs'), t('sync.share_subs_hint'))}
 
     <div class="setting">
       <div class="row-toggle">
@@ -1769,3 +1779,24 @@
     min-width: 0;
   }
 </style>
+
+{#snippet syncToggle(kind: TrackKind, label: string, hint: string)}
+  <div class="setting">
+    <div class="row-toggle">
+      <div class="row-text">
+        <div class="setting-label">{label}</div>
+        <div class="setting-hint">{hint}</div>
+      </div>
+      <button
+        class="switch"
+        class:on={syncPrefs.shares(kind)}
+        role="switch"
+        aria-checked={syncPrefs.shares(kind)}
+        aria-label={label}
+        onclick={() => setSyncPref(kind, !syncPrefs.shares(kind))}
+      >
+        <span class="switch-knob"></span>
+      </button>
+    </div>
+  </div>
+{/snippet}

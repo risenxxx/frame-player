@@ -14,7 +14,7 @@
   import { player } from '$lib/player.svelte';
   import { sync } from '$lib/sync/apply.svelte';
   import { formatCode } from '$lib/sync/protocol';
-  import { wire } from '$lib/sync/wire.svelte';
+  import { wire, type RoomEvent } from '$lib/sync/wire.svelte';
   import type { TorrentStatus } from '$lib/torrent.svelte';
 
   interface Props {
@@ -65,6 +65,46 @@
     onExitFullscreen,
     onBarHover,
   }: Props = $props();
+
+  // ---- the room indicator ----
+
+  /// How long an arrival or a departure stays on the chip before it goes back
+  /// to the roster. Long enough to read at a glance while a film is playing,
+  /// short enough not to hide who is in the room.
+  const EVENT_MS = 4500;
+  /// Names shown before the rest become "+N". Four fits the chip's width at the
+  /// lengths people actually type; the panel lists everybody.
+  const ROSTER_MAX = 4;
+
+  let shownEvent = $state<RoomEvent | null>(null);
+
+  $effect(() => {
+    const next = wire.event;
+    if (!next) return;
+    shownEvent = next;
+    const timer = setTimeout(() => {
+      // Only if it is still the one being shown: a second arrival replaces it,
+      // and clearing then would take the newer notification away early.
+      if (shownEvent === next) shownEvent = null;
+    }, EVENT_MS);
+    return () => clearTimeout(timer);
+  });
+
+  const roster = $derived(wire.members.slice(0, ROSTER_MAX));
+
+  /// The chip stays up through the idle fade for anything the viewer needs to
+  /// see without touching the keyboard — which is precisely when a room goes
+  /// quiet, somebody leaves, or a torrent runs dry.
+  const alert = $derived(
+    wire.waiting.length > 0 || sync.opening || sync.failed || shownEvent !== null,
+  );
+
+  function eventText(e: RoomEvent): string {
+    const name = e.name || t('sync.anon');
+    if (e.kind === 'joined') return t('sync.ev_joined', { name });
+    if (e.kind === 'left') return t('sync.ev_left', { name });
+    return t('sync.ev_host', { name });
+  }
 </script>
 
 {#snippet brandMark()}
@@ -195,8 +235,8 @@
   <div
     class="roomchip"
     class:below={!!torrentChip}
-    class:hidden={idle && !wire.waiting.length && !sync.opening && !sync.failed}
-    class:waiting={wire.waiting.length > 0 || sync.opening || sync.failed}
+    class:hidden={idle && !alert}
+    class:waiting={alert}
   >
     <div class="roomchip-line">
       <svg class="roomchip-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -209,21 +249,41 @@
           stroke-linejoin="round"
         />
       </svg>
-      <span>
-        {#if sync.failed}
-          {t('sync.open_failed')}
-        {:else if sync.opening}
-          {t('sync.opening')}
-        {:else if sync.holdingUp}
-          {t('sync.waiting_you')}
-        {:else if wire.waiting.length === 1}
-          {t('sync.waiting_one', { name: wire.waitingFor[0]?.name || t('sync.anon') })}
-        {:else if wire.waiting.length > 1}
-          {t('sync.waiting_many', { count: wire.waiting.length })}
-        {:else}
-          {t('sync.room')} {formatCode(wire.room)}
+      <span class="roomchip-code">{formatCode(wire.room)}</span>
+    </div>
+
+    <!-- One line under the code, and what it says is whichever of three things
+         matters most right now: something the room is waiting for, something
+         that just happened to its membership, or — the ordinary case — who is
+         here. They are ranked rather than stacked, because a chip that grows a
+         line reflows the corner of the picture. -->
+    <div class="roomchip-line roomchip-second">
+      {#if sync.failed}
+        <span>{t('sync.open_failed')}</span>
+      {:else if sync.opening}
+        <span>{t('sync.opening')}</span>
+      {:else if sync.holdingUp}
+        <span>{t('sync.waiting_you')}</span>
+      {:else if wire.waiting.length === 1}
+        <span>{t('sync.waiting_one', { name: wire.waitingFor[0]?.name || t('sync.anon') })}</span>
+      {:else if wire.waiting.length > 1}
+        <span>{t('sync.waiting_many', { count: wire.waiting.length })}</span>
+      {:else if shownEvent}
+        <span class="roomchip-event">{eventText(shownEvent)}</span>
+      {:else}
+        <!-- The roster. A dot per member: everybody listed is connected, since
+             the relay drops a member the moment their socket goes — so the dot
+             is not "online", it is whether they are ready to be played to. -->
+        {#each roster as member (member.id)}
+          <span class="roomchip-who" class:me={member.id === wire.me}>
+            <i class="roomchip-dot" class:loading={!member.ready}></i>
+            {member.id === wire.me ? t('sync.you') : member.name || t('sync.anon')}
+          </span>
+        {/each}
+        {#if wire.members.length > roster.length}
+          <span class="roomchip-who">{t('sync.more', { count: wire.members.length - roster.length })}</span>
         {/if}
-      </span>
+      {/if}
     </div>
   </div>
 {/if}
@@ -451,6 +511,61 @@
     width: 13px;
     height: 13px;
     color: #8f8f9c;
+  }
+
+  .roomchip-code {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    letter-spacing: 0.08em;
+    color: #e8e8ec;
+  }
+
+  /* The roster wraps rather than overflowing: names are whatever people type,
+     and a chip that grows sideways would run off the window before it ran out
+     of names. `column-gap` larger than `row-gap` keeps a wrapped second line
+     reading as the same group. */
+  .roomchip-second {
+    flex-wrap: wrap;
+    row-gap: 3px;
+    column-gap: 10px;
+    max-width: 240px;
+    white-space: normal;
+    color: #9a9aa6;
+  }
+
+  .roomchip-who {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    /* One long name must not push the others out of the chip. */
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .roomchip-who.me {
+    color: #d6d6de;
+  }
+
+  /* Not "online": everybody in the list is connected, because the relay drops a
+     member the moment their socket goes. Green is ready to be played to, the
+     accent is still opening or buffering — which is the one thing about another
+     viewer that changes what happens on this screen. */
+  .roomchip-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #5ad18f;
+  }
+
+  .roomchip-dot.loading {
+    background: #818cf8;
+    animation: torchip-pulse 1.4s ease-in-out infinite;
+  }
+
+  .roomchip-event {
+    color: #e8e8ec;
   }
 
   .roomchip.waiting .roomchip-icon {

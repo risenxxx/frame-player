@@ -84,6 +84,19 @@ export type ContentRef =
  */
 export interface Timeline {
   content: ContentRef | null;
+  /**
+   * How the room is playing it — currently the audio track, and nothing else.
+   *
+   * On the timeline rather than in a message of its own, and that is worth
+   * saying: a track choice is not "where in the film" and does not obviously
+   * belong here. What earns it the place is that the timeline is already a
+   * *snapshot* with last-writer-wins semantics and already arrives with the
+   * handshake — so a viewer joining mid-film gets the room's audio choice for
+   * free, and a dropped message costs nothing. A separate message would need
+   * its own delivery, its own re-statement on join, and its own reasoning about
+   * ordering against the timeline it accompanies.
+   */
+  tracks: SharedTracks | null;
   paused: boolean;
   /** Seconds into the file at `at`. */
   position: number;
@@ -94,6 +107,50 @@ export interface Timeline {
   rev: number;
   /** Member who caused it, or '' for the relay itself (the readiness freeze). */
   by: string;
+}
+
+/**
+ * What the room agrees about *how* to play the film.
+ *
+ * **Both kinds travel; whether a viewer sends or takes either is theirs to
+ * decide** (`syncPrefs`, and two switches in the settings). The defaults encode
+ * the asymmetry rather than enforcing it: audio on, subtitles off.
+ *
+ * A room is watching one film and listening to one soundtrack, so an audio
+ * choice is the room's by default — hearing different audio is a strange way to
+ * watch together. Subtitles are the opposite case and default off, because one
+ * viewer needs them and another does not, one reads a second language and
+ * another is a native speaker; turning them on for everybody would mean turning
+ * them *off* for somebody who cannot follow the film without them. Subtitle
+ * size, position and delay are presentation and stay personal unconditionally —
+ * that is the roadmap's rule, and these two are the only things on the other
+ * side of it.
+ *
+ * **A description, never an id.** Track ids are positions inside one file: the
+ * Russian dub that is #2 in one rip is routinely #3 in another, so an id shared
+ * between two copies selects the wrong thing silently. What travels is the
+ * descriptor the player already stores for its own per-folder track memory, and
+ * the receiving end resolves it with the same scoring (`matchTrack`) — which is
+ * what makes this work at all when two people have different releases.
+ *
+ * `null` on either side means "the room has no opinion", which is different from
+ * `'no'` — the explicit "play none of them".
+ */
+export interface SharedTracks {
+  audio: TrackDescriptor | 'no' | null;
+  sub: TrackDescriptor | 'no' | null;
+}
+
+/** One kind of track, where both are handled the same way. */
+export type TrackKind = 'audio' | 'sub';
+
+/** Mirrors `TrackDesc` in player.svelte.ts — see `SharedTracks`. */
+export interface TrackDescriptor {
+  lang: string | null;
+  title: string | null;
+  codec: string | null;
+  forced: boolean;
+  index: number;
 }
 
 export interface Member {
@@ -115,9 +172,44 @@ export function positionAt(t: Timeline, nowMs: number): number {
   return Math.max(0, t.position + ((nowMs - t.at) / 1000) * t.speed);
 }
 
+/**
+ * Whether an arriving timeline may replace the one this client holds.
+ *
+ * The rule that stops a shared session from coming apart on a bad connection,
+ * and it is one line because almost all of the work is done by the wire itself:
+ * a WebSocket is a TCP stream, so within one connection messages *cannot*
+ * arrive out of order — they arrive in order or the connection breaks. What is
+ * left to defend against is everything around that:
+ *
+ *   - a **reconnect**, where the previous socket's traffic must not be mixed
+ *     into the new session (the `socket !== sock` guards do that);
+ *   - a **duplicate or replay**, which a monotonic revision makes inert;
+ *   - and plain **delay**, which costs nothing at all — the timeline is a
+ *     projection from `at`, so a snapshot that arrives two seconds late still
+ *     computes the correct position for right now. That is the deepest reason
+ *     the wire carries state rather than actions: a late *action* is wrong, a
+ *     late *snapshot* is merely old.
+ *
+ * **`>=`, not `>`, and that is load-bearing rather than an off-by-one.** A
+ * refusal is answered by the relay re-sending the room's current timeline at
+ * the *same* revision it already had — and that message is precisely the
+ * correction that pulls a guest back from the position they optimistically
+ * moved to. Dropping it as "not newer" would leave them somewhere the room is
+ * not, permanently.
+ *
+ * `authoritative` is the handshake: a `welcome` describes the room as it is now
+ * and is never a stale reading of it. It also covers the one case a revision
+ * cannot — a room that has ceased to exist and been created afresh starts
+ * counting again, and a client still holding the old count would otherwise
+ * reject every timeline it was ever sent.
+ */
+export function shouldApply(held: Timeline, next: Timeline, authoritative: boolean): boolean {
+  return authoritative || next.rev >= held.rev;
+}
+
 /** An empty room's timeline: nothing playing, nothing stamped. */
 export function emptyTimeline(): Timeline {
-  return { content: null, paused: true, position: 0, speed: 1, at: 0, rev: 0, by: '' };
+  return { content: null, tracks: null, paused: true, position: 0, speed: 1, at: 0, rev: 0, by: '' };
 }
 
 // ---- messages ---------------------------------------------------------------
@@ -212,7 +304,7 @@ type Missing<T, F extends readonly string[]> = Exclude<keyof T & string, F[numbe
 type Complete<T, F extends readonly string[]> =
   Missing<T, F> extends never ? true : ['missing from the field list:', Missing<T, F>];
 
-const TIMELINE_FIELDS = ['content', 'paused', 'position', 'speed', 'at', 'rev', 'by'] as const;
+const TIMELINE_FIELDS = ['content', 'tracks', 'paused', 'position', 'speed', 'at', 'rev', 'by'] as const;
 const MEMBER_FIELDS = ['id', 'name', 'ready'] as const;
 const HELLO_FIELDS = ['t', 'ver', 'room', 'name'] as const;
 const CLIENT_TIMELINE_FIELDS = ['t', 'timeline'] as const;
@@ -232,7 +324,17 @@ const WELCOME_FIELDS = [
   'waiting',
   'now',
 ] as const;
-const SERVER_TIMELINE_FIELDS = ['t', 'content', 'paused', 'position', 'speed', 'at', 'rev', 'by'] as const;
+const SERVER_TIMELINE_FIELDS = [
+  't',
+  'content',
+  'tracks',
+  'paused',
+  'position',
+  'speed',
+  'at',
+  'rev',
+  'by',
+] as const;
 const MEMBERS_FIELDS = ['t', 'members', 'host', 'hostOnly', 'waiting'] as const;
 const PONG_FIELDS = ['t', 'c', 's'] as const;
 const ERROR_FIELDS = ['t', 'code', 'message'] as const;

@@ -362,6 +362,40 @@ class Player {
 
 export const player = new Player();
 
+/**
+ * When `time-pos` last arrived, on the monotonic clock.
+ *
+ * Deliberately NOT `$state`: mpv reports the position several times a second,
+ * and a reactive timestamp would re-run every effect that reads it at that rate
+ * for no benefit — nothing renders from it.
+ */
+let timePosAt = 0;
+
+/**
+ * Where playback is *now*, rather than where it was when mpv last said so.
+ *
+ * `player.timePos` is a mirror of an event, so by the time anything reads it, it
+ * is as old as the gap since that event — tens of milliseconds, and more on a
+ * busy machine. For anything the viewer sees that is irrelevant; for comparing
+ * this player against a shared timeline it is a systematic error in a
+ * measurement whose whole job is to be small, and it sat inside the drift
+ * correction's own deadband where it could never be observed.
+ *
+ * Extrapolated at the current *playback* speed, which is the right rate even
+ * while drift correction is bending it: the question is where the film has got
+ * to, not where it was supposed to.
+ */
+export function positionNow(): number {
+  if (player.paused || player.eofReached || !timePosAt) return player.timePos;
+  const ahead = (performance.now() - timePosAt) / 1000;
+  // A mirror that has not been refreshed for a second is not stale, it is
+  // wrong — playback stalled, or the event queue overflowed — and extrapolating
+  // across it would invent a position. The resync sweep runs at 1 s, so this is
+  // the point past which something else is going on.
+  if (ahead > 1) return player.timePos;
+  return player.timePos + ahead * player.speed;
+}
+
 export type PlayerHooks = {
   /// Runs for every observed property, after the mirror has been updated —
   /// so a handler reading `player.x` sees the new value. Kept as one callback
@@ -617,7 +651,10 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
 function applyProperty(ev: PropertyChange) {
   switch (ev.name) {
     case 'pause': player.paused = ev.data; break;
-    case 'time-pos': player.timePos = ev.data ?? 0; break;
+    case 'time-pos':
+      player.timePos = ev.data ?? 0;
+      timePosAt = performance.now();
+      break;
     case 'duration': player.duration = ev.data ?? 0; break;
     case 'filename': player.filename = ev.data; break;
     case 'path': player.filePath = ev.data; break;

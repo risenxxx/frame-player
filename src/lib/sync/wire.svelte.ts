@@ -27,12 +27,15 @@ import {
   isErrorCode,
   normalizeCode,
   positionAt,
+  shouldApply,
   type ClientMsg,
   type ContentRef,
   type ErrorCode,
   type Member,
   type ServerMsg,
+  type SharedTracks,
   type Timeline,
+  type TrackKind,
 } from './protocol';
 import {
   estimateOffset,
@@ -59,6 +62,8 @@ export const DEFAULT_RELAY = 'relay.frameplayer.app';
 
 const RELAY_KEY = 'frameplayer.relay';
 const NAME_KEY = 'frameplayer.syncName';
+const AUDIO_KEY = 'frameplayer.syncAudio';
+const SUBS_KEY = 'frameplayer.syncSubs';
 
 /// Reconnect backoff. Short enough that a Wi-Fi blip is invisible, long enough
 /// that a relay that is down is not hammered by every player that ever joined.
@@ -68,7 +73,17 @@ const RETRY_MS = [500, 1000, 2000, 4000, 8000, 15000] as const;
 /// estimate of a clock, not a heartbeat (the relay's own ping is that).
 const PING_FAST_MS = 500;
 const PING_FAST_COUNT = 8;
-const PING_SLOW_MS = 30_000;
+/**
+ * Ten seconds, not thirty.
+ *
+ * The offset is no longer only used to place the playhead — it now *sets the
+ * correction band* (`deadbandFor`), so a stale uncertainty makes the room
+ * needlessly loose. A ping is a few dozen bytes and this is six a minute; the
+ * window of eight samples then refreshes about once a minute, which is fast
+ * enough to follow a laptop moving between networks and slow enough to be
+ * invisible.
+ */
+const PING_SLOW_MS = 10_000;
 
 /**
  * How long after our own publish the timeline is treated as ours rather than the
@@ -87,6 +102,13 @@ export type SyncError = ErrorCode | 'unreachable' | 'no_relay';
 
 export type Phase = 'off' | 'connecting' | 'joined';
 
+export interface RoomEvent {
+  kind: 'joined' | 'left' | 'host';
+  name: string;
+  /// `performance.now()` when it happened — the chip fades it out on age.
+  at: number;
+}
+
 class Wire {
   phase = $state<Phase>('off');
   /// The room code, once the relay has answered. Never what was typed.
@@ -100,9 +122,19 @@ class Wire {
   timeline = $state<Timeline>(emptyTimeline());
   /// The last refusal. Cleared by the next successful action.
   error = $state<SyncError | null>(null);
-  /// How far our clock estimate could be out, in milliseconds. Shown rather
-  /// than used: it is what turns "this room feels loose" into a known limit.
+  /// How far our clock estimate could be out, in milliseconds. Shown to the
+  /// viewer *and* used: it sets how tightly the room is held (`deadbandFor`).
   uncertainty = $state(Infinity);
+  /**
+   * The last thing that happened to the room's membership, for the indicator.
+   *
+   * Somebody arriving or leaving is the one change a viewer cannot infer from
+   * the film: playback simply carries on, or stops, with nothing to say who did
+   * it. The chip announces it for a few seconds and then goes back to the
+   * roster — a notification rather than a state, which is why it carries the
+   * time it happened rather than a flag somebody has to clear.
+   */
+  event = $state<RoomEvent | null>(null);
 
   /// In a room at all — what every publisher checks before doing anything.
   get on(): boolean {
@@ -125,6 +157,57 @@ class Wire {
 }
 
 export const wire = new Wire();
+
+/**
+ * What this viewer is willing to share about *how* the film is played.
+ *
+ * One switch per kind, and each is symmetric on purpose: it governs both sending
+ * and taking. Publishing a choice you refuse to accept back would be pushing a
+ * preference on a room while opting out of it yourself, and the room would end
+ * up in a state its own members disagree about.
+ *
+ * The defaults are the asymmetry that made these switches worth having at all.
+ * **Audio on**: a room is watching one film and listening to one soundtrack.
+ * **Subtitles off**: one viewer needs them and another does not, one reads a
+ * second language and another is a native speaker — so sharing them by default
+ * would mean somebody turning subtitles off for a person who cannot follow the
+ * film without them. Neither is a rule, which is the point of a switch.
+ *
+ * Ours, written and never read back from anywhere else — the same shape as
+ * `frameplayer.loop` and `frameplayer.normalize`.
+ */
+class SyncPrefs {
+  audio = $state(true);
+  subs = $state(false);
+
+  /** Whether this kind is shared at all, in either direction. */
+  shares(kind: TrackKind): boolean {
+    return kind === 'audio' ? this.audio : this.subs;
+  }
+}
+
+export const syncPrefs = new SyncPrefs();
+
+export function loadSyncPrefs() {
+  try {
+    const audio = localStorage.getItem(AUDIO_KEY);
+    const subs = localStorage.getItem(SUBS_KEY);
+    if (audio !== null) syncPrefs.audio = audio === '1';
+    if (subs !== null) syncPrefs.subs = subs === '1';
+  } catch {
+    // the defaults stand
+  }
+}
+
+export function setSyncPref(kind: TrackKind, on: boolean) {
+  if (kind === 'audio') syncPrefs.audio = on;
+  else syncPrefs.subs = on;
+  try {
+    localStorage.setItem(kind === 'audio' ? AUDIO_KEY : SUBS_KEY, on ? '1' : '0');
+  } catch {
+    // not critical: the choice simply will not survive a restart
+  }
+}
 
 // ---- settings ---------------------------------------------------------------
 
@@ -318,6 +401,7 @@ export function leaveRoom(opts: { quiet?: boolean } = {}) {
   wire.waiting = [];
   wire.timeline = emptyTimeline();
   wire.uncertainty = Infinity;
+  wire.event = null;
   samples = [];
   offset = 0;
   publishedUntil = 0;
@@ -426,7 +510,9 @@ function handle(msg: ServerMsg) {
       wire.uncertainty = Infinity;
       pingsSent = 0;
       schedulePing();
-      applyTimeline(msg.timeline);
+      // Authoritative: a handshake describes the room as it is now, and a room
+      // that has been created afresh counts revisions from zero again.
+      applyTimeline(msg.timeline, true);
       // Restate what the relay cannot know after a reconnect: whether we are
       // ready, and what we were playing. Without the second, a host who dropped
       // and came back would find the room still pointing at the old file.
@@ -438,6 +524,7 @@ function handle(msg: ServerMsg) {
     case 'timeline':
       applyTimeline({
         content: msg.content,
+        tracks: msg.tracks,
         paused: msg.paused,
         position: msg.position,
         speed: msg.speed,
@@ -447,6 +534,7 @@ function handle(msg: ServerMsg) {
       });
       break;
     case 'members':
+      noteMembership(msg.members, msg.host);
       wire.members = msg.members;
       wire.host = msg.host;
       wire.hostOnly = msg.hostOnly;
@@ -486,15 +574,48 @@ function handle(msg: ServerMsg) {
 }
 
 /**
- * Take a timeline from the relay.
- *
- * **Only a strictly higher revision.** That one line is what makes reordering
- * and duplication harmless, and it is why the revision is the relay's to assign:
- * two people pressing space at once produce one winner rather than two peers
- * that each believe a different thing.
+ * Take a timeline from the relay. See `shouldApply` for what is being defended
+ * against and why the comparison is the shape it is.
  */
-function applyTimeline(next: Timeline) {
-  if (next.rev < wire.timeline.rev) return;
+/**
+ * Notice who arrived and who left.
+ *
+ * Diffed here rather than announced by the relay, because the relay would have
+ * to say it *to* somebody: the member list is one broadcast to everybody, and a
+ * per-recipient "Anna joined" message would be a second delivery path for
+ * information already in the first.
+ *
+ * Only ever one event, the newest. Three people arriving at once is a moment,
+ * not three notifications — and the roster underneath already says who is here.
+ */
+function noteMembership(next: Member[], host: string) {
+  const before = wire.members;
+  // The first list after joining is not a stream of arrivals: everybody in it
+  // was already here.
+  if (before.length === 0) return;
+  const had = new Set(before.map((m) => m.id));
+  const has = new Set(next.map((m) => m.id));
+
+  const arrived = next.find((m) => !had.has(m.id) && m.id !== wire.me);
+  if (arrived) {
+    wire.event = { kind: 'joined', name: arrived.name, at: performance.now() };
+    return;
+  }
+  const gone = before.find((m) => !has.has(m.id));
+  if (gone) {
+    wire.event = { kind: 'left', name: gone.name, at: performance.now() };
+    return;
+  }
+  // Nobody came or went, so a changed host is a handover — which matters
+  // enough to say when only the host may drive.
+  if (host !== wire.host && host && wire.host) {
+    const who = next.find((m) => m.id === host);
+    if (who) wire.event = { kind: 'host', name: who.name, at: performance.now() };
+  }
+}
+
+function applyTimeline(next: Timeline, authoritative = false) {
+  if (!shouldApply(wire.timeline, next, authoritative)) return;
   const fromSelf = next.by === wire.me;
   // Our own change coming back is what ends the settling window: from here the
   // authoritative timeline and this viewer's player agree.
@@ -506,7 +627,7 @@ function applyTimeline(next: Timeline) {
 // ---- saying things ----------------------------------------------------------
 
 /** What a publisher supplies. `at`, `rev` and `by` are not the caller's. */
-export type TimelinePatch = Pick<Timeline, 'content' | 'paused' | 'position' | 'speed'>;
+export type TimelinePatch = Pick<Timeline, 'content' | 'tracks' | 'paused' | 'position' | 'speed'>;
 
 /**
  * Say that the timeline moved.
@@ -538,14 +659,60 @@ export function publish(patch: TimelinePatch) {
   send({ t: 'timeline', timeline: next });
 }
 
-/** Convenience for the common case: keep the content, change the rest. */
+/**
+ * Convenience for the common case: keep the content and the tracks, change the
+ * rest.
+ *
+ * Carrying them through matters because the timeline is a *snapshot*: a publish
+ * that left `tracks` out would be publishing "the room has no audio preference",
+ * so every pause would quietly undo somebody's track choice.
+ */
 export function publishState(paused: boolean, position: number, speed: number) {
-  publish({ content: wire.timeline.content, paused, position, speed });
+  publish({ content: wire.timeline.content, tracks: wire.timeline.tracks, paused, position, speed });
 }
 
 /** Announce what this viewer is playing, and start it from `position`. */
 export function publishContent(content: ContentRef | null, position: number, paused: boolean) {
-  publish({ content, paused, position, speed: wire.timeline.speed || 1 });
+  publish({
+    content,
+    // A new film is a new set of tracks: keeping the previous one would have the
+    // matcher hunting for the last episode's dub in this one. The opener's own
+    // choice is published as soon as it is made.
+    tracks: null,
+    paused,
+    position,
+    speed: wire.timeline.speed || 1,
+  });
+}
+
+/**
+ * Say which track the room is watching or listening to, for one kind.
+ *
+ * **Merged with what the room already holds, never replacing it.** The timeline
+ * is a snapshot, so publishing `{audio}` alone would say "the room has no
+ * subtitle preference" — and a viewer who shares audio but not subtitles would
+ * silently undo the subtitle choice of everybody who does share them, every time
+ * they changed the dub.
+ *
+ * Position and pause come from where the room already is: choosing a track is
+ * not a claim about either, and reading this machine's own `timePos` here would
+ * publish it as though it were a seek.
+ */
+export function publishTrack(kind: TrackKind, wish: SharedTracks['audio']) {
+  if (!wire.on) return;
+  const tl = wire.timeline;
+  const tracks: SharedTracks = {
+    audio: tl.tracks?.audio ?? null,
+    sub: tl.tracks?.sub ?? null,
+    [kind]: wish,
+  };
+  publish({
+    content: tl.content,
+    tracks,
+    paused: tl.paused,
+    position: positionAt(tl, serverNow()),
+    speed: tl.speed || 1,
+  });
 }
 
 /**

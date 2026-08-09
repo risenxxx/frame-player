@@ -98,7 +98,16 @@ func TestWireFieldsMatchSharedContract(t *testing.T) {
 	fx := loadProtocolFixture(t)
 	yes := true
 
-	tl := Timeline{Content: json.RawMessage(`{"kind":"url"}`), Paused: true, Position: 12.5, Speed: 1, At: 7, Rev: 3, By: "m1"}
+	tl := Timeline{
+		Content:  json.RawMessage(`{"kind":"url"}`),
+		Tracks:   json.RawMessage(`{"audio":null}`),
+		Paused:   true,
+		Position: 12.5,
+		Speed:    1,
+		At:       7,
+		Rev:      3,
+		By:       "m1",
+	}
 
 	cases := []struct {
 		name string
@@ -157,6 +166,7 @@ func TestValidateRejectsWhatARoomMustNeverSee(t *testing.T) {
 		{"speed past the ceiling", ClientMsg{T: "timeline", Timeline: &Timeline{Speed: MaxSpeed + 1}}},
 		{"NaN speed", ClientMsg{T: "timeline", Timeline: &Timeline{Speed: math.NaN()}}},
 		{"oversized content", ClientMsg{T: "timeline", Timeline: &Timeline{Content: big, Speed: 1}}},
+		{"oversized tracks", ClientMsg{T: "timeline", Timeline: &Timeline{Tracks: big, Speed: 1}}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

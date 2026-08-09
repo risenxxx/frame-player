@@ -36,19 +36,24 @@ import { setProperty } from 'tauri-plugin-libmpv-api';
 import { t } from '../i18n.svelte';
 import { latest } from '../latest';
 import { showOsd } from '../osd.svelte';
-import { loadFiles, player } from '../player.svelte';
+import { loadFiles, player, positionNow } from '../player.svelte';
 import { queueTorrent } from '../playlist.svelte';
 import { issueSeek, seek, wantExact } from '../seek.svelte';
 import { addTorrent, torrent, torrentVideos } from '../torrent.svelte';
+import { followRoomTrack } from '../tracks.svelte';
 import { compareLocal, contentOf, sameContent, type MatchVerdict } from './content';
-import { correctionFor, speedChanged } from './drift';
-import type { ContentRef, Timeline } from './protocol';
+import { correctionFor, deadbandFor, speedChanged } from './drift';
+import type { ContentRef, Timeline, TrackKind } from './protocol';
+
+/// Both kinds, in one place, so a loop over them cannot forget one.
+const TRACK_KINDS: readonly TrackKind[] = ['audio', 'sub'];
 import {
   initWire,
   publishContent,
   publishSettling,
   reportReady,
   serverNow,
+  syncPrefs,
   targetPosition,
   wire,
 } from './wire.svelte';
@@ -131,6 +136,25 @@ export function initSync() {
     reportReady(!busy, busy ? 'buffering' : '');
   });
 
+  // The room's track choices, per kind and only for the kinds this viewer has
+  // asked to share. An effect rather than a branch in `onTimeline` precisely so
+  // that flipping a switch takes effect at once: the timeline has not changed,
+  // but what this viewer wants from it has.
+  $effect(() => {
+    const tracks = wire.timeline.tracks;
+    for (const kind of TRACK_KINDS) {
+      if (!syncPrefs.shares(kind)) {
+        followed[kind] = null;
+        continue;
+      }
+      const wish = tracks?.[kind] ?? null;
+      const key = wish === null ? '' : JSON.stringify(wish);
+      if (key === followed[kind]) continue;
+      followed[kind] = key;
+      if (wish !== null) followRoomTrack(kind, wish);
+    }
+  });
+
   // Keeping the verdict fresh is an effect rather than part of the reconciler
   // because it is about what is *shown*, and the panel should not wait a second
   // to stop saying the wrong thing about a file that has just been opened.
@@ -153,6 +177,19 @@ function currentLocal() {
 }
 
 // ---- what arrives -----------------------------------------------------------
+
+/**
+ * The choice last acted on, per kind.
+ *
+ * The timeline is a snapshot, so every pause and every seek carries the tracks
+ * along with it — without this the matcher would re-run on each and re-select a
+ * track that is already playing.
+ *
+ * `null` means "not following this kind", which is what makes the switch work in
+ * both directions: turning it back on differs from the recorded value and so
+ * applies at once, instead of waiting for somebody to change a track.
+ */
+const followed: Record<TrackKind, string | null> = { audio: null, sub: null };
 
 function onTimeline(next: Timeline, fromSelf: boolean) {
   // A content change is the one thing that cannot wait for the reconciler: it
@@ -186,6 +223,8 @@ function onRoom() {
     sync.opening = false;
     sync.failed = false;
     openedFor = null;
+    followed.audio = null;
+    followed.sub = null;
   }
 }
 
@@ -208,6 +247,10 @@ async function openContent(ref: ContentRef | null) {
   sync.unopenable = null;
   sync.failed = false;
 
+  // A different film has different tracks, so whatever was followed for the
+  // last one must not suppress the first choice made for this one.
+  followed.audio = null;
+  followed.sub = null;
   if (!ref) return;
   if (ref.kind === 'file' || ref.kind === 'hidden') {
     sync.unopenable = ref;
@@ -290,8 +333,17 @@ function reconcile() {
     void setProperty('pause', tl.paused);
   }
 
-  const drift = player.timePos - targetPosition();
-  const plan = correctionFor(drift, tl.speed, tl.paused);
+  // `positionNow()`, not the mirror: `time-pos` is an event, so by the time
+  // anything reads it, it is as old as the gap since mpv last sent one. That is
+  // tens of milliseconds of systematic error in the one measurement whose whole
+  // job is to be small — and it sat *inside* the old deadband, where it could
+  // never be observed.
+  const drift = positionNow() - targetPosition();
+  // The band is what the clock estimate can actually support rather than a flat
+  // tenth of a second: over a nearby relay the offset is known to a few
+  // milliseconds, and accepting fifteen times that was the room "holding to
+  // about a tenth of a second and then not trying".
+  const plan = correctionFor(drift, tl.speed, tl.paused, deadbandFor(wire.uncertainty));
   switch (plan.do) {
     case 'seek':
       restoreSpeed();

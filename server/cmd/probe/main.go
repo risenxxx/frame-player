@@ -187,8 +187,9 @@ func (p *probe) readLoop() {
 			if who == "" {
 				who = "relay"
 			}
-			log.Printf("timeline rev %d by %-11s %s %7.2fs x%.2f  %s",
-				m.Rev, who, pausedWord(m.Paused), m.Position, m.Speed, describeContent(m.Content))
+			log.Printf("timeline rev %d by %-11s %s %7.2fs x%.2f  %s%s",
+				m.Rev, who, pausedWord(m.Paused), m.Position, m.Speed,
+				describeContent(m.Content), describeTracks(m.Tracks))
 
 		case "members":
 			var m wire.MembersMsg
@@ -405,6 +406,31 @@ func describeContent(raw json.RawMessage) string {
 		return fmt.Sprintf("file %q", c.Title)
 	}
 	return string(raw)
+}
+
+// The room's audio choice, which travels as a description rather than an id —
+// so this prints what a real player would try to match against its own copy.
+func describeTracks(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var t struct {
+		Audio *struct {
+			Lang  *string `json:"lang"`
+			Title *string `json:"title"`
+		} `json:"audio"`
+	}
+	if err := json.Unmarshal(raw, &t); err != nil || t.Audio == nil {
+		return ""
+	}
+	parts := []string{}
+	if t.Audio.Lang != nil {
+		parts = append(parts, *t.Audio.Lang)
+	}
+	if t.Audio.Title != nil {
+		parts = append(parts, *t.Audio.Title)
+	}
+	return "  audio[" + strings.Join(parts, " ") + "]"
 }
 
 func short(s string) string {

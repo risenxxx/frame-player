@@ -54,7 +54,13 @@ const (
 type Timeline struct {
 	// What is playing, opaque here. `null` means nothing is.
 	Content json.RawMessage `json:"content"`
-	Paused  bool            `json:"paused"`
+	// How the room is playing it — which audio track, described rather than
+	// numbered. Opaque for the same reason `Content` is: the relay has no
+	// business knowing what a track descriptor looks like, and keeping it that
+	// way means the *next* thing a room decides to share is a frontend change
+	// and not a redeploy.
+	Tracks json.RawMessage `json:"tracks"`
+	Paused bool            `json:"paused"`
 	// Seconds into the file at `At`.
 	Position float64 `json:"position"`
 	Speed    float64 `json:"speed"`
@@ -170,8 +176,11 @@ func (m *ClientMsg) Validate() error {
 }
 
 func (t *Timeline) validate() error {
-	if len(t.Content) > MaxContent {
+	if len(t.Content) > MaxContent || len(t.Tracks) > MaxContent {
 		return ErrBadMessage
+	}
+	if isJSONNull(t.Tracks) {
+		t.Tracks = nil
 	}
 	// A JSON `null` decodes into a 4-byte RawMessage rather than a nil one, and
 	// the two mean the same thing here: nothing is playing. Collapsing them

@@ -16,9 +16,10 @@
  * late is not going to be walked there at 110 % — so there are three bands, and
  * the thresholds are what this module is:
  *
- *   |drift| ≤ 0.15 s   nothing. Below what anyone can perceive across two
- *                      rooms, and correcting it would mean never running at the
- *                      speed the film was authored at.
+ *   |drift| ≤ deadband  nothing — and the band is derived from how well this
+ *                      machine knows the relay's clock rather than fixed, so a
+ *                      close relay is held an order of magnitude tighter than a
+ *                      distant one. See `deadbandFor`.
  *   ≤ 2 s              nudge the speed, aiming to erase it over ~10 s.
  *   > 2 s              one seek, and accept its cost.
  *
@@ -27,8 +28,34 @@
  * it down.
  */
 
-/** Below this, the difference is not worth touching playback for. */
-export const DEADBAND_S = 0.15;
+/**
+ * The band inside which the difference is left alone — **derived from how well
+ * the clock is actually known**, not a constant.
+ *
+ * A fixed 150 ms was the first version and it is what a viewer noticed: the room
+ * held to within a tenth of a second and then stopped trying, because everything
+ * below that was declared close enough. But a tenth of a second is not a
+ * property of the network, it is a guess about it — over a nearby relay the
+ * offset is known to a few milliseconds, and there is no reason to accept
+ * fifteen times that.
+ *
+ * What the band must never go below is the *measurement*: correcting a
+ * difference smaller than the error bars is chasing noise, and two clients each
+ * uncertain by `u` can be `2u` apart while both being exactly right.
+ *
+ * The floor is separately useful — below ~40 ms the correction would be under
+ * half a per cent of speed, which `speedChanged` declines to write to mpv
+ * anyway, so a smaller band would only produce arithmetic nobody acts on.
+ */
+export const MAX_DEADBAND_S = 0.15;
+export const MIN_DEADBAND_S = 0.04;
+
+export function deadbandFor(uncertaintyMs: number): number {
+  // Nothing measured yet — the conservative band, until the first round trips
+  // land. Being briefly loose beats correcting against an offset of zero.
+  if (!Number.isFinite(uncertaintyMs)) return MAX_DEADBAND_S;
+  return Math.min(MAX_DEADBAND_S, Math.max(MIN_DEADBAND_S, (2 * uncertaintyMs) / 1000));
+}
 
 /** Past this, a seek is cheaper than the time spent catching up. */
 export const HARD_SEEK_S = 2;
@@ -61,7 +88,12 @@ export type Correction =
  *
  * `drift` is *local minus target*: positive means this player is ahead.
  */
-export function correctionFor(drift: number, roomSpeed: number, paused: boolean): Correction {
+export function correctionFor(
+  drift: number,
+  roomSpeed: number,
+  paused: boolean,
+  deadband: number,
+): Correction {
   if (!Number.isFinite(drift)) return { do: 'nothing' };
   const size = Math.abs(drift);
 
@@ -70,7 +102,7 @@ export function correctionFor(drift: number, roomSpeed: number, paused: boolean)
     return size > PAUSED_TOLERANCE_S ? { do: 'seek' } : { do: 'nothing' };
   }
   if (size > HARD_SEEK_S) return { do: 'seek' };
-  if (size <= DEADBAND_S) return { do: 'nothing' };
+  if (size <= deadband) return { do: 'nothing' };
 
   // Erase it over CATCHUP_S seconds: ahead by 1 s → run 10 % slow for ten
   // seconds. Proportional rather than a fixed step, so a small difference gets a

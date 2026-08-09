@@ -52,6 +52,48 @@ own change is still in flight, while it is stalled on the network — the
 reconciler returns and does nothing, because a snapshot recomputed a second
 later is as good as one applied now. There is no state machine to fall out of.
 
+## Out-of-order, duplicated and late messages
+
+Worth stating plainly, because the obvious defence is the wrong one.
+
+**Ordering is by revision, not by timestamp.** `rev` is assigned by the relay,
+which is the only participant with a single opinion about what happened first;
+`at` is a *clock reading*, and every client's idea of the relay's clock is an
+estimate with error bars of half a round trip. Two clients ordering by
+timestamp could disagree about which of two changes came last — and both be
+behaving correctly. So `at` answers "where should playback be", and `rev`
+answers "which of these do I believe", and they are deliberately different
+fields doing different jobs.
+
+The protection is layered, and most of it is not ours:
+
+| | what it covers |
+|---|---|
+| TCP | a WebSocket is a stream, so **within one connection messages cannot arrive out of order** — they arrive in order or the connection breaks |
+| `socket !== sock` | a reconnect: the previous socket's traffic is dropped rather than mixed into the new session |
+| `shouldApply` | duplicates and replays — a lower revision is never applied |
+| `welcome` | a full snapshot on every (re)connection, so nothing has to be reconstructed from what was missed |
+| the relay | one mutex, one ordered outbox per member, one writer goroutine: per-member order is total |
+
+**Delay costs nothing at all**, and that is the deepest reason the wire carries
+state rather than actions. A timeline that arrives two seconds late still
+computes the correct position for right now, because it is projected from `at`.
+A late *action* is wrong; a late *snapshot* is merely old.
+
+Two details in `shouldApply` that look like mistakes and are not. It is `>=`
+rather than `>`: a refusal is answered by the relay re-sending the room's
+current timeline at the revision it already had, and that message is exactly the
+correction that pulls a guest back from a position they optimistically moved to
+— dropping it as "not newer" would strand them there. And a `welcome` is applied
+unconditionally: it describes the room as it is now, and it covers the one case
+a revision cannot, which is a room that ceased to exist and was created afresh,
+counting from zero again.
+
+What is *not* defended against, because it cannot be: a client whose outbox on
+the relay overflows is disconnected rather than fed a partial history — it
+reconnects and gets a fresh snapshot. That is the only path by which a client
+misses messages at all.
+
 ## Correcting drift: speed, not seeking
 
 This is the part the roadmap warned about, and the warning was right.
@@ -73,10 +115,34 @@ that module:
 
 | difference | what happens |
 |---|---|
-| ≤ 0.15 s | nothing. Below perception across two rooms, and correcting it would mean never running at the speed the film was authored at |
+| ≤ deadband | nothing |
 | ≤ 2 s | bend the speed, proportionally, aiming to erase it over ~10 s; never more than ±10 % |
 | > 2 s | one seek, and accept its cost |
 | paused, > 0.25 s | seek. There is no speed to bend, and a still frame is exactly where a difference shows |
+
+**The deadband is measured, not chosen.** It started as a flat 150 ms, and that
+is precisely what a viewer reported: a room that held to about a tenth of a
+second and then stopped trying. But a tenth of a second is a guess about the
+network rather than a property of it — over a nearby relay the clock offset is
+known to a few milliseconds. So the band is `2 ×` the measured uncertainty
+(`offsetUncertainty`, half the fastest round trip), clamped between 40 ms and
+150 ms. Two clients each uncertain by `u` can be `2u` apart while both are
+exactly right, so correcting inside that is chasing noise; and below ~40 ms the
+correction is under half a per cent of speed, which `speedChanged` declines to
+write to mpv anyway.
+
+**And the measurement itself was systematically late.** `player.timePos` is a
+mirror of an event, so by the time the reconciler read it, it was as old as the
+gap since mpv last reported — tens of milliseconds of error in the one number
+whose whole job is to be small, sitting *inside* the old deadband where it could
+never be observed. `positionNow()` extrapolates from the arrival timestamp at
+the current playback speed, which removes it. Pings also moved from every 30 s
+to every 10 s, because the offset now sets the band rather than only placing the
+playhead.
+
+What remains is not ours to fix: two machines have different audio output
+latencies, and a Bluetooth speaker adds 150–300 ms on one side of the room. No
+sender-side arithmetic can see that.
 
 The correction is applied **around the room's speed**, not around 1×, so a room
 watching at 1.5× that drifts does not silently lose the speed everybody chose.
@@ -144,6 +210,46 @@ making one the player should mention.
 
 **A file under a privacy root** publishes `hidden`: the timeline works, the name
 does not travel. See below.
+
+### Tracks: two switches, and the defaults are the argument
+
+Both kinds travel, and whether a viewer sends or takes either is theirs to
+decide — one switch per kind in the settings. The defaults encode the asymmetry
+rather than enforcing it:
+
+| | default | why |
+|---|---|---|
+| audio track | **on** | a room is watching one film and listening to one soundtrack; hearing different audio is a strange way to watch together |
+| subtitles | **off** | one viewer needs them and another does not, one reads a second language and another is a native speaker — sharing the choice would mean turning subtitles *off* for somebody who cannot follow the film without them |
+
+Subtitle size, position and delay stay personal unconditionally: that is the
+roadmap's rule, and these two switches are the only things on the other side of
+it.
+
+**Each switch is symmetric** — it governs sending *and* taking. Publishing a
+choice you refuse to accept back would be pushing a preference on a room while
+opting out of it yourself, and the room would end up in a state its own members
+disagree about.
+
+The choices ride on the timeline (`tracks`) rather than in a message of their
+own, which buys two things for nothing: the last-writer-wins semantics it
+already has, and delivery in the handshake — so a viewer joining mid-film gets
+the room's choices without anybody re-stating them. The cost is one rule that
+has to be kept: **a publish merges with what the room already holds**, because
+the timeline is a snapshot and `{audio}` alone would say "no subtitle
+preference". Without that, a viewer sharing audio but not subtitles would wipe
+the subtitle choice of everybody who does share them, every time they changed
+the dub.
+
+What travels is a **description, never an id**. Track ids are positions inside
+one file: the Russian dub that is #2 in one rip is routinely #3 in another, so
+an id shared between two copies selects the wrong thing in silence. The
+descriptor is the one the player already stores for its per-folder track memory,
+and the receiving end resolves it with the same scoring (`matchTrack`) through
+the same pending-restore machinery — which is what makes it work while external
+tracks are still appearing, and what makes it work at all across two releases.
+Only the kind being followed is displaced, so a viewer taking the room's dub
+keeps their own subtitle memory.
 
 The comparison is *identity*, not equality: a title that arrived late, a
 duration that firmed up after the file opened, or a magnet rebuilt from the info
@@ -325,3 +431,11 @@ comes out at exactly **−250 ms** against a `-skew 250ms`, cancelling it.
 - **No chat.** The bus would carry it; a room is not a messenger.
 - **No discovery of who else is watching.** A room exists because somebody sent
   a code.
+- **No presence beyond the room.** Everybody the indicator lists is connected,
+  because the relay drops a member the moment their socket closes — so the dot
+  beside a name is not "online", it is whether they are ready to be played to,
+  which is the one thing about another viewer that changes what happens on this
+  screen. Arrivals and departures are diffed from the member list on each
+  client rather than announced by the relay: the list is already one broadcast
+  to everybody, and a per-recipient "Anna joined" would be a second delivery
+  path for information the first already carries.

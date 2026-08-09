@@ -27,6 +27,7 @@
 import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 
 import { cast, castSwitchAudio } from './cast.svelte';
+import { publishTrack, syncPrefs } from './sync/wire.svelte';
 import { withFileDialog } from './chrome.svelte';
 import {
   delaysFor,
@@ -48,6 +49,7 @@ import {
   type Track,
   type TrackWish,
 } from './player.svelte';
+import type { TrackKind } from './sync/protocol';
 
 /// How long a pending restore may wait for its track to appear.
 const RESTORE_WINDOW_MS = 5000;
@@ -192,17 +194,58 @@ export function initTracks() {
  */
 export function selectTrack(kind: 'audio' | 'sub', track: Track | null) {
   pending = null;
-  if (player.filePath) {
-    const list = kind === 'audio' ? player.audioTracks : player.subTracks;
-    rememberTrack(player.filePath, kind, track ? describeTrack(track, list) : 'no');
-  }
+  const wish: TrackWish | null = player.filePath
+    ? track
+      ? describeTrack(track, kind === 'audio' ? player.audioTracks : player.subTracks)
+      : 'no'
+    : null;
+  if (player.filePath && wish) rememberTrack(player.filePath, kind, wish);
   void mpvSelectTrack(kind, track);
+  // Told to the room only for the kinds this viewer shares — audio by default,
+  // subtitles not (see `syncPrefs`). The switch is symmetric on purpose:
+  // publishing a choice you refuse to accept back would be pushing a preference
+  // on a room while opting out of it yourself.
+  //
+  // A *description* goes over the wire, never the id: see `SharedTracks`.
+  if (wish && syncPrefs.shares(kind)) publishTrack(kind, wish);
   // While the TV owns playback, an audio choice must reach it too: the prepared
   // file carries exactly one track, so the switch is a re-prepare (cached per
   // track — switching back is instant) plus a reload at the TV's position. The
   // local switch above still runs, so the handback and the menu's check mark
   // stay in agreement with what the TV plays.
   if (cast.remote && kind === 'audio' && track) void castSwitchAudio(track);
+}
+
+/**
+ * Take a track a shared room has chosen.
+ *
+ * Deliberately routed through the same pending-restore machinery as the
+ * remembered per-folder choice rather than straight to `aid`/`sid`, and for the
+ * same reasons that machinery exists: the descriptor has to be *matched*
+ * against this copy's own track list (two people rarely have the same rip), and
+ * the list is still filling up for a few hundred milliseconds after a file
+ * loads.
+ *
+ * Only the kind being followed is displaced. A viewer who shares audio but not
+ * subtitles keeps their own subtitle memory while taking the room's dub, and a
+ * restore still in flight for the other kind carries on.
+ */
+export function followRoomTrack(kind: TrackKind, wish: TrackWish) {
+  if (!player.filePath) return;
+  const mine = pending?.path === player.filePath ? pending : null;
+  pending = {
+    path: player.filePath,
+    audio: kind === 'audio' ? wish : mine?.audio,
+    sub: kind === 'sub' ? wish : mine?.sub,
+    aid: kind === 'audio' ? undefined : mine?.aid,
+    sid: kind === 'sub' ? undefined : mine?.sid,
+    applied: {
+      audio: kind === 'audio' ? 0 : (mine?.applied.audio ?? 0),
+      sub: kind === 'sub' ? 0 : (mine?.applied.sub ?? 0),
+    },
+    until: Date.now() + RESTORE_WINDOW_MS,
+  };
+  applyPending(player.audioTracks, player.subTracks);
 }
 
 /// Attach an external subtitle or audio file. The window dimming belongs to the

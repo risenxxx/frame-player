@@ -13,6 +13,7 @@ import {
   isErrorCode,
   normalizeCode,
   positionAt,
+  shouldApply,
   type ContentRef,
   type Timeline,
 } from './protocol';
@@ -105,7 +106,16 @@ describe('normalizeCode', () => {
 
 describe('positionAt', () => {
   const content: ContentRef = { kind: 'url', url: 'x', title: 'x', duration: 100 };
-  const playing: Timeline = { content, paused: false, position: 100, speed: 1, at: 10_000, rev: 1, by: 'a' };
+  const playing: Timeline = {
+    content,
+    tracks: null,
+    paused: false,
+    position: 100,
+    speed: 1,
+    at: 10_000,
+    rev: 1,
+    by: 'a',
+  };
 
   it('runs forward at the timeline speed', () => {
     expect(positionAt(playing, 12_000)).toBe(102);
@@ -141,5 +151,39 @@ describe('isErrorCode', () => {
   it('rejects anything else, so an unknown code cannot become a blank sentence', () => {
     expect(isErrorCode('teapot')).toBe(false);
     expect(isErrorCode('')).toBe(false);
+  });
+});
+
+describe('shouldApply', () => {
+  const at = (rev: number): Timeline => ({ ...emptyTimeline(), rev });
+
+  it('takes a newer revision', () => {
+    expect(shouldApply(at(3), at(4), false)).toBe(true);
+  });
+
+  it('refuses an older one', () => {
+    // The failure this exists for is silent and permanent: a peer that applied a
+    // stale snapshot sits at the wrong position with a healthy-looking room, and
+    // nothing later contradicts it.
+    expect(shouldApply(at(4), at(3), false)).toBe(false);
+    expect(shouldApply(at(400), at(1), false)).toBe(false);
+  });
+
+  it('takes an equal revision, which is the correction after a refusal', () => {
+    // `>=`, not `>`. A relay that refuses a guest's seek answers by re-sending
+    // the room's current timeline at the revision it already had — and that is
+    // exactly the message that pulls the guest back from the position they
+    // optimistically moved to. Dropping it as "not newer" would leave them
+    // somewhere the room is not, for good.
+    expect(shouldApply(at(7), at(7), false)).toBe(true);
+  });
+
+  it('always takes the handshake', () => {
+    // A `welcome` describes the room as it is now. It also covers the one case a
+    // revision cannot: a room that ceased to exist and was created afresh counts
+    // from zero again, and a client still holding the old count would otherwise
+    // reject every timeline it was ever sent.
+    expect(shouldApply(at(99), at(0), true)).toBe(true);
+    expect(shouldApply(at(99), at(1), true)).toBe(true);
   });
 });
