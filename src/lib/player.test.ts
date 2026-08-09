@@ -105,12 +105,26 @@ describe('skipKind', () => {
     expect(skipKind(chapter('Анонс'))).toBe('preview');
   });
 
+  it('reads a trailer as its own kind, not as a next-episode preview', () => {
+    // The kind exists only to label the button, and "Пропустить анонс" over a
+    // disc rip's promo for another film is the wrong sentence.
+    expect(skipKind(chapter('Trailer'))).toBe('trailer');
+    expect(skipKind(chapter('Trailers'))).toBe('trailer');
+    expect(skipKind(chapter('Трейлер'))).toBe('trailer');
+  });
+
+  it('accepts "recap" hyphenated', () => {
+    expect(skipKind(chapter('Re-cap'))).toBe('recap');
+    expect(skipKind(chapter('Рекап'))).toBe('recap');
+  });
+
   it('does NOT match an ordinary sentence containing the word', () => {
     // The bug the anchoring exists for: these are ordinary English words, and a
     // substring search offers to skip the film.
     expect(skipKind(chapter('Ending the war for good'))).toBeNull();
     expect(skipKind(chapter('Opening the vault'))).toBeNull();
     expect(skipKind(chapter('A recap of the situation follows'))).toBeNull();
+    expect(skipKind(chapter('Trailer park showdown'))).toBeNull();
   });
 
   it('reads "opening credits" as an intro, not as credits', () => {

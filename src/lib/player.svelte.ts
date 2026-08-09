@@ -1191,7 +1191,7 @@ export function chapterAt(time: number): Chapter | null {
 
 /// Chapters a viewer normally skips. Split by kind, because the button has to
 /// name what it skips: "Skip credits" over an opening is worse than no button.
-export type SkipKind = 'intro' | 'recap' | 'preview' | 'credits' | 'ad';
+export type SkipKind = 'intro' | 'recap' | 'preview' | 'trailer' | 'credits' | 'ad';
 
 /**
  * Titles that announce a chapter as skippable.
@@ -1229,12 +1229,21 @@ const SKIP_ALTERNATIVES: ReadonlyArray<readonly [SkipKind, string]> = [
   // in JS, so "ранее в\b" never matched at all) — those need an explicit \s.
   [
     'recap',
-    String.raw`recap|previously(?:\s+on(?:\s+.{0,40})?)?|ранее\s+в(?:\s+.{0,40})?|в\s+предыдущих\s+сериях?|краткое\s+содержание`,
+    // "re-cap" is the same word hyphenated, and rips spell it both ways; the
+    // optional hyphen costs nothing because the pattern is anchored anyway.
+    String.raw`re-?cap|previously(?:\s+on(?:\s+.{0,40})?)?|ранее\s+в(?:\s+.{0,40})?|в\s+предыдущих\s+сериях?|краткое\s+содержание|рекап`,
   ],
   [
     'preview',
     String.raw`(?:next\s+episode\s+)?preview|teaser|next\s+time(?:\s+on(?:\s+.{0,40})?)?|анонс|в\s+следующей\s+серии`,
   ],
+  // A kind of its own rather than a spelling of "preview", because the kind is
+  // only ever read to label the button: an anime episode's preview announces
+  // the next episode, while a chapter called "Trailer" on a disc rip is a promo
+  // for another film entirely, and "Пропустить анонс" over one of those is the
+  // "Skip credits over an opening" mistake in miniature. The button names what
+  // it skips, so the pattern that knows the difference keeps it.
+  ['trailer', String.raw`trailers?|трейлеры?`],
   [
     'credits',
     String.raw`(?:end|ending|final|closing)?\s*credits|ending(?:\s+(?:song|theme))?|outro|ed\s*\d*|(?:финальные|заключительные|конечные)?\s*титры|концовка|эндинг`,

@@ -13,12 +13,14 @@
   import { t } from '$lib/i18n.svelte';
   import type { PlaylistEntry } from '$lib/playlist.svelte';
 
-  /// Which of the five announcement chapters this is. The labels live here
-  /// because nothing else names them.
+  /// Which announcement chapter this is. The labels live here because nothing
+  /// else names them; a `SkipKind` added without an entry is a type error at the
+  /// call site, which is the point.
   const SKIP_LABEL = {
     intro: 'skip.intro',
     recap: 'skip.recap',
     preview: 'skip.preview',
+    trailer: 'skip.trailer',
     credits: 'skip.credits',
     ad: 'skip.ad',
   } as const;
