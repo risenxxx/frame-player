@@ -126,7 +126,11 @@ by hand. Updates applied from inside the player do not go through it.
 
 ### macOS
 
-With [Homebrew](https://brew.sh):
+Download `FramePlayer_<version>_aarch64.dmg` from
+[the latest release](https://github.com/risenxxx/frame-player/releases/latest),
+open it and drag **Frame Player** to *Applications*.
+
+With [Homebrew](https://brew.sh) instead:
 
 ```bash
 brew install --cask risenxxx/tap/frame-player
@@ -134,11 +138,6 @@ brew install --cask risenxxx/tap/frame-player
 
 The fully qualified name taps the repository on the way past, so that is the
 whole installation; afterwards the cask answers to `frame-player` alone.
-
-Or open the disk image and drag **Frame Player** to *Applications*. Either way
-that is all — the bundle is signed with an Apple Developer ID and notarised, and
-the ticket is stapled to both the image and the app, so Gatekeeper clears it
-without asking and without needing the network.
 
 The cask is in [a tap of its own](https://github.com/risenxxx/homebrew-tap)
 rather than in `homebrew-cask`, whose casks have to clear a popularity bar this
@@ -154,8 +153,9 @@ application it cannot run.
 positions, remembered tracks and the thumbnail cache where they are; adding
 `--zap` removes those too.
 
-A build you produce yourself from this repository is a different matter: with no
-certificate it is signed ad-hoc, which seals the bundle but certifies nothing.
+A build you produce yourself from this repository is not signed the way the
+releases are: with no certificate it is signed ad-hoc, which seals the bundle
+but certifies nothing.
 macOS then refuses the first launch with an **Open Anyway** button in *System
 Settings → Privacy & Security* — the path that has a way out, as opposed to the
 *"is damaged"* refusal an unsealed binary gets, which has none.
