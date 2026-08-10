@@ -121,8 +121,10 @@ type ClientMsg struct {
 	Ready  *bool  `json:"ready,omitempty"`
 	Reason string `json:"reason,omitempty"`
 
-	// mode
-	HostOnly *bool `json:"hostOnly,omitempty"`
+	// mode — the room's own rules, each present only when it is being changed.
+	HostOnly   *bool `json:"hostOnly,omitempty"`
+	ShareAudio *bool `json:"shareAudio,omitempty"`
+	ShareSubs  *bool `json:"shareSubs,omitempty"`
 
 	// ping — the client's own clock reading, echoed back untouched.
 	C int64 `json:"c,omitempty"`
@@ -164,7 +166,8 @@ func (m *ClientMsg) Validate() error {
 		}
 		m.Reason = truncate(sanitizeName(m.Reason), 24)
 	case "mode":
-		if m.HostOnly == nil {
+		// At least one rule, or the message asks for nothing.
+		if m.HostOnly == nil && m.ShareAudio == nil && m.ShareSubs == nil {
 			return ErrBadMessage
 		}
 	case "ping", "bye":
@@ -232,15 +235,17 @@ func truncate(s string, runes int) string {
 // else. These marshal every field they declare.
 
 type Welcome struct {
-	T        string   `json:"t"`
-	Ver      int      `json:"ver"`
-	Room     string   `json:"room"`
-	Me       string   `json:"me"`
-	Host     string   `json:"host"`
-	HostOnly bool     `json:"hostOnly"`
-	Members  []Member `json:"members"`
-	Timeline Timeline `json:"timeline"`
-	Waiting  []string `json:"waiting"`
+	T          string   `json:"t"`
+	Ver        int      `json:"ver"`
+	Room       string   `json:"room"`
+	Me         string   `json:"me"`
+	Host       string   `json:"host"`
+	HostOnly   bool     `json:"hostOnly"`
+	ShareAudio bool     `json:"shareAudio"`
+	ShareSubs  bool     `json:"shareSubs"`
+	Members    []Member `json:"members"`
+	Timeline   Timeline `json:"timeline"`
+	Waiting    []string `json:"waiting"`
 	// The relay's clock at the moment this was written, so a client has a
 	// usable offset before its first ping round trip completes.
 	Now int64 `json:"now"`
@@ -255,10 +260,12 @@ type TimelineMsg struct {
 }
 
 type MembersMsg struct {
-	T        string   `json:"t"`
-	Members  []Member `json:"members"`
-	Host     string   `json:"host"`
-	HostOnly bool     `json:"hostOnly"`
+	T          string   `json:"t"`
+	Members    []Member `json:"members"`
+	Host       string   `json:"host"`
+	HostOnly   bool     `json:"hostOnly"`
+	ShareAudio bool     `json:"shareAudio"`
+	ShareSubs  bool     `json:"shareSubs"`
 	// Ids of members holding the room up. Ids rather than names so the
 	// frontend can render them in its own way, and so a rename cannot desync
 	// the two lists.

@@ -39,13 +39,13 @@ member	id,name,ready
 client:hello	t,ver,room,name
 client:timeline	t,timeline
 client:ready	t,ready,reason
-client:mode	t,hostOnly
+client:mode	t,hostOnly,shareAudio,shareSubs
 client:ping	t,c
 client:bye	t
 
 # relay → client
-server:welcome	t,ver,room,me,host,hostOnly,members,timeline,waiting,now
+server:welcome	t,ver,room,me,host,hostOnly,shareAudio,shareSubs,members,timeline,waiting,now
 server:timeline	t,content,tracks,paused,position,speed,at,rev,by
-server:members	t,members,host,hostOnly,waiting
+server:members	t,members,host,hostOnly,shareAudio,shareSubs,waiting
 server:pong	t,c,s
 server:error	t,code,message

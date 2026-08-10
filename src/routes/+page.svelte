@@ -42,7 +42,6 @@
   import { blockContextMenu, inTextField } from '$lib/dom';
   import { initSync, syncNoteFileLoaded } from '$lib/sync/apply.svelte';
   import { initDeepLinks, invite } from '$lib/sync/link.svelte';
-  import { loadSyncPrefs } from '$lib/sync/wire.svelte';
   import {
     initSeek,
     resetSeekProbe,
@@ -517,7 +516,6 @@
     loadHistoryPrefs();
     loadPlaylistPrefs();
     loadTorrentPrefs();
-    loadSyncPrefs();
     // **Awaited**, unlike everything else started here, and both are cheap: the
     // recents list settles after one batched `stat` (its posters keep filling in
     // afterwards on their own) and the torrent list is one directory read. What

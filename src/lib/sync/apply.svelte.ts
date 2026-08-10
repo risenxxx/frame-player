@@ -53,7 +53,6 @@ import {
   publishSettling,
   reportReady,
   serverNow,
-  syncPrefs,
   targetPosition,
   wire,
 } from './wire.svelte';
@@ -136,14 +135,14 @@ export function initSync() {
     reportReady(!busy, busy ? 'buffering' : '');
   });
 
-  // The room's track choices, per kind and only for the kinds this viewer has
-  // asked to share. An effect rather than a branch in `onTimeline` precisely so
-  // that flipping a switch takes effect at once: the timeline has not changed,
-  // but what this viewer wants from it has.
+  // The room's track choices, per kind and only for the kinds the room shares.
+  // An effect rather than a branch in `onTimeline` precisely so that the host
+  // flipping a switch takes effect at once: the timeline has not changed, but
+  // what the room does with it has.
   $effect(() => {
     const tracks = wire.timeline.tracks;
     for (const kind of TRACK_KINDS) {
-      if (!syncPrefs.shares(kind)) {
+      if (!wire.shares(kind)) {
         followed[kind] = null;
         continue;
       }

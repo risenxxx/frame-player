@@ -32,6 +32,7 @@ import {
   type ContentRef,
   type ErrorCode,
   type Member,
+  type RoomRules,
   type ServerMsg,
   type SharedTracks,
   type Timeline,
@@ -62,8 +63,6 @@ export const DEFAULT_RELAY = 'relay.frameplayer.app';
 
 const RELAY_KEY = 'frameplayer.relay';
 const NAME_KEY = 'frameplayer.syncName';
-const AUDIO_KEY = 'frameplayer.syncAudio';
-const SUBS_KEY = 'frameplayer.syncSubs';
 
 /// Reconnect backoff. Short enough that a Wi-Fi blip is invisible, long enough
 /// that a relay that is down is not hammered by every player that ever joined.
@@ -116,6 +115,10 @@ class Wire {
   me = $state('');
   host = $state('');
   hostOnly = $state(false);
+  /// The room's own rules about tracks. Defaults mirror the relay's, so a
+  /// panel opened before the handshake lands does not show the wrong answer.
+  shareAudio = $state(true);
+  shareSubs = $state(false);
   members = $state<Member[]>([]);
   /// Ids of members the room is waiting for. Ours included, when it is us.
   waiting = $state<string[]>([]);
@@ -154,62 +157,22 @@ class Wire {
   get isHost(): boolean {
     return this.on && this.me === this.host;
   }
+
+  /// Whether this kind of track choice is the room's, in both directions —
+  /// published when made here, and taken when made elsewhere. One answer, so
+  /// two members cannot disagree about what the room does.
+  shares(kind: TrackKind): boolean {
+    return kind === 'audio' ? this.shareAudio : this.shareSubs;
+  }
 }
 
 export const wire = new Wire();
 
-/**
- * What this viewer is willing to share about *how* the film is played.
- *
- * One switch per kind, and each is symmetric on purpose: it governs both sending
- * and taking. Publishing a choice you refuse to accept back would be pushing a
- * preference on a room while opting out of it yourself, and the room would end
- * up in a state its own members disagree about.
- *
- * The defaults are the asymmetry that made these switches worth having at all.
- * **Audio on**: a room is watching one film and listening to one soundtrack.
- * **Subtitles off**: one viewer needs them and another does not, one reads a
- * second language and another is a native speaker — so sharing them by default
- * would mean somebody turning subtitles off for a person who cannot follow the
- * film without them. Neither is a rule, which is the point of a switch.
- *
- * Ours, written and never read back from anywhere else — the same shape as
- * `frameplayer.loop` and `frameplayer.normalize`.
- */
-class SyncPrefs {
-  audio = $state(true);
-  subs = $state(false);
-
-  /** Whether this kind is shared at all, in either direction. */
-  shares(kind: TrackKind): boolean {
-    return kind === 'audio' ? this.audio : this.subs;
-  }
-}
-
-export const syncPrefs = new SyncPrefs();
-
-export function loadSyncPrefs() {
-  try {
-    const audio = localStorage.getItem(AUDIO_KEY);
-    const subs = localStorage.getItem(SUBS_KEY);
-    if (audio !== null) syncPrefs.audio = audio === '1';
-    if (subs !== null) syncPrefs.subs = subs === '1';
-  } catch {
-    // the defaults stand
-  }
-}
-
-export function setSyncPref(kind: TrackKind, on: boolean) {
-  if (kind === 'audio') syncPrefs.audio = on;
-  else syncPrefs.subs = on;
-  try {
-    localStorage.setItem(kind === 'audio' ? AUDIO_KEY : SUBS_KEY, on ? '1' : '0');
-  } catch {
-    // not critical: the choice simply will not survive a restart
-  }
-}
-
 // ---- settings ---------------------------------------------------------------
+//
+// The two that are genuinely this machine's: where to connect, and what to call
+// yourself. Everything else about a shared session is the *room's* and arrives
+// from the relay — see `RoomRules`.
 
 export function relayUrl(): string {
   try {
@@ -397,6 +360,8 @@ export function leaveRoom(opts: { quiet?: boolean } = {}) {
   wire.me = '';
   wire.host = '';
   wire.hostOnly = false;
+  wire.shareAudio = true;
+  wire.shareSubs = false;
   wire.members = [];
   wire.waiting = [];
   wire.timeline = emptyTimeline();
@@ -498,7 +463,7 @@ function handle(msg: ServerMsg) {
       wire.room = msg.room;
       wire.me = msg.me;
       wire.host = msg.host;
-      wire.hostOnly = msg.hostOnly;
+      applyRules(msg);
       wire.members = msg.members;
       wire.waiting = msg.waiting;
       wire.error = null;
@@ -537,7 +502,7 @@ function handle(msg: ServerMsg) {
       noteMembership(msg.members, msg.host);
       wire.members = msg.members;
       wire.host = msg.host;
-      wire.hostOnly = msg.hostOnly;
+      applyRules(msg);
       wire.waiting = msg.waiting;
       onRoomCb();
       break;
@@ -729,10 +694,28 @@ export function reportReady(ready: boolean, reason = '') {
   if (wire.on) send({ t: 'ready', ready, reason });
 }
 
-/** Host only: hand the controls out, or take them back. */
-export function setHostOnly(on: boolean) {
+/**
+ * Change the room's rules — who may drive, and which track choices are shared.
+ *
+ * One function for all three because they are one kind of thing (what this room
+ * does, as opposed to where it is) and because they answer to the same person.
+ * The relay refuses anybody but the host; this refuses first so a guest's switch
+ * does not flicker on and back.
+ *
+ * Nothing is applied optimistically: the rules arrive in the `members`
+ * broadcast, so every member — including the one who flipped the switch — learns
+ * them from the same message, and there is no window in which the host believes
+ * something the room does not.
+ */
+export function setRoomRules(rules: RoomRules) {
   if (!wire.isHost) return;
-  send({ t: 'mode', hostOnly: on });
+  send({ t: 'mode', ...rules });
+}
+
+function applyRules(rules: { hostOnly: boolean; shareAudio: boolean; shareSubs: boolean }) {
+  wire.hostOnly = rules.hostOnly;
+  wire.shareAudio = rules.shareAudio;
+  wire.shareSubs = rules.shareSubs;
 }
 
 // ---- the clock loop ---------------------------------------------------------

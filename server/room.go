@@ -42,11 +42,22 @@ const readyGrace = 45 * time.Second
 type room struct {
 	code string
 
-	mu       sync.Mutex
-	members  map[string]*client
-	order    []string // join order: stable display, and host succession
-	host     string
+	mu      sync.Mutex
+	members map[string]*client
+	order   []string // join order: stable display, and host succession
+	host    string
+	// The room's own rules, as opposed to where it is in the film. All three
+	// belong to the host for one reason: the host owns the room's rules, and a
+	// panel where one switch answers to a different person than the two beside
+	// it is a panel nobody can predict.
 	hostOnly bool
+	// Whether a track choice made by anybody applies to everybody. Audio on,
+	// subtitles off — a room is watching one film and listening to one
+	// soundtrack, while one viewer needing subtitles and another not is the
+	// ordinary case, and sharing that choice would turn them *off* for somebody
+	// who cannot follow the film without them.
+	shareAudio bool
+	shareSubs  bool
 
 	tl  wire.Timeline
 	rev int64
@@ -75,6 +86,7 @@ type room struct {
 func newRoom(code string, now time.Time) *room {
 	return &room{
 		code:          code,
+		shareAudio:    true,
 		members:       map[string]*client{},
 		notReadySince: map[string]time.Time{},
 		emptySince:    now,
@@ -103,16 +115,18 @@ func (r *room) join(c *client, maxMembers int, now time.Time) (wire.Welcome, err
 	r.notReadySince[c.id] = now
 
 	w := wire.Welcome{
-		T:        "welcome",
-		Ver:      wire.ProtocolVersion,
-		Room:     r.code,
-		Me:       c.id,
-		Host:     r.host,
-		HostOnly: r.hostOnly,
-		Members:  r.membersLocked(now),
-		Timeline: r.tl,
-		Waiting:  r.waitingLocked(now),
-		Now:      now.UnixMilli(),
+		T:          "welcome",
+		Ver:        wire.ProtocolVersion,
+		Room:       r.code,
+		Me:         c.id,
+		Host:       r.host,
+		HostOnly:   r.hostOnly,
+		ShareAudio: r.shareAudio,
+		ShareSubs:  r.shareSubs,
+		Members:    r.membersLocked(now),
+		Timeline:   r.tl,
+		Waiting:    r.waitingLocked(now),
+		Now:        now.UnixMilli(),
 	}
 	// Everyone else hears about the arrival, and about the freeze it caused.
 	r.reconcileReadyLocked(now)
@@ -239,18 +253,32 @@ func (r *room) setReady(id string, ready bool, now time.Time) {
 	r.broadcastMembersLocked(now)
 }
 
-func (r *room) setHostOnly(from string, v bool, now time.Time) error {
+// setMode changes whichever of the room's rules the message names.
+//
+// One entry point for all three, because they are one kind of thing — what this
+// room does, as opposed to where it is — and because they answer to the same
+// person. Only the host: a guest able to hand control away could lock everyone
+// out, the host included, and a panel where the switches obey different people
+// is a panel nobody can predict.
+func (r *room) setMode(from string, msg *wire.ClientMsg, now time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// Only the host may hand control away or take it back — otherwise a guest
-	// could lock everyone else out, the host included.
 	if from != r.host {
 		return errNotAllowed
 	}
-	if r.hostOnly == v {
+	before := [3]bool{r.hostOnly, r.shareAudio, r.shareSubs}
+	if msg.HostOnly != nil {
+		r.hostOnly = *msg.HostOnly
+	}
+	if msg.ShareAudio != nil {
+		r.shareAudio = *msg.ShareAudio
+	}
+	if msg.ShareSubs != nil {
+		r.shareSubs = *msg.ShareSubs
+	}
+	if before == [3]bool{r.hostOnly, r.shareAudio, r.shareSubs} {
 		return nil
 	}
-	r.hostOnly = v
 	r.broadcastMembersLocked(now)
 	return nil
 }
@@ -310,11 +338,13 @@ func (r *room) broadcastMembersLocked(now time.Time) {
 	// would be against whatever the last tick happened to see.
 	r.lastWaiting = waitingKey(r.waitingLocked(now))
 	r.sendAllLocked(wire.MembersMsg{
-		T:        "members",
-		Members:  r.membersLocked(now),
-		Host:     r.host,
-		HostOnly: r.hostOnly,
-		Waiting:  r.waitingLocked(now),
+		T:          "members",
+		Members:    r.membersLocked(now),
+		Host:       r.host,
+		HostOnly:   r.hostOnly,
+		ShareAudio: r.shareAudio,
+		ShareSubs:  r.shareSubs,
+		Waiting:    r.waitingLocked(now),
 	})
 }
 

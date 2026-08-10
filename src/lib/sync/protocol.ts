@@ -112,19 +112,21 @@ export interface Timeline {
 /**
  * What the room agrees about *how* to play the film.
  *
- * **Both kinds travel; whether a viewer sends or takes either is theirs to
- * decide** (`syncPrefs`, and two switches in the settings). The defaults encode
- * the asymmetry rather than enforcing it: audio on, subtitles off.
+ * **Both kinds travel; whether either is shared is a rule of the room**, set by
+ * the host beside "only the host controls playback" — not a preference each
+ * viewer keeps. That is the difference between a room whose members agree about
+ * what it does and a room where one person's audio choice reaches everybody
+ * while another's does not.
  *
- * A room is watching one film and listening to one soundtrack, so an audio
- * choice is the room's by default — hearing different audio is a strange way to
- * watch together. Subtitles are the opposite case and default off, because one
- * viewer needs them and another does not, one reads a second language and
- * another is a native speaker; turning them on for everybody would mean turning
- * them *off* for somebody who cannot follow the film without them. Subtitle
- * size, position and delay are presentation and stay personal unconditionally —
- * that is the roadmap's rule, and these two are the only things on the other
- * side of it.
+ * The defaults are the asymmetry, and they are the argument for having the
+ * switches at all. A room is watching one film and listening to one soundtrack,
+ * so audio is shared — hearing different audio is a strange way to watch
+ * together. Subtitles default off, because one viewer needs them and another
+ * does not, one reads a second language and another is a native speaker;
+ * sharing that choice would turn them *off* for somebody who cannot follow the
+ * film without them. Subtitle size, position and delay are presentation and stay
+ * personal unconditionally — that is the roadmap's rule, and these two are the
+ * only things on the other side of it.
  *
  * **A description, never an id.** Track ids are positions inside one file: the
  * Russian dub that is #2 in one rip is routinely #3 in another, so an id shared
@@ -218,9 +220,27 @@ export type ClientMsg =
   | { t: 'hello'; ver: number; room: string; name: string }
   | { t: 'timeline'; timeline: Timeline }
   | { t: 'ready'; ready: boolean; reason: string }
-  | { t: 'mode'; hostOnly: boolean }
+  | ({ t: 'mode' } & RoomRules)
   | { t: 'ping'; c: number }
   | { t: 'bye' };
+
+/**
+ * The room's own rules, as opposed to where it is in the film.
+ *
+ * All three belong to the **host**, and that is one sentence rather than three:
+ * the host owns the room's rules. A panel where one switch answers to a
+ * different person than the two beside it is a panel nobody can predict.
+ *
+ * On a `mode` message each is optional — only what is being changed is sent —
+ * and on the way back they are always present, because the receiver is being
+ * told the whole state rather than a delta.
+ */
+export interface RoomRules {
+  hostOnly?: boolean;
+  /** A track choice by anybody applies to everybody, per kind. */
+  shareAudio?: boolean;
+  shareSubs?: boolean;
+}
 
 export interface Welcome {
   t: 'welcome';
@@ -229,6 +249,8 @@ export interface Welcome {
   me: string;
   host: string;
   hostOnly: boolean;
+  shareAudio: boolean;
+  shareSubs: boolean;
   members: Member[];
   timeline: Timeline;
   waiting: string[];
@@ -244,6 +266,8 @@ export interface MembersMsg {
   members: Member[];
   host: string;
   hostOnly: boolean;
+  shareAudio: boolean;
+  shareSubs: boolean;
   /** Ids, not names: the frontend renders them itself, and a rename cannot
    * desync the two lists. */
   waiting: string[];
@@ -309,7 +333,7 @@ const MEMBER_FIELDS = ['id', 'name', 'ready'] as const;
 const HELLO_FIELDS = ['t', 'ver', 'room', 'name'] as const;
 const CLIENT_TIMELINE_FIELDS = ['t', 'timeline'] as const;
 const READY_FIELDS = ['t', 'ready', 'reason'] as const;
-const MODE_FIELDS = ['t', 'hostOnly'] as const;
+const MODE_FIELDS = ['t', 'hostOnly', 'shareAudio', 'shareSubs'] as const;
 const PING_FIELDS = ['t', 'c'] as const;
 const BYE_FIELDS = ['t'] as const;
 const WELCOME_FIELDS = [
@@ -319,6 +343,8 @@ const WELCOME_FIELDS = [
   'me',
   'host',
   'hostOnly',
+  'shareAudio',
+  'shareSubs',
   'members',
   'timeline',
   'waiting',
@@ -335,7 +361,7 @@ const SERVER_TIMELINE_FIELDS = [
   'rev',
   'by',
 ] as const;
-const MEMBERS_FIELDS = ['t', 'members', 'host', 'hostOnly', 'waiting'] as const;
+const MEMBERS_FIELDS = ['t', 'members', 'host', 'hostOnly', 'shareAudio', 'shareSubs', 'waiting'] as const;
 const PONG_FIELDS = ['t', 'c', 's'] as const;
 const ERROR_FIELDS = ['t', 'code', 'message'] as const;
 

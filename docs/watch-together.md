@@ -211,11 +211,18 @@ making one the player should mention.
 **A file under a privacy root** publishes `hidden`: the timeline works, the name
 does not travel. See below.
 
-### Tracks: two switches, and the defaults are the argument
+### Tracks: two of the room's rules, and the defaults are the argument
 
-Both kinds travel, and whether a viewer sends or takes either is theirs to
-decide — one switch per kind in the settings. The defaults encode the asymmetry
-rather than enforcing it:
+Both kinds travel, and whether either is shared is **a rule of the room** — set
+by the host, in the room panel, beside "only the host controls playback". Not a
+preference each viewer keeps: a room where one person's audio choice reaches
+everybody and another's does not is a room whose own members disagree about what
+it does. All three rules belong to the host for one reason, which is one
+sentence rather than three — the host owns the room's rules, and a panel where
+one switch answers to a different person than the two beside it is a panel
+nobody can predict.
+
+The defaults encode the asymmetry rather than enforcing it:
 
 | | default | why |
 |---|---|---|
@@ -226,12 +233,12 @@ Subtitle size, position and delay stay personal unconditionally: that is the
 roadmap's rule, and these two switches are the only things on the other side of
 it.
 
-**Each switch is symmetric** — it governs sending *and* taking. Publishing a
-choice you refuse to accept back would be pushing a preference on a room while
-opting out of it yourself, and the room would end up in a state its own members
-disagree about.
+They arrive with the handshake and in every `members` broadcast, so a viewer
+joining mid-film follows the room's audio without waiting for somebody to change
+something; and nothing is applied optimistically, so every member — the host
+included — learns a change from the same message.
 
-The choices ride on the timeline (`tracks`) rather than in a message of their
+The choices themselves ride on the timeline (`tracks`) rather than in a message of their
 own, which buys two things for nothing: the last-writer-wins semantics it
 already has, and delivery in the handshake — so a viewer joining mid-film gets
 the room's choices without anybody re-stating them. The cost is one rule that

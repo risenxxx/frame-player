@@ -265,7 +265,7 @@ func TestNothingPlayingIsNotFrozen(t *testing.T) {
 func TestHostOnlyRefusesAGuestAndCorrectsThem(t *testing.T) {
 	now := time.Now()
 	r, a, b := roomWithTwo(t, now)
-	if err := r.setHostOnly(a.id, true, now); err != nil { // a is the host
+	if err := r.setMode(a.id, &wire.ClientMsg{T: "mode", HostOnly: ptrBool(true)}, now); err != nil { // a is the host
 		t.Fatal(err)
 	}
 	drainOf(t, b, "timeline")
@@ -288,7 +288,7 @@ func TestHostOnlyRefusesAGuestAndCorrectsThem(t *testing.T) {
 func TestOnlyTheHostMayChangeTheMode(t *testing.T) {
 	now := time.Now()
 	r, _, b := roomWithTwo(t, now)
-	if err := r.setHostOnly(b.id, true, now); err != errNotAllowed {
+	if err := r.setMode(b.id, &wire.ClientMsg{T: "mode", HostOnly: ptrBool(true)}, now); err != errNotAllowed {
 		t.Fatalf("a guest set the mode: %v", err)
 	}
 	// ...and the trap this guards: a guest locking everybody out, host included.
@@ -309,7 +309,7 @@ func TestHostSuccession(t *testing.T) {
 	}
 	// The point of succession: with hostOnly on, a room whose host field named
 	// somebody gone is a room nobody can drive.
-	if err := r.setHostOnly(b.id, true, now); err != nil {
+	if err := r.setMode(b.id, &wire.ClientMsg{T: "mode", HostOnly: ptrBool(true)}, now); err != nil {
 		t.Fatalf("the new host cannot set the mode: %v", err)
 	}
 }
@@ -418,5 +418,69 @@ func TestASettledRoomIsNotSweptIntoBroadcasting(t *testing.T) {
 	}
 	if got := drainOf(t, a, "members"); len(got) != 0 {
 		t.Errorf("a settled room broadcast %d times", len(got))
+	}
+}
+
+func ptrBool(v bool) *bool { return &v }
+
+// The room's rules are the room's, not each viewer's — the same shape as
+// `hostOnly`, and for the same reason: a room where one person's audio choice
+// applies to everybody and another's does not is a room whose own members
+// disagree about what it does.
+func TestSharingRulesBelongToTheRoom(t *testing.T) {
+	now := time.Now()
+	r, a, b := roomWithTwo(t, now)
+	drainOf(t, b, "members")
+
+	// The defaults are the argument for having the switches at all.
+	if !r.shareAudio || r.shareSubs {
+		t.Fatalf("defaults are audio %v, subs %v — want true, false", r.shareAudio, r.shareSubs)
+	}
+
+	// Only the host, exactly like handing control away.
+	if err := r.setMode(b.id, &wire.ClientMsg{T: "mode", ShareSubs: ptrBool(true)}, now); err != errNotAllowed {
+		t.Fatalf("a guest changed a room rule: %v", err)
+	}
+	if r.shareSubs {
+		t.Fatal("the guest's change was applied anyway")
+	}
+
+	// One message may carry several rules, and everybody is told.
+	if err := r.setMode(a.id, &wire.ClientMsg{T: "mode", ShareSubs: ptrBool(true), ShareAudio: ptrBool(false)}, now); err != nil {
+		t.Fatal(err)
+	}
+	if r.shareAudio || !r.shareSubs {
+		t.Fatalf("audio %v, subs %v after the change", r.shareAudio, r.shareSubs)
+	}
+	last := lastOf(t, b, "members")
+	if last["shareSubs"] != true || last["shareAudio"] != false {
+		t.Errorf("the room was not told: %v", last)
+	}
+
+	// A change that changes nothing says nothing — otherwise every reopening of
+	// the panel would broadcast to everybody.
+	drainOf(t, b, "members")
+	if err := r.setMode(a.id, &wire.ClientMsg{T: "mode", ShareSubs: ptrBool(true)}, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := drainOf(t, b, "members"); len(got) != 0 {
+		t.Errorf("a no-op change broadcast %d times", len(got))
+	}
+}
+
+// A joiner has to learn the rules from the handshake, or they would follow the
+// room's audio choice only after somebody happened to change something.
+func TestTheHandshakeCarriesTheRoomRules(t *testing.T) {
+	now := time.Now()
+	r, a, _ := roomWithTwo(t, now)
+	if err := r.setMode(a.id, &wire.ClientMsg{T: "mode", ShareSubs: ptrBool(true)}, now); err != nil {
+		t.Fatal(err)
+	}
+	w, err := r.join(testClient(testHub(), "c"), 16, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !w.ShareAudio || !w.ShareSubs || w.HostOnly {
+		t.Errorf("welcome carried audio %v subs %v hostOnly %v", w.ShareAudio, w.ShareSubs, w.HostOnly)
 	}
 }

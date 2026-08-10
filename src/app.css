@@ -464,6 +464,31 @@ button.primary:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* A settings row whose control sits to the right of its own label and hint.
+   Here rather than in a component because two of them draw it — the settings
+   sheet and the room panel — and a class one component declares is a class the
+   other renders unstyled. That is the `.speedopt` failure written down in
+   CLAUDE.md, and `css-orphans` is what caught this one before it shipped:
+   the room's three switches would have come out as bare stacked boxes. */
+.row-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-text .setting-label {
+  margin-bottom: 3px;
+}
+
+.row-text .setting-hint {
+  margin-top: 0;
+}
+
 .setting-hint {
   color: #77777f;
   font-size: 11.5px;

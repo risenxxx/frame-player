@@ -27,7 +27,7 @@
 import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 
 import { cast, castSwitchAudio } from './cast.svelte';
-import { publishTrack, syncPrefs } from './sync/wire.svelte';
+import { publishTrack, wire } from './sync/wire.svelte';
 import { withFileDialog } from './chrome.svelte';
 import {
   delaysFor,
@@ -201,13 +201,13 @@ export function selectTrack(kind: 'audio' | 'sub', track: Track | null) {
     : null;
   if (player.filePath && wish) rememberTrack(player.filePath, kind, wish);
   void mpvSelectTrack(kind, track);
-  // Told to the room only for the kinds this viewer shares — audio by default,
-  // subtitles not (see `syncPrefs`). The switch is symmetric on purpose:
-  // publishing a choice you refuse to accept back would be pushing a preference
-  // on a room while opting out of it yourself.
+  // Told to the room only for the kinds the *room* shares — a rule the host
+  // sets beside "only the host controls playback", not a preference each viewer
+  // keeps. `wire.shares` answers in both directions, which is what stops two
+  // members disagreeing about what their own room does.
   //
   // A *description* goes over the wire, never the id: see `SharedTracks`.
-  if (wish && syncPrefs.shares(kind)) publishTrack(kind, wish);
+  if (wish && wire.shares(kind)) publishTrack(kind, wish);
   // While the TV owns playback, an audio choice must reach it too: the prepared
   // file carries exactly one track, so the switch is a re-prepare (cached per
   // track — switching back is instant) plus a reload at the TV's position. The

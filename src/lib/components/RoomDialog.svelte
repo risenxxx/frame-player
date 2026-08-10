@@ -19,14 +19,14 @@
   import { showOsd } from '$lib/osd.svelte';
   import { sync } from '$lib/sync/apply.svelte';
   import { invite } from '$lib/sync/link.svelte';
-  import { CODE_LENGTH, formatCode, normalizeCode } from '$lib/sync/protocol';
+  import { CODE_LENGTH, formatCode, normalizeCode, type RoomRules } from '$lib/sync/protocol';
   import {
     displayName,
     joinRoom,
     leaveRoom,
     relayUrl,
     setDisplayName,
-    setHostOnly,
+    setRoomRules,
     wire,
   } from '$lib/sync/wire.svelte';
   import { fmtSize } from '$lib/units';
@@ -169,21 +169,20 @@
       {/each}
     </ul>
 
-    <div class="setting">
-      <span class="setting-label">{t('sync.host_only_label')}</span>
-      <button
-        class="switch"
-        class:on={wire.hostOnly}
-        role="switch"
-        aria-checked={wire.hostOnly}
-        aria-label={t('sync.host_only_label')}
-        disabled={!wire.isHost}
-        onclick={() => setHostOnly(!wire.hostOnly)}
-      >
-        <span class="switch-knob"></span>
-      </button>
+    <!-- The room's own rules, all three of them, and all three the host's.
+         They sit together because they are one kind of thing — what this room
+         does, as opposed to where it is in the film — and a panel where one
+         switch answers to a different person than the two beside it is a panel
+         nobody can predict. A guest sees them read-only, which is honest: they
+         describe the room the guest is in. -->
+    <div class="room-rules">
+      {@render rule('hostOnly', t('sync.host_only_label'), t('sync.host_only_hint'), wire.hostOnly)}
+      {@render rule('shareAudio', t('sync.share_audio'), t('sync.share_audio_hint'), wire.shareAudio)}
+      {@render rule('shareSubs', t('sync.share_subs'), t('sync.share_subs_hint'), wire.shareSubs)}
+      <!-- Said once for the group rather than on each disabled switch: three
+           identical explanations would read as three separate refusals. -->
+      {#if !wire.isHost}<p class="setting-hint">{t('sync.rules_guest')}</p>{/if}
     </div>
-    <p class="setting-hint">{t('sync.host_only_hint')}</p>
 
     {#if Number.isFinite(wire.uncertainty)}
       <p class="setting-hint">{t('sync.clock', { ms: Math.round(wire.uncertainty) })}</p>
@@ -213,24 +212,25 @@
          the form arguing with the reason it was opened. -->
     <p class="setting-hint room-lead">{t('sync.lead')}</p>
 
-    <!-- Who you are, in a block of its own.
-         It used to sit bare above the primary button, and that is exactly how it
-         read: as the first field of "create a room" — so somebody joining by
-         code skipped it and arrived nameless. It applies to both paths, so it
-         is separated from both: its own surface, its own hint saying so, and a
-         gap before the choice begins. -->
-    <div class="room-me">
-      <label class="room-me-field">
-        <span class="setting-label">{t('sync.name_label')}</span>
-        <input
-          class="link-input room-input"
-          bind:value={name}
-          placeholder={t('sync.name_ph')}
-          maxlength="32"
-        />
-      </label>
-      <p class="setting-hint room-me-hint">{t('sync.name_hint')}</p>
-    </div>
+    <!-- Who you are.
+         It has to read as belonging to neither branch below — bare above the
+         primary button it was simply the first field of "create a room", and
+         somebody joining by code skipped it and arrived nameless. What does
+         that here is the plain rule under it, saying "that was about you, this
+         is about what you want to do", and nothing else: it is `.room-field`,
+         exactly like the code field, because two text inputs in one dialog
+         wearing different shapes reads as a mistake rather than as a
+         distinction. The placeholder carries what a hint line used to. -->
+    <label class="room-field">
+      <span class="setting-label">{t('sync.name_label')}</span>
+      <input
+        class="link-input room-input"
+        bind:value={name}
+        placeholder={t('sync.name_ph')}
+        maxlength="32"
+      />
+    </label>
+    <div class="room-rule"></div>
 
     {#if fromInvite}
       {@render joinBlock(true)}
@@ -247,6 +247,28 @@
     {/if}
   {/if}
 </Dialog>
+
+{#snippet rule(key: keyof RoomRules, label: string, hint: string, on: boolean)}
+  <div class="setting room-rule-row">
+    <div class="row-toggle">
+      <div class="row-text">
+        <div class="setting-label">{label}</div>
+        <div class="setting-hint">{hint}</div>
+      </div>
+      <button
+        class="switch"
+        class:on
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        disabled={!wire.isHost}
+        onclick={() => setRoomRules({ [key]: !on })}
+      >
+        <span class="switch-knob"></span>
+      </button>
+    </div>
+  </div>
+{/snippet}
 
 {#snippet createButton(primary: boolean)}
   <button
@@ -285,28 +307,21 @@
 
 
 <style>
+  /* The fields below carry their own 12px of top margin, so the lead only has
+     to make up the difference — otherwise the first field sits noticeably
+     further from the text than the others do from each other. */
   .room-lead {
-    margin: 0 0 14px;
+    margin: 0 0 2px;
   }
 
-  .room-me {
-    padding: 11px 12px 9px;
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  .room-me-field {
-    display: block;
-  }
-
-  .room-me-field .setting-label {
-    display: block;
-    margin-bottom: 5px;
-  }
-
-  .room-me-hint {
-    margin: 6px 0 0;
+  /* Plain, wordless, and the only other rule in the dialog carries «или» — so
+     the two are not competing to mean the same thing. This one separates who
+     you are from what you want to do; that one separates the two things you
+     could want. */
+  .room-rule {
+    height: 1px;
+    margin: 16px 0 4px;
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .room-field {
@@ -433,6 +448,17 @@
     color: #9a9aa6;
     font-size: 12px;
     overflow-wrap: anywhere;
+  }
+
+  /* Grouped rather than spaced apart: three switches in a row read as one
+     subject, which is what they are. The last one drops its margin so the
+     group ends where the buttons below begin. */
+  .room-rules {
+    margin-bottom: 14px;
+  }
+
+  .room-rule-row:last-child {
+    margin-bottom: 0;
   }
 
   .room-people {
