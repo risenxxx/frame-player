@@ -39,6 +39,7 @@ nothing about watching a film.
 | 26 | Casting to a television — Google Cast and DLNA, including torrents |
 | 32 | Watching together — a shared timeline over a small relay, with torrents picked up by the other players automatically |
 | 33 | Catalog — browse and search films and series, then pick a release for one, with metadata through a proxy of our own so the player carries no API key |
+| 28 | Subtitles lifted clear of the control bar while it is up |
 
 Details for the larger ones: [torrents.md](torrents.md), [casting.md](casting.md),
 [watch-together.md](watch-together.md), [catalog.md](catalog.md).
@@ -67,24 +68,6 @@ value is that the companion read-back exists, so a toggle in the player can show
 the truth rather than a guess. An hour of work, and only where the device
 declares the extension.
 
-### 28. Lift the subtitles when the interface is up
-
-The bottom bar covers subtitles while it is visible. The fix is one property and
-one trap:
-
-- `sub-margin-y` looks like the right control and **does not affect ASS
-  subtitles at all** — measured on the same frame, plain subtitles moved 191 px
-  and ASS did not move.
-- `sub-pos` moves both, because mpv's subtitle override default lets it reach
-  ASS. It is also **the slider the settings dialog exposes**, so the shift has to
-  be computed from the viewer's own value, restored exactly, and never written
-  to the configuration file.
-
-The amount has to come from the bar's height as a fraction of the window rather
-than a constant — 20 points of `sub-pos` moved the line 206 px in a 1080-tall
-frame, so a point is about one percent, and a constant would be wrong in the
-mini player and on a large display. One measurement is still open: how it
-behaves when the video is letterboxed and shorter than the window.
 
 ### 29. Playback speed on the remote
 
@@ -129,7 +112,7 @@ a line. So the work is the *rule* and the *offer*, not the mechanism:
   same three bounds `prefetch` is written under.
 
 Worth doing on its own merits and *not* as a workaround: the bug that prompted
-it (a rutracker release with 24 seeders that would not download at all) was a
+it (a release with 24 seeders that would not download at all) was a
 dead tracker announce, not a slow swarm — see the tracker section of
 `torrents.md` and `src-tauri/vendor/README.md`.
 

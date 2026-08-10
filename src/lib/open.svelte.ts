@@ -67,6 +67,7 @@ import {
   torrentVideos,
   updateTorrent,
   watchedFiles,
+  type CatalogOrigin,
   type RememberedTorrent,
   type TorrentFile,
   type TorrentInfo,
@@ -406,7 +407,7 @@ export function resolveTitleIfMissing() {
 // picker. Either way every video in it becomes a queue entry, which costs
 // nothing until one is played (see torrent.rs).
 
-export async function openTorrent(source: string) {
+export async function openTorrent(source: string, origin?: CatalogOrigin) {
   opening.box.torrentError = null;
   opening.pick = null;
   opening.lastLink = source;
@@ -427,7 +428,10 @@ export async function openTorrent(source: string) {
     if (info.name) rememberTitle(key, info.name);
     // How to reopen this torrent later, which is what makes the start-screen
     // list and the history cards work after a restart.
-    rememberTorrent(info, key);
+    // The catalog's context, when the catalog is what opened this. Passed
+    // through rather than reached for: this module must not know the catalog
+    // exists, and a torrent opened any other way simply has none.
+    rememberTorrent(info, key, origin);
     opening.box.recent = recentLinks();
     const videos = torrentVideos(info);
     if (videos.length === 0) {

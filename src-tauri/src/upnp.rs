@@ -1,6 +1,6 @@
 //! Asking the router whether the BitTorrent port is really open.
 //!
-//! **Why this exists at all is a measurement, not a feature request.** A rutracker
+//! **Why this exists at all is a measurement, not a feature request.** One private tracker
 //! swarm was probed one peer at a time: of ~30 addresses the tracker handed out,
 //! **20–22 never answered a SYN**, 5 completed a handshake, 2–3 refused the
 //! connection outright and exactly **1** showed the mid-handshake cut that means

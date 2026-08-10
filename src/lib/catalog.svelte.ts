@@ -26,8 +26,11 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { locale, t } from './i18n.svelte';
+import { showOsd } from './osd.svelte';
 import { latest } from './latest';
-import { openTorrent } from './open.svelte';
+import { openUpdateDialog, opening, openTorrent } from './open.svelte';
+import type { RememberedTorrent } from './torrent.svelte';
+import { player } from './player.svelte';
 
 /// No indexer is compiled in. Where the catalog looks when the viewer has named
 /// nowhere is asked for at runtime — see `suggested` and `catalog_config`.
@@ -80,6 +83,8 @@ const ENABLED_KEY = 'frameplayer.catalog';
 /// block pays the discovery once rather than on every launch.
 const CDN_KEY = 'frameplayer.tmdbCdn';
 const SORT_KEY = 'frameplayer.releaseSort';
+const FLOOR_KEY = 'frameplayer.releaseFloor';
+const DEAD_KEY = 'frameplayer.releaseHideDead';
 
 /// One title as the catalog knows it.
 export interface CatalogItem {
@@ -118,6 +123,7 @@ export interface Release {
   seasons: number[];
   magnet: string;
   created: string;
+  url: string;
 }
 
 /**
@@ -127,13 +133,34 @@ export interface Release {
  */
 export type CatalogPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
-/// How the release list is ordered. Remembered, because it is a preference
-/// about how somebody chooses rather than a property of one search.
-export type ReleaseSort = 'quality' | 'seeders';
+/**
+ * How the release list is ordered.
+ *
+ * Three questions, not one ranking with three tie-breaks. `quality` answers
+ * "the best copy", `seeders` answers "the copy that will actually download",
+ * and `size` answers the one a season makes you ask: **which of these is the
+ * whole thing rather than one episode.**
+ *
+ * That last one is why size is a first-class order rather than a tie-break. A
+ * series comes back as a mixture of single-episode releases and packs, and the
+ * only signal separating them that every source fills in is how big they are —
+ * the episode-range markers a title may carry are written by a minority (31 of
+ * 768 rows in one measured response). Combined with a quality floor it is a
+ * precise instrument: "1080p and above, biggest first" is the whole-season
+ * query, and it needs no field the indexer does not have.
+ */
+export type ReleaseSort = 'quality' | 'seeders' | 'size';
+
+/// A floor on quality. `0` is no floor; the rest are the values the indexer
+/// reports, and a release whose quality it could not read (`0`) is only ever
+/// shown when there is no floor at all — filtering it in would let an unknown
+/// masquerade as whatever the viewer asked for.
+export type QualityFloor = 0 | 720 | 1080 | 2160;
 
 function readSort(): ReleaseSort {
   try {
-    return localStorage.getItem(SORT_KEY) === 'seeders' ? 'seeders' : 'quality';
+    const v = localStorage.getItem(SORT_KEY);
+    return v === 'seeders' || v === 'size' ? v : 'quality';
   } catch {
     return 'quality';
   }
@@ -146,6 +173,43 @@ export function setReleaseSort(next: ReleaseSort) {
     else localStorage.setItem(SORT_KEY, next);
   } catch {
     // not critical: the choice simply will not survive a restart
+  }
+}
+
+function readFloor(): QualityFloor {
+  try {
+    const v = Number(localStorage.getItem(FLOOR_KEY));
+    return v === 720 || v === 1080 || v === 2160 ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function setQualityFloor(next: QualityFloor) {
+  catalog.floor = next;
+  try {
+    if (next === 0) localStorage.removeItem(FLOOR_KEY);
+    else localStorage.setItem(FLOOR_KEY, String(next));
+  } catch {
+    // not critical
+  }
+}
+
+export function setHideDead(on: boolean) {
+  catalog.hideDead = on;
+  try {
+    if (on) localStorage.setItem(DEAD_KEY, 'on');
+    else localStorage.removeItem(DEAD_KEY);
+  } catch {
+    // not critical
+  }
+}
+
+function readHideDead(): boolean {
+  try {
+    return localStorage.getItem(DEAD_KEY) === 'on';
+  } catch {
+    return false;
   }
 }
 
@@ -222,6 +286,10 @@ class Catalog {
   /// look untouched for a second or more.
   starting = $state<string | null>(null);
 
+  /// The torrent whose update is being looked for, so the row can say so and a
+  /// second click cannot start a parallel lookup.
+  checking = $state<string | null>(null);
+
   /**
    * How the release list is ordered.
    *
@@ -232,6 +300,31 @@ class Catalog {
    * between the two.
    */
   sort = $state<ReleaseSort>(readSort());
+
+  /// The lowest quality worth listing, and whether unseeded releases are shown
+  /// at all. Remembered for the same reason the order is: these are preferences
+  /// about how somebody chooses, not properties of one search.
+  floor = $state<QualityFloor>(readFloor());
+  hideDead = $state(readHideDead());
+
+  /**
+   * What survives the filters, before ordering.
+   *
+   * A quality floor deliberately drops releases whose quality the indexer could
+   * not read, because keeping them would let an unknown pass as whatever was
+   * asked for — but only when a floor is set at all, so the default view still
+   * shows everything.
+   */
+  visibleReleases = $derived(
+    this.releases.filter(
+      (r) => (!this.floor || r.quality >= this.floor) && (!this.hideDead || r.seeders > 0),
+    ),
+  );
+
+  /// How many releases the filters removed, so the panel can say so. An empty
+  /// list under an active filter must not read the same as an empty answer from
+  /// the indexer — one of those is the viewer's own doing and undoable.
+  filteredOut = $derived(this.releases.length - this.visibleReleases.length);
 
   /// What the grid actually draws: the search results while there is a query,
   /// the trending list while there is not.
@@ -255,9 +348,26 @@ class Catalog {
    * of the requested order rather than of the response.
    */
   sortedReleases = $derived.by(() => {
-    if (this.sort === 'quality') return this.releases;
-    return [...this.releases].sort(
-      (a, b) => b.seeders - a.seeders || b.quality - a.quality || b.size - a.size,
+    const rows = this.visibleReleases;
+    // Already in quality order from Rust, so the common case copies nothing.
+    if (this.sort === 'quality') return rows;
+    // A copy, never a sort in place: `sort()` mutates, and mutating the `$state`
+    // array from inside a `$derived` is a write during a read — the shape that
+    // made the ScrollFade effect re-run itself forever.
+    if (this.sort === 'seeders') {
+      return [...rows].sort(
+        (a, b) => b.seeders - a.seeders || b.quality - a.quality || b.size - a.size,
+      );
+    }
+    // Size, and **a dead release still sinks**. Otherwise the largest thing in
+    // the list — which is exactly what somebody hunting a whole season is
+    // reaching for — is routinely one nobody is seeding, and the order would
+    // put the single most disappointing row first.
+    return [...rows].sort(
+      (a, b) =>
+        Number(b.seeders > 0) - Number(a.seeders > 0) ||
+        b.size - a.size ||
+        b.seeders - a.seeders,
     );
   });
 }
@@ -638,10 +748,112 @@ export async function playRelease(release: Release, close: () => void) {
   catalog.starting = release.magnet;
   try {
     close();
-    await openTorrent(release.magnet);
+    // **Raised before the magnet is handed over, not after.** Closing the panel
+    // leaves the start screen with nothing happening on it, while resolving a
+    // magnet is a DHT lookup — measured elsewhere in this project at 1.5 to 10
+    // seconds on a cold torrent. Without this the player looked like it had
+    // simply swallowed the click, which is the same silence `openRecent` fixes
+    // for a history card and the torrent rows fix with their own spinner.
+    //
+    // The overlay is worth more here than a plain spinner would be: it prints
+    // peers and rate from `torrentLabel`, so a swarm that is slow to answer
+    // says so rather than looking like a hang.
+    opening.busy = true;
+    // What makes this torrent updatable later without anybody pasting a link.
+    // Only the catalog can supply it, which is why it travels with the open
+    // rather than being looked up afterwards.
+    await openTorrent(release.magnet, {
+      url: release.url,
+      title: catalog.picked?.title ?? catalog.query,
+      original: catalog.picked?.original_title ?? catalog.query,
+      year: catalog.picked?.year ?? null,
+      season: catalog.season,
+      quality: release.quality,
+      release: release.title,
+    });
   } finally {
     catalog.starting = null;
+    // `noteOpened` clears this when a file actually loads, and
+    // `reportLoadFailure` clears it on the way to the error dialog. Neither
+    // fires when the resolve itself throws — `openTorrent` catches that and
+    // raises the link dialog — so without this the overlay would stand over a
+    // start screen for the rest of the session.
+    if (!player.hasFile) opening.busy = false;
   }
+}
+
+/**
+ * Look for a newer release of a torrent already on disk, and hand it back.
+ *
+ * **A button rather than a background check, and the measurement is what
+ * decided that.** The exact path — the same tracker page carrying a different
+ * torrent — depends on the indexer having re-crawled that page, and it re-crawls
+ * rarely: of 464 rows in one live response, 1 had been touched in the last 90
+ * days and 6 in 180, with 456 sharing a single bulk-sweep date. A check that
+ * usually finds nothing, run automatically, is a request per remembered torrent
+ * to somebody else's service on every launch, and it teaches people to ignore
+ * its answer. Asked for, it is one request when somebody actually wants to know.
+ *
+ * The fuzzy path — a *different* page, same release, published later — is the
+ * one that pays, because new rows are indexed promptly. Both are tried in Rust;
+ * this only carries the question and the answer.
+ *
+ * Returns null when there is nothing newer, and throws only when the lookup
+ * itself failed — the caller has to tell those apart, since "no update" is an
+ * answer and "could not ask" is not.
+ */
+export async function findTorrentUpdate(known: RememberedTorrent): Promise<Release | null> {
+  const origin = known.origin;
+  // A pasted magnet has no search to re-run. Not a failure: the manual dialog
+  // is the honest answer for it, and the caller falls back to exactly that.
+  if (!origin) return null;
+  return await invoke<Release | null>('catalog_find_update', {
+    base: effectiveIndexer(),
+    title: origin.title,
+    originalTitle: origin.original,
+    year: origin.year,
+    season: origin.season,
+    knownUrl: origin.url,
+    knownHash: known.infoHash,
+    knownName: origin.release,
+    knownQuality: origin.quality,
+  });
+}
+
+/**
+ * The update button on a torrent row: look first, ask second.
+ *
+ * The automatic lookup only works for a torrent that came from the catalog and
+ * only when the indexer has something newer, so **every other outcome falls
+ * through to the dialog that was there before** — which is not a consolation
+ * prize but the correct answer for a pasted magnet, where there is no search to
+ * re-run.
+ *
+ * What it never does is apply the update. `openUpdateDialog` is given the found
+ * magnet pre-filled, so the viewer still confirms: replacing a season's torrent
+ * re-checks every episode already on disk, and that is not a thing to do on a
+ * guess about a name.
+ */
+export async function checkTorrentUpdate(known: RememberedTorrent) {
+  if (catalog.checking) return;
+  catalog.checking = known.infoHash;
+  try {
+    const found = await findTorrentUpdate(known);
+    if (found) {
+      showOsd(t('torrent.update_found'));
+      openUpdateDialog(known, found.magnet);
+      return;
+    }
+    // Told apart on purpose: a torrent with no catalog origin was never
+    // searchable, while one that was searched and came back empty is a fact
+    // about the indexer worth reporting.
+    showOsd(known.origin ? t('torrent.update_none') : t('torrent.update_manual'));
+  } catch {
+    showOsd(t('torrent.update_check_failed'));
+  } finally {
+    catalog.checking = null;
+  }
+  openUpdateDialog(known);
 }
 
 /**

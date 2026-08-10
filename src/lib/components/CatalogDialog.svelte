@@ -25,6 +25,8 @@
     playRelease,
     releaseTags,
     runSearch,
+    setHideDead,
+    setQualityFloor,
     setReleaseSort,
     type Release,
   } from '$lib/catalog.svelte';
@@ -282,21 +284,39 @@
   <div class="cat-section cat-sortrow">
     <span>{label}</span>
     <div class="segmented cat-sort">
-      <button
-        class="segopt"
-        class:sel={catalog.sort === 'quality'}
-        onclick={() => setReleaseSort('quality')}
-      >
-        {t('catalog.sort_quality')}
-      </button>
-      <button
-        class="segopt"
-        class:sel={catalog.sort === 'seeders'}
-        onclick={() => setReleaseSort('seeders')}
-      >
-        {t('catalog.sort_seeders')}
-      </button>
+      {#each [['quality', t('catalog.sort_quality')], ['seeders', t('catalog.sort_seeders')], ['size', t('catalog.sort_size')]] as const as [id, text] (id)}
+        <button class="segopt" class:sel={catalog.sort === id} onclick={() => setReleaseSort(id)}>
+          {text}
+        </button>
+      {/each}
     </div>
+  </div>
+
+  <!-- The filters on their own row under the order, because they answer a
+       different question: the order is "show me these differently", a filter is
+       "show me fewer of these". Putting five controls on one line would also
+       overflow the sheet at the Russian labels. -->
+  <div class="cat-filters">
+    <span class="cat-filter-label">{t('catalog.min_quality')}</span>
+    <div class="segmented cat-floor">
+      {#each [0, 720, 1080, 2160] as const as q (q)}
+        <button
+          class="segopt"
+          class:sel={catalog.floor === q}
+          onclick={() => setQualityFloor(q)}
+        >
+          {q === 0 ? t('catalog.floor_any') : q === 2160 ? '4K' : `${q}p`}
+        </button>
+      {/each}
+    </div>
+    <button
+      class="cat-toggle"
+      class:on={catalog.hideDead}
+      aria-pressed={catalog.hideDead}
+      onclick={() => setHideDead(!catalog.hideDead)}
+    >
+      {t('catalog.hide_dead')}
+    </button>
   </div>
 {/snippet}
 
@@ -342,7 +362,14 @@
   {:else if catalog.releasePhase === 'ready' && catalog.releases.length === 0}
     <div class="cat-empty">{t('catalog.no_releases')}</div>
   {:else if catalog.releases.length}
-    {@render sortRow(t('catalog.releases', { count: catalog.releases.length }))}
+    {@render sortRow(t('catalog.releases', { count: catalog.visibleReleases.length }))}
+    {#if catalog.visibleReleases.length === 0}
+      <!-- Everything was filtered out. Deliberately not the same sentence as
+           "the indexer found nothing": one of these is the viewer's own doing
+           and undoable, and saying so is the difference between a dead end and
+           a control they can move back. -->
+      <div class="cat-empty">{t('catalog.all_filtered', { count: catalog.filteredOut })}</div>
+    {/if}
     <div class="cat-releases">
       {#each catalog.sortedReleases as r (r.magnet)}
         <button
@@ -614,6 +641,67 @@
     flex: 0 0 auto;
     padding-left: 12px;
     padding-right: 12px;
+  }
+
+  /* The filters, under the order rather than beside it: five controls on one
+     line overflow the sheet at the Russian labels, and the two rows answer
+     different questions anyway — "show these differently" against "show fewer
+     of these". Wrapping rather than scrolling, because unlike the season picker
+     this row has a fixed, small number of controls and a second line costs
+     nothing. */
+  .cat-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin: 0 2px 12px;
+  }
+
+  .cat-filter-label {
+    color: #77777f;
+    font-size: 11.5px;
+  }
+
+  /* Same override as `.cat-sort`: `.segopt` is `flex: 1`, which here would
+     stretch four pills across the sheet. Written to beat the base rule rather
+     than left to source order — app.css and this file are separate stylesheets
+     and the order between them is the bundler's. */
+  .cat-floor {
+    flex: none;
+    padding: 2px;
+  }
+
+  .cat-floor .segopt {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    font-size: 11.5px;
+  }
+
+  /* A boolean, so neither a pill row nor a switch: those are "one of several
+     named values" and "a setting that stands", and this is a filter you flip
+     while reading a list. Deliberately not indigo when on — indigo means
+     selected/primary, and a filter being active is a state of the list rather
+     than a choice among alternatives. */
+  .cat-toggle {
+    padding: 5px 11px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 7px;
+    background: transparent;
+    color: #9a9aa6;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+
+  .cat-toggle:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #d6d6de;
+  }
+
+  .cat-toggle.on {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.28);
+    color: #e8e8ec;
   }
 
   .cat-releases {

@@ -987,7 +987,7 @@
     </div>
 
     <!-- The only large lever left on peer count, and it is measured rather
-         than believed: of ~30 addresses a rutracker announce returned, 20–22
+         than believed: of ~30 addresses one tracker's announce returned, 20–22
          never answered a SYN — peers behind NAT, which can only ever dial us.
          Public trackers, `numwant`, IPv6 and PEX were all measured and give
          nothing here.

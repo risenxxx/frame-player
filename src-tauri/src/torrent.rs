@@ -566,7 +566,7 @@ impl TorrentService {
                 disable_upload: !seeding,
                 // Without a listener the session announces `port=0`, and
                 // trackers refuse that outright (opentrackr answers "Port
-                // can't be 0", rutracker 403s) — so every tracker announce was
+                // can't be 0", the tracker 403s) — so every tracker announce was
                 // silently worthless and the DHT was the *only* peer source,
                 // which is exactly the redundancy failure that made its
                 // Windows death (see vendor/README.md) a total outage. A real
@@ -579,7 +579,7 @@ impl TorrentService {
                 // **Off by default and opt-in, because it changes the machine
                 // rather than the app**: a mapping makes this port reachable
                 // from the internet for as long as the session lives. What it
-                // buys is measured and large — of ~30 addresses a rutracker
+                // buys is measured and large — of ~30 addresses one tracker
                 // announce returned, 20–22 never answered a SYN, i.e. they are
                 // behind NAT and can only ever be reached if they dial us. A
                 // reachable client turns those from unreachable into possible.
@@ -1668,7 +1668,7 @@ impl TorrentService {
 /// whether it is started.** `make_peer_rx` passes `None` for the port unless the
 /// torrent is running, and a tracker asked from port 0 treats the caller as
 /// unable to accept connections and answers with almost nothing: measured
-/// against rutracker on one info hash, **1 peer from port 0 against 26 from a
+/// against one such tracker on one info hash, **1 peer from port 0 against 26 from a
 /// real one**. Adding paused is not negotiable here (it is the whole reason
 /// "what is in this torrent" costs no download), so metadata is left to the DHT
 /// alone — and a torrent whose DHT records have gone stale then never resolves
@@ -1729,7 +1729,7 @@ async fn announce_one(
     port: u16,
 ) -> Vec<SocketAddr> {
     // The announce URL's own query is kept and re-appended, exactly as the
-    // vendored tracker client does it: rutracker's `?magnet` marker and a
+    // vendored tracker client does it: the `?magnet` marker some URLs carry, and a
     // private tracker's passkey live there, and replacing the query is a 403.
     let (base, base_query) = match url.split_once('?') {
         Some((base, query)) => (base, Some(query)),
@@ -2913,7 +2913,7 @@ mod tests {
     /// answer here is silent — no peers, and a magnet that never resolves.
     #[test]
     fn announce_peers_parsing() {
-        // Verbatim shape from rutracker: no `complete`, no `incomplete`.
+        // Verbatim shape from a real tracker: no `complete`, no `incomplete`.
         let mut real = b"d8:intervali3595e12:min intervali3595e5:peers12:".to_vec();
         real.extend_from_slice(&[93, 100, 177, 140, 0x7F, 0xA1]);
         real.extend_from_slice(&[5, 77, 195, 179, 0xA7, 0x30]);

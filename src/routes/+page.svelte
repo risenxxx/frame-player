@@ -105,7 +105,12 @@
     togglePortForward,
     toggleSeeding,
   } from '$lib/open.svelte';
-  import { catalog, closeCatalog, openCatalog } from '$lib/catalog.svelte';
+  import {
+    catalog,
+    checkTorrentUpdate,
+    closeCatalog,
+    openCatalog,
+  } from '$lib/catalog.svelte';
   import {
     addTrackFile,
     applyDelays,
@@ -1229,7 +1234,7 @@
       onOpenRecent={(item) => void openRecent(item)}
       onForgetRecent={(item) => forgetRecent(item.path)}
       onOpenTorrent={(row) => void openRememberedTorrent(row)}
-      onUpdateTorrent={(known) => void openUpdateDialog(known)}
+      onUpdateTorrent={(known) => void checkTorrentUpdate(known)}
       onDeleteTorrent={(row) => void deleteTorrent(row)}
       onDeleteWatched={(row) => void deleteWatchedFiles(row)}
     />

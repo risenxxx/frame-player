@@ -147,14 +147,24 @@ Four properties it depends on:
   answer happened to be the first time the panel was opened, which is the
   per-build constant this replaced, reintroduced in the client.
 - **How fast a change lands is a CDN setting, not a property of the file.**
-  Setting `Cache-Control` as object metadata at upload works and is the obvious
-  move, but it is the one part of the mechanism that lives in an object's
-  headers, so it is lost the first time somebody re-uploads without the flag —
-  silently, because the file is correct and only the timing changes. A Cache
-  Rule on the path instead overrides whatever the origin sends, which makes the
-  caching independent of how the object got there. Matching the path and not the
-  host matters: a rule over the whole update host would also cover `latest.json`
-  and delay the updater's view of a release.
+  Setting `Cache-Control` as object metadata at upload is the obvious move and
+  is the wrong one: it is the only part of the mechanism that lives in an
+  object's headers, so it is lost the first time somebody re-uploads without the
+  flag — silently, because the file is correct and only the timing changes. (The
+  R2 dashboard has no field for it either, which is its own argument.)
+
+  What is in place instead is a **Cache Rule** on this path, set to ignore the
+  origin's `Cache-Control` and use a five-minute edge TTL. That makes the timing
+  independent of how the object got there. Matching the path and not the host
+  matters: a rule over the whole update host would also cover `latest.json` and
+  delay the updater's view of a release.
+
+  **How to tell it is actually matching**, which is not obvious from the
+  dashboard: ask for the object twice and read `cf-cache-status`. A rule that
+  applies gives `MISS` then `HIT` with an `age` header. **`DYNAMIC` means the
+  rule is not matching at all** — Cloudflare decided not to cache, which for
+  this file is harmless (changes land instantly) but means the rule is not doing
+  what it looks like it is doing.
 
 ## The indexer's search is fuzzy; the filtering is ours
 

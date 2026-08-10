@@ -1072,7 +1072,7 @@
 
   /* `flex: 0 0 200px` is only half of a fixed width: **`min-width: auto` is the
      default and it wins**, so a card whose name is one long unbreakable token —
-     `Dutton.Ranch.S01E02.WEB-DLRip-AVC.x264.seleZen`, i.e. every torrent file —
+     `Dutton.Ranch.S01E02.WEB-DLRip-AVC.x264.GROUP`, i.e. every torrent file —
      grew to fit it. Measured at 312px against its neighbours' 200, and since the
      poster's height comes from its width that card was also half again as tall.
      The same rule the queue rows already carry, missed here. */

@@ -1026,6 +1026,7 @@ pub fn run() {
             catalog::catalog_search,
             catalog::catalog_details,
             catalog::catalog_releases,
+            catalog::catalog_find_update,
             opensubtitles::subs_search,
             opensubtitles::subs_download,
             opensubtitles::subs_login,

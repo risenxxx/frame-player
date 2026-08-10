@@ -212,7 +212,7 @@ than wrong addresses.
 ## Why a swarm has fewer peers than the tracker page claims
 
 Twenty-four seeders on a tracker page and five connections is not a lie on
-either side. Probing every address a rutracker announce returned, one at a time,
+either side. Probing every address one private tracker's announce returned, one at a time,
 splits the difference cleanly — of about thirty:
 
 | what happened | count | what it means |

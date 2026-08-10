@@ -153,6 +153,10 @@ pub struct Release {
     pub seasons: Vec<i32>,
     pub magnet: String,
     pub created: String,
+    /// The tracker's own page for this release. **Measured unique and stable**:
+    /// 768 distinct URLs across 768 rows, so it is the indexer's identity for a
+    /// row and the only exact handle we get on "this same release, later".
+    pub url: String,
 }
 
 // ---- TMDB ------------------------------------------------------------------
@@ -473,6 +477,8 @@ struct IndexerRow {
     #[serde(default)]
     title: String,
     #[serde(default)]
+    url: String,
+    #[serde(default)]
     tracker: String,
     #[serde(default)]
     size: u64,
@@ -619,6 +625,7 @@ pub async fn catalog_releases(
                 seasons: row.seasons,
                 magnet: row.magnet,
                 created: row.create_time,
+                url: row.url,
             });
         }
         // Enough to choose from. A second query on top of a full first one adds
@@ -685,6 +692,103 @@ fn sort_releases(out: &mut [Release]) {
             .then(b.seeders.cmp(&a.seeders))
             .then(b.size.cmp(&a.size))
     });
+}
+
+/// Look for a newer release of something already on disk.
+///
+/// **Two paths, and the measurement says which one actually pays.** The obvious
+/// one is exact: a release's tracker URL is its identity at the indexer (768
+/// unique URLs across 768 rows), so the same URL carrying a different magnet
+/// means the uploader replaced the torrent on the same page. The other is
+/// fuzzy: a *different* page whose parsed name is close enough to be the same
+/// release, published later.
+///
+/// Measured against the live service, the exact path is the rare one. Of 464
+/// rows in one broad response, **1 had been re-crawled in the last 90 days and
+/// 6 in 180** — 456 of them shared a single sweep date. New rows appear
+/// promptly (the service reports hundreds a day), old rows are revisited in
+/// occasional bulk passes. So a re-upload that creates a new page is found
+/// quickly, while an edit to an existing page may not surface for months.
+///
+/// Both are therefore tried, exact first, and **neither is applied here** — the
+/// answer goes back to the caller as a candidate. Replacing a season's torrent
+/// costs a re-check of everything already on disk, which is not a thing to do
+/// on a guess.
+#[tauri::command]
+pub async fn catalog_find_update(
+    base: String,
+    title: String,
+    original_title: String,
+    year: Option<i32>,
+    season: Option<i32>,
+    known_url: String,
+    known_hash: String,
+    known_name: String,
+    known_quality: i64,
+) -> Result<Option<Release>, String> {
+    let releases = catalog_releases(base, title, original_title, year, season).await?;
+    let known_hash = known_hash.to_lowercase();
+    let known_url = known_url.trim();
+
+    // Exact: the same page, a different torrent on it.
+    if !known_url.is_empty() {
+        if let Some(hit) = releases
+            .iter()
+            .find(|r| r.url == known_url && magnet_hash(&r.magnet) != known_hash)
+        {
+            return Ok(Some(hit.clone()));
+        }
+    }
+
+    // Fuzzy: another page, the same release by name, published later. Ordered by
+    // date so the newest candidate wins rather than whichever the sort happened
+    // to put first — the release list is ordered for *choosing*, not for this.
+    let mut candidates: Vec<&Release> = releases
+        .iter()
+        .filter(|r| {
+            magnet_hash(&r.magnet) != known_hash
+                && r.url != known_url
+                // **Same quality, or it is not an update.** The name alone is
+                // not enough, and that is measured rather than assumed: two
+                // releases of one series differing only in source and
+                // resolution share 7 of 11 tokens, which clears the 0.6
+                // threshold. Offering one as an update to the other would
+                // re-check everything on disk and fetch a different rip
+                // entirely. A release that changes quality is a different
+                // release; `0` means the indexer could not read it, and an
+                // unknown must not match anything.
+                && known_quality > 0
+                && r.quality == known_quality
+                && looks_like_same_release(&r.title, &known_name)
+        })
+        .collect();
+    candidates.sort_by(|a, b| b.created.cmp(&a.created));
+    Ok(candidates.first().map(|r| (*r).clone()))
+}
+
+/// Token overlap, the same rule the frontend already applies when a magnet is
+/// pasted into the link box — a re-upload keeps most of its name and changes
+/// the episode count in the middle of it, so a prefix test is no use.
+///
+/// Kept here rather than called across the boundary because this runs over a
+/// hundred rows per check and the frontend's copy exists for a single
+/// comparison; the threshold is the same 0.6 and a divergence would show up as
+/// the two disagreeing about one release, which is a test's job to catch.
+fn looks_like_same_release(a: &str, b: &str) -> bool {
+    let tokens = |s: &str| -> std::collections::HashSet<String> {
+        s.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.chars().count() > 1)
+            .map(|w| w.to_string())
+            .collect()
+    };
+    let (x, y) = (tokens(a), tokens(b));
+    if x.len() < 3 || y.len() < 3 {
+        return false;
+    }
+    let (small, large) = if x.len() <= y.len() { (&x, &y) } else { (&y, &x) };
+    let shared = small.iter().filter(|w| large.contains(*w)).count();
+    shared as f64 / small.len() as f64 >= 0.6
 }
 
 /// The info hash out of a magnet, lower-cased, or the whole link when there is
@@ -758,6 +862,7 @@ mod tests {
             seasons: vec![],
             magnet: format!("magnet:?xt=urn:btih:{quality}{video_type}{seeders}{size}"),
             created: String::new(),
+            url: String::new(),
         }
     }
 
@@ -834,6 +939,34 @@ mod tests {
         assert_eq!(proxy_base("http://localhost:8090/").unwrap(), "http://localhost:8090");
         // And the trailing slash goes, or every URL built from it doubles one.
         assert_eq!(proxy_base("https://example.org///").unwrap(), "https://example.org");
+    }
+
+    #[test]
+    fn same_release_matches_a_re_upload_and_not_a_neighbour() {
+        // The case this exists for: an uploader adds an episode and the count
+        // changes in the middle of a long name. A prefix test fails here, which
+        // is why it is token overlap.
+        let before = "Some Show / Сериал [2024, WEB-DL 1080p] Серии: 1-8 из 10 Dub + Sub";
+        let after = "Some Show / Сериал [2024, WEB-DL 1080p] Серии: 1-10 из 10 Dub + Sub";
+        assert!(looks_like_same_release(before, after));
+
+        // **And the name alone is not enough**, which is the finding this test
+        // exists to record. Two releases of one series differing only in source
+        // and resolution share 7 of 11 tokens — 0.64, over the 0.6 threshold —
+        // so token overlap calls them the same release and they are not. That
+        // is why `catalog_find_update` also requires the quality to match:
+        // offering a 4K remux as an "update" to a 1080p season would re-check
+        // everything on disk and fetch a different rip.
+        let other = "Some Show / Сериал [2024, BDRemux 2160p HDR] Серии: 1-10 из 10 MVO";
+        assert!(
+            looks_like_same_release(before, other),
+            "if this stops matching, the quality guard in catalog_find_update is no \
+             longer load-bearing and the comment there should say so"
+        );
+
+        // Too little to judge is a refusal, not a guess: two short names would
+        // otherwise match on one shared word.
+        assert!(!looks_like_same_release("Show", "Show"));
     }
 
     #[test]

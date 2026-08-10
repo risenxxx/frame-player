@@ -95,7 +95,7 @@ class TorrentPrefs {
    *
    * **Off by default because it changes the machine rather than the app**, and
    * on at all because it is the only large lever left on peer count. Measured on
-   * a rutracker swarm, one address at a time: of ~30 the tracker handed out,
+   * one private tracker's swarm, one address at a time: of ~30 it handed out,
    * **20–22 never answered a SYN** — peers behind NAT, reachable only if they
    * dial us — 5 completed a handshake, and exactly one showed the mid-handshake
    * cut that means DPI. Everything else that suggests itself was measured and is
@@ -328,6 +328,29 @@ const STORE_KEY = TORRENTS_KEY;
 /// of strings that never grows on its own.
 const STORE_LIMIT = 100;
 
+/**
+ * Enough about the catalog release a torrent came from to find its successor.
+ *
+ * Only ever set for a torrent opened through the catalog — a pasted magnet has
+ * no search to re-run, and that is the honest difference between the two ways
+ * in rather than a gap to fill later.
+ *
+ * `url` is the exact handle (a tracker page is one release), `quality` is what
+ * stops a 4K remux being offered as an update to a 1080p season, and the rest
+ * is the query that produced the list.
+ */
+export interface CatalogOrigin {
+  url: string;
+  title: string;
+  original: string;
+  year: number | null;
+  season: number | null;
+  quality: number;
+  /// The release's own title, which is what the name comparison runs against —
+  /// `name` on the torrent is the folder's and says far less.
+  release: string;
+}
+
 export interface RememberedTorrent {
   infoHash: string;
   /// What to hand `torrent_add` to get playable URLs back.
@@ -336,6 +359,8 @@ export interface RememberedTorrent {
   /// Video file count, for the row's "9 файлов" without resolving anything.
   videos: number;
   at: number;
+  /// Where this came from, when it came from the catalog. Absent otherwise.
+  origin?: CatalogOrigin;
   /**
    * Episodes watched to the end, by file name.
    *
@@ -374,7 +399,7 @@ function readStore(): Store {
  * history off nothing is written, and the storage list falls back to what disk
  * alone can say.
  */
-export function rememberTorrent(info: TorrentInfo, magnet: string) {
+export function rememberTorrent(info: TorrentInfo, magnet: string, origin?: CatalogOrigin) {
   if (!history.prefs.enabled) return;
   try {
     const store = readStore();
@@ -384,6 +409,11 @@ export function rememberTorrent(info: TorrentInfo, magnet: string) {
       name: info.name,
       videos: torrentVideos(info).length,
       at: Date.now(),
+      // Carried forward when this open did not come from the catalog, for the
+      // same reason `watched` is: this runs on *every* open, and reopening a
+      // season from the start screen would otherwise erase the one thing that
+      // makes it updatable.
+      origin: origin ?? store[info.info_hash]?.origin,
       // Reopening a torrent must not forget which episodes were finished — this
       // runs on every open, including the one that follows a magnet being
       // pasted again.
