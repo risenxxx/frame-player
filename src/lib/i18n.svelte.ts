@@ -32,6 +32,8 @@ const ru = {
   'catalog.no_releases': 'Раздач не нашлось',
   'catalog.releases': 'Раздачи: {count}',
   'catalog.seeders': 'сидов: {count}',
+  'catalog.sort_quality': 'По качеству',
+  'catalog.sort_seeders': 'По сидам',
   'catalog.series': 'Сериал',
   'catalog.season': 'Сезон {number}',
   'catalog.runtime': '{minutes} мин',
@@ -52,7 +54,7 @@ const ru = {
     'This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.',
   'catalog.setting': 'Каталог фильмов и сериалов',
   'catalog.setting_hint':
-    'Добавляет на стартовый экран поиск по каталогу: описание и постеры берутся с TMDB, список раздач — с указанного ниже сервиса. Оба узнают, что вы ищете, поэтому выключено по умолчанию.',
+    'Кнопка «Каталог» на стартовом экране: описания и постеры берутся с TMDB, список раздач — с указанного ниже сервиса. Оба узнают, что вы ищете — выключите, если это нежелательно.',
   'catalog.tmdb_label': 'Сервис описаний',
   'catalog.tmdb_hint':
     'Через него идут постеры и описания с TMDB — ключ хранится там, а не в плеере. Сами постеры грузятся напрямую с TMDB, а через сервис только если TMDB недоступен. Пустое поле возвращает адрес по умолчанию.',
@@ -776,6 +778,8 @@ const en: Record<MessageKey, string> = {
   'catalog.no_releases': 'No releases found',
   'catalog.releases': 'Releases: {count}',
   'catalog.seeders': 'seeds: {count}',
+  'catalog.sort_quality': 'By quality',
+  'catalog.sort_seeders': 'By seeds',
   'catalog.series': 'Series',
   'catalog.season': 'Season {number}',
   'catalog.runtime': '{minutes} min',
@@ -793,7 +797,7 @@ const en: Record<MessageKey, string> = {
     'This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.',
   'catalog.setting': 'Film and series catalog',
   'catalog.setting_hint':
-    'Adds a catalog search to the start screen: descriptions and posters come from TMDB, the release list from the service below. Both learn what you are looking for, which is why this is off by default.',
+    'The «Catalog» button on the start screen: descriptions and posters come from TMDB, the release list from the service below. Both learn what you are looking for — turn this off if that is unwelcome.',
   'catalog.tmdb_label': 'Metadata service',
   'catalog.tmdb_hint':
     'Posters and descriptions from TMDB come through it — the key lives there rather than in the player. Posters themselves load straight from TMDB, and through the service only where TMDB is unreachable. An empty field restores the default.',

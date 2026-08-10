@@ -574,17 +574,62 @@ pub async fn catalog_releases(
         }
     }
 
-    // Seeders first, because on a torrent that is the difference between
-    // watching now and waiting; quality breaks the tie, since between two live
-    // releases the better one costs nothing extra.
-    out.sort_by(|a, b| {
-        b.seeders
-            .cmp(&a.seeders)
-            .then(b.quality.cmp(&a.quality))
-            .then(b.size.cmp(&a.size))
-    });
+    sort_releases(&mut out);
     out.truncate(MAX_RELEASES);
     Ok(out)
+}
+
+/// Where a release's dynamic range puts it: 1 for anything the indexer flagged
+/// as high dynamic range, 0 for ordinary.
+///
+/// Deliberately two buckets rather than a ladder. Measured across 768 rows from
+/// the live public instance, the field only ever held `sdr` and `hdr` — so
+/// ranking Dolby Vision above HDR10 would be a distinction invented here rather
+/// than one the data makes, and it is not obviously the right way round anyway
+/// (DV looks better on a display that handles it and worse on one that does
+/// not). Anything unrecognised is treated as high, because the indexer only
+/// fills this in when it found something: an empty value is the ordinary case
+/// and a value we have not seen is more likely a new HDR flavour than a new way
+/// of writing "sdr".
+fn dynamic_rank(video_type: &str) -> i32 {
+    match video_type.trim().to_ascii_lowercase().as_str() {
+        "" | "sdr" => 0,
+        _ => 1,
+    }
+}
+
+/// Order the releases the way somebody choosing one actually reads them.
+///
+/// **Quality is the outer key and dynamic range the inner one**, so the list
+/// runs 4K HDR → 4K SDR → 1080p HDR → 1080p SDR → … with seeders deciding
+/// inside each group. That is a different answer from sorting by seeders alone,
+/// which was the first version: it put a live 480p rip above a 4K HDR remux
+/// with a healthy swarm, and the question a viewer is asking is "what is the
+/// best copy I can get", not "what is the busiest".
+///
+/// **Except that a release nobody is seeding sinks to the bottom regardless.**
+/// That is the one place this departs from a pure quality order, and it is
+/// measured rather than defensive: of 95 4K rows in one live response, **13 had
+/// no seeders at all**. Without this the top of the list is routinely occupied
+/// by the best-looking thing that will never download, which is the worst
+/// possible first row — "cannot be watched" outranks "would look nicer".
+/// Nothing is hidden: they are still listed, still marked, still pickable.
+///
+/// Size breaks the last tie because between two otherwise identical releases
+/// the bigger one is the less compressed.
+///
+/// Note this also decides *which* releases survive `MAX_RELEASES`, so it is a
+/// selection order as well as a display order. The frontend may re-sort what
+/// comes back — see `sortedReleases` — but it cannot recover a row this dropped.
+fn sort_releases(out: &mut [Release]) {
+    out.sort_by(|a, b| {
+        (b.seeders > 0)
+            .cmp(&(a.seeders > 0))
+            .then(b.quality.cmp(&a.quality))
+            .then(dynamic_rank(&b.video_type).cmp(&dynamic_rank(&a.video_type)))
+            .then(b.seeders.cmp(&a.seeders))
+            .then(b.size.cmp(&a.size))
+    });
 }
 
 /// The info hash out of a magnet, lower-cased, or the whole link when there is
@@ -638,6 +683,81 @@ mod tests {
             magnet_hash("magnet:?xt=urn:btih:ABC&tr=one"),
             magnet_hash("magnet:?xt=urn:btih:abc&tr=two&dn=name")
         );
+    }
+
+    fn rel(quality: i64, video_type: &str, seeders: i64, size: u64) -> Release {
+        Release {
+            title: format!("{quality}p {video_type} s{seeders}"),
+            tracker: "t".into(),
+            size,
+            seeders,
+            peers: 0,
+            quality,
+            video_type: video_type.into(),
+            voices: vec![],
+            seasons: vec![],
+            magnet: format!("magnet:?xt=urn:btih:{quality}{video_type}{seeders}{size}"),
+            created: String::new(),
+        }
+    }
+
+    #[test]
+    fn releases_group_by_quality_then_dynamic_range() {
+        // Deliberately shuffled, and every pair below differs in exactly one
+        // key — so a reordering of the comparison chain shows up as a specific
+        // swap rather than as "the list looks different".
+        let mut v = vec![
+            rel(1080, "sdr", 900, 5),  // busiest of all, and still not first
+            rel(2160, "hdr", 10, 5),
+            rel(720, "hdr", 500, 5),
+            rel(2160, "sdr", 400, 5),
+            rel(2160, "hdr", 50, 5),
+            rel(1080, "hdr", 3, 5),
+        ];
+        sort_releases(&mut v);
+        let order: Vec<_> = v.iter().map(|r| (r.quality, r.video_type.as_str(), r.seeders)).collect();
+        assert_eq!(
+            order,
+            vec![
+                (2160, "hdr", 50),
+                (2160, "hdr", 10),
+                (2160, "sdr", 400),
+                (1080, "hdr", 3),
+                (1080, "sdr", 900),
+                (720, "hdr", 500),
+            ],
+            "quality is the outer key, dynamic range the inner one, seeders decide inside a group"
+        );
+    }
+
+    #[test]
+    fn a_release_nobody_seeds_sinks_to_the_bottom() {
+        // Measured on a live response: 13 of 95 4K rows had no seeders at all,
+        // so without this the first row is routinely the best-looking thing that
+        // will never download.
+        let mut v = vec![
+            rel(2160, "hdr", 0, 9),
+            rel(480, "sdr", 1, 9),
+            rel(2160, "hdr", 0, 20),
+        ];
+        sort_releases(&mut v);
+        assert_eq!(v[0].quality, 480, "the only live release must come first");
+        // And among the dead ones the ordinary rules still apply, so the list
+        // does not become arbitrary below the fold — bigger first on a tie.
+        assert_eq!((v[1].quality, v[1].size), (2160, 20));
+        assert_eq!((v[2].quality, v[2].size), (2160, 9));
+    }
+
+    #[test]
+    fn dynamic_rank_buckets_anything_flagged() {
+        assert_eq!(dynamic_rank("sdr"), 0);
+        assert_eq!(dynamic_rank(""), 0);
+        assert_eq!(dynamic_rank("SDR"), 0);
+        // Only `sdr` and `hdr` were observed, so an unrecognised value is far
+        // more likely a new HDR flavour than a new spelling of "ordinary".
+        assert_eq!(dynamic_rank("hdr"), 1);
+        assert_eq!(dynamic_rank("HDR10"), 1);
+        assert_eq!(dynamic_rank("dv"), 1);
     }
 
     #[test]

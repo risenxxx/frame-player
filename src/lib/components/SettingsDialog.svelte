@@ -889,10 +889,11 @@
 
   {:else if settingsTab === 'torrents'}
     <!-- First in the tab, because "how do I find a release" comes before
-         "what happens to one I have". Off by default: this is the only
-         surface in the player that tells a third party what somebody is
-         *looking for* rather than acting on a file they already hold, and
-         that choice is the viewer's to make rather than the installer's. -->
+         "what happens to one I have". On by default, but the switch stays:
+         this is the only surface in the player that tells a third party what
+         somebody is *looking for* rather than acting on a file they already
+         hold, which is an argument for a way out rather than for hiding the
+         feature from everyone who never opens this sheet. -->
     <div class="setting">
       <div class="row-toggle">
         <div class="row-text">

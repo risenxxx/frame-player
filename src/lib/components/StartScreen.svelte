@@ -271,7 +271,7 @@
            when the catalog is switched on, so the default install still has the
            two buttons it always had. -->
       {#if onOpenCatalog}
-        <button class="btn-outline" onclick={onOpenCatalog}>
+        <button class="btn-outline btn-catalog" onclick={onOpenCatalog}>
           <!-- A magnifier at the same 24-unit box and 2px stroke as the chain
                beside it. The handle stops short of the corner on purpose: run
                to 20,20 it reads as a longer glyph than the chain and the two
@@ -609,6 +609,94 @@
     justify-content: center;
     flex-wrap: wrap;
     gap: 12px 16px;
+  }
+
+  /* The catalog, marked out by a gradient hairline.
+     ───────────────────────────────────────────────────────────────────────
+     **Why not simply colour it in.** Indigo means one thing in this player —
+     selected / on / primary / focused — so a second indigo *fill* beside
+     "Открыть файл" would be two primaries, i.e. none. A 1px gradient ring is a
+     different token from a flat fill and can therefore carry a different
+     meaning: *this one is worth knowing about*. It is the one place a second
+     hue appears in the palette, and the gradient is what makes it read as a
+     gradient at all — indigo shading into indigo is invisible at a hairline,
+     so the violet end is doing the work rather than decorating.
+
+     **Drawn with a masked `::before`, not with two background layers.** The
+     usual `padding-box`/`border-box` double-gradient trick needs an opaque fill
+     behind the interior, and this button's fill is transparent and *changes on
+     hover* — so it would have to hardcode the start screen's own colour and
+     then track the hover state as well. The mask punches the middle out of a
+     gradient rectangle instead, which leaves the button's own background
+     untouched and lets `:hover` keep working exactly as it does on its
+     siblings.
+
+     Both the prefixed and the standard properties are set, and they are not
+     interchangeable: WebKit needs `-webkit-mask-composite: xor`, Blink takes
+     `mask-composite: exclude`, and this ships on both engines.
+
+     Not animated, deliberately. A slowly rotating gradient is the obvious next
+     step and it is wrong here: this is the screen the player sits on whenever
+     nothing is playing, and permanent motion in the corner of the eye is
+     fatiguing rather than inviting. */
+  .btn-outline.btn-catalog {
+    position: relative;
+    /* The ring replaces the plain border rather than sitting inside it. The
+       geometry does not move: the border box is still 1px larger than the
+       padding box, so this button is exactly the height of the one beside it. */
+    border-color: transparent;
+    color: #e8e8ec;
+  }
+
+  .btn-outline.btn-catalog::before {
+    content: '';
+    position: absolute;
+    /* **`-1px`, not `0`, and it is a full pixel of misalignment.** An absolutely
+       positioned box resolves its insets against the containing block's
+       *padding* box, so `inset: 0` here lands inside the button's own 1px
+       border — putting this ring one pixel further in than the plain border of
+       the button standing next to it. Measured in a WKWebView harness against
+       the built stylesheet: the gradient sat at +1.0px from the button's left
+       edge instead of at 0. Pulling the box out by the border width puts it on
+       the border box, where the sibling's border is. `border-radius: inherit`
+       is still right, because a radius is specified against the border box. */
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(115deg, #818cf8, #6366f1 45%, #a855f7);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    /* An absolutely positioned `::before` paints above the in-flow children —
+       the lesson the bars' scrim gradients already carry. Here the mask leaves
+       only the 1px frame painted, so nothing covers the label; this is belt and
+       braces for the click rather than for the pixels. */
+    pointer-events: none;
+  }
+
+  /* Brighter on hover, in step with the fill `.btn-outline` already lightens.
+     Written as three classes so it beats `.btn-outline:hover` rather than
+     relying on which stylesheet the bundler emitted last — the fight this
+     project has lost twice already. */
+  .btn-outline.btn-catalog:hover:not(:disabled) {
+    border-color: transparent;
+  }
+
+  .btn-outline.btn-catalog:hover:not(:disabled)::before {
+    background: linear-gradient(115deg, #a5b4fc, #818cf8 45%, #c084fc);
+  }
+
+  /* The glyph carries the accent too, at full strength rather than the 0.8 its
+     siblings get: on this button the icon is part of the mark, not decoration
+     beside the words. Two classes, so it beats `.btn-outline svg`. */
+  .btn-outline.btn-catalog svg {
+    color: #a5b4fc;
+    opacity: 1;
   }
 
   .recent {

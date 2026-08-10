@@ -69,6 +69,7 @@ const ENABLED_KEY = 'frameplayer.catalog';
 /// Whether TMDB's CDN was reachable last time. Remembered so a viewer behind a
 /// block pays the discovery once rather than on every launch.
 const CDN_KEY = 'frameplayer.tmdbCdn';
+const SORT_KEY = 'frameplayer.releaseSort';
 
 /// One title as the catalog knows it.
 export interface CatalogItem {
@@ -109,15 +110,39 @@ export interface Release {
  */
 export type CatalogPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
+/// How the release list is ordered. Remembered, because it is a preference
+/// about how somebody chooses rather than a property of one search.
+export type ReleaseSort = 'quality' | 'seeders';
+
+function readSort(): ReleaseSort {
+  try {
+    return localStorage.getItem(SORT_KEY) === 'seeders' ? 'seeders' : 'quality';
+  } catch {
+    return 'quality';
+  }
+}
+
+export function setReleaseSort(next: ReleaseSort) {
+  catalog.sort = next;
+  try {
+    if (next === 'quality') localStorage.removeItem(SORT_KEY);
+    else localStorage.setItem(SORT_KEY, next);
+  } catch {
+    // not critical: the choice simply will not survive a restart
+  }
+}
+
 class Catalog {
   /**
    * Whether the catalog is offered at all.
    *
-   * **Off by default, and that is a decision rather than caution.** Everything
-   * else in this player acts on something the viewer already has; the catalog
-   * is the first surface that sends a question about what they *want* to watch
-   * to a third party. Turning it on is a sentence in the settings and one
-   * click, and the choice belongs to the viewer rather than to the installer.
+   * **On by default, with the switch kept.** It started off by default, on the
+   * argument that this is the only surface in the player that tells a third
+   * party what somebody is *looking for* rather than acting on a file they
+   * already hold. That argument is still true and it is why the switch exists —
+   * but it is an argument for a way out, not for hiding the feature from
+   * everybody who never opens the settings. A default is a guess about what
+   * most people want; a switch is the answer for the rest.
    *
    * Reactive rather than a function reading localStorage at each call site: the
    * start screen's button appears and disappears with it, and a getter would
@@ -163,9 +188,39 @@ class Catalog {
   /// look untouched for a second or more.
   starting = $state<string | null>(null);
 
+  /**
+   * How the release list is ordered.
+   *
+   * `quality` is what Rust already sorted by and what the list arrives in — 4K
+   * HDR first, seeders inside each group. `seeders` is the other legitimate
+   * question ("what will actually download"), and it is a different one rather
+   * than a worse one, which is why it is a control instead of a compromise
+   * between the two.
+   */
+  sort = $state<ReleaseSort>(readSort());
+
   /// What the grid actually draws: the search results while there is a query,
   /// the trending list while there is not.
   shown = $derived(this.query.trim() ? this.results : this.trending);
+
+  /**
+   * The release list in the chosen order.
+   *
+   * A copy, never a sort in place: `sort()` mutates, and mutating the `$state`
+   * array from inside a `$derived` is a write during a read — which is the
+   * shape that made the ScrollFade effect re-run itself forever.
+   *
+   * It can only ever re-order what Rust sent, which is the top `MAX_RELEASES`
+   * by the quality order. For the counts this actually sees (a popular film
+   * filtered down to a few dozen) the cap does not bind, so the two orders see
+   * the same set.
+   */
+  sortedReleases = $derived.by(() => {
+    if (this.sort === 'quality') return this.releases;
+    return [...this.releases].sort(
+      (a, b) => b.seeders - a.seeders || b.quality - a.quality || b.size - a.size,
+    );
+  });
 }
 
 export const catalog = new Catalog();
@@ -291,19 +346,26 @@ export function notePosterFailed() {
   }
 }
 
+/**
+ * **The stored value is the refusal, not the consent**, which is what makes the
+ * default flip cost no migration: an absent key means on, and `off` is the only
+ * thing ever written. Anyone who had turned the catalog on under the previous
+ * default holds the string `on`, which is not `off` and therefore still reads
+ * as enabled — so nobody's choice changes underneath them, in either direction.
+ */
 function readEnabled(): boolean {
   try {
-    return localStorage.getItem(ENABLED_KEY) === 'on';
+    return localStorage.getItem(ENABLED_KEY) !== 'off';
   } catch {
-    return false;
+    return true;
   }
 }
 
 export function setCatalogEnabled(on: boolean) {
   catalog.enabled = on;
   try {
-    if (on) localStorage.setItem(ENABLED_KEY, 'on');
-    else localStorage.removeItem(ENABLED_KEY);
+    if (on) localStorage.removeItem(ENABLED_KEY);
+    else localStorage.setItem(ENABLED_KEY, 'off');
   } catch {
     // not critical: the choice simply will not survive a restart
   }

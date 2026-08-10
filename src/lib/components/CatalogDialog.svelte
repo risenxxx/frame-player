@@ -20,6 +20,7 @@
     playRelease,
     releaseTags,
     runSearch,
+    setReleaseSort,
     type Release,
   } from '$lib/catalog.svelte';
   import { t } from '$lib/i18n.svelte';
@@ -245,9 +246,32 @@
   {:else if catalog.releasePhase === 'ready' && catalog.releases.length === 0}
     <div class="cat-empty">{t('catalog.no_releases')}</div>
   {:else if catalog.releases.length}
-    <div class="cat-section">{t('catalog.releases', { count: catalog.releases.length })}</div>
+    <!-- The count and the order on one line: the order is a real choice here,
+         because "the best copy" and "the copy that will actually download" are
+         different questions and the list answers whichever is asked. Right of
+         the count rather than above the list, so it reads as a property of the
+         heading instead of as another section. -->
+    <div class="cat-section cat-sortrow">
+      <span>{t('catalog.releases', { count: catalog.releases.length })}</span>
+      <div class="segmented cat-sort">
+        <button
+          class="segopt"
+          class:sel={catalog.sort === 'quality'}
+          onclick={() => setReleaseSort('quality')}
+        >
+          {t('catalog.sort_quality')}
+        </button>
+        <button
+          class="segopt"
+          class:sel={catalog.sort === 'seeders'}
+          onclick={() => setReleaseSort('seeders')}
+        >
+          {t('catalog.sort_seeders')}
+        </button>
+      </div>
+    </div>
     <div class="cat-releases">
-      {#each catalog.releases as r (r.magnet)}
+      {#each catalog.sortedReleases as r (r.magnet)}
         <button
           class="rel"
           disabled={catalog.starting !== null}
@@ -312,6 +336,31 @@
     color: #77777f;
     font-size: 11.5px;
     margin: 10px 2px 10px;
+  }
+
+  /* The heading and its order control on one line, the control pushed right.
+     `baseline` rather than `center`, so the label sits on the same line as the
+     pill text instead of being nudged by the pill's own padding. */
+  .cat-sortrow {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  /* `.segopt` is `flex: 1`, which here would stretch two pills across the whole
+     sheet. Written to beat the base rule rather than left to source order —
+     app.css and this file are separate stylesheets and the order between them
+     is the bundler's, which is the fight this project has now lost twice. */
+  .cat-sort {
+    flex: none;
+    padding: 2px;
+  }
+
+  .cat-sort .segopt {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    font-size: 11.5px;
   }
 
   /* `auto-fill` with a fixed maximum, not `1fr`: at `1fr` a search that returns
