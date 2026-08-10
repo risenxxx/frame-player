@@ -53,7 +53,28 @@
       0 10px 34px rgba(0, 0, 0, 0.5),
       inset 0 1px 0 rgba(255, 255, 255, 0.06);
     animation: osd-in 0.15s ease;
-    z-index: 30;
+    /* **Above the dialogs (70), below the tooltip (90) and the veil (100).**
+       A popup reports the outcome of something the viewer just did, and the
+       thing they just did is very often a button inside a dialog — clearing the
+       torrent cache, restarting seeding, switching port forwarding, updating a
+       torrent. At 30 every one of those landed *under* the backdrop, which is
+       `rgba(0, 0, 0, 0.45)` rather than opaque, so the popup did not vanish: it
+       showed through at 55 % over a dimmed screen, reading as something that had
+       escaped to the background rather than as an answer. The layers it stays
+       below are the two that must cover everything: a tooltip is anchored to
+       whatever the pointer is on and is the more local answer, and the veil
+       exists to mask the fullscreen transition.
+
+       This is safe only because the popup takes no clicks (`pointer-events:
+       none` above) — it is the one floating surface in the player that is
+       purely a readout, so nothing behind it becomes unreachable. What it does
+       cost is paint: the sheet is 598px wide and centred, so under about
+       1040px of window width it reaches left of the popup's own 18 + 202, and
+       a sheet tall enough to start at the backdrop's 56px top then loses its
+       corner for the 1.2s the popup is up. That is the right side of the
+       trade — a notification that covers a corner is a notification you can
+       read. */
+    z-index: 80;
   }
 
   /* The bar must not press against the bottom edge */

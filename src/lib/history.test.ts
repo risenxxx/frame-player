@@ -28,6 +28,7 @@ const invoked = invoke as unknown as ReturnType<typeof vi.fn>;
 import {
   addExcludedFolder,
   clearHistory,
+  forgetRecent,
   history,
   isPrivatePath,
   purgeTorrentHistory,
@@ -322,19 +323,42 @@ describe('purging', () => {
   describe('purgeTorrentHistory', () => {
     const HASH = 'ABCDEF0123456789abcdef0123456789abcdef01';
     const id = (i: number) => `torrent:${HASH.toLowerCase()}/${i}`;
+    /// What a torrent episode is actually opened from: the port belongs to the
+    /// session and is gone by the next launch, which is why the id above is what
+    /// gets stored.
+    const stream = (i: number) => `http://127.0.0.1:51234/t/${HASH.toLowerCase()}/${i}/ep${i}.mkv`;
 
+    // **Seeded through the writer, not by hand.** These entries used to be
+    // written straight into localStorage as `{ pos: 1 }`, and that one omission
+    // is what let this whole describe pass over a purge that did not work:
+    // `persistPosition` always stores `src` beside the position, the store list
+    // read the identity out of `src`, and for a torrent that is a loopback URL
+    // rather than anything `torrent:<hash>/` matches. Every real episode
+    // survived being forgotten. A fixture that cannot be produced by the app is
+    // not a fixture.
     beforeEach(() => {
-      localStorage.setItem(
-        STORES.positions,
-        JSON.stringify({ [id(0)]: { pos: 1 }, [id(1)]: { pos: 2 }, '/Films/a.mkv': { pos: 3 } }),
-      );
+      persistPosition(stream(0), 60, 600);
+      persistPosition(stream(1), 60, 600);
+      persistPosition('/Films/a.mkv', 60, 600);
       localStorage.setItem(STORES.titles, JSON.stringify({ [id(0)]: 'S01E01', '/Films/a.mkv': 'A' }));
     });
 
     it('takes every episode of the torrent and nothing else', () => {
       purgeTorrentHistory(HASH);
-      expect(positionsLoad()).toEqual({ '/Films/a.mkv': { pos: 3 } });
+      expect(Object.keys(positionsLoad())).toEqual(['/Films/a.mkv']);
       expect(JSON.parse(localStorage.getItem(STORES.titles)!)).toEqual({ '/Films/a.mkv': 'A' });
+    });
+
+    it('takes an entry written before positions carried a source', () => {
+      // Records from before source ids existed have no `src` at all, and the
+      // store falls back to the key for them. They are the only entries the old
+      // reading was right about, so they need their own case now.
+      localStorage.setItem(
+        STORES.positions,
+        JSON.stringify({ [id(0)]: { pos: 1 }, '/Films/a.mkv': { pos: 3 } }),
+      );
+      purgeTorrentHistory(HASH);
+      expect(Object.keys(positionsLoad())).toEqual(['/Films/a.mkv']);
     });
 
     it('matches the hash whatever case either side arrives in', () => {
@@ -358,6 +382,74 @@ describe('purging', () => {
       localStorage.setItem(STORES.resume, JSON.stringify({ path: '/Films/a.mkv', pos: 60 }));
       purgeTorrentHistory(HASH);
       expect(localStorage.getItem(STORES.resume)).not.toBe(null);
+    });
+  });
+
+  /**
+   * Forgetting one card, which is the same mistake one scale down.
+   *
+   * It was reported as "I delete something from the history and it is back after
+   * a restart", and the restart is a red herring: the card leaves the in-memory
+   * list immediately, so nothing re-reads localStorage until the next visit to
+   * the start screen. What was actually happening is that the delete was aimed
+   * at `item.path` — how to open the video — while every store is keyed by what
+   * it is, and the two agree only for a local file.
+   */
+  describe('forgetRecent', () => {
+    const HASH = 'abcdef0123456789abcdef0123456789abcdef01';
+
+    it('forgets a torrent episode, whose path is a loopback URL', () => {
+      const stream = `http://127.0.0.1:51234/t/${HASH}/3/ep3.mkv`;
+      persistPosition(stream, 60, 600);
+      expect(Object.keys(positionsLoad())).toEqual([`torrent:${HASH}/3`]);
+      forgetRecent(stream);
+      expect(positionsLoad()).toEqual({});
+    });
+
+    it('forgets a link whose id is not the URL it was opened from', () => {
+      // A share button hands over `?si=<tracking>`, which `sourceId` strips —
+      // so this is the ordinary case for a link, not an exotic one.
+      const shared = 'https://youtu.be/ID?si=track';
+      persistPosition(shared, 60, 600);
+      expect(Object.keys(positionsLoad())).toEqual(['https://youtu.be/ID']);
+      forgetRecent(shared);
+      expect(positionsLoad()).toEqual({});
+    });
+
+    it('forgets a local file, where the two have always agreed', () => {
+      persistPosition('/Films/a.mkv', 60, 600);
+      forgetRecent('/Films/a.mkv');
+      expect(positionsLoad()).toEqual({});
+    });
+
+    it('takes the remembered title with it', () => {
+      // Left behind by the two hand-written deletes, and keyed by identity —
+      // which for a local file is the path, so this store on its own is a list
+      // of everything ever watched.
+      persistPosition('/Films/a.mkv', 60, 600);
+      rememberTitle('/Films/a.mkv', 'A Film');
+      forgetRecent('/Films/a.mkv');
+      expect(titleFor('/Films/a.mkv')).toBe(null);
+    });
+
+    it('leaves the torrent it belongs to alone', () => {
+      // One episode is not the season: the magnet is what reopens the rest, and
+      // the store that holds it is filed under `torrent:<hash>/` rather than
+      // under any one episode's id.
+      localStorage.setItem(
+        STORES.torrents,
+        JSON.stringify({ [HASH]: { infoHash: HASH, magnet: `magnet:?xt=urn:btih:${HASH}` } }),
+      );
+      persistPosition(`http://127.0.0.1:51234/t/${HASH}/3/ep3.mkv`, 60, 600);
+      forgetRecent(`http://127.0.0.1:51234/t/${HASH}/3/ep3.mkv`);
+      expect(Object.keys(JSON.parse(localStorage.getItem(STORES.torrents)!))).toEqual([HASH]);
+    });
+
+    it('leaves the neighbouring episodes alone', () => {
+      persistPosition(`http://127.0.0.1:51234/t/${HASH}/3/ep3.mkv`, 60, 600);
+      persistPosition(`http://127.0.0.1:51234/t/${HASH}/4/ep4.mkv`, 60, 600);
+      forgetRecent(`http://127.0.0.1:51234/t/${HASH}/3/ep3.mkv`);
+      expect(Object.keys(positionsLoad())).toEqual([`torrent:${HASH}/4`]);
     });
   });
 });

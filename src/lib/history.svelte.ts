@@ -673,26 +673,38 @@ async function loadPosters(run: Attempt) {
   }
 }
 
-/// Remove one file from the history, along with its thumbnails on disk.
+/**
+ * Remove one video from the history, along with its thumbnails on disk.
+ *
+ * **The argument is how to open it; what gets deleted is what it *is*.** This
+ * used to delete `map[path]` from two stores by hand, and every store here is
+ * keyed by `sourceId` — which equals the path for a local file and for nothing
+ * else. So a local card went and the other two kinds came back at the next
+ * `loadRecent`: a torrent episode always (its path is a loopback URL, its key is
+ * `torrent:<hash>/<index>`) and a link whenever `sourceId` had canonicalised it,
+ * which a share URL with `?si=` always has. It looked like a delete that worked
+ * because the card also leaves `history.recent` below, so nothing re-read
+ * localStorage until the next visit to the start screen — or, as it was
+ * reported, until the next launch.
+ *
+ * Going through `purgeStores` rather than fixing the two `delete`s is what makes
+ * that hold for a store added later, and it closes a leak the hand-written pair
+ * had: the remembered titles were not touched, and that store is keyed by
+ * identity, so for a local file it is a list of everything ever watched. The
+ * other stores answer this predicate correctly by themselves — a torrent is
+ * filed under `torrent:<hash>/`, so forgetting one episode cannot forget the
+ * season, the folder track memory is keyed by the folder, and the downloaded
+ * subtitles by their own paths.
+ */
 export function forgetRecent(path: string) {
-  try {
-    const map = positionsLoad();
-    delete map[path];
-    localStorage.setItem(POSITIONS_KEY, JSON.stringify(map));
-  } catch {
-    // not critical
-  }
-  try {
-    const tracks = tracksLoad();
-    delete tracks[path];
-    localStorage.setItem(TRACKS_KEY, JSON.stringify(tracks));
-  } catch {
-    // not critical
-  }
+  const id = sourceId(path);
+  purgeStores((other) => other === id);
+  // Thumbnails are addressed in Rust by a hash of the file path, so this half
+  // is the one thing that legitimately still speaks in paths.
   void invoke('forget_thumbs', { path }).catch(() => {});
-  const item = history.recent.find((r) => r.path === path);
+  const item = history.recent.find((r) => r.id === id);
   if (item?.poster) URL.revokeObjectURL(item.poster);
-  history.recent = history.recent.filter((r) => r.path !== path);
+  history.recent = history.recent.filter((r) => r.id !== id);
 }
 
 /**
@@ -726,18 +738,22 @@ export async function clearHistory() {
  * Every localStorage store that holds something about a *particular video*, and
  * where inside it that video's identity sits.
  *
- * Three separate operations have to walk this set — excluding a folder,
- * forgetting a torrent, and clearing the history outright — and each of them
- * used to enumerate the stores by hand. Three hand-written lists of the same
- * thing is one list too many even before they disagree, and they did: **`clear
- * history` cleared three of the six**, leaving the remembered titles (which for
- * a local file are keyed by the path, so that store *is* a list of everything
- * watched), the per-folder track memory, and the downloaded-subtitle paths
- * sitting in localStorage after the viewer had asked for all of it to go.
+ * Four separate operations have to walk this set — excluding a folder,
+ * forgetting a torrent, forgetting one card, and clearing the history outright —
+ * and each of them used to enumerate the stores by hand. Hand-written lists of
+ * the same thing are one list too many even before they disagree, and they did
+ * twice: **`clear history` cleared three of the six**, leaving the remembered
+ * titles (which for a local file are keyed by the path, so that store *is* a
+ * list of everything watched), the per-folder track memory and the
+ * downloaded-subtitle paths sitting in localStorage after the viewer had asked
+ * for all of it to go — and `forgetRecent` named two stores, deleted from both
+ * by the wrong kind of string, and left the titles behind as well.
  *
- * The identity is not always the key. Positions carry `src` beside it because
- * the two answer different questions — the id is "which video", `src` is "how
- * do I open it" — and they only coincide for a local file.
+ * **Every identity here is `sourceId`-shaped, never a path that happens to
+ * work.** Positions carry `src` beside the key because the two answer different
+ * questions — the id is "which video", `src` is "how do I open it" — and they
+ * coincide only for a local file; a purge must ask the first question, or it
+ * asks the transport where the film went.
  *
  * `frameplayer.links` is deliberately absent: a URL has no folder and no
  * position, so nothing in it can belong to one. It is cleared by name in
@@ -814,7 +830,15 @@ function singleStore(key: string, field: string): IdentifiedStore {
 }
 
 const IDENTIFIED_STORES: IdentifiedStore[] = [
-  mapStore(POSITIONS_KEY, (id, entry) => (entry as { src?: string } | null)?.src ?? id),
+  // **The key, not the `src` beside it.** Reading the identity out of `src` was
+  // wrong in the one case where the two differ at all: for a local file the key
+  // *is* the path, so a folder purge is unaffected either way, while a torrent's
+  // `src` is the loopback URL its session happened to serve it from — so
+  // `purgeTorrentHistory`, which asks a `torrent:<hash>/` question, matched
+  // nothing and left a position behind for every episode of a deleted torrent.
+  // It passed its test because the fixture seeded entries with no `src` at all,
+  // which `persistPosition` never writes.
+  mapStore(POSITIONS_KEY),
   // Keyed by the bare info hash, so its identity is spelled the way a torrent's
   // is everywhere else. **It was missing entirely** — "forget everything" left
   // behind a magnet per torrent ever opened, which names what was watched as
