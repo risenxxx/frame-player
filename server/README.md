@@ -42,7 +42,7 @@ that a process keeping no state can afford to lose.
 | `RELAY_ORIGINS` | `*` | allowed `Origin` patterns — see below |
 | `RELAY_TRUST_PROXY` | off | honour `X-Forwarded-For` |
 | `RELAY_DOWNLOAD_WIN` · `_MAC` | — | direct installer for the visitor's platform, offered on the invitation page |
-| `RELAY_DOWNLOAD_PAGE` | — | fallback for any other platform, or when no direct installer is set |
+| `RELAY_DOWNLOAD_PAGE` | the project's releases page | fallback for any other platform, or when no direct installer is set; set it empty to offer nothing |
 | `RELAY_MAX_ROOMS` | 5000 | |
 | `RELAY_MAX_MEMBERS` | 16 | per room |
 | `RELAY_ROOM_TTL` | 5m | how long an empty room waits for somebody to come back |
@@ -61,8 +61,12 @@ was the first version and was dropped: the privacy discipline that shapes the
 webfont on a public invitation page bought nothing but a second copy of a font
 to keep in step with the player's.
 
-With none of the download variables set the page simply offers nothing, which is
-better than a dead link.
+`RELAY_DOWNLOAD_PAGE` has a default on purpose. The one visitor this page exists
+for is the one who does **not** have the player, and while every download
+variable was optional they were shown a code and nothing to do with it. It
+points at the releases page rather than a site, because that is the address that
+exists and carries both platforms. Point it at your own once you have one, or
+set it empty to offer nothing.
 
 **`RELAY_ORIGINS` defaults to `*` on purpose.** The room code is the only secret
 here; there are no cookies, no credentials and no ambient authority of any kind,

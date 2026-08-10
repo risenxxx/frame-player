@@ -35,10 +35,15 @@ type Config struct {
 	TrustProxy     bool
 
 	// Where the invitation page sends somebody who does not have the player.
+	//
 	// Per platform where the operator has a direct installer — an invitation is
 	// not the moment to hand somebody a release list — and a page as the
-	// fallback. All three optional: with none set the page simply does not
-	// offer anything, which is better than offering a dead link.
+	// fallback, which is what ships by default. The default matters more than it
+	// looks: without one the page rendered *no* download link at all, so the one
+	// visitor the page exists for, the one who does not have the player, was
+	// shown a code and nothing to do with it.
+	//
+	// Set `RELAY_DOWNLOAD_PAGE=` (empty) to suppress it deliberately.
 	DownloadWin  string
 	DownloadMac  string
 	DownloadPage string
@@ -66,7 +71,7 @@ func defaultConfig() Config {
 		TrustProxy:       env("RELAY_TRUST_PROXY", "") != "",
 		DownloadWin:      env("RELAY_DOWNLOAD_WIN", ""),
 		DownloadMac:      env("RELAY_DOWNLOAD_MAC", ""),
-		DownloadPage:     env("RELAY_DOWNLOAD_PAGE", ""),
+		DownloadPage:     env("RELAY_DOWNLOAD_PAGE", defaultDownloadPage),
 		MaxRooms:         envInt("RELAY_MAX_ROOMS", 5000),
 		MaxMembers:       envInt("RELAY_MAX_MEMBERS", 16),
 		RoomTTL:          envDur("RELAY_ROOM_TTL", 5*time.Minute),
@@ -84,6 +89,18 @@ func defaultConfig() Config {
 		MsgBurst:     40,
 	}
 }
+
+// Where a visitor without the player is sent when the operator has not said
+// otherwise.
+//
+// A page rather than an installer, because which installer is right depends on
+// the platform and a wrong one is worse than a page that offers both. The
+// releases page rather than a site: it is the same address the README hands
+// people, it carries both platforms, and — the point — it exists. A default
+// pointing at a page that has not been built yet would be a dead link on the
+// one screen shown to somebody who does not have the player, which is worse
+// than the release list it replaces.
+const defaultDownloadPage = "https://github.com/risenxxx/frame-player/releases/latest"
 
 type server struct {
 	cfg Config

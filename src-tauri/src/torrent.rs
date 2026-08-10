@@ -568,6 +568,97 @@ impl TorrentService {
                 .map(|id| id.as_string()),
         };
 
+        // **The metadata has to be in hand before the folder can be chosen**,
+        // because the folder is named after the torrent — so the order here is
+        // now: get the bytes, then name the directory, then add. Three sources,
+        // in the order they cost nothing, something, and a swarm.
+        //
+        // A `.torrent` file *is* the metadata. A magnet opened before has it
+        // cached, which is what makes reopening a season instant (measured
+        // 1.52 s → 4.45 ms) — librqbit runs with `persistence` for `fastresume`
+        // but forgets nothing else, so without our own copy every open would go
+        // back to the DHT.
+        let mut meta_bytes = match file_bytes {
+            Some(bytes) => Some(bytes),
+            None => hinted_hash
+                .as_ref()
+                .and_then(|h| std::fs::read(meta_path(&dir, h)).ok()),
+        };
+        let from_cache = meta_bytes.is_some() && !local_file;
+
+        // A magnet nobody here has opened: the swarm is the only place the name
+        // exists. `list_only` is exactly this question — it resolves the
+        // metadata and returns **before any storage is created**, so it costs
+        // one lookup and touches neither the disk nor the session, and the
+        // bytes it hands back are what the real add below replays in
+        // milliseconds. Which is why resolving twice is not what this does.
+        let mut seed = None;
+        if meta_bytes.is_none() {
+            if let Some(hash) = hinted_hash.as_deref() {
+                let port = session.tcp_listen_port().unwrap_or(0);
+                // See `announce_peers`: a torrent added paused announces
+                // `port=0`, which trackers answer with almost nothing, so the
+                // peers for the metadata fetch are asked for directly.
+                seed = Some(announce_peers(&source, hash, port).await);
+                let probe = AddTorrentOptions {
+                    list_only: true,
+                    initial_peers: seed.clone(),
+                    ..Default::default()
+                };
+                match tokio::time::timeout(
+                    RESOLVE_TIMEOUT,
+                    session.add_torrent(AddTorrent::from_url(source.as_str()), Some(probe)),
+                )
+                .await
+                {
+                    Ok(Ok(AddTorrentResponse::ListOnly(r))) => {
+                        meta_bytes = Some(r.torrent_bytes.to_vec())
+                    }
+                    Ok(Ok(_)) => eprintln!("[torrent] list_only did not answer with a listing"),
+                    Ok(Err(e)) => return Err(format!("{e:#}")),
+                    Err(_) => return Err("resolve_timeout".into()),
+                }
+            }
+        }
+
+        // Cache it before anything can fail: the next open is instant even if
+        // this one goes wrong from here.
+        if let (Some(hash), Some(bytes)) = (hinted_hash.as_deref(), meta_bytes.as_deref()) {
+            if !from_cache {
+                let path = meta_path(&dir, hash);
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(path, bytes);
+            }
+        }
+
+        let meta_name = meta_bytes.as_deref().and_then(|b| {
+            let meta = librqbit::torrent_from_bytes::<librqbit::ByteBuf>(b).ok()?;
+            let name = String::from_utf8_lossy(&meta.info.name?).trim().to_string();
+            (!name.is_empty()).then_some(name)
+        });
+
+        // **A hash-named folder is renamed the first time we can read the
+        // torrent's name**, which is what carries the old layout across without
+        // an upgrade step that walks the whole cache. It happens here, before
+        // the torrent is added, because a rename under a live torrent is a
+        // silent failure on Windows (the files are open) and a set of dangling
+        // handles on macOS.
+        //
+        // The cost is one full re-check on this open: the folder moves out from
+        // under librqbit's own store entry, so `fastresume` is discarded and the
+        // pieces are hashed again — measured at ~3.2 s for a 7.5 GB season, once
+        // per torrent, ever. A failed rename costs nothing at all: the old
+        // folder is still found by hash on the next line.
+        if let (Some(hash), Some(name)) = (hinted_hash.as_deref(), meta_name.as_deref()) {
+            self.rename_legacy_folder(&dir, hash, name).await;
+        }
+
+        let folder = hinted_hash
+            .as_ref()
+            .map(|h| folder_for(&dir, h, meta_name.as_deref()));
+
         let opts = |initial_peers: Option<Vec<SocketAddr>>| AddTorrentOptions {
             paused: true,
             // Only ever set on the path that has to fetch metadata from the
@@ -603,77 +694,50 @@ impl TorrentService {
             // file was indistinguishable from a finished one and a poster could
             // be decoded out of zeros.
             only_files: Some(Vec::new()),
-            // **The folder is the info hash**, rather than librqbit's default of
-            // the torrent's own name. Three reasons, and the first is the one
-            // that decides it: `ManagedTorrentOptions.output_folder` is
-            // `pub(crate)`, so a name-derived folder could never be *read back*
-            // and the mapping from "this torrent" to "this directory" would have
-            // to be reconstructed by guessing. It also removes every question a
-            // torrent name raises as a path — length limits, `/` in the name,
-            // two releases that share one — and it makes `torrent_forget` cheap
-            // to validate: a legal folder here is exactly 40 hex characters.
-            output_folder: hinted_hash
+            // **The folder carries the info hash**, rather than being librqbit's
+            // default of the torrent's own name. `ManagedTorrentOptions
+            // ::output_folder` is `pub(crate)`, so a name-derived folder could
+            // never be *read back* and the mapping from "this torrent" to "this
+            // directory" would have to be reconstructed by guessing — see
+            // `folder_name` for why the answer is a suffix rather than an index
+            // file, and `sanitize_name` for what a torrent name has to survive
+            // before it can be a path at all.
+            output_folder: folder
                 .as_ref()
-                .map(|h| dir.join(h).to_string_lossy().into_owned()),
+                .map(|f| f.to_string_lossy().into_owned()),
             ..Default::default()
         };
 
-        // **A magnet already opened once is never resolved again.** The metadata
-        // is the torrent file, and once we have it there is nothing left to ask
-        // the swarm for — but librqbit runs with `persistence: None` (a session
-        // that resumes torrents at startup is a background BitTorrent client,
-        // which this app is not), so it forgets the torrent between runs and
-        // would go back to the DHT every time. Measured, that lookup is ~10 s,
-        // and it was being paid even to reopen a season already sitting on disk.
-        // Caching the bytes ourselves keeps the session stateless and makes a
-        // reopen instant.
-        // Skipped when the source *is* a torrent file: the bytes are already in
-        // hand, and reading a second copy of them off disk could only differ.
-        let cached = file_bytes.is_none().then(|| {
-            hinted_hash
-                .as_ref()
-                .and_then(|h| std::fs::read(meta_path(&dir, h)).ok())
-        });
-        let cached = cached.flatten();
-
+        // The bytes above are the whole torrent, so this add reaches no network
+        // at all — measured 4.45 ms against a 1.52 s resolve. The `.torrent`
+        // **URL** is the one source that gets here with nothing in hand: it has
+        // no hash to name a folder or a cache entry with, so it goes to librqbit
+        // as a URL and lands in librqbit's own default directory.
         let mut added = None;
-        if let Some(bytes) = cached {
+        if let Some(bytes) = meta_bytes {
             match tokio::time::timeout(
                 RESOLVE_TIMEOUT,
-                session.add_torrent(AddTorrent::from_bytes(bytes), Some(opts(None))),
+                session.add_torrent(AddTorrent::from_bytes(bytes), Some(opts(seed.clone()))),
             )
             .await
             {
                 Ok(Ok(r)) => added = Some(r),
                 // A truncated or stale cache file must not make the torrent
                 // unopenable — the magnet is still the source of truth.
-                Ok(Err(e)) => eprintln!("[torrent] cached metadata unusable, resolving: {e:#}"),
-                Err(_) => eprintln!("[torrent] cached metadata timed out, resolving"),
+                Ok(Err(e)) => eprintln!("[torrent] metadata unusable, resolving: {e:#}"),
+                Err(_) => eprintln!("[torrent] metadata timed out, resolving"),
             }
         }
 
         let added = match added {
             Some(r) => r,
-            None => {
-                let what = match file_bytes {
-                    Some(bytes) => AddTorrent::from_bytes(bytes),
-                    None => AddTorrent::from_url(source.as_str()),
-                };
-                // Only when the metadata has to come from the swarm: a
-                // `.torrent` file already *is* the metadata, and a cached copy
-                // was just tried above.
-                let seed = match (&what, hinted_hash.as_deref()) {
-                    (AddTorrent::Url(_), Some(hash)) => {
-                        let port = session.tcp_listen_port().unwrap_or(0);
-                        Some(announce_peers(&source, hash, port).await)
-                    }
-                    _ => None,
-                };
-                tokio::time::timeout(RESOLVE_TIMEOUT, session.add_torrent(what, Some(opts(seed))))
-                    .await
-                    .map_err(|_| "resolve_timeout".to_string())?
-                    .map_err(|e| format!("{e:#}"))?
-            }
+            None => tokio::time::timeout(
+                RESOLVE_TIMEOUT,
+                session.add_torrent(AddTorrent::from_url(source.as_str()), Some(opts(seed))),
+            )
+            .await
+            .map_err(|_| "resolve_timeout".to_string())?
+            .map_err(|e| format!("{e:#}"))?,
         };
 
         let handle = match added {
@@ -681,14 +745,17 @@ impl TorrentService {
             AddTorrentResponse::ListOnly(_) => return Err("torrent not started".into()),
         };
 
-        // Keep the metadata for next time. Best-effort: failing to write it
-        // costs a DHT lookup on the next open and nothing else.
+        // The fallback path above resolved from the swarm and nothing has cached
+        // it — and a `.torrent` URL only learns its own hash here. Best-effort:
+        // failing to write it costs a lookup on the next open and nothing else.
         if let Ok(bytes) = handle.with_metadata(|m| m.torrent_bytes.clone()) {
             let path = meta_path(&dir, &handle.info_hash().as_string());
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
+            if !path.is_file() {
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(path, &bytes);
             }
-            let _ = std::fs::write(path, &bytes);
         }
 
         let info_hash = handle.info_hash().as_string();
@@ -796,6 +863,54 @@ impl TorrentService {
         Ok(handle)
     }
 
+    /// Give a torrent whose folder is a bare info hash the readable name we can
+    /// now read out of its metadata.
+    ///
+    /// The migration for the old layout, done one torrent at a time at the
+    /// moment it is opened — rather than as a sweep over the cache at startup,
+    /// which would be a pass over somebody's whole disk for a cosmetic gain and
+    /// would run while the session may already hold half of it.
+    ///
+    /// **A rename must not happen under a live torrent.** On Windows the files
+    /// are open and the rename simply fails; on macOS it succeeds and leaves
+    /// librqbit writing through handles to a path that no longer exists. So the
+    /// torrent is taken out of the session first — which is also what drops the
+    /// store entry pointing at the old directory, the thing
+    /// `prune_orphaned_store` would otherwise collect on the next launch.
+    ///
+    /// The price is `fastresume`: the entry that carried the verified piece map
+    /// goes with it, so this open re-hashes what is on disk (~3.2 s for a 7.5 GB
+    /// season, measured). Once per torrent, ever. Anything that fails here
+    /// leaves the old folder exactly as it was, and `folder_for` finds it by
+    /// hash regardless — the readable name is a convenience, never the way back
+    /// to the data.
+    async fn rename_legacy_folder(&self, dir: &std::path::Path, hash: &str, name: &str) {
+        let hash = hash.to_ascii_lowercase();
+        let from = dir.join(&hash);
+        if !from.is_dir() {
+            return;
+        }
+        let to = dir.join(folder_name(&hash, Some(name)));
+        if to == from || to.exists() {
+            return;
+        }
+
+        let session = {
+            let mut inner = self.inner.lock().await;
+            inner.torrents.remove(&hash);
+            inner.session.clone()
+        };
+        if let Some(session) = session {
+            if let Ok(id) = librqbit::api::TorrentIdOrHash::parse(&hash) {
+                let _ = session.delete(id, false).await;
+            }
+        }
+        match std::fs::rename(&from, &to) {
+            Ok(()) => eprintln!("[torrent] {hash} renamed to {:?}", to.file_name()),
+            Err(e) => eprintln!("[torrent] could not rename {hash}: {e}"),
+        }
+    }
+
     async fn wait_ready(&self, handle: &Arc<ManagedTorrent>) -> Result<(), String> {
         let t0 = std::time::Instant::now();
         let r = self.wait_ready_inner(handle).await;
@@ -897,7 +1012,7 @@ impl TorrentService {
             .with_metadata(|m| m.file_infos.get(index).map(|f| f.relative_filename.clone()))
             .ok()
             .flatten()?;
-        let path = dir.join(info_hash.to_ascii_lowercase()).join(rel);
+        let path = folder_for(dir, info_hash, None).join(rel);
         path.is_file().then(|| LocalFile {
             path: path.to_string_lossy().into_owned(),
             complete,
@@ -1007,8 +1122,17 @@ impl TorrentService {
             if folder.starts_with('.') {
                 continue;
             }
-            let info_hash = is_info_hash(&folder).then(|| folder.to_ascii_lowercase());
-            let name = info_hash.as_deref().and_then(|h| cached_name(dir, h));
+            let info_hash = folder_hash(&folder);
+            // The metadata's own name first — the folder's is sanitized and
+            // truncated, so it is what a person reads in a file manager rather
+            // than what the torrent is called. But it is a far better fallback
+            // than nothing when the cache entry is missing: that row used to
+            // read "Раздача без названия" beside a directory that says on its
+            // face what it holds.
+            let name = info_hash
+                .as_deref()
+                .and_then(|h| cached_name(dir, h))
+                .or_else(|| folder_label(&folder));
             out.push(TorrentOnDisk {
                 size: dir_size(&entry.path()),
                 path: entry.path().to_string_lossy().into_owned(),
@@ -1032,11 +1156,18 @@ impl TorrentService {
     /// The whole fix is a rename, done **before** the new torrent is added: the
     /// data ends up in the folder the new hash will ask for, and `overwrite`
     /// makes librqbit verify it and mark those pieces as held. Nothing else in
-    /// `add` changes, and the "folder name is the info hash" invariant that
+    /// `add` changes, and the "the folder carries the info hash" invariant that
     /// `torrent_list` and `torrent_forget` rely on survives intact — which it
     /// would not if the two were merged into one folder instead. That is also
     /// what keeps deletion unambiguous, the thing qBittorrent's shared-save-path
     /// approach gives up.
+    ///
+    /// The destination is deliberately the **bare hash** rather than a readable
+    /// name: the replacement's own name is not known until its metadata is
+    /// resolved, which is the very next thing `add` does — and `add` renames a
+    /// hash-named folder the moment it can read a name for it. So the readable
+    /// name arrives one step later, through the path that already does it,
+    /// instead of this function guessing with the superseded torrent's name.
     pub async fn relocate(
         &self,
         dir: &std::path::Path,
@@ -1050,12 +1181,17 @@ impl TorrentService {
         if old_hash == new_hash {
             return Ok(());
         }
-        let from = dir.join(&old_hash);
+        let Some(from) = find_folder(dir, &old_hash) else {
+            return Err("nothing to move".into());
+        };
         let to = dir.join(&new_hash);
         if !from.is_dir() {
             return Err("nothing to move".into());
         }
-        if to.exists() {
+        // Asked by hash, not by path: the replacement may already have a folder
+        // under its readable name, which `to` would not collide with and we
+        // would then hand it a second one.
+        if find_folder(dir, &new_hash).is_some() {
             // The replacement already has data of its own. Merging two folders
             // is a different, riskier operation than a rename, and the caller
             // loses nothing by simply opening the new torrent normally.
@@ -1101,8 +1237,11 @@ impl TorrentService {
             return Err("not a torrent folder".into());
         }
 
-        if is_info_hash(folder) {
-            let hash = folder.to_ascii_lowercase();
+        // Parsed out of the folder rather than tested against the whole of it:
+        // the name now carries the hash in brackets, and a folder with no
+        // readable hash at all is one from the older name-based layout, which
+        // can be measured and deleted but was never in any session.
+        if let Some(hash) = folder_hash(folder) {
             let session = {
                 let mut inner = self.inner.lock().await;
                 inner.torrents.remove(&hash);
@@ -1654,6 +1793,134 @@ fn file_complete(handle: &Arc<ManagedTorrent>, index: usize) -> bool {
 /// accident.
 fn is_info_hash(s: &str) -> bool {
     s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// The torrent name, made safe to be one path component on both platforms.
+///
+/// Everything here is a Windows rule; none of it costs anything on macOS, and
+/// two of them are the kind of failure that only appears on somebody else's
+/// machine. **Reserved device names** (`CON`, `NUL`, `COM1`…) cannot be a file
+/// or a folder in any directory, with or without an extension, so a release
+/// literally called `AUX` would be undeletable rather than merely odd — hence
+/// the suffix that keeps the stem from being one. **A trailing dot or space is
+/// silently dropped** by the Win32 layer, so a folder created as `Show.` is
+/// afterwards addressed as `Show`, and every path we build from the name we
+/// asked for misses it.
+///
+/// The length cap is the other half. A release name of ninety characters is
+/// ordinary, the info hash adds 43 more, and inside the torrent there is often
+/// another directory and a long file name on top — all of it against a path
+/// limit that is still 260 by default on Windows. The readable part is a
+/// convenience; the hash carries the identity, so it is the readable part that
+/// gets cut. Cut on a **character** boundary, never a byte one, or a Cyrillic
+/// name loses half a code point and stops being valid UTF-8.
+fn sanitize_name(name: &str) -> String {
+    const MAX_CHARS: usize = 80;
+    const RESERVED: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+
+    let mut out = String::with_capacity(name.len().min(MAX_CHARS * 4));
+    let mut chars = 0;
+    for c in name.chars() {
+        if chars >= MAX_CHARS {
+            break;
+        }
+        // The Windows set, plus the control range, plus the separators — a name
+        // is one path component and may not grow another.
+        let safe = match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => ' ',
+            // Ours, not the platform's: the hash is written in brackets and a
+            // name carrying its own would make the suffix unparseable.
+            '[' | ']' => ' ',
+            c if (c as u32) < 0x20 => ' ',
+            c => c,
+        };
+        out.push(safe);
+        chars += 1;
+    }
+
+    // Runs of spaces collapse, because the substitutions above make them.
+    let collapsed = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut trimmed = collapsed.trim_end_matches('.').trim().to_string();
+    // **The stem is what makes a name reserved, not the whole of it**:
+    // `com1.2026` addresses the serial port exactly as `COM1` does, extension
+    // or no extension. So the escape goes at the end of the stem rather than at
+    // the end of the name, which is where it was first written and where it
+    // achieves nothing.
+    let stem_len = trimmed.find('.').unwrap_or(trimmed.len());
+    if RESERVED
+        .iter()
+        .any(|r| trimmed[..stem_len].eq_ignore_ascii_case(r))
+    {
+        trimmed.insert(stem_len, '_');
+    }
+    trimmed
+}
+
+/// `<Name> [<infohash>]`, or the bare hash when there is no name to use.
+///
+/// **The folder keeps naming itself**, which is the whole reason this is a
+/// suffix rather than an index file mapping hash to directory.
+/// `ManagedTorrentOptions.output_folder` is `pub(crate)`, so the mapping from a
+/// torrent to its directory can never be read back out of librqbit and has to
+/// be recoverable from what is on disk — the same constraint that made the
+/// folder a bare info hash in the first place, and the same reason `cached_name`
+/// reads the torrent's own metadata instead of trusting our localStorage.
+///
+/// A side file would answer it too, and would be a second source of truth to
+/// keep in step with the directory: a rename, a half-written index or a folder
+/// restored from a backup all put the two out of agreement, and the failure is
+/// a torrent that cannot be found or, worse, a delete aimed at the wrong path.
+fn folder_name(hash: &str, name: Option<&str>) -> String {
+    let hash = hash.to_ascii_lowercase();
+    match name.map(sanitize_name).filter(|n| !n.is_empty()) {
+        Some(name) => format!("{name} [{hash}]"),
+        None => hash,
+    }
+}
+
+/// The info hash a folder belongs to, or `None` for one this build never wrote.
+///
+/// Both layouts: the bare hash, and the readable `<Name> [<hash>]`. Anything
+/// else is a folder from the older name-based layout, which can be measured and
+/// deleted but never resumed.
+fn folder_hash(folder: &str) -> Option<String> {
+    if is_info_hash(folder) {
+        return Some(folder.to_ascii_lowercase());
+    }
+    let inner = folder.strip_suffix(']')?.rsplit_once(" [")?.1;
+    is_info_hash(inner).then(|| inner.to_ascii_lowercase())
+}
+
+/// The readable half of a folder name, when it has one.
+fn folder_label(folder: &str) -> Option<String> {
+    let (label, hash) = folder.strip_suffix(']')?.rsplit_once(" [")?;
+    (is_info_hash(hash) && !label.is_empty()).then(|| label.to_string())
+}
+
+/// Where this torrent's data is, or is about to go.
+///
+/// **A folder that already exists always wins**, whatever it is called. That is
+/// what lets the readable name arrive without a migration: a season downloaded
+/// under the old layout keeps its hash-named directory and keeps working, and
+/// nothing on disk is moved by an upgrade.
+fn folder_for(dir: &std::path::Path, hash: &str, name: Option<&str>) -> PathBuf {
+    find_folder(dir, hash).unwrap_or_else(|| dir.join(folder_name(hash, name)))
+}
+
+/// The existing folder for an info hash, found by reading the directory.
+///
+/// A scan rather than a lookup, and cheap enough: a torrent cache holds a
+/// handful of entries, and the alternative is the index file `folder_name`
+/// exists to avoid.
+fn find_folder(dir: &std::path::Path, hash: &str) -> Option<PathBuf> {
+    let hash = hash.to_ascii_lowercase();
+    std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
+        let name = e.file_name().to_str()?.to_owned();
+        (folder_hash(&name)? == hash && e.path().is_dir()).then(|| e.path())
+    })
 }
 
 fn stream_url(port: u16, info_hash: &str, index: usize, path: &str) -> String {
@@ -2364,6 +2631,73 @@ mod tests {
         assert!(!is_info_hash(".."));
     }
 
+    /// A folder names its torrent **and** identifies it, and this is the pair
+    /// of functions that has to agree about the second half. A name that does
+    /// not round-trip is a torrent whose data cannot be found — the folder is
+    /// still there, but nothing maps it back to an info hash, so it reads as a
+    /// leftover from a layout nobody uses and offers only to be deleted.
+    #[test]
+    fn folders_name_their_torrent_and_still_identify_it() {
+        const HASH: &str = "08ada5a7a6183aae1e09d831df6748d566095a10";
+
+        // Both layouts answer, and the old one keeps working with no migration.
+        assert_eq!(folder_hash(HASH).as_deref(), Some(HASH));
+        assert_eq!(
+            folder_hash("Dutton.Ranch.S01 [08ADA5A7A6183AAE1E09D831DF6748D566095A10]").as_deref(),
+            Some(HASH),
+            "the hash is the identity and its case is not part of it"
+        );
+
+        // Anything that is not ours must not be read as ours: `forget` deletes
+        // by this answer, and `find_folder` hands data to whoever asks.
+        assert_eq!(folder_hash("Dutton.Ranch.S01.2026.WEB-DLRip"), None);
+        assert_eq!(folder_hash(""), None);
+        assert_eq!(folder_hash(".."), None);
+        // Brackets a *name* could carry, with nothing that parses inside them.
+        assert_eq!(folder_hash("Some Show [1080p]"), None);
+        assert_eq!(folder_hash("[08ada5a7a6183aae1e09d831df6748d566095a10]"), None);
+
+        for name in [
+            "Dutton.Ranch.S01.2026.WEB-DLRip-AVC.x264",
+            // Every character Windows forbids, plus the separators, plus our
+            // own brackets — none of which may reach a path.
+            "A<B>C:D\"E/F\\G|H?I*J [K]",
+            // A trailing dot is dropped by Win32 after the folder is created,
+            // so the path we build afterwards would miss it.
+            "Show Name...",
+            // A reserved device name is not a legal folder in any directory.
+            "NUL",
+            "com1.2026",
+            // Long, and not ASCII: a byte-wise cut here is invalid UTF-8.
+            &"Сезон первый в очень длинном названии ".repeat(4),
+        ] {
+            let folder = folder_name(HASH, Some(name));
+            assert_eq!(
+                folder_hash(&folder).as_deref(),
+                Some(HASH),
+                "{name:?} produced {folder:?}, which does not identify its torrent"
+            );
+            let stem = folder.strip_suffix(&format!(" [{HASH}]")).unwrap();
+            assert!(
+                !stem.contains(['<', '>', ':', '"', '/', '\\', '|', '?', '*', '[', ']']),
+                "{folder:?} carries a character that cannot be in a path"
+            );
+            assert!(!stem.ends_with(['.', ' ']), "{folder:?} ends in a dropped character");
+            assert!(stem.chars().count() <= 81, "{folder:?} is not capped");
+            for reserved in ["CON", "PRN", "AUX", "NUL", "COM1"] {
+                assert!(
+                    !stem.split('.').next().unwrap().eq_ignore_ascii_case(reserved),
+                    "{folder:?} is a reserved device name"
+                );
+            }
+        }
+
+        // Nothing to name it with — a `.torrent` URL, or metadata that will not
+        // parse — falls back to the layout that needs no name at all.
+        assert_eq!(folder_name(HASH, None), HASH);
+        assert_eq!(folder_name(HASH, Some("   ")), HASH);
+    }
+
     /// `torrent_forget` deletes a directory by name, so the name is the only
     /// thing standing between it and the rest of the disk. Escapes are refused
     /// before anything is touched.
@@ -2454,7 +2788,7 @@ mod tests {
             service.wait_ready(&handle).await.expect("never initialized");
 
             for file in &info.files {
-                let path = base.join(&hash).join(&file.path);
+                let path = folder_for(&base, &hash, None).join(&file.path);
                 let meta = std::fs::metadata(&path)
                     .unwrap_or_else(|e| panic!("no file at {}: {e}", path.display()));
                 assert_eq!(
@@ -2539,7 +2873,19 @@ mod tests {
                 .local_path(&base, &info.info_hash, file.index)
                 .await
                 .expect("local_path found nothing");
-            assert_eq!(local.path, base.join(&hash).join("clip.mkv").to_string_lossy());
+            // **Staged under the old layout and found under the new one.** The
+            // folder went in as a bare info hash — which is what a season
+            // downloaded by an earlier build looks like — and `add` renamed it
+            // the moment it could read the torrent's name. So this asserts the
+            // migration as well as the lookup, and it is spelled out rather
+            // than resolved with `folder_for`, which would agree with whatever
+            // the code did.
+            assert_eq!(
+                local.path,
+                base.join(format!("offline [{hash}]"))
+                    .join("clip.mkv")
+                    .to_string_lossy()
+            );
             assert!(local.complete, "a fully seeded file reported incomplete");
 
             // The load-bearing assertion: still paused, so `select` never
@@ -2731,15 +3077,20 @@ mod tests {
             // had never been built — so `forget` finds no session and only the
             // directory goes.
             let second = Arc::new(TorrentService::default());
-            second.forget(&base, &hash).await.unwrap();
-            assert!(!base.join(&hash).exists());
+            // By the folder's own name, exactly as the start screen passes it
+            // back from `list` — which by now is the readable one, since the
+            // open above renamed it.
+            let folder = find_folder(&base, &hash).expect("no folder for the torrent");
+            let folder = folder.file_name().unwrap().to_string_lossy().into_owned();
+            second.forget(&base, &folder).await.unwrap();
+            assert!(find_folder(&base, &hash).is_none());
             assert!(!meta.exists(), "the cached metadata outlived the torrent");
 
             // The next session is where it used to reappear.
             let third = Arc::new(TorrentService::default());
             third.ensure_started(base.clone(), false, false).await.unwrap();
             assert!(
-                !base.join(&hash).is_dir(),
+                find_folder(&base, &hash).is_none(),
                 "the deleted torrent was restored and its folder recreated"
             );
             assert!(
@@ -2845,7 +3196,9 @@ mod tests {
             // and this one is in it only because it was restored.
             let second = Arc::new(TorrentService::default());
             second.ensure_started(base.clone(), false, false).await.unwrap();
-            second.forget(&base, &hash).await.unwrap();
+            let folder = find_folder(&base, &hash).expect("no folder for the torrent");
+            let folder = folder.file_name().unwrap().to_string_lossy().into_owned();
+            second.forget(&base, &folder).await.unwrap();
 
             let store = base.join(SESSION_DIR).join("session.json");
             assert!(
@@ -2927,7 +3280,7 @@ pub fn torrent_offline_file(
         ),
         None => return None,
     };
-    let path = dir.join(&hash).join(&rel);
+    let path = folder_for(&dir, &hash, None).join(&rel);
     let Ok(meta) = std::fs::metadata(&path) else {
         eprintln!("[poster] {hash}/{index}: no file at {}", path.display());
         return None;

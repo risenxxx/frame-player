@@ -391,3 +391,55 @@ func TestTheInvitationPageIsADocument(t *testing.T) {
 		}
 	}
 }
+
+// The one visitor this page exists for is the one who does not have the player,
+// and until a default was set they were shown a code and nothing to do with it:
+// the download link only rendered when an operator had configured a URL, which
+// nobody had.
+func TestSomebodyWithoutThePlayerIsGivenSomewhereToGo(t *testing.T) {
+	s, _ := startRelay(t, nil)
+	render := func() string {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/j/ABC123", nil)
+		req.SetPathValue("code", "ABC123")
+		s.serveJoinPage(rec, req)
+		return rec.Body.String()
+	}
+	if !strings.Contains(render(), defaultDownloadPage) {
+		t.Error("an out-of-the-box relay offers no way to get the player")
+	}
+
+	// ...and an operator who wants it gone can still say so. Checked on the
+	// download link's own class rather than on "any http link": the page also
+	// carries the font stylesheet, so the broad test passed for the wrong reason
+	// and would have gone on passing if the link had never been removed.
+	s.cfg.DownloadPage = ""
+	if strings.Contains(render(), `class="get"`) {
+		t.Error("clearing the download page left a link behind")
+	}
+}
+
+// A product name broken across two lines reads as two products. Everything else
+// on the page is left to text-wrap; this pair is worth forbidding outright, and
+// the assertion has to be written with explicit escapes — the two spellings are
+// indistinguishable in a source file, which is exactly how the first version of
+// this test came to compare a string with itself.
+func TestTheProductNameNeverBreaks(t *testing.T) {
+	const joined = "Frame\u00a0Player"
+	const broken = "Frame Player"
+	s, _ := startRelay(t, nil)
+	for _, lang := range []string{"ru", "en"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/j/ABC123", nil)
+		req.SetPathValue("code", "ABC123")
+		req.Header.Set("Accept-Language", lang)
+		s.serveJoinPage(rec, req)
+		body := rec.Body.String()
+		if !strings.Contains(body, joined) {
+			t.Errorf("%s: the product name is missing or breakable", lang)
+		}
+		if strings.Contains(body, broken) {
+			t.Errorf("%s: an ordinary space survives inside the product name", lang)
+		}
+	}
+}

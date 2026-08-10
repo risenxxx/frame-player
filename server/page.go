@@ -40,7 +40,11 @@ import (
 // a dozen phrases on one page, and a table of keys would be more machinery than
 // the thing it holds.
 type pageText struct {
-	Lang     string
+	Lang string
+	/// The product name, with the space that must never break. Data rather than
+	/// markup because the template is a raw string literal, where `\u00a0` is
+	/// six characters and not a space at all.
+	Brand    string
 	Title    string
 	Sub      string
 	CodeCap  string
@@ -52,27 +56,33 @@ type pageText struct {
 }
 
 var textRU = pageText{
-	Lang:     "ru",
-	Title:    "Смотрим вместе",
-	Sub:      "Один фильм, одна позиция, одни паузы.",
-	CodeCap:  "Код комнаты",
-	Open:     "Открыть в Frame Player",
-	Manual:   "Или откройте плеер, нажмите «Смотреть вместе» и введите код.",
-	NoPlayer: "Нет плеера?",
-	Get:      "Скачать Frame Player",
-	Privacy:  "Через сервер идут только позиция и пауза. Видео не передаётся.",
+	Lang:    "ru",
+	Brand:   "Frame\u00a0Player",
+	Title:   "Смотрим вместе",
+	Sub:     "Один фильм, одна позиция, общие паузы.",
+	CodeCap: "Код комнаты",
+	// `\u00a0` rather than a literal non-breaking space, which is invisible in
+	// the source and reads as an ordinary one to whoever edits it next. A product
+	// name split across two lines is the one break worth forbidding outright;
+	// everything else is left to `text-wrap: balance`.
+	Open:     "Открыть в Frame\u00a0Player",
+	Manual:   "Или введите код в плеере — «Смотреть вместе».",
+	NoPlayer: "Ещё нет плеера?",
+	Get:      "Скачать Frame\u00a0Player",
+	Privacy:  "Через сервер идёт только позиция и пауза — не видео.",
 }
 
 var textEN = pageText{
 	Lang:     "en",
+	Brand:    "Frame\u00a0Player",
 	Title:    "Watch together",
 	Sub:      "One film, one position, the same pauses.",
 	CodeCap:  "Room code",
-	Open:     "Open in Frame Player",
-	Manual:   "Or open the player, choose “Watch together” and type the code.",
-	NoPlayer: "Don’t have it?",
-	Get:      "Get Frame Player",
-	Privacy:  "Only the position and pause travel through the server. No video does.",
+	Open:     "Open in Frame\u00a0Player",
+	Manual:   "Or open the player and choose “Watch together”.",
+	NoPlayer: "Don’t have it yet?",
+	Get:      "Get Frame\u00a0Player",
+	Privacy:  "Only the position and pause travel through the server — never the video.",
 }
 
 // The language to answer in, from `Accept-Language`.
@@ -126,7 +136,7 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="color-scheme" content="dark">
-<title>{{.Code}} · Frame Player</title>
+<title>{{.Code}} · {{.Brand}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@300..900&display=swap">
@@ -138,42 +148,69 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
     font: 400 15px/1.55 'Rubik', -apple-system, 'Segoe UI', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  main { width: 100%; max-width: 360px; text-align: center }
-  h1 { font-size: 19px; font-weight: 500; margin: 0 0 4px; letter-spacing: .01em }
+  main { width: 100%; max-width: 340px; text-align: center }
+  /* Every run of prose here is two or three lines in a fixed column, which is
+     exactly the case text-wrap balance is for: without it each paragraph ended
+     with a single word alone on its last line. Progressive enhancement — a
+     browser that does not know the property lays the text out as before.
+     (No backticks in this file's CSS: the template is a raw string literal and
+     one would end it.) */
+  h1, p { text-wrap: balance }
+  h1 { font-size: 19px; font-weight: 500; margin: 0 0 6px; letter-spacing: .01em }
   p { margin: 0; color: #9a9aa6; font-size: 13.5px }
-  /* The six characters are the thing on this page. Monospaced and tracked out
-     for the same reason the player sets them that way: a code is read aloud and
-     typed back, and that is where 0/O and 1/l go wrong. */
-  .code {
-    font: 600 34px/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-    letter-spacing: .18em; padding-left: .18em;
-    margin: 26px 0 8px; color: #e8e8ec;
+  .lead { color: #b9b9c3 }
+
+  .codebox {
+    margin: 22px 0 20px;
+    padding: 13px 16px 15px;
+    border: 1px solid rgba(255, 255, 255, .09);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .035);
   }
-  .cap { font-size: 12px; color: #7a7a88; text-transform: uppercase; letter-spacing: .08em }
+  .cap {
+    font-size: 11px; font-weight: 500; text-transform: uppercase;
+    letter-spacing: .11em; color: #7a7a88;
+  }
+  /* Monospaced and tracked out for the reason the player sets them that way: a
+     code is read aloud and typed back, and that is where 0/O and 1/l go wrong.
+     The tracking adds a trailing gap the box would otherwise centre against, so
+     the same amount is padded back on the left. */
+  .code {
+    margin-top: 7px;
+    font: 600 31px/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    letter-spacing: .14em; padding-left: .14em; color: #e8e8ec;
+  }
+
   .go {
-    display: block; margin: 24px 0 0; padding: 12px 18px; border: 0; border-radius: 10px;
+    display: block; padding: 11px 18px; border: 0; border-radius: 10px;
     background: #6366f1; color: #fff; font: inherit; font-weight: 500;
     text-decoration: none; transition: background .15s ease;
   }
   .go:hover { background: #818cf8 }
-  .sub { margin-top: 14px; font-size: 12.5px }
-  .rule { height: 1px; margin: 22px 0 14px; background: rgba(255,255,255,.1) }
-  .get { color: #b9b9c3; text-decoration: none; border-bottom: 1px solid rgba(255,255,255,.2) }
-  .get:hover { color: #e8e8ec }
-  .foot { margin-top: 18px; font-size: 11.5px; color: #6f6f7a }
+  .sub { margin-top: 13px; font-size: 12.5px }
+  .get { color: #c7cbff; text-decoration: none; border-bottom: 1px solid rgba(199, 203, 255, .35) }
+  .get:hover { border-bottom-color: #c7cbff }
+  .foot { margin-top: 22px; font-size: 11.5px; color: #64646f }
 </style>
 </head><body><main>
   <h1>{{.Title}}</h1>
-  <p>{{.Sub}}</p>
+  <p class="lead">{{.Sub}}</p>
 
-  <div class="cap">{{.CodeCap}}</div>
-  <div class="code">{{.Code}}</div>
+  <!-- The caption and the code are one block, because on the page they are one
+       thing. They used to be two siblings with the caption's gap below it three
+       times the gap above — so it read as the tail of the sentence overhead
+       rather than as the label of the six characters under it. Grouping them is
+       what fixes that rather than a smaller margin: a box says "these belong
+       together" in a way spacing has to be re-tuned to keep saying. -->
+  <div class="codebox">
+    <div class="cap">{{.CodeCap}}</div>
+    <div class="code">{{.Code}}</div>
+  </div>
 
   <a class="go" href="frameplayer://join/{{.Code}}">{{.Open}}</a>
   <p class="sub">{{.Manual}}</p>
 
   {{if .Download}}
-    <div class="rule"></div>
     <p class="sub">{{.NoPlayer}} <a class="get" href="{{.Download}}" rel="noopener">{{.Get}}</a></p>
   {{end}}
 
