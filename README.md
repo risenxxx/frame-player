@@ -192,6 +192,13 @@ Settings → Privacy & Security* — the path that has a way out, as opposed to 
 
 **Sources**
 
+- **Catalog** — browse what is popular or search by title, open a film or a
+  series and pick a release for it: quality, dynamic range, size, dubs and
+  seeders side by side, best copy first. Descriptions and posters come from
+  TMDB through a proxy of the project's own, so the player carries no API key;
+  the release list comes from a JacRed/Torznab-compatible indexer whose address
+  is a setting. On by default, and switchable off — it is the one surface here
+  that tells a third party what you are *looking for*.
 - **Links** — anything yt-dlp resolves, plus direct stream URLs.
 - **Torrent streaming** — a magnet link becomes a playable queue served from a
   loopback HTTP server, with piece priority following the playhead, buffered
@@ -314,6 +321,11 @@ preserved, and changes apply live. The bottom of the dialog links to the file
 itself, and reports which decoder is actually in use, so a silent fallback to
 software decoding is visible.
 
+Three addresses are settings rather than build-time constants, each with a
+sensible default and each empty-means-default: the watch-together relay, the
+catalog's metadata proxy and its release indexer. Self-hosting any of them is a
+setting, not a fork — see [services/](services/).
+
 ## Hotkeys
 
 Bound to physical keys, so they work in any keyboard layout, and all of them can
@@ -414,8 +426,10 @@ reach it, and `shared/sync-protocol.txt` is a contract only one half of which
 they check:
 
 ```bash
-go vet frameplayer/... && go test -race frameplayer/...  # both services, from the repo root
-cd services/relay && go vet ./... && go test -race ./...
+# Both Go services, from the repository root. The pattern is `frameplayer/...`
+# and not `./...`: the root is not itself a module, so a path pattern rooted
+# there matches nothing and complains as though the workspace were broken.
+go vet frameplayer/... && go test -race frameplayer/...
 ```
 
 Testing a *room* needs two players, and the player is single-instance, so a
@@ -444,9 +458,11 @@ go run ./services/relay/cmd/probe -room ABC123 -hold 20s     # hold the room, on
 | `src-tauri/src/torrent.rs` | Torrent session and the loopback HTTP server mpv opens |
 | `src-tauri/src/cast.rs` · `dlna.rs` | Casting: the Cast client, the LAN file server, the UPnP transport |
 | `src-tauri/src/opensubtitles.rs` | Subtitle search and download |
+| `src-tauri/src/catalog.rs` | The catalog: TMDB through our proxy, and the release lookup |
 | `src/lib/sync/` | Watching together: the wire, the clock estimate, content identity, drift correction |
-| `services/` | The Go services: `relay/` (watching together) and `tmdb/` (the metadata proxy)
-| `services/relay/` | The watch-together relay (Go) and `cmd/probe`, a headless peer for testing it alone |
+| `services/` | The Go services, deployed apart and developed together behind the root `go.work` |
+| `services/relay/` | The watch-together relay, and `cmd/probe`, a headless peer for testing it alone |
+| `services/tmdb/` | The metadata proxy: holds the TMDB key, caches responses and posters |
 | `src-tauri/src/macos_*.rs` | Native window chrome and menu bar on macOS |
 | `src-tauri/lua/zoompan.lua` | Atomic zoom+pan applied on mpv's core thread |
 | `patches/` | The mpv `--wid` embedding patch for macOS |

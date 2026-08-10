@@ -1,0 +1,236 @@
+# The catalog
+
+Finding something to watch, and the release that carries it.
+
+Everything here was measured against the live services rather than read from
+documentation, and several of the measurements contradict what the obvious
+design would assume. The rules that must not be broken are in
+[CLAUDE.md](../CLAUDE.md); this is the reasoning, the numbers and the dead ends.
+
+## Two services, and which answers what
+
+TMDB says **what** to watch — posters, localised titles, descriptions, how many
+seasons a series has. A JacRed/Torznab-compatible indexer says **where from** —
+trackers, quality, dubs, seeders, a magnet.
+
+Neither can do the other's job, and that is what decides the shape. An indexer
+holds no posters and no descriptions, so browsing one directly is a list of raw
+release names — precisely the experience a catalog exists to replace. TMDB knows
+nothing about torrents.
+
+The bridge between them is a text search by title and year, and it is the part
+that would have been most expensive to build. It turned out not to need
+building: the public indexer already parses release names into `name`,
+`originalname`, `relased`, `quality`, `videotype`, `voices` and `seasons`.
+
+## Why there is no TMDB key in the player
+
+The first design baked one in, on the argument that **TMDB rate-limit by IP
+address rather than by key** — 50 requests/second and 20 connections per address
+— so one key shared by every copy creates no contention: each viewer spends
+their own budget.
+
+That is true and it is beside the point. It is a fact about **load**, not a
+permission. Read against the actual [API terms](https://www.themoviedb.org/api-terms-of-use):
+
+- §1.A — the licence is **non-transferable and non-sublicensable**. Handing the
+  key to every user is close to sublicensing it.
+- §1.C — you may not "attempt to cloak or conceal Your identity, or the identity
+  of any website, program, service, application". One anonymous credential
+  shared by every copy is exactly that.
+- §2.A — the free licence is **non-commercial**, which a free player satisfies.
+  There is no "personal use" tier; that is not the right frame. Note GPL-3.0
+  lets anyone sell copies, so a fork that starts charging owes TMDB its own
+  commercial licence.
+- §3 — **attribution is mandatory**: the exact sentence, plus the TMDB logo kept
+  less prominent than the application's own marks.
+
+The OpenSubtitles analogy that motivated the first design is weaker than it
+looks and **inverted in one place**: OpenSubtitles *bans* applications that make
+their users register keys of their own, so a shipped key is the required design
+there. TMDB has no such rule, and per-user keys are ordinary for them.
+
+So metadata goes through [`services/tmdb`](../services/tmdb), which holds the
+key. One identified server calling on behalf of one identified application
+raises neither §1.A nor §1.C.
+
+**Still outstanding:** §3 also requires the TMDB logo. The player carries the
+sentence; the logo needs their official asset committed, which is a trademark
+and not something to draw from memory.
+
+## Capacity
+
+A proxy turns a per-IP budget into a shared ceiling, so the cache is not an
+optimisation — it is what makes the architecture work. TMDB recommend caching
+themselves.
+
+The shape of the traffic is what makes the ceiling generous. Trending is one
+upstream request per language per TTL, serving every viewer's panel. A film's
+metadata does not change, so details cache for days. Only free-text search has a
+real tail, and it alone sets the rate.
+
+Taking a session to be one trending view, three searches and two title pages:
+
+| Cache behaviour | Upstream calls/session | Sessions/s | Sessions/day |
+|---|---|---|---|
+| Cold, no hits at all | 6 | 8 | ~700 000 |
+| Pessimistic (search 50 %, details 30 %) | ~2.4 | 21 | ~1 800 000 |
+| Realistic (search 35 %, details 15 %) | ~1.35 | 37 | ~3 200 000 |
+
+The rate limit is therefore not the binding constraint for any plausible number
+of users. Bandwidth is — and that is a decision made on the client.
+
+## Posters: the expensive nine tenths
+
+A grid of twenty posters at `w342` is roughly **800 KB** against **~25 KB** of
+JSON for the same screen. Proxying images by default would mean paying for the
+expensive part of the traffic in order to serve a minority.
+
+So posters load **straight from TMDB's CDN**, which costs the proxy nothing and
+is closer to the viewer than any server of ours. The proxy's `/img/…` route
+exists for the viewers TMDB is not reachable from — a real population, which is
+why every comparable player grew a proxy of its own.
+
+**How the client decides is the interesting part.** Rust returns the poster
+*path*, never a URL, and the frontend composes it against whichever base works.
+Geolocating the client IP was considered and rejected: it needs a database, is
+wrong for anyone on a VPN or a corporate network, and infers a fact the browser
+reports for free. Trying is the measurement.
+
+One failure was not enough of a measurement, though. An `<img>` cannot tell a
+refused connection from a 404, and the live CDN **does** answer 404 for a stale
+path — verified. A single missing poster would otherwise convict a perfectly
+reachable CDN and push every image through the proxy, permanently and silently.
+Hence `CDN_STRIKES`: three failures, with any success resetting the count. A
+blocked CDN fails every image in a grid and reaches the threshold at once; a
+stale path never does. The proxy passes 404 through as 404 for the same reason.
+
+## The indexer's search is fuzzy; the filtering is ours
+
+Measured against the live public instance, `search=Дюна` answers **768 rows** —
+including football matches. The name filter cuts that to 34 and the info-hash
+dedupe to 29.
+
+Three things that filter must get right, all measured on that response:
+
+1. **Compare the indexer's parsed `name`/`originalname`, never the raw tracker
+   title.** That string carries the year, the codec and the dub list, so a
+   substring test against it matches anything that merely mentions the film.
+2. **Match on *either* name.** Kinozal fills `originalname` with the whole
+   release line (`Дюна / Dune: Part One (Dune) / 2021 / ДБ, 2 x ПМ, ЛД СТ / …`),
+   so only `name` is usable there.
+3. **Keep rows whose year is 0.** Kinozal does not fill `relased` at all, and a
+   strict year filter drops every 4K release the search found.
+
+`fold()` is what makes the comparison work across alphabets: release names mix
+Latin and Cyrillic homoglyphs freely, so `Матрица` with a Latin `a` is a
+different string and the same film.
+
+## Ordering
+
+Quality is the outer key and dynamic range the inner one — 4K HDR → 4K SDR →
+1080p HDR → 1080p SDR → … — with seeders deciding inside a group.
+
+The first version sorted by seeders alone and put a live 480p rip above a 4K
+remux with a healthy swarm. That answers "what is busiest"; the question a
+viewer is asking is "what is the best copy I can get".
+
+**One departure from a pure quality order: a release nobody seeds sinks to the
+bottom.** Measured — of 95 4K rows in one live response, **13 had no seeders at
+all**. Without this the first row is routinely the best-looking thing that will
+never download. Nothing is hidden: they are still listed, marked and pickable.
+
+`dynamic_rank` is deliberately two buckets rather than a ladder. Across 768 live
+rows the field only ever held `sdr` and `hdr`, so ranking Dolby Vision against
+HDR10 would be a distinction invented here — and it is not obviously the right
+way round anyway, since DV looks better on a display that handles it and worse
+on one that does not.
+
+Because this also decides *which* releases survive the cap, it is a selection
+order as well as a display one. The frontend may re-order what comes back (a "by
+seeders" pill, remembered) but cannot recover a row this dropped.
+
+## What the data does *not* support: translation types
+
+The obvious next feature is filtering by дубляж / многоголосый / двухголосый /
+авторский. The data does not carry it, and this is worth writing down so it is
+not attempted twice.
+
+**The `voices` field is a name, not a type.** Across 768 rows:
+
+- **empty in 67 %** of them (511 of 768);
+- only **17 distinct values** in total;
+- of the 257 rows that have any, **180 (70 %) are the single value `Дубляж`** —
+  the only entry that is a *type* at all;
+- everything else is a studio (`Jaskier`, `LostFilm`, `HDRezka`, `Red Head
+  Sound`, `Пифагор`, `TVShows`, `ViruseProject`, …), an individual author
+  (`Сербин`, `Яроцкий`, `Есарев`) or a broadcaster (`Россия`);
+- the values are not even normalised — **`Сербин` and `Ю. Сербин` are the same
+  person** and would appear twice in any filter built from them.
+
+**The type can be read from the raw title, but almost nowhere.** Only **17 %**
+of rows carry a recognisable marker (`Dub`, `MVO`, `DVO`, `AVO`, `ДБ`, `ПМ`,
+`ЛМ`), and that figure is an upper bound — short tokens like `ст` and `ло`
+over-match. It is also wildly tracker-dependent:
+
+| Tracker | Rows | With a type marker |
+|---|---|---|
+| kinozal | 120 | **80 %** |
+| nnmclub | 71 | 17 % |
+| rutracker | 273 | 9 % |
+| selezen | 11 | 9 % |
+| rutor | 122 | **0 %** |
+| bitru | 72 | **0 %** |
+| torrentby | 69 | **0 %** |
+| megapeer | 28 | **0 %** |
+
+Four trackers — 291 rows, 38 % of the sample — never write it. Only kinozal
+keeps it because it is part of their title format.
+
+So a full taxonomy would be right for kinozal and wrong-by-omission for a third
+of the results, and a filter for "многоголосый закадровый" would silently hide
+releases whose type merely was not written down. **Absence of a marker is not
+absence of the thing**, and any filter here needs an explicit "unknown" bucket
+rather than folding it into "no".
+
+What *is* supportable, in descending order of reliability: a **дубляж** flag
+(`voices` contains `Дубляж`, or the title carries `Dub`/`ДБ`); a coarse **"has a
+Russian track"**; and a **filter by studio or author name**, which is how people
+actually choose for a series. None of it is built yet.
+
+## Why not the alternatives
+
+**Own indexer.** Rutracker has no open search: the official API
+(`api.rutracker.org/v1/`) is a *lookup* by topic id or info hash and has never
+had a search method, and `tracker.php` requires a logged-in session. Their
+periodic full database dump is the one genuinely open channel but is refreshed
+too rarely for anything currently airing. Running a crawler means tracker
+accounts, FlareSolverr for Cloudflare, a proxy for the block, and a permanent
+maintenance burden — for data a public aggregator already publishes.
+
+**JacRed's own sync mode** (`syncapi` + `opensync`) is the middle option: your
+own instance holding your own copy of the database, pulled from an upstream,
+with no tracker accounts at all. Worth reaching for if the public instance
+becomes unreliable or if seeing your own queries matters.
+
+**Cinemeta** (Stremio's addon) is keyless and serves posters, so it removes the
+TMDB question entirely — but its metadata is English-only, which a ru/en
+interface cannot use as its primary source.
+
+## Privacy
+
+This is the only surface in the player that tells a third party what somebody is
+*looking for* rather than acting on a file they already hold. It is on by
+default with a switch to turn it off, and the switch exists precisely because
+that argument is real — it is an argument for a way out, not for hiding the
+feature from everyone who never opens the settings.
+
+The proxy **does not log queries**. A proxy sees what everybody searches for,
+which is a step backwards from the client calling TMDB directly, and the only
+honest compensation is to keep none of it. Its `/health` counts totals, never
+terms.
+
+Nothing here is derived from a path, so there is no privacy root to gate
+against. **That stops being true the moment anything asks "which releases exist
+for the file I am watching"** — such a feature would need the gate before it
+ships, and would become the eighth enforcement point.

@@ -216,6 +216,7 @@ function render() {
   w(`- [Native libraries](#native-libraries) (${projects.length})`);
   w(`- [Rust crates](#rust-crates) (${crates.length})`);
   w(`- [JavaScript packages](#javascript-packages) (${js.length})`);
+  w('- [Online services](#online-services)');
   w('- [License texts](#license-texts)');
   w("- [Frame Player's own license](#frame-players-own-license)");
   w();
@@ -255,6 +256,41 @@ function render() {
   w('| Package | Version | License |');
   w('|---|---|---|');
   for (const p of js) w(`| ${p.name} | ${p.version} | ${p.license} |`);
+  w();
+  w('---');
+  w();
+  // Not a bundled component, and here for a different reason from everything
+  // above: these are services the player *talks to*, and one of them requires
+  // this notice by contract. The TMDB API terms (§3) ask for the sentence
+  // verbatim and specifically "within your application's About or Credits
+  // type section" — this document, reachable from the settings footer, is that
+  // section. It is also shown in the catalog panel itself, where the data
+  // appears; the terms want it in the credits regardless.
+  //
+  // **The sentence is reproduced exactly and never translated.** A translation
+  // is a different sentence, and this one is quoted rather than described.
+  w('## Online services');
+  w();
+  w('These are not bundled with the player. They are services it can be asked to');
+  w('contact, listed here because their terms ask for it or because knowing what');
+  w('the player can talk to belongs in the same place as what it is built from.');
+  w();
+  w('### The Movie Database (TMDB)');
+  w();
+  w('Film and series metadata for the catalog, reached through a caching proxy so');
+  w('the player itself carries no API key.');
+  w();
+  w('> This product uses TMDB and the TMDB APIs but is not endorsed, certified, or');
+  w('> otherwise approved by TMDB.');
+  w();
+  w('### OpenSubtitles');
+  w();
+  w('Subtitle search and download, when asked for.');
+  w();
+  w('### Torrent indexers');
+  w();
+  w('A JacRed/Torznab-compatible service supplies the catalog\'s release lists. Its');
+  w('address is a setting and no particular operator is endorsed.');
   w();
   w('---');
   w();

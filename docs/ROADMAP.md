@@ -38,9 +38,10 @@ nothing about watching a film.
 | 25 | Content languages beyond the two interface languages |
 | 26 | Casting to a television — Google Cast and DLNA, including torrents |
 | 32 | Watching together — a shared timeline over a small relay, with torrents picked up by the other players automatically |
+| 33 | Catalog — browse and search films and series, then pick a release for one, with metadata through a proxy of our own so the player carries no API key |
 
 Details for the larger ones: [torrents.md](torrents.md), [casting.md](casting.md),
-[watch-together.md](watch-together.md).
+[watch-together.md](watch-together.md), [catalog.md](catalog.md).
 
 Everything not listed — seekbar thumbnails, resume, watch history, zoom and pan,
 window preferences, HDR handling, the updater, media keys, the macOS menu bar —

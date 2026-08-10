@@ -31,6 +31,7 @@ GPL-only component appears.
 - [Native libraries](#native-libraries) (44)
 - [Rust crates](#rust-crates) (442)
 - [JavaScript packages](#javascript-packages) (7)
+- [Online services](#online-services)
 - [License texts](#license-texts)
 - [Frame Player's own license](#frame-players-own-license)
 
@@ -562,6 +563,31 @@ not listed: they do not reach a user's machine.
 | @tauri-apps/plugin-updater | 2.10.1 | MIT OR Apache-2.0 |
 | svelte | 5.56.8 | MIT |
 | tauri-plugin-libmpv-api | 0.3.2 | MPL-2.0 |
+
+---
+
+## Online services
+
+These are not bundled with the player. They are services it can be asked to
+contact, listed here because their terms ask for it or because knowing what
+the player can talk to belongs in the same place as what it is built from.
+
+### The Movie Database (TMDB)
+
+Film and series metadata for the catalog, reached through a caching proxy so
+the player itself carries no API key.
+
+> This product uses TMDB and the TMDB APIs but is not endorsed, certified, or
+> otherwise approved by TMDB.
+
+### OpenSubtitles
+
+Subtitle search and download, when asked for.
+
+### Torrent indexers
+
+A JacRed/Torznab-compatible service supplies the catalog's release lists. Its
+address is a setting and no particular operator is endorsed.
 
 ---
 
