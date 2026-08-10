@@ -310,3 +310,84 @@ func TestJoinPageAcceptsWhatAPersonTypes(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// The invitation page is the one thing here a person who does not have the
+// player ever sees, so what it says has to follow the browser rather than the
+// server's own idea of a language.
+func TestJoinPageSpeaksTheVisitorsLanguage(t *testing.T) {
+	s, _ := startRelay(t, func(c *Config) {
+		c.DownloadWin = "https://example.invalid/FramePlayer-setup.exe"
+		c.DownloadPage = "https://example.invalid/download"
+	})
+
+	page := func(lang, ua string) string {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/j/ABC123", nil)
+		req.SetPathValue("code", "ABC123")
+		req.Header.Set("Accept-Language", lang)
+		req.Header.Set("User-Agent", ua)
+		s.serveJoinPage(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("%s → %d", lang, rec.Code)
+		}
+		return rec.Body.String()
+	}
+
+	ru := page("ru-RU,ru;q=0.9,en;q=0.8", "Mozilla/5.0 (Windows NT 10.0)")
+	if !strings.Contains(ru, `lang="ru"`) || !strings.Contains(ru, "Смотрим вместе") {
+		t.Error("a Russian browser was answered in English")
+	}
+	// The tag that comes first wins, which is what a browser's ordering means.
+	if got := page("en-GB,en;q=0.9,ru;q=0.8", ""); !strings.Contains(got, `lang="en"`) {
+		t.Error("an English browser was not answered in English")
+	}
+	// Anything else, including nothing at all: a link is forwarded far more
+	// often than it is generated.
+	for _, header := range []string{"", "de-DE", "zh-CN,zh;q=0.9"} {
+		if got := page(header, ""); !strings.Contains(got, `lang="en"`) {
+			t.Errorf("Accept-Language %q was not answered in English", header)
+		}
+	}
+
+	// The installer for the platform that asked, and the page as the fallback.
+	if !strings.Contains(ru, "FramePlayer-setup.exe") {
+		t.Error("a Windows visitor was not offered the Windows installer")
+	}
+	if got := page("en", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)"); !strings.Contains(got, "example.invalid/download") {
+		t.Error("a Mac visitor with no Mac installer configured was not offered the page")
+	}
+	// A shared cache must not hand one visitor's language to the next.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/j/ABC123", nil)
+	req.SetPathValue("code", "ABC123")
+	s.serveJoinPage(rec, req)
+	if v := rec.Header().Get("Vary"); !strings.Contains(v, "Accept-Language") {
+		t.Errorf("Vary = %q", v)
+	}
+}
+
+// The invitation page is something anyone can be linked to, so it stays a
+// document: no script, no framework, nothing that runs. The typeface is the one
+// thing it fetches, and that is a deliberate exception rather than a drift —
+// see the note at the top of page.go.
+func TestTheInvitationPageIsADocument(t *testing.T) {
+	s, _ := startRelay(t, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/j/ABC123", nil)
+	req.SetPathValue("code", "ABC123")
+	s.serveJoinPage(rec, req)
+	body := rec.Body.String()
+	if strings.Contains(body, "<script") || strings.Contains(body, "onload=") {
+		t.Error("the page runs something")
+	}
+	if !strings.Contains(body, "fonts.googleapis.com/css2?family=Rubik") {
+		t.Error("the page is not set in the typeface the player uses")
+	}
+	// One host, and it is the font service. Anything else appearing here is a
+	// dependency somebody added without deciding to.
+	for _, off := range []string{"analytics", "gtag", "doubleclick", "cdn.jsdelivr", "unpkg"} {
+		if strings.Contains(body, off) {
+			t.Errorf("the page reaches %q", off)
+		}
+	}
+}

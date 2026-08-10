@@ -41,6 +41,14 @@
     onToggleFullscreen: () => void;
     onExitFullscreen: () => void;
     onBarHover: (over: boolean) => void;
+    /// Raise the room panel. The chip is the only thing that names the room, so
+    /// it is also where you press to see who is in it.
+    onOpenRoom: () => void;
+    /// Hold the chrome up while the pointer is on the chip — the same thing the
+    /// bar itself reports, and needed for the same reason now that this is a
+    /// control: a button that fades out under a resting cursor cannot be
+    /// pressed.
+    onChipHover: (over: boolean) => void;
   }
 
   let {
@@ -64,6 +72,8 @@
     onToggleFullscreen,
     onExitFullscreen,
     onBarHover,
+    onOpenRoom,
+    onChipHover,
   }: Props = $props();
 
   // ---- the room indicator ----
@@ -232,11 +242,26 @@
      (top-left is where `.osd` appears, and it would cover either outright), and
      when a torrent is feeding a shared room both are legitimately up. -->
 {#if wire.on}
-  <div
+  <!-- A control, unlike the torrent readout beside it, and that is a deliberate
+       exception to the rule those two share. The rule is that a *readout* over
+       the video must not eat clicks — the top bar's gradient taught it once, and
+       what it looks like is the player ignoring you. A button is the opposite
+       case: this is the only thing on screen that names the room, so it is also
+       the obvious thing to press to see who is in it.
+
+       What the rule still costs is the faded state. While idle this is at zero
+       opacity and would otherwise be an invisible button swallowing a click on
+       the picture, so `pointer-events` goes with the opacity. -->
+  <button
     class="roomchip"
     class:below={!!torrentChip}
     class:hidden={idle && !alert}
     class:waiting={alert}
+    data-tip={t('sync.chip_tip')}
+    aria-label={t('sync.chip_tip')}
+    onclick={onOpenRoom}
+    onmouseenter={() => onChipHover(true)}
+    onmouseleave={() => onChipHover(false)}
   >
     <div class="roomchip-line">
       <svg class="roomchip-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -285,7 +310,7 @@
         {/if}
       {/if}
     </div>
-  </div>
+  </button>
 {/if}
 
 <style>
@@ -466,19 +491,26 @@
     right: 18px;
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 5px;
     padding: 7px 11px 8px;
+    text-align: left;
+    cursor: pointer;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 9px;
     background: rgba(16, 16, 22, 0.82);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
     color: #d6d6de;
     font-size: 11.5px;
-    /* A readout, not a control: the gotcha the top bar's gradient already
-       taught once is that anything over the video which eats clicks reads as
-       the player ignoring you. */
-    pointer-events: none;
-    transition: opacity 0.25s ease;
+    transition:
+      opacity 0.25s ease,
+      background 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .roomchip:hover {
+    background: rgba(26, 26, 34, 0.94);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   /* The torrent chip's own height plus the gap between them. A fixed number
@@ -488,8 +520,12 @@
     top: 106px;
   }
 
+  /* The opacity and the hit area move together: a button at zero opacity is an
+     invisible thing swallowing clicks on the picture, which is the readout
+     gotcha wearing the other hat. */
   .roomchip.hidden {
     opacity: 0;
+    pointer-events: none;
   }
 
   /* Waiting is the state that outlives idle, and it says so in more than words:

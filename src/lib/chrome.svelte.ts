@@ -56,6 +56,11 @@ class Chrome {
   uiVisible = $state(true);
   oscHover = $state(false);
   barHover = $state(false);
+  /// The pointer is on the room chip. A third flag for the same idea as the two
+  /// above, and it earns its place the moment the chip stopped being a readout:
+  /// a control that fades out from under a resting cursor cannot be clicked, and
+  /// the chip is where you press to see who is in the room.
+  chipHover = $state(false);
   /// Parked on the title bar: like `oscHover`, keeps the UI from going idle.
   pointerInTitlebar = $state(false);
   cursorHidden = $state(false);
@@ -88,6 +93,7 @@ class Chrome {
       !seek.dragging &&
       !this.oscHover &&
       !this.barHover &&
+      !this.chipHover &&
       !this.uiVisible &&
       !this.overlayOpen &&
       // While casting the window is a remote control and a status display —

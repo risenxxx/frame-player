@@ -334,9 +334,23 @@
               aria-label={IS_MAC ? t('start.torrent_reveal_mac') : t('start.torrent_reveal_win')}
               onclick={() => void revealItemInDir(row.path)}
             >
+              <!-- Nudged right and up by (0.25, 0.75) of the viewBox against
+                   the obvious drawing, and the numbers are measured rather than
+                   dialled in by eye. A folder is not a symmetric glyph: the tab
+                   puts extra outline in the top-left, so the *centroid of the
+                   stroke* — sum of segment lengths times their midpoints — lands
+                   at (7.76, 8.74) in a box whose centre is (8, 8). Every other
+                   icon in this set is a shape whose bounding box and centroid
+                   coincide (the plus, the cross), which is why this one alone
+                   read as sitting low and left inside its 28px button.
+
+                   Written into the three absolute coordinates rather than as a
+                   `transform`, so the path *is* centred and nothing downstream
+                   has to know about a correction. At the 14px render that is
+                   0.22px right and 0.66px up. -->
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <path
-                  d="M2.5 12.2V4.6a.8.8 0 0 1 .8-.8h2.6l1.3 1.5h5.5a.8.8 0 0 1 .8.8v6.1a.8.8 0 0 1-.8.8H3.3a.8.8 0 0 1-.8-.8z"
+                  d="M2.75 11.45V3.85a.8.8 0 0 1 .8-.8h2.6l1.3 1.5h5.5a.8.8 0 0 1 .8.8v6.1a.8.8 0 0 1-.8.8H3.55a.8.8 0 0 1-.8-.8z"
                   fill="none"
                   stroke="currentColor"
                   stroke-width="1.4"

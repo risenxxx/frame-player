@@ -34,6 +34,15 @@ type Config struct {
 	OriginPatterns []string
 	TrustProxy     bool
 
+	// Where the invitation page sends somebody who does not have the player.
+	// Per platform where the operator has a direct installer — an invitation is
+	// not the moment to hand somebody a release list — and a page as the
+	// fallback. All three optional: with none set the page simply does not
+	// offer anything, which is better than offering a dead link.
+	DownloadWin  string
+	DownloadMac  string
+	DownloadPage string
+
 	MaxRooms   int
 	MaxMembers int
 	RoomTTL    time.Duration
@@ -55,6 +64,9 @@ func defaultConfig() Config {
 		PublicURL:        strings.TrimRight(env("RELAY_PUBLIC_URL", ""), "/"),
 		OriginPatterns:   splitList(env("RELAY_ORIGINS", "*")),
 		TrustProxy:       env("RELAY_TRUST_PROXY", "") != "",
+		DownloadWin:      env("RELAY_DOWNLOAD_WIN", ""),
+		DownloadMac:      env("RELAY_DOWNLOAD_MAC", ""),
+		DownloadPage:     env("RELAY_DOWNLOAD_PAGE", ""),
 		MaxRooms:         envInt("RELAY_MAX_ROOMS", 5000),
 		MaxMembers:       envInt("RELAY_MAX_MEMBERS", 16),
 		RoomTTL:          envDur("RELAY_ROOM_TTL", 5*time.Minute),

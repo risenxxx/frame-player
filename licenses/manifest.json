@@ -420,6 +420,16 @@
       "url": "https://www.webmproject.org/",
       "source": "https://github.com/webmproject/libvpx",
       "libs": []
+    },
+    {
+      "id": "rubik",
+      "name": "Rubik",
+      "license": "OFL-1.1",
+      "text": "rubik",
+      "url": "https://fonts.google.com/specimen/Rubik",
+      "source": "https://github.com/googlefonts/rubik",
+      "libs": [],
+      "note": "The interface typeface, shipped as woff2 subsets in static/fonts/ so the player carries its own copy and renders identically offline. Not a library, hence no `libs`: the coverage check is about the dylib closure, and a font ships as an asset — which is exactly why it had no entry here until somebody looked. The OFL requires the copyright notice and licence to travel with the font, which is what this entry is for. The relay page does not redistribute it; it links to Google Fonts."
     }
   ]
 }

@@ -41,6 +41,8 @@ that a process keeping no state can afford to lose.
 | `RELAY_PUBLIC_URL` | — | what `/j/<code>` prints as the address to share |
 | `RELAY_ORIGINS` | `*` | allowed `Origin` patterns — see below |
 | `RELAY_TRUST_PROXY` | off | honour `X-Forwarded-For` |
+| `RELAY_DOWNLOAD_WIN` · `_MAC` | — | direct installer for the visitor's platform, offered on the invitation page |
+| `RELAY_DOWNLOAD_PAGE` | — | fallback for any other platform, or when no direct installer is set |
 | `RELAY_MAX_ROOMS` | 5000 | |
 | `RELAY_MAX_MEMBERS` | 16 | per room |
 | `RELAY_ROOM_TTL` | 5m | how long an empty room waits for somebody to come back |
@@ -48,6 +50,19 @@ that a process keeping no state can afford to lose.
 | `RELAY_SWEEP` | 15s | |
 
 `GET /healthz` and `GET /metrics` (plain text) are there for a monitor.
+
+The invitation page answers in Russian or English from `Accept-Language`, and
+offers the installer for the platform in the `User-Agent` where one is
+configured — a download does not take the tab with it, so the code stays on
+screen behind it. It is a document: no script, no framework, nothing that runs.
+Its one external dependency is the typeface, from Google Fonts. Embedding a copy
+was the first version and was dropped: the privacy discipline that shapes the
+*relay* is about the room and what is being watched in it, and applying it to a
+webfont on a public invitation page bought nothing but a second copy of a font
+to keep in step with the player's.
+
+With none of the download variables set the page simply offers nothing, which is
+better than a dead link.
 
 **`RELAY_ORIGINS` defaults to `*` on purpose.** The room code is the only secret
 here; there are no cookies, no credentials and no ambient authority of any kind,

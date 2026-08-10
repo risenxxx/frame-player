@@ -1281,6 +1281,8 @@
     onToggleFullscreen={() => void toggleFullscreen()}
     onExitFullscreen={() => void exitFullscreen()}
     onBarHover={(over) => (chrome.barHover = over)}
+    onOpenRoom={() => (overlays.room = true)}
+    onChipHover={(over) => (chrome.chipHover = over)}
   />
 
   <!-- Windows only, and that is not a tidy-up: `drag_resize_window` is

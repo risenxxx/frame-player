@@ -46,7 +46,9 @@
   invite.code = '';
 
   let code = $state(invited);
-  let copied = $state(false);
+  /// Which button last copied, not merely *that* something did — one shared
+  /// flag put "Скопировано" on the code button when the link was taken.
+  let copied = $state<'code' | 'link' | null>(null);
 
   const canJoin = $derived(normalizeCode(code).length === CODE_LENGTH);
   /// How the viewer got here, not what is currently typed — so a code entered
@@ -81,12 +83,17 @@
     joinRoom(code);
   }
 
-  async function copy(text: string) {
+  async function copy(what: 'code' | 'link', text: string) {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      copied = true;
-      setTimeout(() => (copied = false), 1600);
+      copied = what;
+      // Cleared only if it is still this one: pressing the other button in the
+      // meantime moves the label there, and clearing then would take the newer
+      // confirmation away early.
+      setTimeout(() => {
+        if (copied === what) copied = null;
+      }, 1600);
     } catch {
       // Clipboard permission is the webview's to refuse; the code is on screen
       // in full either way, which is what it is there for.
@@ -122,11 +129,13 @@
     <div class="room-code">
       <span class="room-code-value">{formatCode(wire.room)}</span>
       <div class="room-copy">
-        <button class="btn-outline" onclick={() => copy(wire.room)}>
-          {copied ? t('sync.copied') : t('sync.copy_code')}
+        <button class="btn-outline" onclick={() => copy('code', wire.room)}>
+          {copied === 'code' ? t('sync.copied') : t('sync.copy_code')}
         </button>
         {#if link}
-          <button class="btn-outline" onclick={() => copy(link)}>{t('sync.copy_link')}</button>
+          <button class="btn-outline" onclick={() => copy('link', link)}>
+            {copied === 'link' ? t('sync.copied') : t('sync.copy_link')}
+          </button>
         {/if}
       </div>
     </div>
@@ -158,16 +167,34 @@
       {#if sync.failed}<div class="link-error">{t('sync.open_failed')}</div>{/if}
     </div>
 
-    <ul class="room-people">
-      {#each wire.members as member (member.id)}
-        <li class="room-person">
-          <span class="room-name">{member.name || t('sync.anon')}</span>
-          {#if member.id === wire.host}<span class="room-badge">{t('sync.host_badge')}</span>{/if}
-          {#if member.id === wire.me}<span class="room-badge">{t('sync.you')}</span>{/if}
-          {#if !member.ready}<span class="room-badge loading">{t('sync.loading_badge')}</span>{/if}
-        </li>
-      {/each}
-    </ul>
+    <!-- A heading and hairline rows rather than another bordered box: the
+         complaint was that the names ran into the prose above and below, which
+         is a *grouping* problem, and a list that looks like a list solves it
+         without nesting a third surface inside the sheet. The glyph carries it
+         at a glance — a column of person marks is legible as "these are people"
+         before a word of it is read. -->
+    <div class="room-people">
+      <div class="setting-label">{t('sync.members', { count: wire.members.length })}</div>
+      <ul class="room-list">
+        {#each wire.members as member (member.id)}
+          <li class="room-person">
+            <svg class="room-person-ico" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M8 8.2a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Zm-4.6 4.9c0-2.5 2.1-3.9 4.6-3.9s4.6 1.4 4.6 3.9"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span class="room-name">{member.name || t('sync.anon')}</span>
+            {#if member.id === wire.host}<span class="room-badge">{t('sync.host_badge')}</span>{/if}
+            {#if member.id === wire.me}<span class="room-badge">{t('sync.you')}</span>{/if}
+            {#if !member.ready}<span class="room-badge loading">{t('sync.loading_badge')}</span>{/if}
+          </li>
+        {/each}
+      </ul>
+    </div>
 
     <!-- The room's own rules, all three of them, and all three the host's.
          They sit together because they are one kind of thing — what this room
@@ -477,20 +504,39 @@
   }
 
   .room-people {
-    list-style: none;
-    margin: 0 0 14px;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
+    margin-bottom: 14px;
   }
 
+  .room-list {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+  }
+
+  /* Separated by a hairline rather than by a gap: with names of wildly
+     different lengths a gap alone leaves a ragged column that reads as prose,
+     which is the thing being fixed. The last row drops its rule so the list
+     ends where the switches below begin. */
   .room-person {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     font-size: 13px;
     color: #d6d6de;
+  }
+
+  .room-person:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .room-person-ico {
+    flex: none;
+    width: 13px;
+    height: 13px;
+    color: #6f6f7a;
   }
 
   .room-name {
