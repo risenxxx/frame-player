@@ -175,8 +175,8 @@ const ru = {
   'torrent.dir_hint':
     'Куда складывать скачанное. По умолчанию — служебная папка приложения: система считает её временной и может очистить. Уже скачанное остаётся на месте и продолжает открываться.',
   'torrent.dir_default_note': 'Служебная папка приложения',
-  'torrent.dir_change': 'Выбрать папку',
-  'torrent.dir_reset': 'Вернуть по умолчанию',
+  'torrent.dir_change': 'Выбрать',
+  'torrent.dir_reset': 'Сброс',
   'torrent.dir_failed': 'Не удалось использовать эту папку: {detail}',
   'torrent.cache_clear': 'Очистить кэш раздач',
   'torrent.cache_hint':
@@ -877,8 +877,8 @@ const en: Record<MessageKey, string> = {
   'torrent.dir_hint':
     "Where downloaded pieces are kept. The default is the app's own cache folder, which the system treats as temporary and may empty. Anything already downloaded stays where it is and keeps opening.",
   'torrent.dir_default_note': "The app's own cache folder",
-  'torrent.dir_change': 'Choose a folder',
-  'torrent.dir_reset': 'Back to the default',
+  'torrent.dir_change': 'Choose',
+  'torrent.dir_reset': 'Reset',
   'torrent.dir_failed': 'That folder cannot be used: {detail}',
   'torrent.cache_clear': 'Clear torrent cache',
   'torrent.cache_hint':

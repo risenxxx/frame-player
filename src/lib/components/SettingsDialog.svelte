@@ -936,42 +936,31 @@
     <div class="setting">
       <div class="setting-label">{t('torrent.dir')}</div>
       <div class="setting-hint">{t('torrent.dir_hint')}</div>
-      {#if torrentDir}
-        <div class="folders">
-          <div class="folder-row">
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                d="M2.5 12.2V4.6a.8.8 0 0 1 .8-.8h2.6l1.3 1.5h5.5a.8.8 0 0 1 .8.8v6.1a.8.8 0 0 1-.8.8H3.3a.8.8 0 0 1-.8-.8z"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.4"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <!-- Same isolation as the excluded folders: the container is rtl so
-                 the ellipsis eats the head of the path rather than its tail, and
-                 without `bdi` the slashes drift. -->
-            <span class="folder-path" title={torrentDir}><bdi>{torrentDir}</bdi></span>
-          </div>
-        </div>
-        {#if torrentDirDefault}
-          <div class="setting-hint">{t('torrent.dir_default_note')}</div>
-        {/if}
-      {/if}
-      <!-- Both are actions, so both are buttons: `.settings-link` promises
-           navigation, and "back to the default" moves where files are written. -->
-      <div class="link-actions">
-        <button
-          class="btn-outline"
-          onclick={async () => {
-            if (await pickTorrentDir()) await readTorrentDir();
-          }}
-        >
-          {t('torrent.dir_change')}
-        </button>
+      <!-- **Shaped as a field with its action inside it**, rather than as a
+           row of text with a button underneath. What it shows is a value that
+           can be changed, which is what a field looks like — and the excluded
+           folders' row, borrowed here first, is built for a *list*: short, and
+           inset by an icon it needs to distinguish one entry from the next.
+           There is one entry here and a label above it saying what it is. -->
+      <div class="torrent-dir">
+        <!-- The container is rtl so the ellipsis eats the head of the path
+             rather than its tail — the meaningful part of a path is its last
+             components — and `bdi` isolates the direction, or the slashes,
+             being neutral characters, drift and "/Users/…" draws as "Users/…/". -->
+        <span class="torrent-dir-path" title={torrentDir ?? ''}><bdi>{torrentDir ?? ''}</bdi></span>
+        <!-- **Both actions belong to the field, so both sit in it.** This was a
+             `.btn-outline` in `.link-actions` first — which is a dialog
+             *footer*: full size, pushed to the bottom right, reading as the
+             main action of the page rather than as an undo for one control.
+             Beside the picker it is unmistakably about this path, and the pair
+             needs no explanation of what it resets. One word for the same
+             reason the delay stepper's reset is one: the noun is already in the
+             label above, and a sentence here would squeeze the path.
+             Quieter than the picker on purpose — choosing is the action, going
+             back to the default is the correction. -->
         {#if !torrentDirDefault}
           <button
-            class="btn-outline"
+            class="torrent-dir-reset"
             onclick={async () => {
               await resetTorrentDir();
               await readTorrentDir();
@@ -980,7 +969,18 @@
             {t('torrent.dir_reset')}
           </button>
         {/if}
+        <button
+          class="torrent-dir-pick"
+          onclick={async () => {
+            if (await pickTorrentDir()) await readTorrentDir();
+          }}
+        >
+          {t('torrent.dir_change')}
+        </button>
       </div>
+      {#if torrentDirDefault}
+        <div class="setting-hint">{t('torrent.dir_default_note')}</div>
+      {/if}
     </div>
 
     <!-- Streaming a torrent writes the pieces to disk, so a few films fill
@@ -1532,6 +1532,92 @@
     padding: 7px 8px 7px 10px;
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.05);
+  }
+
+  /* A field, and the same one `.link-input` is: same border, fill, radius and
+     outer height, so the two read as one control shape across the sheet. The
+     height is reproduced by the button plus this padding and border (28 + 8 +
+     2) rather than by copying the input's padding, because here the button is
+     what sets it — and every box is a border box (the reset in app.css), which
+     is what makes the two numbers comparable at all.
+
+     **Measured against the built stylesheet in both engines, and they do not
+     agree about the input**: Chromium puts `.link-input` at 38.00 and WebKit at
+     37.00, because its default line box for 13px text is a pixel shorter. So
+     there is no height that matches on both, 38 matches Chromium exactly and
+     WebKit by a pixel, and the two controls are never adjacent anyway — the
+     relay field is in «Основные» and this is in «Раздачи». */
+  .torrent-dir {
+    display: flex;
+    align-items: center;
+    /* Tighter than the 8px it was: this gap now also falls *between* the two
+       chips, and at 8px they read as two separate offers rather than as one
+       pair of actions belonging to the path beside them. */
+    gap: 6px;
+    margin-top: 6px;
+    /* Asymmetric on purpose: the right side is the gap around the button and
+       obeys the concentric-corner rule below, while the left is `.link-input`'s
+       own 12px, so text in the two fields starts at the same offset when they
+       are stacked. */
+    padding: 4px 4px 4px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .torrent-dir-path {
+    flex: 1;
+    min-width: 0;
+    /* Truncate the start, not the tail: for a path the meaningful part is its
+       last components. Direction isolated by <bdi> in the markup. */
+    direction: rtl;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #d6d6de;
+    font-size: 12px;
+  }
+
+  /* Inner radius = outer minus the gap (8 − 4), the concentric rule a rounded
+     box inside another rounded box has to obey or the two curves fight. */
+  .torrent-dir-pick {
+    flex: none;
+    height: 28px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #d6d6de;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+
+  .torrent-dir-pick:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+  }
+
+  /* The picker's twin, one step quieter: same box, no fill until the pointer
+     arrives. Two filled chips side by side would be two equal offers, and they
+     are not — one chooses, the other undoes. */
+  .torrent-dir-reset {
+    flex: none;
+    height: 28px;
+    padding: 0 9px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #8a8a95;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+
+  .torrent-dir-reset:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #e8e8ec;
   }
 
   .folder-ico {

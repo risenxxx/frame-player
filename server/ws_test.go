@@ -487,3 +487,45 @@ func TestTheTabIcon(t *testing.T) {
 		t.Error("the page does not point at the icon this relay serves")
 	}
 }
+
+// The invitation page's markup and CSS live in a raw string literal, and a
+// backtick anywhere inside one ends it. That has broken the build three times
+// while writing comments about CSS, where backticks around property names are
+// the natural way to write. The compiler catches it, but only after the fact and
+// with an error pointing at whatever line the string now runs into; this says
+// what actually happened.
+func TestTheTemplateHasNoBackticks(t *testing.T) {
+	s, _ := startRelay(t, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/j/ABC123", nil)
+	req.SetPathValue("code", "ABC123")
+	s.serveJoinPage(rec, req)
+	if strings.Contains(rec.Body.String(), "`") {
+		t.Error("a backtick reached the rendered page — the raw string literal it lives in cannot contain one")
+	}
+}
+
+// What made the page jump in a browser that injects into the document: an
+// element appended to body became a second grid item, the grid grew a row, and
+// the centred content moved into the upper half.
+func TestExtensionsCannotReachTheLayout(t *testing.T) {
+	s, _ := startRelay(t, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/j/ABC123", nil)
+	req.SetPathValue("code", "ABC123")
+	s.serveJoinPage(rec, req)
+	body := rec.Body.String()
+
+	// The centring happens in an element of ours, so anything appended to body
+	// lands after it in normal flow rather than inside the layout.
+	if !strings.Contains(body, `<body><div class="page">`) {
+		t.Error("the content is no longer wrapped, so body is a layout container for whatever gets injected into it")
+	}
+	// And body itself must stay an ordinary block: making it a flex or grid
+	// container is what turned an injected sibling into a layout participant.
+	for _, laid := range []string{"body {\n    margin: 0;\n    display: grid", "body {\n    margin: 0;\n    display: flex"} {
+		if strings.Contains(body, laid) {
+			t.Error("body is a layout container again")
+		}
+	}
+}

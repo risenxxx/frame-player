@@ -188,8 +188,32 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@300..900&display=swap">
 <style>
   * { box-sizing: border-box }
+  /* **The page centres itself inside an element of its own, and body is left an
+     ordinary block.**
+
+     Browser extensions append to document.body — Comet adds an empty
+     browser-mcp-container element at the end of it, and others do the same.
+     While body was the grid container, that injected node became a *second grid
+     item*: the grid grew a second implicit row and place-items centred the
+     content in the upper half instead of in the page. Measured by reproducing
+     the injection locally, the block moved from 246-556 to 139-449 — a jump of
+     107 px upward, which is exactly what was reported.
+
+     A wrapper we own is the fix rather than a workaround: anything appended to
+     body now lands after our box in normal flow and cannot reach our layout at
+     all. Flex rather than grid inside it for the same reason one level down — a
+     stray sibling in a centred row costs nothing vertically, where in a grid it
+     becomes a row. Two cheap defences at the two places something can be
+     injected, and the second is what keeps a future edit that drops the wrapper
+     from silently bringing the bug back. */
   body {
     margin: 0;
+    background: #101016;
+    color: #e8e8ec;
+    font: 400 15px/1.55 'Rubik', -apple-system, 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
     /* svh, not vh — and the plain vh above it is what older browsers get.
        On a phone 100vh is the *large* viewport: the height the page would have
        once the address bar has scrolled away. At load, while the bar is still
@@ -207,10 +231,10 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
        literal and one would end it. This is the second time.) */
     min-height: 100vh;
     min-height: 100svh;
-    display: grid; place-items: center;
-    background: #101016; color: #e8e8ec; padding: 24px;
-    font: 400 15px/1.55 'Rubik', -apple-system, 'Segoe UI', system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
   }
   main { width: 100%; max-width: 340px; text-align: center }
   /* Every run of prose here is two or three lines in a fixed column, which is
@@ -275,7 +299,7 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
   .get:hover { border-bottom-color: #c7cbff }
   .foot { margin-top: 22px; font-size: 11.5px; color: #64646f }
 </style>
-</head><body><main>
+</head><body><div class="page"><main>
   <h1>{{.Title}}</h1>
   <p class="lead">{{.Sub}}</p>
 
@@ -298,7 +322,7 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
   {{end}}
 
   <p class="foot">{{.Privacy}}</p>
-</main></body></html>
+</main></div></body></html>
 `))
 
 func (s *server) serveJoinPage(w http.ResponseWriter, r *http.Request) {

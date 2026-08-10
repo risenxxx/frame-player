@@ -8,6 +8,8 @@
   /// a torrent all reach into the player, and this component deliberately knows
   /// nothing about it.
   import { tick } from 'svelte';
+
+  import { flipAxis, shiftAxis } from '$lib/floating';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
   import { formatTime } from '$lib/format';
@@ -58,9 +60,112 @@
     onDeleteWatched,
   }: Props = $props();
 
-  /// Which row is asking what to delete. One at a time: two open panels would
-  /// be two questions on screen with one answer expected.
-  let deleteFor = $state<string | null>(null);
+  /**
+   * The delete menu: which row asked, where it goes, and what it may offer.
+   *
+   * A floating panel rather than the row expanding underneath itself. The
+   * expanding version pushed every row below it down at the moment a
+   * destructive question was asked — the list moved under the cursor that was
+   * about to answer — and it made a row two heights, which a list of rows
+   * should not be.
+   *
+   * `placed` is the two-pass placement every floating box here needs: the size
+   * cannot be measured until it is in the DOM, so it is rendered hidden, laid
+   * out, and shown. `visibility` rather than a conditional block, or there is
+   * nothing to measure.
+   */
+  let menu = $state<{
+    row: TorrentRow;
+    folder: string;
+    seen: number;
+    x: number;
+    y: number;
+    placed: boolean;
+  } | null>(null);
+  let menuEl = $state<HTMLDivElement | undefined>();
+  /// The row whose cross is lit — the menu's own folder, or nothing.
+  const deleteFor = $derived(menu?.folder ?? null);
+
+  async function openDeleteMenu(row: TorrentRow, anchor: HTMLElement) {
+    if (menu?.folder === row.folder) {
+      closeDeleteMenu();
+      return;
+    }
+    menu = {
+      row,
+      folder: row.folder,
+      seen: row.info_hash ? watchedFiles(row.info_hash).size : 0,
+      x: 0,
+      y: 0,
+      placed: false,
+    };
+    await tick();
+    if (!menuEl || !menu) return;
+    const a = anchor.getBoundingClientRect();
+    const box = menuEl.getBoundingClientRect();
+    // Sideways out of the row, like a submenu: left of the cross by preference,
+    // since the cross sits at the right edge of a panel that is itself centred
+    // and the window margin beside it is usually the narrower side.
+    const h = flipAxis({
+      near: a.left,
+      far: a.right,
+      size: box.width,
+      limit: window.innerWidth,
+      gap: 6,
+      preferBefore: true,
+    });
+    menu = {
+      ...menu,
+      x: h.pos,
+      // Hung from the cross's top edge and slid up only as far as it must, so
+      // the panel reads as coming out of the row it belongs to.
+      y: shiftAxis(a.top - 6, box.height, window.innerHeight),
+      placed: true,
+    };
+  }
+
+  function closeDeleteMenu() {
+    menu = null;
+  }
+
+  /**
+   * Everything that invalidates a placement in viewport coordinates.
+   *
+   * A fixed panel does not travel with the content underneath it, so a scroll
+   * would leave it pointing at a row that has moved. Closing is the honest
+   * answer — the alternative is re-placing on every scroll frame for a panel
+   * that is open for a second.
+   *
+   * The outside click is captured, so it closes the menu before it reaches
+   * whatever is under it; the cross's own handler still toggles, because the
+   * capture listener leaves clicks inside the menu and on the anchor alone.
+   */
+  $effect(() => {
+    if (!menu) return;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest('.rowmenu') || target?.closest('.torrow-forget')) return;
+      closeDeleteMenu();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closeDeleteMenu();
+      }
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', closeDeleteMenu);
+    // The list scrolls inside `.overlay`, and the window itself does not, so
+    // this has to listen in the capture phase: a scroll event does not bubble.
+    window.addEventListener('scroll', closeDeleteMenu, true);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', closeDeleteMenu);
+      window.removeEventListener('scroll', closeDeleteMenu, true);
+    };
+  });
 
   /**
    * What a recents card is pointing at, for its tooltip.
@@ -402,8 +507,7 @@
                 ? t('start.torrent_playing')
                 : t('start.torrent_delete')}
               aria-label={t('start.torrent_delete')}
-              onclick={() =>
-                (deleteFor = deleteFor === row.folder ? null : row.folder)}
+              onclick={(e) => openDeleteMenu(row, e.currentTarget)}
             >
               <svg viewBox="0 0 10 10" aria-hidden="true">
                 <path
@@ -416,39 +520,55 @@
             </button>
             </div>
           </div>
-          {#if deleteFor === row.folder}
-            <!-- Expanded in place rather than in a floating menu, the same call
-                 the cast picker's per-device panel makes: a panel hoisted out of
-                 this list would need the context menu's hover bridge, its click
-                 guards and its drill-down for a narrow window, all for two
-                 buttons. It also turns the cross into a two-step action, which
-                 for something that deletes a season is a gain rather than a
-                 cost. -->
-            {@const seen = row.info_hash ? watchedFiles(row.info_hash).size : 0}
-            <div class="torrow-delete">
-              <span class="torrow-delete-q">{t('start.torrent_delete_what')}</span>
-              {#if seen > 0}
-                <button class="btn-outline" onclick={() => onDeleteWatched(row)}>
-                  {t('start.torrent_delete_watched', { count: seen })}
-                </button>
-              {/if}
-              <button
-                class="btn-danger"
-                onclick={() => {
-                  deleteFor = null;
-                  onDeleteTorrent(row);
-                }}
-              >
-                {t('start.torrent_delete_all')}
-              </button>
-            </div>
-          {/if}
         {/each}
       </div>
     </div>
   {/if}
   </div>
 </div>
+
+<!-- **Outside `.overlay`, which scrolls.** `position: fixed` inside a scroll
+     container measures and hit-tests correctly in both engines and is still
+     clipped on screen — the finding that moved the context menu's submenus out
+     of their parent. So the panel is a sibling of the list, placed in viewport
+     coordinates, and closed when anything moves underneath it. -->
+{#if menu}
+  <div
+    class="rowmenu"
+    bind:this={menuEl}
+    style="left: {menu.x}px; top: {menu.y}px; visibility: {menu.placed
+      ? 'visible'
+      : 'hidden'}"
+    role="menu"
+    tabindex="-1"
+  >
+    <div class="rowmenu-head">{t('start.torrent_delete_what')}</div>
+    {#if menu.seen > 0}
+      <button
+        class="menu-item"
+        role="menuitem"
+        onclick={() => {
+          const row = menu?.row;
+          closeDeleteMenu();
+          if (row) onDeleteWatched(row);
+        }}
+      >
+        {t('start.torrent_delete_watched', { count: menu.seen })}
+      </button>
+    {/if}
+    <button
+      class="menu-item danger"
+      role="menuitem"
+      onclick={() => {
+        const row = menu?.row;
+        closeDeleteMenu();
+        if (row) onDeleteTorrent(row);
+      }}
+    >
+      {t('start.torrent_delete_all')}
+    </button>
+  </div>
+{/if}
 
 <style>
   /* The two ways in, side by side: the file picker is the primary action and
@@ -685,23 +805,34 @@
     color: #e8e8ec;
   }
 
-  /* The question the cross now asks, under the row it belongs to. Indented to
-     the row's own text so it reads as part of it rather than as a new row, and
-     laid out as one line because it is one question with two answers. */
-  .torrow-delete {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 0 14px 12px;
-    margin-top: -4px;
+  /* The floating-surface recipe, taken whole: the fill is also the start
+     screen's own colour, so without the hairline border this panel would be
+     invisible here, and without the shadow it would be lost over a bright
+     poster. Narrower than `.ctxmenu`'s 256px minimum on purpose — that number
+     is sized for the speed row, and this menu is two short answers to one
+     question. */
+  .rowmenu {
+    position: fixed;
+    z-index: 60;
+    min-width: 190px;
+    padding: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: rgba(16, 16, 22, 0.96);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   }
 
-  .torrow-delete-q {
-    flex: 1;
-    min-width: 0;
-    color: #8a8a95;
-    font-size: 12.5px;
+  .rowmenu-head {
+    padding: 4px 8px 6px;
+    color: #77777f;
+    font-size: 11.5px;
+  }
+
+  /* The one destructive row, coloured on hover rather than at rest: red text
+     sitting in a menu reads as a warning about the menu, not as a description
+     of one item in it. */
+  .rowmenu .menu-item.danger:hover {
+    color: #f0a0a0;
   }
 
   /* Lit while its panel is open, so the row that is asking is obvious when two
