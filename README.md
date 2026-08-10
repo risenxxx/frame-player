@@ -24,6 +24,7 @@ whatever an OSC script can draw.
 - [Highlights](#highlights)
 - [Install](#install) — [Windows](#windows) · [macOS](#macos)
 - [Features](#features)
+- [Watch together](#watch-together)
 - [Configuration](#configuration)
 - [Hotkeys](#hotkeys)
 - [Building](#building) — [Windows](#windows-1) · [macOS](#macos-1) · [Tests](#tests)
@@ -43,6 +44,15 @@ you can see whether a jump will land or wait, subtitles shipped inside the
 torrent are attached automatically, and the next episode is fetched ahead once
 the current one is complete. Nothing is downloaded until you actually ask for
 it, and **seeding is off by default**.
+
+**Watch it with somebody who is not in the room.** A six-character code puts two
+players on one timeline: the same position, the same pauses, the same episode.
+Drift is corrected by nudging playback speed rather than by seeking — a seek to
+fix a tenth of a second costs a decode from the previous keyframe and lands you
+further out than you started — and a room pauses itself for anybody still
+buffering. If what you are watching is a torrent, everybody else fetches it from
+the same swarm and follows you through the season without pasting anything.
+Nothing but the timeline goes through the relay; no media ever does.
 
 **Send it to the television, without repacking it first.** The player speaks
 both Google Cast and DLNA and picks per device and per file: where the set can
@@ -239,6 +249,49 @@ Settings → Privacy & Security* — the path that has a way out, as opposed to 
   and every 6 hours and offers a one-click update that reopens the current video
   at the same position.
 
+## Watch together
+
+A room holds a **timeline** — what is playing, whether it is paused, where in it
+and at what speed. Everyone fetches the film themselves, so no media passes
+between the players and none passes through the relay.
+
+Open the context menu → **Смотреть вместе** (Watch together). Create a room and
+you get a six-character code and a link; either one gets somebody else in. A
+`frameplayer://join/ABC123` link opens the player straight into the join dialog
+with the code filled in — it is *offered* rather than obeyed, because a custom
+scheme is a surface any web page can aim at.
+
+**What is shared, and what is not.** Position, pause, speed and which file is
+playing are the room's. Volume, subtitle appearance, zoom, delays and window
+state are yours. Track choices sit in between and are a *rule of the room*, set
+by the host beside "only the host controls playback": the audio track is shared
+by default (a room is watching one film and listening to one soundtrack) and
+subtitles are not (one viewer needs them and another does not — sharing that
+choice would turn them off for somebody who cannot follow the film without
+them). A track travels as a *description* rather than a track number, so it
+still resolves correctly when two people have different rips.
+
+**What everybody else opens** depends on where your film came from:
+
+| source | what happens on the other machines |
+|---|---|
+| torrent | the magnet and the file index travel; everyone opens the same episode themselves, and switching episode carries the room with it |
+| link | the URL travels and each player resolves it |
+| local file | nothing can be sent, so the room shows the name, length and release hash — open your own copy and the player says whether it is the same release, a different rip, or a different film |
+| a file in a hidden folder | the timeline still syncs and the name does not leave your machine |
+
+**Anybody can control playback** by default, and the host can turn that off. A
+room pauses itself while any member is still opening a file or buffering, and
+says who it is waiting for; a member who never reports stops holding it up after
+45 seconds.
+
+**The relay** is a small Go server in [`server/`](server/) — no database,
+nothing written to disk, and a room ceases to exist a few minutes after the last
+person leaves. Builds point at a default instance; the address is a field in
+**Settings → Основные**, so running your own is a setting rather than a fork.
+See [server/README.md](server/README.md) to deploy one and
+[docs/watch-together.md](docs/watch-together.md) for the design.
+
 ## Configuration
 
 The player reads an `mpv.conf` of its own, created with a commented template on
@@ -356,6 +409,27 @@ cd src-tauri && FP_TEST_VIDEO=/path/to/test.mp4 cargo test --lib -- --nocapture
 On macOS a test binary cannot find the bundled dylibs on its own, so add
 `DYLD_FALLBACK_LIBRARY_PATH=$PWD/lib`.
 
+The watch-together relay is its own tree and its own run — the Node gates do not
+reach it, and `shared/sync-protocol.txt` is a contract only one half of which
+they check:
+
+```bash
+cd server && go vet ./... && go test -race ./...
+```
+
+Testing a *room* needs two players, and the player is single-instance, so a
+second `npm run tauri dev` signals the first rather than starting one.
+`cmd/probe` is the other end of a room — it joins, follows the timeline and
+prints where it thinks playback is, so the real player can be driven by hand and
+watched from a terminal:
+
+```bash
+go run ./server &
+go run ./server/cmd/probe -room ABC123 -drive
+go run ./server/cmd/probe -room ABC123 -skew 300ms   # a clock that is wrong on purpose
+go run ./server/cmd/probe -room ABC123 -hold 20s     # hold the room, on purpose
+```
+
 ## Project structure
 
 | Path | What lives there |
@@ -369,10 +443,13 @@ On macOS a test binary cannot find the bundled dylibs on its own, so add
 | `src-tauri/src/torrent.rs` | Torrent session and the loopback HTTP server mpv opens |
 | `src-tauri/src/cast.rs` · `dlna.rs` | Casting: the Cast client, the LAN file server, the UPnP transport |
 | `src-tauri/src/opensubtitles.rs` | Subtitle search and download |
+| `src/lib/sync/` | Watching together: the wire, the clock estimate, content identity, drift correction |
+| `server/` | The watch-together relay (Go) and `cmd/probe`, a headless peer for testing it alone |
 | `src-tauri/src/macos_*.rs` | Native window chrome and menu bar on macOS |
 | `src-tauri/lua/zoompan.lua` | Atomic zoom+pan applied on mpv's core thread |
 | `patches/` | The mpv `--wid` embedding patch for macOS |
 | `scripts/` | SDK fetching, the macOS libmpv build, dylib bundling, DMG layout |
+| `shared/` | Contracts two languages have to keep, read by both test suites |
 | `docs/` | Design notes: why the architecture, the transports and the shipping story look like this |
 | `external-issues-backlog/` | Upstream bugs found here, written up for filing |
 

@@ -28,6 +28,7 @@ function positions(map: Record<string, Rec>) {
 // is the one thing these tests are here to notice.
 const row = (hash: string | null): TorrentOnDisk => ({
   folder: hash ?? 'x',
+  path: `/torrents/${hash ?? 'x'}`,
   size: 0,
   info_hash: hash,
   // What the disk says it is called, which nothing here depends on: a resume

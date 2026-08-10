@@ -74,6 +74,7 @@ import {
   chapterTitle,
   jumpChapter,
   player,
+  positionNow,
   seekChapter,
   setVolume as mpvSetVolume,
   toggleMute as mpvToggleMute,
@@ -201,12 +202,17 @@ export const playback = new Playback();
  * and `player.timePos` still describe the state the gesture is about to leave.
  * Publishing those would send the room the previous position — and, since the
  * relay stamps whatever arrives, would then drag everybody back to it.
+ *
+ * Where no position is given — a pause, a speed change — the *extrapolated* one
+ * is used rather than the mirror, for the same reason the reconciler reads it:
+ * `time-pos` is an event, so the mirror is tens of milliseconds behind, and
+ * publishing it tells the room the film is further back than it is.
  */
 function share(next: { paused?: boolean; position?: number; speed?: number }) {
   if (!wire.on) return;
   publishState(
     next.paused ?? playback.paused,
-    clampPosition(next.position ?? playback.position),
+    clampPosition(next.position ?? (cast.remote ? playback.position : positionNow())),
     next.speed ?? player.speed,
   );
 }

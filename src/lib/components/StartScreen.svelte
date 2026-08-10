@@ -8,8 +8,10 @@
   /// a torrent all reach into the player, and this component deliberately knows
   /// nothing about it.
   import { tick } from 'svelte';
+  import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
   import { formatTime } from '$lib/format';
+  import { IS_MAC } from '$lib/platform';
   import { history, type RecentItem } from '$lib/history.svelte';
   import { t } from '$lib/i18n.svelte';
   import { withKey } from '$lib/keys.svelte';
@@ -320,6 +322,28 @@
                  text and the actions — rather than between every pair and
                  undoing the centering it was computed for. -->
             <div class="torrow-actions">
+            <!-- Where the files are is a question this section raises and,
+                 until now, refused to answer: it is the one place that says
+                 how much disk a torrent takes, while the folder itself sits in
+                 a cache directory under an info-hash name that nobody would
+                 find by browsing. The path comes from Rust because the root is
+                 Rust's to know — and is about to stop being a constant. -->
+            <button
+              class="card-forget torrow-forget torrow-reveal"
+              data-tip={IS_MAC ? t('start.torrent_reveal_mac') : t('start.torrent_reveal_win')}
+              aria-label={IS_MAC ? t('start.torrent_reveal_mac') : t('start.torrent_reveal_win')}
+              onclick={() => void revealItemInDir(row.path)}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M2.5 12.2V4.6a.8.8 0 0 1 .8-.8h2.6l1.3 1.5h5.5a.8.8 0 0 1 .8.8v6.1a.8.8 0 0 1-.8.8H3.3a.8.8 0 0 1-.8-.8z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
             {#if row.known}
               {@const known = row.known}
               <button
@@ -635,6 +659,16 @@
      Written to beat `.torrow-forget svg` above rather than left to source order,
      since the update button carries both classes. */
   .card-forget.torrow-forget.torrow-update svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* An outline the size of the plus rather than of the cross: a folder is a
+     closed shape carrying its own tab, and at the cross's 10px the notch stops
+     being legible as one. Written to beat `.torrow-forget svg` for the same
+     reason the update button is — the button carries both classes and equal
+     specificity would leave it to source order. */
+  .card-forget.torrow-forget.torrow-reveal svg {
     width: 14px;
     height: 14px;
   }

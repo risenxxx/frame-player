@@ -162,6 +162,11 @@ pub struct TorrentOnDisk {
     /// that is the 40-hex info hash (see `add`); anything else predates that
     /// layout and can only be measured and deleted, not resumed.
     pub folder: String,
+    /// Where that folder actually is, so the frontend can hand it to
+    /// `revealItemInDir`. The name alone is not enough — the root is Rust's to
+    /// know, and about to stop being a constant (the viewer will be able to
+    /// choose it).
+    pub path: String,
     /// Set when `folder` is a well-formed info hash.
     pub info_hash: Option<String>,
     pub size: u64,
@@ -573,6 +578,31 @@ impl TorrentService {
             // Without it, re-opening a magnet watched yesterday errors on the
             // existing files instead of continuing from them.
             overwrite: true,
+            // **Nothing is wanted yet, and saying so is what keeps a season
+            // from costing its full weight the moment it is opened.** Left
+            // unset, this is `None`, and librqbit reads that as "everything":
+            // `initializing.rs` stretches every file of the torrent to its full
+            // length (`set_len`) before handing it over. On APFS and ext4 that
+            // is free — a hole allocates nothing — but **NTFS has no sparse
+            // file unless somebody asks for one with `FSCTL_SET_SPARSE`, and
+            // librqbit never does**, so on Windows a nine-episode season
+            // occupied all of itself from the first open while two episodes had
+            // actually been fetched. Reported as "the empty files take up
+            // space", which is exactly what they do.
+            //
+            // An empty selection is legal — `compute_only_files` only checks
+            // that each index is in range — and it costs nothing later, because
+            // `update_only_files`, which `select` already calls, does not
+            // preallocate at all: it moves the chunk tracker and the
+            // persistence record, and the file grows as pieces are written.
+            //
+            // It also gives `torrent_offline_file` back a signal it had lost:
+            // that gate compares the file's length against the torrent's, and
+            // with everything preallocated the comparison was always equal — so
+            // on Windows, where the allocated size *is* the length, an untouched
+            // file was indistinguishable from a finished one and a poster could
+            // be decoded out of zeros.
+            only_files: Some(Vec::new()),
             // **The folder is the info hash**, rather than librqbit's default of
             // the torrent's own name. Three reasons, and the first is the one
             // that decides it: `ManagedTorrentOptions.output_folder` is
@@ -981,6 +1011,7 @@ impl TorrentService {
             let name = info_hash.as_deref().and_then(|h| cached_name(dir, h));
             out.push(TorrentOnDisk {
                 size: dir_size(&entry.path()),
+                path: entry.path().to_string_lossy().into_owned(),
                 info_hash,
                 name,
                 folder,
@@ -2358,6 +2389,85 @@ mod tests {
         // The guard is not merely returning errors — nothing was removed.
         assert!(base.join("victim").is_dir());
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// **Opening a torrent must not cost the weight of the torrent.**
+    ///
+    /// librqbit stretches every file to its full length at initialization
+    /// unless told which ones are wanted, and on NTFS — where a file is not
+    /// sparse unless somebody asks — that allocation is real: a season occupied
+    /// all of itself while two episodes had been fetched. `only_files:
+    /// Some(vec![])` at `add` is what prevents it, and this is the assertion
+    /// that fails if anybody removes it.
+    ///
+    /// Length rather than allocated blocks, deliberately: `set_len` is what the
+    /// change is about, and a length is the same fact on every filesystem,
+    /// while blocks are free on APFS and would make this pass on the platform
+    /// that never had the problem.
+    #[test]
+    fn an_unopened_torrent_allocates_nothing() {
+        tauri::async_runtime::block_on(async {
+            let base = std::env::temp_dir().join("frameplayer-prealloc-torrent");
+            let _ = std::fs::remove_dir_all(&base);
+            let stage = base.join("stage");
+            std::fs::create_dir_all(&stage).unwrap();
+
+            let payload: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+            std::fs::write(stage.join("ep1.mkv"), &payload).unwrap();
+            std::fs::write(stage.join("ep2.mkv"), &payload).unwrap();
+
+            let created = librqbit::create_torrent(
+                &stage,
+                librqbit::CreateTorrentOptions {
+                    name: Some("season"),
+                    piece_length: Some(32 * 1024),
+                },
+            )
+            .await
+            .unwrap();
+            let hash = created.info_hash().as_string();
+
+            // The metadata is cached, so nothing has to be resolved; the data is
+            // thrown away, so this is a torrent nobody has downloaded yet.
+            let meta = meta_path(&base, &hash);
+            std::fs::create_dir_all(meta.parent().unwrap()).unwrap();
+            std::fs::write(&meta, created.as_bytes().unwrap()).unwrap();
+            std::fs::remove_dir_all(&stage).unwrap();
+
+            let service = Arc::new(TorrentService::default());
+            let info = service
+                .add(base.clone(), format!("magnet:?xt=urn:btih:{hash}"), false, false)
+                .await
+                .expect("add failed");
+            assert_eq!(info.files.len(), 2);
+
+            // **`add` returns while the torrent is still `Initializing`**, and
+            // the preallocation this test is about happens at the *end* of that
+            // phase — so checking the files straight after `add` finds them
+            // zero-length whatever `only_files` says, and the test passes
+            // without the code it exists to pin. (Established by removing the
+            // fix and watching it stay green.) Waiting is the whole assertion.
+            let handle = {
+                let inner = service.inner.lock().await;
+                inner.torrents[&info.info_hash].handle.clone()
+            };
+            service.wait_ready(&handle).await.expect("never initialized");
+
+            for file in &info.files {
+                let path = base.join(&hash).join(&file.path);
+                let meta = std::fs::metadata(&path)
+                    .unwrap_or_else(|e| panic!("no file at {}: {e}", path.display()));
+                assert_eq!(
+                    meta.len(),
+                    0,
+                    "{} was preallocated to {} bytes — only_files is not empty at add",
+                    file.path,
+                    meta.len()
+                );
+            }
+
+            let _ = std::fs::remove_dir_all(&base);
+        });
     }
 
     /// **A file already on disk is served without touching the swarm**, proved

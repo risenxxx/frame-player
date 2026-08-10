@@ -565,6 +565,10 @@ export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
 
 export interface TorrentOnDisk {
   folder: string;
+  /// Absolute path to that folder. The root belongs to Rust — the frontend
+  /// cannot compose this itself, and is about to have even less business
+  /// trying, since the viewer will be able to choose where the files go.
+  path: string;
   info_hash: string | null;
   size: number;
   /// The torrent's own name, read from the metadata cached beside its data.

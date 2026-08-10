@@ -130,7 +130,12 @@ export function initSync() {
     // changes nothing, and making an evening stop for somebody who is off
     // looking for their own copy is worse than letting it run. They are told
     // what to open; the panel says so.
-    const willOpen = !player.hasFile && !sync.unopenable;
+    // ...and only when there is something to open. A viewer sitting on the
+    // start screen of a room where nothing is playing is not holding anybody
+    // up — there is nothing to be ready *for* — and reporting otherwise made
+    // creating a room from the start screen announce "waiting for you" about a
+    // wait that did not exist and could not end.
+    const willOpen = !player.hasFile && !sync.unopenable && wire.timeline.content !== null;
     const busy = sync.opening || player.stalled || willOpen;
     reportReady(!busy, busy ? 'buffering' : '');
   });
@@ -305,6 +310,17 @@ async function openContent(ref: ContentRef | null) {
  */
 function reconcile() {
   if (!wire.on || !player.hasFile) return;
+  // **Alone in a room there is nothing to keep in step with**, and correcting
+  // anyway is not merely pointless — it is self-inflicted. Every publish stamps
+  // its `at` when the relay receives it while its `position` was read a moment
+  // earlier here, so a lone member is always a little out of step with a
+  // timeline nobody else is reading, and the corrector then bends the speed to
+  // chase it. Reported as a film playing slightly fast in an empty room, which
+  // is exactly what it was.
+  if (wire.members.length < 2) {
+    restoreSpeed();
+    return;
+  }
   const tl = wire.timeline;
   if (!tl.content) return;
   // Our own last change has not come back yet, so the authoritative timeline

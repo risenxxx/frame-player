@@ -184,7 +184,10 @@
       {#if !wire.isHost}<p class="setting-hint">{t('sync.rules_guest')}</p>{/if}
     </div>
 
-    {#if Number.isFinite(wire.uncertainty)}
+    <!-- Only once there is somebody to be out of step with. Alone in a room the
+         figure is real but answers a question nobody asked, and printing it
+         beside a film that is playing perfectly reads as a warning. -->
+    {#if wire.members.length > 1 && Number.isFinite(wire.uncertainty)}
       <p class="setting-hint">{t('sync.clock', { ms: Math.round(wire.uncertainty) })}</p>
     {/if}
 
@@ -418,6 +421,18 @@
   .room-copy {
     display: flex;
     gap: 8px;
+  }
+
+  /* Smaller than a standalone `.btn-outline`, which is sized for being the
+     thing you came to press. These sit beside the code and are how you *take*
+     it away — secondary to the six characters they are next to, which are set
+     at 26px. Specificity: a scoped `.room-copy .btn-outline` is (0,2,0) against
+     the shared `button.btn-outline` at (0,1,1), and classes are compared before
+     elements — so this wins wherever the two meet. */
+  .room-copy .btn-outline {
+    padding: 0 12px;
+    height: 30px;
+    font-size: 12.5px;
   }
 
   .room-waiting {
