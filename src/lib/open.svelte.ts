@@ -366,6 +366,22 @@ export function cancelLoadFailure() {
 /// A file opened. Whatever failed on the way there was a step and not an
 /// outcome, and nothing is being attempted any more.
 export function noteOpened() {
+  abandonOpening();
+}
+
+/**
+ * The viewer left before anything opened.
+ *
+ * Deliberately not `noteOpened`, which says a file arrived: here nothing did,
+ * and the two only happen to clear the same three things. The indicator is
+ * raised in `beforeLoad` and taken down on `file-loaded`, so **every way out of
+ * a load that never lands has to say so** — otherwise the flag stands for the
+ * rest of the session. Going back to the start screen from a torrent still
+ * finding peers is that way out, and it left "открываем ссылку…" over the
+ * picker with nothing left to clear it: mpv answers the `stop` with an
+ * `end-file` whose reason is `stop`, and only `error` reaches the failure path.
+ */
+export function abandonOpening() {
   clearTimeout(loadFailTimer);
   opening.attempting = '';
   opening.busy = false;

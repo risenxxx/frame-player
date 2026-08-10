@@ -8,6 +8,7 @@ mod macos_chrome;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 mod cast;
+mod color;
 mod catalog;
 mod dlna;
 mod opensubtitles;

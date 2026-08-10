@@ -81,6 +81,7 @@
     takeSkip,
   } from '$lib/endscreen.svelte';
   import {
+    abandonOpening,
     cancelLoadFailure,
     clearTorrentCache,
     deleteTorrent,
@@ -323,6 +324,13 @@
     // The position is flushed first so the card this file is about to appear on
     // carries the moment it was actually left at, not the previous write.
     flushPosition();
+    // Nothing is being opened any more, and saying so is this path's job: the
+    // indicator goes up in `beforeLoad` and comes down on `file-loaded`, so a
+    // load abandoned in between — a torrent still looking for peers, which is
+    // exactly when somebody gives up on it — has nothing else to take it down.
+    // The `stop` below does not: its `end-file` carries the reason `stop`, and
+    // only `error` reaches the failure path.
+    abandonOpening();
     // And the torrent is let go here rather than left to the `filename === null`
     // handler, for the same reason the picker is raised here: this path *knows*
     // it is leaving, while that one is inferring it from an event that may be

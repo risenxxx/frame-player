@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use crate::color;
 use ffmpeg::media;
 use ffmpeg::software::scaling;
 use ffmpeg::util::frame::video::Video;
@@ -72,14 +73,19 @@ const MAX_CONTINUE_SECS: f64 = 6.0;
 /// shorter than a typical GOP.
 const MAX_EXACT_CONTINUE_SECS: f64 = 1.0;
 const PTS_EPS: f64 = 1e-4;
-/// "KTB4". v3 was the bump for keyframe-only caches (v2 held duplicates instead
+/// "KTB5". v3 was the bump for keyframe-only caches (v2 held duplicates instead
 /// of frames at the requested positions on long-GOP files). v4 is when the
 /// source path joined the header: the file
 /// name is a hash of path + size + mtime, so without the path inside there was
 /// no way to answer "which cached storyboards belong to this folder" — and that
-/// is exactly what excluding a folder has to be able to do. Old caches are
-/// simply not read and get regenerated in the background.
-const CACHE_MAGIC: u32 = 0x4B54_4234;
+/// is exactly what excluding a folder has to be able to do. **v5 is the colour
+/// conversion** (`color.rs`): the cache key is a hash of the file, not of how it
+/// was decoded, so without a bump every storyboard already on disk would keep
+/// serving frames made with the wrong matrix — permanently, and for exactly the
+/// files the change was made for, since a Dolby Vision release is one somebody
+/// has already hovered over. Old caches are simply not read and get regenerated
+/// in the background.
+const CACHE_MAGIC: u32 = 0x4B54_4235;
 
 struct ThumbSession {
     ictx: ffmpeg::format::context::Input,
@@ -99,6 +105,9 @@ struct ThumbSession {
     /// instead of re-seeking the same GOP for every cell.
     refine_mode: bool,
     scaler: Option<(ffmpeg::format::Pixel, u32, u32, scaling::Context)>,
+    /// How this file's colour is encoded, when swscale cannot be trusted with
+    /// it. `None` is the ordinary SDR case and the fast path; see `color.rs`.
+    hdr: Option<color::Hdr>,
     stream_index: usize,
     time_base: f64,
     start_offset: f64,
@@ -151,6 +160,7 @@ impl ThumbSession {
         };
         let out_w = (THUMB_WIDTH.min(disp_w.round().max(2.0) as u32)).max(2) & !1;
         let out_h = (((out_w as f64 * vh as f64 / disp_w).round().max(2.0)) as u32).max(2) & !1;
+        let hdr = Self::detect_hdr(&stream, &decoder);
         Ok(ThumbSession {
             ictx,
             decoder,
@@ -161,12 +171,38 @@ impl ThumbSession {
             eof_sent: false,
             refine_mode: false,
             scaler: None,
+            hdr,
             stream_index,
             time_base,
             start_offset,
             out_w,
             out_h,
         })
+    }
+
+    /// Does this frame need the colour path in `color.rs`, or can swscale have
+    /// it?
+    ///
+    /// **Dolby Vision is asked about first, because a profile 5 stream carries
+    /// no colour tags at all** — the file this was written for reports
+    /// `yuv420p10le(tv)` and nothing else, since the colour lives in the RPU.
+    /// Only profile 5 (and its ancestor 4) encode the picture as IPT rather
+    /// than Y'CbCr; 7 and 8 have an HDR10-compatible base layer, so they are
+    /// already handled by the transfer characteristic below and must not be
+    /// dragged through the IPT path.
+    fn detect_hdr(
+        stream: &ffmpeg::format::stream::Stream,
+        decoder: &ffmpeg::decoder::Video,
+    ) -> Option<color::Hdr> {
+        if matches!(dolby_profile(stream), Some(4) | Some(5)) {
+            return Some(color::Hdr::Dolby5);
+        }
+        use ffmpeg::util::color::TransferCharacteristic as Trc;
+        match decoder.color_transfer_characteristic() {
+            Trc::SMPTE2084 => Some(color::Hdr::Pq),
+            Trc::ARIB_STD_B67 => Some(color::Hdr::Hlg),
+            _ => None,
+        }
     }
 
     fn next_video_packet(&mut self) -> Option<ffmpeg::Packet> {
@@ -311,37 +347,77 @@ impl ThumbSession {
         }
         let fmt = self.frame.format();
         let (fw, fh) = (self.frame.width(), self.frame.height());
+        // HDR leaves swscale doing the resize and nothing else: the target is
+        // 16-bit planar YUV, which is a format change and a scale with no
+        // matrix in it, and `color.rs` takes it from there.
+        let target = match self.hdr {
+            Some(_) => ffmpeg::format::Pixel::YUV444P16LE,
+            None => ffmpeg::format::Pixel::RGB24,
+        };
         let rebuild = match &self.scaler {
             Some((sf, sw, sh, _)) => *sf != fmt || *sw != fw || *sh != fh,
             None => true,
         };
         if rebuild {
-            let ctx = scaling::Context::get(
+            let mut ctx = scaling::Context::get(
                 fmt,
                 fw,
                 fh,
-                ffmpeg::format::Pixel::RGB24,
+                target,
                 self.out_w,
                 self.out_h,
                 // heavy downscale (4K -> 320px): FAST_BILINEAR is far cheaper
                 scaling::Flags::FAST_BILINEAR,
             )
             .map_err(|e| format!("scaler: {e}"))?;
+            if self.hdr.is_none() {
+                set_sdr_colorspace(&mut ctx, &self.frame);
+            }
             self.scaler = Some((fmt, fw, fh, ctx));
         }
-        let mut rgb = Video::empty();
+        let mut out = Video::empty();
         self.scaler
             .as_mut()
             .unwrap()
             .3
-            .run(&self.frame, &mut rgb)
+            .run(&self.frame, &mut out)
             .map_err(|e| format!("scale: {e}"))?;
 
-        let stride = rgb.stride(0);
-        let row = self.out_w as usize * 3;
-        let data = rgb.data(0);
-        let mut tight = Vec::with_capacity(row * self.out_h as usize);
-        for y in 0..self.out_h as usize {
+        let (w, h) = (self.out_w as usize, self.out_h as usize);
+        if let Some(kind) = self.hdr {
+            // `data()` hands back bytes; the planes are 16-bit samples, and the
+            // stride is in bytes, so both have to be divided by two.
+            let plane = |i: usize| -> (&[u16], usize) {
+                let bytes = out.data(i);
+                let s = out.stride(i) / 2;
+                let n = s * h;
+                let words =
+                    unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const u16, n.min(bytes.len() / 2)) };
+                (words, s)
+            };
+            let (y, sy) = plane(0);
+            let (u, su) = plane(1);
+            let (v, sv) = plane(2);
+            let primaries = match self.frame.color_primaries() {
+                ffmpeg::util::color::Primaries::BT709 => color::Primaries::Bt709,
+                _ => color::Primaries::Bt2020,
+            };
+            let full = self.frame.color_range() == ffmpeg::util::color::Range::JPEG;
+            return Ok(color::yuv444_16_to_srgb(
+                [y, u, v],
+                [sy, su, sv],
+                w,
+                h,
+                kind,
+                primaries,
+                full,
+            ));
+        }
+        let stride = out.stride(0);
+        let row = w * 3;
+        let data = out.data(0);
+        let mut tight = Vec::with_capacity(row * h);
+        for y in 0..h {
             tight.extend_from_slice(&data[y * stride..y * stride + row]);
         }
         Ok(tight)
@@ -359,6 +435,94 @@ impl ThumbSession {
             )
             .map_err(|e| format!("jpeg: {e}"))?;
         Ok(jpeg)
+    }
+}
+
+/// The Dolby Vision profile this stream declares, if any.
+///
+/// FFmpeg 8 keeps stream-level side data on the codec parameters
+/// (`coded_side_data`), not on `AVStream` where it used to live — the crate's
+/// own `Stream::side_data` reads the old field and finds nothing. The payload
+/// is an `AVDOVIDecoderConfigurationRecord`, i.e. a struct rather than the raw
+/// box bytes, so the profile is a field read and not a bit unpack.
+fn dolby_profile(stream: &ffmpeg::format::stream::Stream) -> Option<u8> {
+    /// `dovi_meta.h` is outside the sys crate's bindings, and the record is
+    /// nine bytes of `uint8_t` whose order is fixed by the Dolby specification
+    /// the header cites — so it is declared here rather than reached for. Only
+    /// the length is trusted from outside: the size check below is what makes
+    /// reading this pointer safe if FFmpeg ever grows the struct.
+    #[repr(C)]
+    struct DoviRecord {
+        version_major: u8,
+        version_minor: u8,
+        profile: u8,
+        level: u8,
+        rpu_present: u8,
+        el_present: u8,
+        bl_present: u8,
+        bl_signal_compatibility_id: u8,
+        md_compression: u8,
+    }
+    unsafe {
+        let par = stream.parameters();
+        let par = par.as_ptr();
+        if par.is_null() {
+            return None;
+        }
+        let list = (*par).coded_side_data;
+        let n = (*par).nb_coded_side_data;
+        if list.is_null() || n <= 0 {
+            return None;
+        }
+        for i in 0..n as isize {
+            let sd = &*list.offset(i);
+            if sd.type_ != ffmpeg::sys::AVPacketSideDataType::DOVI_CONF {
+                continue;
+            }
+            if sd.data.is_null() || sd.size < std::mem::size_of::<DoviRecord>() {
+                return None;
+            }
+            return Some((*(sd.data as *const DoviRecord)).profile);
+        }
+        None
+    }
+}
+
+/// Tell swscale what the frame's colour actually is.
+///
+/// Without this it uses its own default coefficients — BT.601 — for everything,
+/// which is a hue error on every BT.709 file and a large one on anything wider.
+/// Measured on a BT.2020 frame: up to 32/255 out on the green channel. The
+/// destination is RGB, so it is full range by definition; a failure to set the
+/// details is not worth reporting, since what follows is exactly the behaviour
+/// there was before.
+fn set_sdr_colorspace(ctx: &mut scaling::Context, frame: &Video) {
+    use ffmpeg::util::color::{Range, Space};
+    let src = match frame.color_space() {
+        Space::BT709 => ffmpeg::sys::SWS_CS_ITU709,
+        Space::BT2020NCL | Space::BT2020CL => ffmpeg::sys::SWS_CS_BT2020,
+        Space::SMPTE240M => ffmpeg::sys::SWS_CS_SMPTE240M,
+        Space::FCC => ffmpeg::sys::SWS_CS_FCC,
+        Space::BT470BG | Space::SMPTE170M => ffmpeg::sys::SWS_CS_ITU601,
+        // Unspecified is the common case for SD and for anything hand-muxed,
+        // and BT.709 is the right guess for everything this player will meet:
+        // swscale's own default of 601 is a guess about videotapes.
+        _ => ffmpeg::sys::SWS_CS_ITU709,
+    };
+    let full = i32::from(frame.color_range() == Range::JPEG);
+    unsafe {
+        let coeff = ffmpeg::sys::sws_getCoefficients(src as i32);
+        let dst = ffmpeg::sys::sws_getCoefficients(ffmpeg::sys::SWS_CS_ITU709 as i32);
+        ffmpeg::sys::sws_setColorspaceDetails(
+            ctx.as_mut_ptr(),
+            coeff,
+            full,
+            dst,
+            1,
+            0,
+            1 << 16,
+            1 << 16,
+        );
     }
 }
 
@@ -959,6 +1123,11 @@ mod tests {
     }
 
     /// Smoke test: FP_TEST_VIDEO=<path> cargo test thumb_smoke -- --nocapture
+    ///
+    /// `FP_TEST_POS=2100,2400` picks the positions and `FP_TEST_DUMP=<dir>`
+    /// writes the JPEGs out — which is the only way to check a *colour* change,
+    /// since a thumbnail that is the right size and the wrong hue passes every
+    /// assertion that can be written about it.
     #[test]
     fn thumb_smoke() {
         let Ok(path) = std::env::var("FP_TEST_VIDEO") else {
@@ -966,10 +1135,21 @@ mod tests {
         };
         let _ = ffmpeg::init();
         let mut s = ThumbSession::open(&path).expect("open session");
-        for pos in [0.0, 5.0, 30.0, 59.0] {
+        println!("hdr = {:?}", s.hdr);
+        let positions: Vec<f64> = match std::env::var("FP_TEST_POS") {
+            Ok(v) => v.split(',').filter_map(|p| p.trim().parse().ok()).collect(),
+            Err(_) => vec![0.0, 5.0, 30.0, 59.0],
+        };
+        let dump = std::env::var("FP_TEST_DUMP").ok();
+        for pos in positions {
             let (pts, jpeg) = s.frame_at(pos, 10.0).expect("frame_at");
             println!("pos={pos} -> pts={pts:.3} jpeg={} bytes", jpeg.len());
             assert!(jpeg.len() > 500);
+            if let Some(dir) = &dump {
+                let file = std::path::Path::new(dir).join(format!("thumb-{pos}.jpg"));
+                std::fs::write(&file, &jpeg).expect("write dump");
+                println!("  wrote {}", file.display());
+            }
         }
     }
 
@@ -1232,7 +1412,11 @@ fn container_title(path: &str) -> Option<String> {
 // cannot be attributed to a folder, and `purge_thumbs` could not honour a
 // privacy root being excluded.
 
-const POSTER_MAGIC: &[u8; 4] = b"FPP1";
+/// v2 for the same reason `CACHE_MAGIC` went to v5: a poster captured before
+/// the colour conversion existed is a wrongly-coloured picture of the right
+/// film, and nothing else would ever replace it — this one is captured once,
+/// while the file plays, and then kept.
+const POSTER_MAGIC: &[u8; 4] = b"FPP2";
 
 /// Mean luma and its mean absolute deviation, on a packed RGB buffer.
 fn rgb_stats(rgb: &[u8]) -> (f64, f64) {
