@@ -29,15 +29,25 @@ import { locale, t } from './i18n.svelte';
 import { latest } from './latest';
 import { openTorrent } from './open.svelte';
 
+/// No indexer is compiled in. Where the catalog looks when the viewer has named
+/// nowhere is asked for at runtime — see `suggested` and `catalog_config`.
+export const DEFAULT_INDEXER = '';
+
 /**
- * The public JacRed instance, measured working without a key: 3.2 million
- * releases across fourteen trackers, updated daily, answering `/api/v1.0/torrents`
- * with the release name already parsed into title, year, quality and dubs.
+ * The configuration document, beside `latest.json` on the update host.
  *
- * It is somebody else's server and it sees what is searched for, which is what
- * the setting's hint says and why the field is there at all.
+ * A static file rather than an endpoint on the metadata proxy, deliberately: it
+ * is then independent of whether that service is up, deployed or reachable, and
+ * it sits on infrastructure the updater already depends on — so the one thing
+ * that has to be changeable quickly does not inherit the availability of the
+ * one thing that does the most work.
+ *
+ * Not a setting. The other three addresses are, because somebody self-hosting
+ * has a reason to point them elsewhere; this one only ever fills a gap for
+ * viewers who have set nothing, and a self-hoster sets their own indexer
+ * instead.
  */
-export const DEFAULT_INDEXER = 'https://api.jacred.su';
+const CONFIG_URL = 'https://updates.frameplayer.app/catalog.json';
 
 /**
  * Our own TMDB proxy (`services/tmdb`), which is where the API key lives.
@@ -87,6 +97,13 @@ export interface CatalogDetails extends CatalogItem {
   seasons: number[];
   runtime: number | null;
   genres: string[];
+}
+
+/// What the service suggests at runtime. Never persisted — see `suggested`.
+export interface CatalogConfig {
+  indexer: string;
+  disabled: boolean;
+  notice: string;
 }
 
 export interface Release {
@@ -164,6 +181,23 @@ class Catalog {
   /// fails, which is what a blocked CDN looks like from inside a webview.
   cdnDirect = $state(readCdn());
 
+  /**
+   * Where the metadata service suggests looking, when the viewer has not said.
+   *
+   * **In memory only, and deliberately.** The whole reason this is remote
+   * configuration rather than a constant is that the instance's answer is the
+   * current one; caching it on disk would pin whatever it happened to be the
+   * first time somebody opened the panel, which is the per-build constant this
+   * replaced, reintroduced by the client.
+   */
+  suggested = $state('');
+
+  /// The service reports the catalog as unavailable, with an optional sentence
+  /// saying why. One level above the address: an instance may need the panel to
+  /// stop for reasons unrelated to which indexer it points at.
+  suppressed = $state(false);
+  suppressedNotice = $state('');
+
   query = $state('');
   results = $state<CatalogItem[]>([]);
   /// What the grid is showing when the query is empty: the trending list, which
@@ -211,9 +245,14 @@ class Catalog {
    * shape that made the ScrollFade effect re-run itself forever.
    *
    * It can only ever re-order what Rust sent, which is the top `MAX_RELEASES`
-   * by the quality order. For the counts this actually sees (a popular film
-   * filtered down to a few dozen) the cap does not bind, so the two orders see
-   * the same set.
+   * by the quality order — and **that cap does bind on a popular title**:
+   * measured against the live indexer, `Dune` answered 1444 rows, 326 of which
+   * survived the name and year filter, against a cap of 120. So "by seeders"
+   * re-orders the best 120 by quality rather than the best 120 by seeders, and
+   * a live 480p rip outside that window is not recoverable here. Raising the
+   * cap is not the fix — a list nobody reads to the end is not more useful —
+   * but if this ever matters, the honest answer is to make the cap a property
+   * of the requested order rather than of the response.
    */
   sortedReleases = $derived.by(() => {
     if (this.sort === 'quality') return this.releases;
@@ -232,12 +271,24 @@ const releaseReads = latest();
 
 // ---- The setting ----------------------------------------------------------
 
+/// What the viewer has set, and nothing else. Empty when they have not.
 export function indexerUrl(): string {
   try {
     return localStorage.getItem(INDEXER_KEY) ?? DEFAULT_INDEXER;
   } catch {
     return DEFAULT_INDEXER;
   }
+}
+
+/**
+ * Where releases are actually looked for.
+ *
+ * The viewer's own setting always wins; the service's suggestion only fills a
+ * gap. That order is what keeps a configuration change from affecting somebody
+ * who chose their own indexer.
+ */
+export function effectiveIndexer(): string {
+  return indexerUrl() || catalog.suggested;
 }
 
 export function setIndexerUrl(url: string) {
@@ -389,9 +440,41 @@ export async function openCatalog() {
   catalog.picked = null;
   catalog.releases = [];
   catalog.releasePhase = 'idle';
+
+  // **Set before the first `await`, not after it.** The panel is on screen the
+  // moment `open` flips, and `idle` renders the "start typing" placeholder —
+  // so with the phase left alone until the requests below have finished, the
+  // first thing a viewer saw was an empty panel telling them to type,
+  // replaced a moment later by the skeletons. Not a flicker either: the two
+  // calls that follow are a network round trip and a reachability check with a
+  // four-second timeout, so on a slow link that wrong answer stood for
+  // seconds.
+  //
+  // Only when there is nothing to show yet. A reopened panel still holds its
+  // trending list or its results, and those render immediately — announcing a
+  // load in front of content that is already there would be its own flash.
+  if (!catalog.trending.length && !catalog.query.trim()) catalog.phase = 'loading';
+
+  // Asked on **every** opening rather than once per session: a configuration
+  // change has to reach a player that is already running, and somebody who
+  // leaves the app open for a week would otherwise be on last week's answer.
+  // The service caches its own reply, so this costs a round trip and nothing
+  // else.
+  const config = await invoke<CatalogConfig>('catalog_config', { url: CONFIG_URL }).catch(
+    () => null,
+  );
+  catalog.suggested = config?.indexer ?? '';
+  catalog.suppressed = config?.disabled ?? false;
+  catalog.suppressedNotice = config?.notice ?? '';
+
   catalog.hasMeta = await invoke<boolean>('catalog_ready', { proxy: tmdbUrl() }).catch(() => false);
   if (!catalog.hasMeta || catalog.trending.length) {
-    if (catalog.phase === 'idle') catalog.phase = 'ready';
+    // Unconditionally, because the phase set above is now `loading` rather than
+    // `idle` — the old guard tested for `idle` and would leave the skeletons up
+    // for good on the path where there is nothing to fetch. Nothing is loading
+    // on either branch here: the trending list is already in hand, or there is
+    // no metadata service to ask.
+    catalog.phase = 'ready';
     return;
   }
   const run = searches.begin();
@@ -506,7 +589,7 @@ async function loadReleases(args: {
   catalog.releaseError = null;
   try {
     const list = await invoke<Release[]>('catalog_releases', {
-      base: indexerUrl(),
+      base: effectiveIndexer(),
       title: args.title,
       originalTitle: args.original,
       year: args.year,

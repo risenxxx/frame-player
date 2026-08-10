@@ -196,7 +196,7 @@ Settings → Privacy & Security* — the path that has a way out, as opposed to 
   series and pick a release for it: quality, dynamic range, size, dubs and
   seeders side by side, best copy first. Descriptions and posters come from
   TMDB through a proxy of the project's own, so the player carries no API key;
-  the release list comes from a JacRed/Torznab-compatible indexer whose address
+  the release list comes from a Torznab-compatible indexer whose address
   is a setting. On by default, and switchable off — it is the one surface here
   that tells a third party what you are *looking for*.
 - **Links** — anything yt-dlp resolves, plus direct stream URLs.

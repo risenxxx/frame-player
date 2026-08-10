@@ -74,6 +74,11 @@ verdict is remembered, so the discovery is paid once.
 | `GET /img/{size}/{file}` | Forwarded to `image.tmdb.org`, cached on disk |
 | `GET /health` | Liveness and cache counters |
 
+The catalog's runtime configuration is deliberately **not** here — it is a
+static document beside `latest.json` on the update host, so that it does not
+inherit this service's availability. See [docs/catalog.md](../../docs/catalog.md).
+
+
 ## Configuration
 
 | Variable | Default | Meaning |

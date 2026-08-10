@@ -8,6 +8,11 @@
   /// Everything that *acts* lives in `catalog.svelte.ts`; this file draws.
   import { tick } from 'svelte';
 
+  // `base` rather than a bare `/tmdb.svg`: SvelteKit resolves static assets
+  // against it, and the app is served from a custom protocol in the packaged
+  // build rather than from a web root.
+  import { base } from '$app/paths';
+
   import Dialog from '$lib/components/Dialog.svelte';
   import {
     catalog,
@@ -88,7 +93,15 @@
   scrollable
   {onclose}
 >
-  {#if !catalog.picked}
+  {#if catalog.suppressed}
+    <!-- The metadata service reports the catalog as unavailable. One level
+         above the address, since an instance may need the panel to stop for
+         reasons unrelated to which indexer it points at — and clearing the
+         address alone would leave a panel that still looks like it should
+         work. Its own sentence when one was supplied, a generic one
+         otherwise. -->
+    <div class="cat-empty">{catalog.suppressedNotice || t('catalog.unavailable')}</div>
+  {:else if !catalog.picked}
     <!-- The grid. The field stays at the top of it rather than becoming a
          header of its own: a search box IS what this view is, and framing it
          separately would make the panel look like it has a toolbar. -->
@@ -113,7 +126,8 @@
       <div class="cat-note">{t('catalog.no_key_hint')}</div>
       {@render releaseList()}
     {:else if catalog.phase === 'loading'}
-      {@render working(t('catalog.searching'))}
+      {@render gridHead()}
+      {@render skeletonGrid()}
     {:else if catalog.phase === 'failed'}
       <div class="link-error">{catalog.error}</div>
     {:else if catalog.shown.length === 0}
@@ -121,9 +135,7 @@
         {catalog.query.trim() ? t('catalog.nothing') : t('catalog.type_something')}
       </div>
     {:else}
-      {#if !catalog.query.trim()}
-        <div class="cat-section">{t('catalog.trending')}</div>
-      {/if}
+      {@render gridHead()}
       <div class="cat-grid">
         {#each catalog.shown as item (item.kind + item.id)}
           <button class="cat-card" onclick={() => void pickTitle(item)}>
@@ -222,54 +234,115 @@
        nothing here came from TMDB and claiming otherwise would be its own kind
        of wrong.
 
-       Still missing and tracked: §3 also asks for the TMDB logo, kept *less*
-       prominent than the application's own marks. That needs their official
-       asset added to the repository — it is a trademark and cannot be drawn
-       from memory. -->
+       §3 asks for the logo as well as the sentence, kept *less prominent than
+       the marks that primarily describe or identify Your Application* — which
+       the size does here, against a 42px product name on the start screen and
+       the mark in the title bar.
+
+       **Their file, referenced rather than inlined, and unaltered.** It is a
+       trademark: it is served as-is from `static/tmdb.svg` instead of being
+       pasted into this component, so nothing here can quietly change its
+       colours, and its internal `linearGradient id` cannot collide with
+       another SVG on the page. No opacity or filter is applied for the same
+       reason — the size is what makes it subordinate, not a treatment of the
+       mark. Only the height is set, so its own proportions decide the width. -->
   {#if catalog.hasMeta}
-    <div class="cat-attr">{t('catalog.tmdb_notice')}</div>
+    <div class="cat-attr">
+      <img class="cat-attr-logo" src="{base}/tmdb.svg" alt="TMDB" />
+      <span>{t('catalog.tmdb_notice')}</span>
+    </div>
   {/if}
 </Dialog>
 
-{#snippet working(label: string)}
-  <div class="cat-working">
-    <span class="cat-spin"></span>
-    {label}
+{#snippet gridHead()}
+  <!-- **Rendered by the loading branch as well as the loaded one, and that is
+       the point of it being a snippet.** The heading is 35px of layout; drawing
+       it only once the data arrives pushes the whole grid — and the
+       attribution under it — down by that much at the moment everything else
+       settles, which is the jump the skeletons exist to remove. Keeping the
+       condition in one place is what stops the two branches drifting apart
+       again: they were two copies, and the copy without the heading is exactly
+       how this was missed the first time. -->
+  {#if !catalog.query.trim()}
+    <div class="cat-section">{t('catalog.trending')}</div>
+  {/if}
+{/snippet}
+
+{#snippet sortRow(label: string)}
+  <!-- The count and the order on one line: the order is a real choice here,
+       because "the best copy" and "the copy that will actually download" are
+       different questions and the list answers whichever is asked. Right of the
+       label rather than above the list, so it reads as a property of the
+       heading instead of as another section.
+
+       Drawn while the releases are still loading too, with the pills live: they
+       only set state, so choosing an order before the answer arrives works —
+       and a control that appears with the data would move every row down by the
+       difference between a plain line and a row of pills. -->
+  <div class="cat-section cat-sortrow">
+    <span>{label}</span>
+    <div class="segmented cat-sort">
+      <button
+        class="segopt"
+        class:sel={catalog.sort === 'quality'}
+        onclick={() => setReleaseSort('quality')}
+      >
+        {t('catalog.sort_quality')}
+      </button>
+      <button
+        class="segopt"
+        class:sel={catalog.sort === 'seeders'}
+        onclick={() => setReleaseSort('seeders')}
+      >
+        {t('catalog.sort_seeders')}
+      </button>
+    </div>
+  </div>
+{/snippet}
+
+{#snippet skeletonGrid()}
+  <!-- **A placeholder that is the size of the answer, not a spinner.** The
+       attribution sits below whatever this branch renders, so a one-line
+       spinner puts the TMDB logo just under the search field and the arriving
+       grid then shoves it four rows down — a bright mark jumping half the
+       sheet. Occupying roughly the final height is the whole point; the
+       animation is secondary.
+
+       Twenty because that is what the service returns: TMDB pages both trending
+       and search at twenty, so this is the real count rather than a guess, and
+       the grid resolves to the same number of rows it will have. -->
+  <div class="cat-grid" aria-busy="true" aria-label={t('catalog.searching')}>
+    {#each { length: 20 }, i (i)}
+      <div class="cat-card">
+        <span class="cat-poster skel"></span>
+        <!-- Two lines, the second shorter, because that is the shape of a title
+             above a year. Uneven widths keep a block of twenty from reading as
+             a table. -->
+        <span class="skel skel-line" style="width: {70 + ((i * 37) % 26)}%"></span>
+        <span class="skel skel-line short"></span>
+      </div>
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet skeletonReleases()}
+  <div class="cat-releases" aria-busy="true" aria-label={t('catalog.looking')}>
+    {#each { length: 6 }, i (i)}
+      <div class="skel skel-rel"></div>
+    {/each}
   </div>
 {/snippet}
 
 {#snippet releaseList()}
   {#if catalog.releasePhase === 'loading'}
-    {@render working(t('catalog.looking'))}
+    {@render sortRow(t('catalog.releases_loading'))}
+    {@render skeletonReleases()}
   {:else if catalog.releasePhase === 'failed'}
     <div class="link-error">{catalog.releaseError}</div>
   {:else if catalog.releasePhase === 'ready' && catalog.releases.length === 0}
     <div class="cat-empty">{t('catalog.no_releases')}</div>
   {:else if catalog.releases.length}
-    <!-- The count and the order on one line: the order is a real choice here,
-         because "the best copy" and "the copy that will actually download" are
-         different questions and the list answers whichever is asked. Right of
-         the count rather than above the list, so it reads as a property of the
-         heading instead of as another section. -->
-    <div class="cat-section cat-sortrow">
-      <span>{t('catalog.releases', { count: catalog.releases.length })}</span>
-      <div class="segmented cat-sort">
-        <button
-          class="segopt"
-          class:sel={catalog.sort === 'quality'}
-          onclick={() => setReleaseSort('quality')}
-        >
-          {t('catalog.sort_quality')}
-        </button>
-        <button
-          class="segopt"
-          class:sel={catalog.sort === 'seeders'}
-          onclick={() => setReleaseSort('seeders')}
-        >
-          {t('catalog.sort_seeders')}
-        </button>
-      </div>
-    </div>
+    {@render sortRow(t('catalog.releases', { count: catalog.releases.length }))}
     <div class="cat-releases">
       {#each catalog.sortedReleases as r (r.magnet)}
         <button
@@ -316,6 +389,27 @@
     color: #6f6f7a;
     font-size: 11px;
     line-height: 1.45;
+  }
+
+  /* Only the height is set: the mark is 489×35.4, so letting the width follow
+     keeps its own proportions rather than imposing ours. 13px of height puts it
+     at ~180px wide — legible, and an order of magnitude below the 42px product
+     name on the start screen, which is what "less prominent" asks for.
+     `display: block` so the sentence sits under it rather than beside it; a
+     180px logo and two lines of text on one row would leave the text in a
+     column too narrow to read. */
+  .cat-attr-logo {
+    display: block;
+    height: 13px;
+    /* **The ratio has to be stated, and `width: auto` alone is not enough.**
+       The file carries a `viewBox` and no `width`/`height` attributes, so it has
+       no intrinsic size for `auto` to resolve against — measured in a WKWebView
+       harness, `height: 13px; width: auto` rendered a 13×13 square with nothing
+       painted in it. The numbers are the viewBox's own, so the mark keeps its
+       proportions rather than being given ours. */
+    aspect-ratio: 489.04 / 35.4;
+    width: auto;
+    margin-bottom: 8px;
   }
 
   /* A note that is not an error: no key in this build, nothing to fix. */
@@ -618,24 +712,22 @@
     font-size: 10.5px;
   }
 
-  .cat-working {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 9px;
-    padding: 26px 2px;
-    color: #b9b9c3;
-    font-size: 12.5px;
-  }
+  /* The skeleton's own fill. Sitting on the sheet's `rgba(16,16,22,0.97)` it
+     has to be a lightening rather than a darkening, like every other resting
+     surface in the player. */
+  .skel {
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 6px;
+    /* Pulsing the *whole block* rather than a thin stroke: the note on the
+       torrent list's delete cross is about a 1.4px glyph, where taking a layer
+       off full opacity makes the engine re-rasterise and the mark visibly
+       twitches. A 150px slab has no such edge to shimmer.
 
-  .cat-spin {
-    flex: none;
-    width: 13px;
-    height: 13px;
-    border-radius: 50%;
-    border: 1.5px solid rgba(255, 255, 255, 0.25);
-    border-top-color: #b9b9c3;
-    animation: cat-spin 0.8s linear infinite;
+       Alternating rather than looping, so there is no jump back at the seam,
+       and it stops the moment the data lands — the objection to the catalog
+       button's gradient (permanent motion in the corner of the eye) does not
+       apply to something that exists for half a second. */
+    animation: cat-pulse 1.3s ease-in-out infinite alternate;
   }
 
   /* Its own keyframes, because Svelte scopes them like every other rule in a
@@ -643,9 +735,43 @@
      naming it here would point at nothing at all. (Writing the literal opening
      tag of a style block in a comment is what `css-orphans` finds with
      `lastIndexOf`, so this says it in words instead.) */
-  @keyframes cat-spin {
+  @keyframes cat-pulse {
     to {
-      transform: rotate(360deg);
+      opacity: 0.45;
     }
+  }
+
+  /* `.cat-poster` already carries the 2:3 ratio and the radius, so a skeleton
+     card is the real card's geometry with nothing in it — which is what makes
+     the grid resolve to the height it will actually have. */
+  .cat-card .cat-poster.skel {
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  /* Matched to `.card-name`: 12.5px text on a 6px top margin gives ~18px of
+     line box, so the bar plus its margin occupies the same room the title will. */
+  .skel-line {
+    display: block;
+    height: 9px;
+    margin-top: 9px;
+    border-radius: 4px;
+  }
+
+  /* The year line under the title — `.card-left` is 11.5px and short.
+     The 9px margin is not symmetry with the line above it, it is arithmetic:
+     measured in a WKWebView harness against the built stylesheet, a 7px margin
+     left each skeleton card 2px shorter than the real one, which across four
+     rows put the attribution 8px out. At 9px the two grids measure the same. */
+  .skel-line.short {
+    width: 34%;
+    height: 8px;
+    margin-top: 9px;
+  }
+
+  /* One release row: 9px of padding top and bottom around a 12.5px title and an
+     11.5px meta line, which is the 48px this stands in for. */
+  .skel-rel {
+    height: 48px;
+    border-radius: 9px;
   }
 </style>

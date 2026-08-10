@@ -936,10 +936,16 @@
       <div class="setting">
         <div class="setting-label">{t('catalog.indexer_label')}</div>
         <div class="setting-hint">{t('catalog.indexer_hint')}</div>
+        <!-- The placeholder is whatever is *actually* being used when the
+             viewer has set nothing — the service's suggestion, which is not a
+             constant and may be withdrawn. Showing it here is the only place
+             the effective value is visible, and an empty box with no
+             placeholder would read as "nothing configured" while the catalog
+             plainly works. -->
         <input
           class="link-input"
           value={indexerVal}
-          placeholder={DEFAULT_INDEXER}
+          placeholder={catalog.suggested || DEFAULT_INDEXER}
           spellcheck="false"
           autocapitalize="off"
           aria-label={t('catalog.indexer_label')}

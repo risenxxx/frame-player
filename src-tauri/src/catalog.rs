@@ -1,5 +1,5 @@
 //! The catalog: **what** to watch (TMDB) and **where to get it** (a
-//! JacRed/Jackett-compatible indexer).
+//! Torznab-compatible indexer).
 //!
 //! Two services and the split between them is the whole design. TMDB answers
 //! "which film is this" — posters, localised titles, descriptions, how many
@@ -375,6 +375,61 @@ pub async fn catalog_details(
     })
 }
 
+/// Runtime defaults the service supplies, asked for rather than compiled in.
+///
+/// Ordinary remote configuration: a value built into the binary changes only
+/// for people who download a new build, so it is a per-build constant rather
+/// than a default. Asked for at runtime, the operator of an instance sets it
+/// once and every player using that instance follows.
+///
+/// It never overrides a viewer's own setting, and the frontend does not persist
+/// what comes back — so what the panel uses is the instance's current answer
+/// rather than whatever it was the first time somebody opened it.
+#[derive(serde::Deserialize, Serialize, Default)]
+pub struct CatalogConfig {
+    #[serde(default)]
+    pub indexer: String,
+    /// A switch above the address: a complaint may be about the feature rather
+    /// than about where it points, and then removing the address is not an
+    /// answer.
+    #[serde(default)]
+    pub disabled: bool,
+    #[serde(default)]
+    pub notice: String,
+}
+
+/// Read the configuration document.
+///
+/// A static file rather than an endpoint on the metadata proxy, and that is the
+/// point: it is then independent of whether the proxy is up, deployed or
+/// reachable, and it lives beside `latest.json` on infrastructure the updater
+/// already depends on. `https` only, for the reason `proxy_base` gives.
+///
+/// **Every failure is the same answer — no configuration — because the player
+/// has a working state without one: it asks the viewer.** A missing file, a
+/// blocked host, a truncated document and a 404 are therefore not told apart;
+/// none of them is worth an error path, and treating a parse failure as "no
+/// configuration" is what stops half a document publishing half a setting.
+#[tauri::command]
+pub async fn catalog_config(url: String) -> CatalogConfig {
+    let url = url.trim();
+    if !url.starts_with("https://") {
+        return CatalogConfig::default();
+    }
+    let Ok(response) = http()
+        .get(url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+    else {
+        return CatalogConfig::default();
+    };
+    if !response.status().is_success() {
+        return CatalogConfig::default();
+    }
+    response.json().await.unwrap_or_default()
+}
+
 // ---- The indexer -----------------------------------------------------------
 
 /// Fold a title down to what two spellings of the same film have in common.
@@ -407,7 +462,7 @@ fn fold(s: &str) -> String {
         .collect()
 }
 
-/// One row of JacRed's `/api/v1.0/torrents`.
+/// One row of the indexer's `/api/v1.0/torrents`.
 ///
 /// The field names are the indexer's, typo included — `relased` is what the API
 /// answers and renaming it here would only move the surprise. Everything is
@@ -476,7 +531,7 @@ async fn ask_indexer(base: &str, query: &str) -> Result<Vec<IndexerRow>, String>
 /// the extra query, not the first guess.
 ///
 /// Filtering happens here rather than in the query, because which parameters an
-/// instance honours varies and a self-hosted JacRed is not guaranteed to be the
+/// instance honours varies and a self-hosted one is not guaranteed to be the
 /// same build as the public one. `search` is the one parameter every version
 /// has; year and season are matched against the fields that come back.
 #[tauri::command]
@@ -655,8 +710,10 @@ mod tests {
         // pin nothing at all. The escape is what makes the case visible to a
         // reader as well as to the compiler.
         //
-        // "Матрица" all in Cyrillic, against the same word with Latin M, a and
-        // a — the substitution a tracker title routinely arrives with.
+        // "Матрица" is a word, not a title: it is picked because every letter
+        // that matters is here — М/M, а/a and р/p all have Latin twins — and a
+        // release name routinely arrives with some of them substituted.
+        // All-Cyrillic first, then the same word with Latin M, a and a.
         let cyrillic = "\u{041C}\u{0430}\u{0442}\u{0440}\u{0438}\u{0446}\u{0430}";
         let mixed = "\u{004D}\u{0061}\u{0442}\u{0440}\u{0438}\u{0446}\u{0061}";
         assert_ne!(cyrillic, mixed, "the fixtures must be different strings");
@@ -668,7 +725,10 @@ mod tests {
         // And it must still tell genuinely different titles apart, or every
         // sequel in a series matches its predecessor.
         assert_ne!(fold("Матрица"), fold("Матрица 2"));
-        assert_ne!(fold("Дюна"), fold("Луна"));
+        // Two words differing by one letter, neither of which folds into the
+        // other: `д`/`л` have no Latin twin, so this is the case the fold must
+        // *not* collapse.
+        assert_ne!(fold("дом"), fold("лом"));
     }
 
     #[test]

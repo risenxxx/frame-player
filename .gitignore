@@ -36,5 +36,10 @@ src-tauri/ffmpeg-macos/
 # committed was not in fact ignored.
 HANDOFF.md
 
-# `go build ./...` inside server/ writes the binary next to its source.
+# `go build ./...` inside services/relay writes the binary next to its source.
 server/relay
+services/relay/relay
+
+# The compiled service binaries from `go build`, which land in the repo root.
+tmdb
+relay

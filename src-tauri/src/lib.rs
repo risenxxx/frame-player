@@ -1021,6 +1021,7 @@ pub fn run() {
             cast::cast_status,
             cast::cast_disconnect,
             catalog::catalog_ready,
+            catalog::catalog_config,
             catalog::catalog_trending,
             catalog::catalog_search,
             catalog::catalog_details,

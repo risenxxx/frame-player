@@ -31,6 +31,7 @@ const ru = {
   'catalog.type_something': 'Начните вводить название',
   'catalog.no_releases': 'Раздач не нашлось',
   'catalog.releases': 'Раздачи: {count}',
+  'catalog.releases_loading': 'Раздачи',
   'catalog.seeders': 'сидов: {count}',
   'catalog.sort_quality': 'По качеству',
   'catalog.sort_seeders': 'По сидам',
@@ -39,6 +40,7 @@ const ru = {
   'catalog.runtime': '{minutes} мин',
   'catalog.back': 'Назад',
   'catalog.no_indexer': 'Не указан адрес поиска раздач — задайте его в настройках',
+  'catalog.unavailable': 'Каталог сейчас недоступен',
   'catalog.no_proxy': 'Не указан адрес сервиса описаний — задайте его в настройках',
   'catalog.bad_proxy': 'Адрес сервиса описаний неверен',
   'catalog.insecure_proxy': 'Адрес сервиса описаний должен начинаться с https://',
@@ -60,7 +62,7 @@ const ru = {
     'Через него идут постеры и описания с TMDB — ключ хранится там, а не в плеере. Сами постеры грузятся напрямую с TMDB, а через сервис только если TMDB недоступен. Пустое поле возвращает адрес по умолчанию.',
   'catalog.indexer_label': 'Сервис поиска раздач',
   'catalog.indexer_hint':
-    'Совместимый с JacRed индексатор. По умолчанию — публичный: он видит ваши запросы. Свой экземпляр можно поднять на синхронизации с чужой базой, без аккаунтов на трекерах. Пустое поле возвращает адрес по умолчанию.',
+    'Совместимый с Torznab индексатор. По умолчанию — публичный: он видит ваши запросы. Свой экземпляр можно поднять на синхронизации с чужой базой, без аккаунтов на трекерах. Пустое поле возвращает адрес по умолчанию.',
 
   'error.mpv': 'Не удалось запустить mpv',
   'error.mpv_hint':
@@ -777,6 +779,7 @@ const en: Record<MessageKey, string> = {
   'catalog.type_something': 'Start typing a title',
   'catalog.no_releases': 'No releases found',
   'catalog.releases': 'Releases: {count}',
+  'catalog.releases_loading': 'Releases',
   'catalog.seeders': 'seeds: {count}',
   'catalog.sort_quality': 'By quality',
   'catalog.sort_seeders': 'By seeds',
@@ -785,6 +788,7 @@ const en: Record<MessageKey, string> = {
   'catalog.runtime': '{minutes} min',
   'catalog.back': 'Back',
   'catalog.no_indexer': 'No release-search address is set — add one in the settings',
+  'catalog.unavailable': 'The catalog is unavailable right now',
   'catalog.no_proxy': 'No metadata service address is set — add one in the settings',
   'catalog.bad_proxy': 'The metadata service address is not a valid URL',
   'catalog.insecure_proxy': 'The metadata service address must start with https://',
@@ -803,7 +807,7 @@ const en: Record<MessageKey, string> = {
     'Posters and descriptions from TMDB come through it — the key lives there rather than in the player. Posters themselves load straight from TMDB, and through the service only where TMDB is unreachable. An empty field restores the default.',
   'catalog.indexer_label': 'Release search service',
   'catalog.indexer_hint':
-    'A JacRed-compatible indexer. The default is a public one, and it sees your queries. Your own instance can run on a sync of somebody else’s database, with no tracker accounts. An empty field restores the default.',
+    'A Torznab-compatible indexer. The default is a public one, and it sees your queries. Your own instance can run on a sync of somebody else’s database, with no tracker accounts. An empty field restores the default.',
 
   'error.mpv': 'Could not start mpv',
   'error.mpv_hint':
