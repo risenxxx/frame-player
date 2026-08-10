@@ -12,11 +12,11 @@
 // clock, which is the only way to see drift correction working as something
 // other than a coincidence.
 //
-//	go run ./server &
-//	go run ./server/cmd/probe                      # creates a room, prints the code
-//	go run ./server/cmd/probe -room ABC123          # joins the player's room
-//	go run ./server/cmd/probe -room ABC123 -skew 300ms
-//	go run ./server/cmd/probe -room ABC123 -hold 20s   # freeze the room on purpose
+//	go run ./services/relay &
+//	go run ./services/relay/cmd/probe                      # creates a room, prints the code
+//	go run ./services/relay/cmd/probe -room ABC123          # joins the player's room
+//	go run ./services/relay/cmd/probe -room ABC123 -skew 300ms
+//	go run ./services/relay/cmd/probe -room ABC123 -hold 20s   # freeze the room on purpose
 //
 // With `-drive`, stdin takes commands: `p` toggles pause, `<number>` seeks,
 // `r`/`n` report ready/not ready, `q` quits.

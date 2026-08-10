@@ -1,0 +1,47 @@
+# systemd unit for running the TMDB proxy straight from a binary, without Docker.
+#
+#   go build -trimpath -ldflags "-s -w" -o /usr/local/bin/frameplayer-tmdb ./services/tmdb
+#   install -m644 services/tmdb/frameplayer-tmdb.service /etc/systemd/system/
+#   install -m600 /dev/null /etc/frameplayer-tmdb.env   # then put FP_TMDB_KEY in it
+#   systemctl enable --now frameplayer-tmdb
+#
+# Put a TLS terminator in front of it (Caddy, nginx). The player refuses a
+# plaintext metadata service off loopback, so http:// is not an option for a
+# deployed instance — see `proxy_base` in catalog.rs.
+
+[Unit]
+Description=Frame Player TMDB metadata proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/frameplayer-tmdb
+Environment=TMDB_ADDR=127.0.0.1:8090
+Environment=TMDB_CACHE_DIR=/var/lib/frameplayer-tmdb/images
+# The API key, and optionally TMDB_TOKEN to keep this from being an open TMDB
+# proxy anybody may point an application at. In a file rather than here, because
+# a unit file is world-readable and this one is not meant to be.
+EnvironmentFile=/etc/frameplayer-tmdb.env
+Restart=always
+RestartSec=2
+
+# Unlike the relay, this service keeps a cache — which is the only thing it may
+# write, and the sandbox says exactly that. If anything else here ever has to be
+# relaxed, that is the signal the service has grown a responsibility it should
+# not have.
+DynamicUser=yes
+StateDirectory=frameplayer-tmdb
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

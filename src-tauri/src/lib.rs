@@ -8,6 +8,7 @@ mod macos_chrome;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 mod cast;
+mod catalog;
 mod dlna;
 mod opensubtitles;
 mod power;
@@ -1019,6 +1020,11 @@ pub fn run() {
             cast::cast_control,
             cast::cast_status,
             cast::cast_disconnect,
+            catalog::catalog_ready,
+            catalog::catalog_trending,
+            catalog::catalog_search,
+            catalog::catalog_details,
+            catalog::catalog_releases,
             opensubtitles::subs_search,
             opensubtitles::subs_download,
             opensubtitles::subs_login,

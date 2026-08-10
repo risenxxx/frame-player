@@ -29,7 +29,7 @@
     title: string;
     label?: string;
     /// Sheet geometry. `settings` is the default width the tab row sets.
-    variant?: 'settings' | 'link' | 'subs' | 'diag';
+    variant?: 'settings' | 'link' | 'subs' | 'diag' | 'catalog';
     /// Marks a sheet whose content scrolls. Purely documentation — the
     /// scrollbar skin in app.css is universal (see the note there).
     scrollable?: boolean;
@@ -72,6 +72,7 @@
     class:link-dialog={variant === 'link'}
     class:subs-dialog={variant === 'subs'}
     class:diag-dialog={variant === 'diag'}
+    class:catalog-dialog={variant === 'catalog'}
     class:scrollable
     role="dialog"
     aria-label={label ?? title}
@@ -188,6 +189,17 @@
      tell one rip from another. */
   .subs-dialog {
     width: min(680px, 100%);
+  }
+
+  /* The widest sheet in the player, and the width is arithmetic rather than
+     taste: the poster grid is five columns of 150px with a 16px gap, i.e. 814px
+     of content, plus the sheet's own 38px of padding, gutter and border. Five
+     because a poster is 2:3 and four of them leave the row looking like a
+     shelf with a gap in it, while six needs a window wider than the 1280 this
+     player is routinely used at. `100%` still wins in a narrow window — the
+     grid is `auto-fill`, so it drops to four, three, two columns by itself. */
+  .catalog-dialog {
+    width: min(852px, 100%);
   }
 
   /* `.settings` is a block box, so the `gap` this used to declare did nothing

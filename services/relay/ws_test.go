@@ -286,8 +286,100 @@ func TestReadinessFreezesAndThawsOverTheWire(t *testing.T) {
 	}
 }
 
+// A code that answers to nothing gets an answer, not an invitation. The room
+// exists from the moment the relay issues its code, so the only way to reach a
+// well-formed code with no room behind it is that the room has ended — and
+// handing somebody a code that will then fail inside the player, with nothing
+// on either screen to explain it, is the outcome this replaces.
+// A room under a chosen code. The page reports whether a room exists, so any
+// test about the *invitation* has to have one — otherwise it is quietly testing
+// the "this room has ended" page instead.
+func withRoom(t *testing.T, s *server, code string) {
+	t.Helper()
+	r, err := s.hub.create(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.hub.mu.Lock()
+	delete(s.hub.rooms, r.code)
+	r.code = code
+	s.hub.rooms[code] = r
+	s.hub.mu.Unlock()
+}
+
+func TestAPageForARoomThatHasEnded(t *testing.T) {
+	s, _ := startRelay(t, nil)
+	render := func(code string) string {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/j/"+code, nil)
+		req.SetPathValue("code", code)
+		req.Header.Set("Accept-Language", "en")
+		s.serveJoinPage(rec, req)
+		return rec.Body.String()
+	}
+
+	// Nothing was ever created under this code.
+	gone := render("ZZZZZZ")
+	if !strings.Contains(gone, "This room has ended") {
+		t.Error("an invitation was offered for a room that does not exist")
+	}
+	if strings.Contains(gone, "frameplayer://join/") {
+		t.Error("the page still offers to open a room that is not there")
+	}
+
+	// A live room still gets the invitation.
+	room, err := s.hub.create(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := render(room.code)
+	if !strings.Contains(live, "frameplayer://join/"+room.code) {
+		t.Error("a live room was not offered")
+	}
+	if strings.Contains(live, "This room has ended") {
+		t.Error("a live room was reported as ended")
+	}
+}
+
+// The check makes the page an oracle, so it is a courtesy withdrawn under
+// abuse: past the probe budget the existence check is simply not made and the
+// invitation renders as it always did. A script gets a burst of truths and then
+// noise; a person refreshing never notices there was a limit.
+func TestWalkingTheCodeSpaceGetsNoise(t *testing.T) {
+	s, _ := startRelay(t, func(c *Config) { c.ProbeBurst = 3; c.ProbePerSecond = 0.01 })
+	render := func() string {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/j/ZZZZZZ", nil)
+		req.SetPathValue("code", "ZZZZZZ")
+		req.Header.Set("Accept-Language", "en")
+		req.RemoteAddr = "10.9.9.9:1234"
+		s.serveJoinPage(rec, req)
+		return rec.Body.String()
+	}
+	truths := 0
+	for range 3 {
+		if strings.Contains(render(), "This room has ended") {
+			truths++
+		}
+	}
+	if truths != 3 {
+		t.Fatalf("%d of the first three probes told the truth, want 3", truths)
+	}
+	// Past the budget it stops answering the question rather than erroring:
+	// a 429 to a human who refreshed too often would be the worse trade.
+	if after := render(); strings.Contains(after, "This room has ended") {
+		t.Error("the page kept answering whether a room exists past the probe budget")
+	} else if !strings.Contains(after, "frameplayer://join/") {
+		t.Error("past the budget the page should fall back to the plain invitation")
+	}
+}
+
 func TestJoinPageAcceptsWhatAPersonTypes(t *testing.T) {
 	s, _ := startRelay(t, nil)
+	// Rooms have to exist, or the page answers "ended" and never prints the
+	// scheme link this is about.
+	withRoom(t, s, "ABC123")
+	withRoom(t, s, "ABC023")
 	for _, path := range []string{"/j/abc-123", "/j/ABC123", "/j/abcI23"} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", path, nil)
@@ -320,6 +412,7 @@ func TestJoinPageSpeaksTheVisitorsLanguage(t *testing.T) {
 		c.DownloadWin = "https://example.invalid/FramePlayer-setup.exe"
 		c.DownloadPage = "https://example.invalid/download"
 	})
+	withRoom(t, s, "ABC123")
 
 	page := func(lang, ua string) string {
 		rec := httptest.NewRecorder()

@@ -36,6 +36,11 @@
     torrentResume: (row: TorrentRow) => { name: string; pos: number; dur: number; index: number } | null;
     onOpenFile: () => void;
     onOpenLink: () => void;
+    /// Null while the catalog is switched off, which is the default — the
+    /// button is then not drawn at all rather than drawn and disabled. A
+    /// disabled control invites a click and then explains; an absent one is
+    /// honest about a feature nobody has turned on.
+    onOpenCatalog: (() => void) | null;
     onOpenRecent: (item: RecentItem) => void;
     onForgetRecent: (item: RecentItem) => void;
     onOpenTorrent: (row: TorrentRow) => void;
@@ -52,6 +57,7 @@
     torrentResume,
     onOpenFile,
     onOpenLink,
+    onOpenCatalog,
     onOpenRecent,
     onForgetRecent,
     onOpenTorrent,
@@ -259,6 +265,26 @@
         </svg>
         {t('start.link')}
       </button>
+      <!-- The third way in, and deliberately the same weight as the link rather
+           than a lesser one: all three answer "how do I get something playing",
+           and only the first is the player's own reason to exist. Drawn only
+           when the catalog is switched on, so the default install still has the
+           two buttons it always had. -->
+      {#if onOpenCatalog}
+        <button class="btn-outline" onclick={onOpenCatalog}>
+          <!-- A magnifier at the same 24-unit box and 2px stroke as the chain
+               beside it. The handle stops short of the corner on purpose: run
+               to 20,20 it reads as a longer glyph than the chain and the two
+               stop looking like one set. -->
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="M15.4 15.4 19.5 19.5" />
+            </g>
+          </svg>
+          {t('start.catalog')}
+        </button>
+      {/if}
     </div>
   </div>
   {#if history.recent.length}
@@ -571,13 +597,18 @@
 {/if}
 
 <style>
-  /* The two ways in, side by side: the file picker is the primary action and
-     the link sits next to it as a plain one. */
+  /* The ways in, side by side: the file picker is the primary action and the
+     other two sit next to it as plain ones.
+     Wrapping is not decoration — with the catalog on, three Russian labels are
+     ~400px of buttons plus their gaps, against a window whose minimum width is
+     480 and which the mini player takes well below the start screen's own
+     comfortable size. Unwrapped, the third button leaves the panel. */
   .start-actions {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 16px;
+    flex-wrap: wrap;
+    gap: 12px 16px;
   }
 
   .recent {

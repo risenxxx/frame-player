@@ -14,6 +14,7 @@
  * any of them is for.
  */
 
+import { catalog, closeCatalog, closeTitle } from './catalog.svelte';
 import { chrome, exitFullscreen } from './chrome.svelte';
 import { opening } from './open.svelte';
 import { loadChapters, loadTracks } from './player.svelte';
@@ -45,7 +46,9 @@ class Overlays {
   trackMenu = $derived(this.menu === 'audio' || this.menu === 'sub' ? this.menu : null);
 
   /// Something is over the video, so the chrome must not fade out from under it.
-  any = $derived(this.menu !== null || this.settings || this.licenses || this.room);
+  any = $derived(
+    this.menu !== null || this.settings || this.licenses || this.room || catalog.open,
+  );
 }
 
 export const overlays = new Overlays();
@@ -59,7 +62,8 @@ export const overlays = new Overlays();
 export function initOverlays() {
   $effect(() => {
     chrome.overlayOpen = overlays.any;
-    chrome.sheetOpen = overlays.settings || overlays.licenses || overlays.room;
+    chrome.sheetOpen =
+      overlays.settings || overlays.licenses || overlays.room || catalog.open;
   });
 }
 
@@ -105,6 +109,15 @@ export function toggleInfo(hasFile: boolean) {
 export function closeTopmost() {
   if (opening.linkOpen) {
     opening.linkOpen = false;
+    return;
+  }
+  // Two layers inside one sheet, unwound innermost first exactly as the stack
+  // rule says: a title's page gives the grid back, and only the grid closes the
+  // panel. Escape collapsing the whole catalog from a release list would throw
+  // away a search as well as a choice.
+  if (catalog.open) {
+    if (catalog.picked) closeTitle();
+    else closeCatalog();
     return;
   }
   if (overlays.info) {

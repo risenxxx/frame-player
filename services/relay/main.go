@@ -7,8 +7,8 @@
 // person leaves. That is a deliberate property rather than an unfinished one:
 // the least this can know is the most it should.
 //
-//	go run ./server                       # :8080
-//	RELAY_ADDR=:9000 go run ./server
+//	go run ./services/relay                       # :8080
+//	RELAY_ADDR=:9000 go run ./services/relay
 package main
 
 import (
@@ -57,10 +57,12 @@ type Config struct {
 	HandshakeTimeout time.Duration
 	SweepInterval    time.Duration
 
-	JoinPerSecond float64
-	JoinBurst     float64
-	MsgPerSecond  float64
-	MsgBurst      float64
+	JoinPerSecond  float64
+	JoinBurst      float64
+	ProbePerSecond float64
+	ProbeBurst     float64
+	MsgPerSecond   float64
+	MsgBurst       float64
 }
 
 func defaultConfig() Config {
@@ -83,6 +85,10 @@ func defaultConfig() Config {
 		// person mistyping a code, useless for walking the code space.
 		JoinPerSecond: 1.0 / 6.0,
 		JoinBurst:     10,
+		// Generous for a person — refreshing an invitation a dozen times is
+		// ordinary — and useless for walking a billion codes.
+		ProbePerSecond: 1,
+		ProbeBurst:     30,
 		// A timeline change is a human gesture and a ping is one every thirty
 		// seconds, so this is two orders of magnitude of headroom.
 		MsgPerSecond: 20,

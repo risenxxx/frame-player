@@ -1,0 +1,21 @@
+// Two Go services in one repository, developed together and deployed apart.
+//
+// Committed on purpose. Without it every Go command has to be run from inside
+// one service's directory, which is how the documented commands drifted into
+// `go run ./server` — a form that never worked from anywhere, because the
+// module root was `server/` itself. With the workspace, `go test frameplayer/...`
+// from the repository root covers both services, and each keeps its own
+// `go.mod` so a container built from one service's directory (where there is no
+// workspace file) resolves exactly the same dependencies.
+//
+// Note the pattern: **`frameplayer/...`, not `./...`**. The repository root is
+// not itself a module, so a path pattern rooted there matches nothing and says
+// so in a way that reads like a broken workspace ("directory prefix . does not
+// contain modules listed in go.work"). A module-path pattern has no such
+// problem and covers both by their shared prefix.
+go 1.24
+
+use (
+	./services/relay
+	./services/tmdb
+)

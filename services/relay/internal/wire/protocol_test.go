@@ -15,7 +15,7 @@ import (
 // defending against and why it is a file rather than a constant here.
 func loadProtocolFixture(t *testing.T) map[string][]string {
 	t.Helper()
-	path := filepath.Join("..", "..", "..", "shared", "sync-protocol.txt")
+	path := filepath.Join("..", "..", "..", "..", "shared", "sync-protocol.txt")
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("open %s: %v", path, err)

@@ -9,14 +9,14 @@ exist a few minutes after the last person leaves.
 That is the whole design, and the rest of this file is consequences of it.
 
 ```bash
-go run ./server                 # :8080
-go test -race ./server/...
+go run ./services/relay                 # :8080
+go test -race frameplayer/relay/...
 ```
 
 ## Running it
 
 ```bash
-CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o frameplayer-relay ./server
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o frameplayer-relay ./services/relay
 ```
 
 A static binary of a few megabytes with no runtime dependencies. Put a TLS
@@ -46,14 +46,22 @@ that a process keeping no state can afford to lose.
 | `RELAY_MAX_ROOMS` | 5000 | |
 | `RELAY_MAX_MEMBERS` | 16 | per room |
 | `RELAY_ROOM_TTL` | 5m | how long an empty room waits for somebody to come back |
+| probe limit | 30 burst, 1/s | how often one address may be told whether a room exists |
 | `RELAY_PING` | 20s | liveness |
 | `RELAY_SWEEP` | 15s | |
 
 `GET /healthz` and `GET /metrics` (plain text) are there for a monitor.
 
-The invitation page answers in Russian or English from `Accept-Language`, and
-offers the installer for the platform in the `User-Agent` where one is
-configured — a download does not take the tab with it, so the code stays on
+The invitation page says whether the room is still there — a code that answers
+to nothing means the room has ended, which is worth saying rather than handing
+somebody a code that will fail inside the player. That makes the page an oracle
+for walking the code space, so it is a courtesy withdrawn under abuse: past the
+probe budget the check is simply not made and the plain invitation renders. A
+script gets a burst of truths and then noise; a person refreshing never notices
+there was a limit.
+
+It answers in Russian or English from `Accept-Language`, and offers the
+installer for the platform in the `User-Agent` where one is configured — a download does not take the tab with it, so the code stays on
 screen behind it. It is a document: no script, no framework, nothing that runs.
 Its one external dependency is the typeface, from Google Fonts. Embedding a copy
 was the first version and was dropped: the privacy discipline that shapes the
@@ -131,11 +139,11 @@ machine, and in practice mean it never gets checked. `cmd/probe` is the other en
 of a room:
 
 ```bash
-go run ./server &
-go run ./server/cmd/probe -play -drive          # creates a room, prints the code
-go run ./server/cmd/probe -room ABC123 -drive    # joins the player's room
-go run ./server/cmd/probe -room ABC123 -skew 300ms   # a clock that is wrong on purpose
-go run ./server/cmd/probe -room ABC123 -hold 20s     # freeze the room, on purpose
+go run ./services/relay &
+go run ./services/relay/cmd/probe -play -drive          # creates a room, prints the code
+go run ./services/relay/cmd/probe -room ABC123 -drive    # joins the player's room
+go run ./services/relay/cmd/probe -room ABC123 -skew 300ms   # a clock that is wrong on purpose
+go run ./services/relay/cmd/probe -room ABC123 -hold 20s     # freeze the room, on purpose
 ```
 
 It prints the timeline it received and, once a second, where it thinks playback

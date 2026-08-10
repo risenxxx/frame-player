@@ -273,7 +273,7 @@
     {/if}
 
     {#if wire.error}
-      <p class="link-error">{t(`sync.err_${wire.error}` as 'sync.err_no_room')}</p>
+      <p class="link-error room-err">{t(`sync.err_${wire.error}` as 'sync.err_no_room')}</p>
     {/if}
   {/if}
 </Dialog>
@@ -348,6 +348,17 @@
      the two are not competing to mean the same thing. This one separates who
      you are from what you want to do; that one separates the two things you
      could want. */
+  /* The shared `.link-error` carries 2px of top margin, which is right where it
+     was written — directly under the field that produced it, in the link box —
+     and wrong here, where it follows a full-width button and read as stuck to
+     it. Left-aligned rather than centred, deliberately: the form above it is a
+     column of labelled fields, and the longer messages ("check the address in
+     settings — it needs https") wrap to two lines, which a reader scans far
+     better ranged left than centred. */
+  .room-err {
+    margin-top: 14px;
+  }
+
   .room-rule {
     height: 1px;
     margin: 16px 0 4px;

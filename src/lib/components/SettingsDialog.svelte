@@ -56,6 +56,16 @@
   import { showOsd } from '$lib/osd.svelte';
   import { syncMenuChecks } from '$lib/window-prefs.svelte';
   import { DEFAULT_RELAY, relayUrl, setRelayUrl } from '$lib/sync/wire.svelte';
+  import {
+    DEFAULT_INDEXER,
+    DEFAULT_TMDB,
+    catalog,
+    indexerUrl,
+    setCatalogEnabled,
+    setIndexerUrl,
+    setTmdbUrl,
+    tmdbUrl,
+  } from '$lib/catalog.svelte';
   import { fmtSize } from '$lib/units';
 
   interface Props {
@@ -404,6 +414,24 @@
     // slash, and an empty entry falls back to the default — so the field has to
     // show what will actually be used, not what was typed.
     relayVal = relayUrl();
+  }
+
+  // ---- The catalog ----
+  // Same shape as the relay above and for the same reason: a half-typed host is
+  // a host, and the field has to show what will actually be used rather than
+  // what was typed — an empty entry falls back to the default rather than
+  // turning the feature off, which is what the switch beside it is for.
+  let indexerVal = $state(indexerUrl());
+  let tmdbVal = $state(tmdbUrl());
+
+  function saveIndexer(next: string) {
+    setIndexerUrl(next);
+    indexerVal = indexerUrl();
+  }
+
+  function saveTmdb(next: string) {
+    setTmdbUrl(next);
+    tmdbVal = tmdbUrl();
   }
 
   // ---- The TV (casting) tab ----
@@ -860,6 +888,65 @@
     </div>
 
   {:else if settingsTab === 'torrents'}
+    <!-- First in the tab, because "how do I find a release" comes before
+         "what happens to one I have". Off by default: this is the only
+         surface in the player that tells a third party what somebody is
+         *looking for* rather than acting on a file they already hold, and
+         that choice is the viewer's to make rather than the installer's. -->
+    <div class="setting">
+      <div class="row-toggle">
+        <div class="row-text">
+          <div class="setting-label">{t('catalog.setting')}</div>
+          <div class="setting-hint">{t('catalog.setting_hint')}</div>
+        </div>
+        <button
+          class="switch"
+          class:on={catalog.enabled}
+          role="switch"
+          aria-checked={catalog.enabled}
+          aria-label={t('catalog.setting')}
+          onclick={() => setCatalogEnabled(!catalog.enabled)}
+        >
+          <span class="switch-knob"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Shown only once the catalog is on: an address for a feature nobody
+         has enabled is a question about something that is not happening. -->
+    {#if catalog.enabled}
+      <!-- The metadata service first, because it is the one the player itself
+           depends on: without it the panel still works but has no pictures,
+           which is the difference a viewer notices immediately. -->
+      <div class="setting">
+        <div class="setting-label">{t('catalog.tmdb_label')}</div>
+        <div class="setting-hint">{t('catalog.tmdb_hint')}</div>
+        <input
+          class="link-input"
+          value={tmdbVal}
+          placeholder={DEFAULT_TMDB}
+          spellcheck="false"
+          autocapitalize="off"
+          aria-label={t('catalog.tmdb_label')}
+          onchange={(e) => saveTmdb(e.currentTarget.value)}
+        />
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">{t('catalog.indexer_label')}</div>
+        <div class="setting-hint">{t('catalog.indexer_hint')}</div>
+        <input
+          class="link-input"
+          value={indexerVal}
+          placeholder={DEFAULT_INDEXER}
+          spellcheck="false"
+          autocapitalize="off"
+          aria-label={t('catalog.indexer_label')}
+          onchange={(e) => saveIndexer(e.currentTarget.value)}
+        />
+      </div>
+    {/if}
+
     <!-- Seeding was under the privacy controls, on the argument that it is
          the same kind of decision as an excluded folder — what leaves this
          machine. That argument still holds and is not why it moved: a

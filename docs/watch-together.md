@@ -342,14 +342,14 @@ real event.
 
 ## The relay
 
-Go, `server/`, one dependency (`github.com/coder/websocket`), a static binary of
+Go, `services/relay/`, one dependency (`github.com/coder/websocket`), a static binary of
 a few megabytes on `scratch`. No database, nothing written to disk, and a room
 ceases to exist a few minutes after the last person leaves — deliberately, not
 for want of finishing: the least this can know is the most it should.
 
 Builds point at `relay.frameplayer.app`, and the address is a **field in the
 settings sheet** rather than a build-time constant — so running your own is a
-setting rather than a fork, and `server/` is the whole of what has to be
+setting rather than a fork, and `services/relay/` is the whole of what has to be
 deployed. It sits under «Основные» rather than in the room dialog, where it
 started: practically nobody runs their own relay, so a field on the way into
 every room was a question with one answer standing in front of the two controls
@@ -407,16 +407,16 @@ is an otherwise pointless-looking environment variable at the top of it.
 
 The player is single-instance, so a second `npm run tauri dev` signals the first
 rather than starting one — which would make "does this still sync" cost a second
-machine, and in practice mean it never gets checked. `server/cmd/probe` is the
+machine, and in practice mean it never gets checked. `services/relay/cmd/probe` is the
 other end of a room: it joins, follows the timeline, and prints once a second
 where it thinks playback is.
 
 ```bash
-go run ./server &
-go run ./server/cmd/probe -play -drive           # creates a room, prints the code
-go run ./server/cmd/probe -room ABC123 -drive     # joins the player's room
-go run ./server/cmd/probe -room ABC123 -skew 300ms
-go run ./server/cmd/probe -room ABC123 -hold 20s
+go run ./services/relay &
+go run ./services/relay/cmd/probe -play -drive           # creates a room, prints the code
+go run ./services/relay/cmd/probe -room ABC123 -drive     # joins the player's room
+go run ./services/relay/cmd/probe -room ABC123 -skew 300ms
+go run ./services/relay/cmd/probe -room ABC123 -hold 20s
 ```
 
 `-skew` makes the probe lie about its own clock, which is the only way to see

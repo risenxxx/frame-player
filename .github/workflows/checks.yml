@@ -46,7 +46,7 @@ jobs:
       - name: Gates
         run: npm run gates
 
-  relay:
+  services:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -56,7 +56,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
-          cache-dependency-path: server/go.sum
+          cache-dependency-path: |
+            services/relay/go.sum
+            services/tmdb/go.mod
 
       # `-race` because the relay's whole shape is concurrent — a room's lock, a
       # per-member outbox, a sweeper — and a data race there is exactly the kind
@@ -67,9 +69,12 @@ jobs:
       # track it — see the note in `protocol_test.go`), and a fresh runner has no
       # cache anyway. It costs nothing and it stops a future edit to that test
       # from silently re-enabling the trap.
-      - name: Relay
-        working-directory: server
+      # `frameplayer/...` rather than `./...`: the repository root is not itself a
+      # module, so a path pattern rooted there matches nothing and reports it in
+      # a way that reads like a broken workspace. The module-path pattern covers
+      # both services by their shared prefix.
+      - name: Services
         run: |
-          go vet ./...
-          go build ./...
-          go test -race -count=1 ./...
+          go vet frameplayer/...
+          go build frameplayer/...
+          go test -race -count=1 frameplayer/...

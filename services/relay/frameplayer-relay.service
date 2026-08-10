@@ -1,7 +1,7 @@
 # systemd unit for running the relay straight from a binary, without Docker.
 #
-#   go build -trimpath -ldflags "-s -w" -o /usr/local/bin/frameplayer-relay ./server
-#   install -m644 server/frameplayer-relay.service /etc/systemd/system/
+#   go build -trimpath -ldflags "-s -w" -o /usr/local/bin/frameplayer-relay ./services/relay
+#   install -m644 services/relay/frameplayer-relay.service /etc/systemd/system/
 #   systemctl enable --now frameplayer-relay
 #
 # Put a TLS terminator in front of it (Caddy, nginx) and set RELAY_TRUST_PROXY so

@@ -285,11 +285,11 @@ room pauses itself while any member is still opening a file or buffering, and
 says who it is waiting for; a member who never reports stops holding it up after
 45 seconds.
 
-**The relay** is a small Go server in [`server/`](server/) — no database,
+**The relay** is a small Go server in [`services/relay/`](services/relay/) — no database,
 nothing written to disk, and a room ceases to exist a few minutes after the last
 person leaves. Builds point at a default instance; the address is a field in
 **Settings → General**, so running your own is a setting rather than a fork.
-See [server/README.md](server/README.md) to deploy one and
+See [services/relay/README.md](services/relay/README.md) to deploy one and
 [docs/watch-together.md](docs/watch-together.md) for the design.
 
 ## Configuration
@@ -414,7 +414,8 @@ reach it, and `shared/sync-protocol.txt` is a contract only one half of which
 they check:
 
 ```bash
-cd server && go vet ./... && go test -race ./...
+go vet frameplayer/... && go test -race frameplayer/...  # both services, from the repo root
+cd services/relay && go vet ./... && go test -race ./...
 ```
 
 Testing a *room* needs two players, and the player is single-instance, so a
@@ -424,10 +425,10 @@ prints where it thinks playback is, so the real player can be driven by hand and
 watched from a terminal:
 
 ```bash
-go run ./server &
-go run ./server/cmd/probe -room ABC123 -drive
-go run ./server/cmd/probe -room ABC123 -skew 300ms   # a clock that is wrong on purpose
-go run ./server/cmd/probe -room ABC123 -hold 20s     # hold the room, on purpose
+go run ./services/relay &
+go run ./services/relay/cmd/probe -room ABC123 -drive
+go run ./services/relay/cmd/probe -room ABC123 -skew 300ms   # a clock that is wrong on purpose
+go run ./services/relay/cmd/probe -room ABC123 -hold 20s     # hold the room, on purpose
 ```
 
 ## Project structure
@@ -444,7 +445,8 @@ go run ./server/cmd/probe -room ABC123 -hold 20s     # hold the room, on purpose
 | `src-tauri/src/cast.rs` · `dlna.rs` | Casting: the Cast client, the LAN file server, the UPnP transport |
 | `src-tauri/src/opensubtitles.rs` | Subtitle search and download |
 | `src/lib/sync/` | Watching together: the wire, the clock estimate, content identity, drift correction |
-| `server/` | The watch-together relay (Go) and `cmd/probe`, a headless peer for testing it alone |
+| `services/` | The Go services: `relay/` (watching together) and `tmdb/` (the metadata proxy)
+| `services/relay/` | The watch-together relay (Go) and `cmd/probe`, a headless peer for testing it alone |
 | `src-tauri/src/macos_*.rs` | Native window chrome and menu bar on macOS |
 | `src-tauri/lua/zoompan.lua` | Atomic zoom+pan applied on mpv's core thread |
 | `patches/` | The mpv `--wid` embedding patch for macOS |

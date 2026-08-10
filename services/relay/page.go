@@ -30,6 +30,7 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+	"time"
 
 	"frameplayer/relay/internal/wire"
 )
@@ -94,6 +95,9 @@ type pageText struct {
 	NoPlayer string
 	Get      string
 	Privacy  string
+	// Shown instead of the invitation when the room is not there any more.
+	GoneTitle string
+	GoneSub   string
 }
 
 var textRU = pageText{
@@ -106,24 +110,28 @@ var textRU = pageText{
 	// the source and reads as an ordinary one to whoever edits it next. A product
 	// name split across two lines is the one break worth forbidding outright;
 	// everything else is left to `text-wrap: balance`.
-	Open:     "Открыть в Frame\u00a0Player",
-	Manual:   "Или введите код в плеере — «Смотреть вместе».",
-	NoPlayer: "Ещё нет плеера?",
-	Get:      "Скачать Frame\u00a0Player",
-	Privacy:  "Через сервер идёт только позиция и пауза — не видео.",
+	Open:      "Открыть в Frame\u00a0Player",
+	Manual:    "Или введите код в плеере — «Смотреть вместе».",
+	NoPlayer:  "Ещё нет плеера?",
+	Get:       "Скачать Frame\u00a0Player",
+	Privacy:   "Через сервер идёт только позиция и пауза — не видео.",
+	GoneTitle: "Комната закрыта",
+	GoneSub:   "Комната живёт, пока в ней кто-то есть. Попросите новую ссылку.",
 }
 
 var textEN = pageText{
-	Lang:     "en",
-	Brand:    "Frame\u00a0Player",
-	Title:    "Watch together",
-	Sub:      "One film, one position, the same pauses.",
-	CodeCap:  "Room code",
-	Open:     "Open in Frame\u00a0Player",
-	Manual:   "Or open the player and choose “Watch together”.",
-	NoPlayer: "Don’t have it yet?",
-	Get:      "Get Frame\u00a0Player",
-	Privacy:  "Only the position and pause travel through the server — never the video.",
+	Lang:      "en",
+	Brand:     "Frame\u00a0Player",
+	Title:     "Watch together",
+	Sub:       "One film, one position, the same pauses.",
+	CodeCap:   "Room code",
+	Open:      "Open in Frame\u00a0Player",
+	Manual:    "Or open the player and choose “Watch together”.",
+	NoPlayer:  "Don’t have it yet?",
+	Get:       "Get Frame\u00a0Player",
+	Privacy:   "Only the position and pause travel through the server — never the video.",
+	GoneTitle: "This room has ended",
+	GoneSub:   "A room exists only while somebody is in it. Ask for a new link.",
 }
 
 // The language to answer in, from `Accept-Language`.
@@ -173,6 +181,8 @@ type joinPageData struct {
 	pageText
 	Code     string
 	Download string
+	// The code is well-formed but no room answers to it.
+	Gone bool
 }
 
 var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
@@ -298,8 +308,23 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
   .get { color: #c7cbff; text-decoration: none; border-bottom: 1px solid rgba(199, 203, 255, .35) }
   .get:hover { border-bottom-color: #c7cbff }
   .foot { margin-top: 22px; font-size: 11.5px; color: #64646f }
+  /* Spent rather than absent: muted, and without the box and button that make a
+     live code look pressable. */
+  .gone-code {
+    margin-top: 20px;
+    font: 500 17px/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    letter-spacing: .14em; padding-left: .14em; color: #56565f;
+  }
 </style>
 </head><body><div class="page"><main>
+{{if .Gone}}
+  <h1>{{.GoneTitle}}</h1>
+  <p class="lead">{{.GoneSub}}</p>
+  <!-- The code is still shown, small and spent: it is how somebody checks they
+       clicked the link they meant to, and it makes the page an answer about
+       *this* invitation rather than a generic error. -->
+  <div class="gone-code">{{.Code}}</div>
+{{else}}
   <h1>{{.Title}}</h1>
   <p class="lead">{{.Sub}}</p>
 
@@ -316,12 +341,13 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
 
   <a class="go" href="frameplayer://join/{{.Code}}">{{.Open}}</a>
   <p class="sub">{{.Manual}}</p>
+{{end}}
 
   {{if .Download}}
     <p class="sub">{{.NoPlayer}} <a class="get" href="{{.Download}}" target="_blank" rel="noopener">{{.Get}}</a></p>
   {{end}}
 
-  <p class="foot">{{.Privacy}}</p>
+  {{if not .Gone}}<p class="foot">{{.Privacy}}</p>{{end}}
 </main></div></body></html>
 `))
 
@@ -331,10 +357,26 @@ func (s *server) serveJoinPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not a room code", http.StatusNotFound)
 		return
 	}
-	// Whether the room *exists* is deliberately not checked or reported. It
-	// would turn this page into an oracle for walking the code space, and it
-	// would be wrong as often as it was right: a link is normally sent before
-	// anyone has opened the player.
+	// Whether the room exists **is** reported, and the first version of this
+	// page was wrong not to. The argument for staying silent was that a link is
+	// normally sent before anyone has opened the player — but the code is issued
+	// by the relay when the room is created, so by the time a link exists the
+	// room does too. The only way to arrive at a code that answers to nothing is
+	// that the room has since ended, and saying so is a true and useful answer:
+	// the alternative is a page that hands somebody a code which then fails
+	// inside the player with nothing to explain it.
+	//
+	// What the silence really bought was that this page could not be used as an
+	// oracle for walking the code space, and that is bought properly below: past
+	// the probe budget the check is simply not made and the invitation renders as
+	// it always did. A script gets thirty truths and then noise; a person
+	// refreshing a page never notices there was a limit.
+	gone := false
+	if s.hub.allowProbe(s.addrOf(r), time.Now()) {
+		_, err := s.hub.get(code)
+		gone = err != nil
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -345,6 +387,7 @@ func (s *server) serveJoinPage(w http.ResponseWriter, r *http.Request) {
 		pageText: pageTextFor(r.Header.Get("Accept-Language")),
 		Code:     code,
 		Download: s.downloadFor(r.Header.Get("User-Agent")),
+		Gone:     gone,
 	})
 }
 

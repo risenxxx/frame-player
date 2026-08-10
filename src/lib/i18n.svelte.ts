@@ -19,6 +19,46 @@ const ru = {
   'start.recent': 'Продолжить просмотр',
   'start.remaining': 'осталось {time}',
   'start.forget': 'Убрать из истории',
+  'start.catalog': 'Каталог',
+
+  'catalog.title': 'Каталог',
+  'catalog.placeholder': 'Название фильма или сериала',
+  'catalog.placeholder_raw': 'Название раздачи',
+  'catalog.trending': 'Сейчас смотрят',
+  'catalog.searching': 'Ищем…',
+  'catalog.looking': 'Ищем раздачи…',
+  'catalog.nothing': 'Ничего не нашлось',
+  'catalog.type_something': 'Начните вводить название',
+  'catalog.no_releases': 'Раздач не нашлось',
+  'catalog.releases': 'Раздачи: {count}',
+  'catalog.seeders': 'сидов: {count}',
+  'catalog.series': 'Сериал',
+  'catalog.season': 'Сезон {number}',
+  'catalog.runtime': '{minutes} мин',
+  'catalog.back': 'Назад',
+  'catalog.no_indexer': 'Не указан адрес поиска раздач — задайте его в настройках',
+  'catalog.no_proxy': 'Не указан адрес сервиса описаний — задайте его в настройках',
+  'catalog.bad_proxy': 'Адрес сервиса описаний неверен',
+  'catalog.insecure_proxy': 'Адрес сервиса описаний должен начинаться с https://',
+  'catalog.unreachable': 'Сервис не отвечает',
+  'catalog.failed': 'Не удалось выполнить поиск',
+  'catalog.no_key_hint':
+    'Сервис описаний недоступен, поэтому постеров и описаний не будет — поиск идёт напрямую по раздачам.',
+  // **Deliberately not translated, and identical in both dictionaries.** The
+  // TMDB API terms (§3) prescribe this exact sentence; a translation is a
+  // different sentence, and being the only untranslated string in the file is a
+  // smaller fault than reproducing a required notice inaccurately.
+  'catalog.tmdb_notice':
+    'This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.',
+  'catalog.setting': 'Каталог фильмов и сериалов',
+  'catalog.setting_hint':
+    'Добавляет на стартовый экран поиск по каталогу: описание и постеры берутся с TMDB, список раздач — с указанного ниже сервиса. Оба узнают, что вы ищете, поэтому выключено по умолчанию.',
+  'catalog.tmdb_label': 'Сервис описаний',
+  'catalog.tmdb_hint':
+    'Через него идут постеры и описания с TMDB — ключ хранится там, а не в плеере. Сами постеры грузятся напрямую с TMDB, а через сервис только если TMDB недоступен. Пустое поле возвращает адрес по умолчанию.',
+  'catalog.indexer_label': 'Сервис поиска раздач',
+  'catalog.indexer_hint':
+    'Совместимый с JacRed индексатор. По умолчанию — публичный: он видит ваши запросы. Свой экземпляр можно поднять на синхронизации с чужой базой, без аккаунтов на трекерах. Пустое поле возвращает адрес по умолчанию.',
 
   'error.mpv': 'Не удалось запустить mpv',
   'error.mpv_hint':
@@ -723,6 +763,43 @@ const en: Record<MessageKey, string> = {
   'start.recent': 'Continue watching',
   'start.remaining': '{time} left',
   'start.forget': 'Remove from history',
+  'start.catalog': 'Catalog',
+
+  'catalog.title': 'Catalog',
+  'catalog.placeholder': 'A film or series title',
+  'catalog.placeholder_raw': 'A release name',
+  'catalog.trending': 'Trending now',
+  'catalog.searching': 'Searching…',
+  'catalog.looking': 'Looking for releases…',
+  'catalog.nothing': 'Nothing found',
+  'catalog.type_something': 'Start typing a title',
+  'catalog.no_releases': 'No releases found',
+  'catalog.releases': 'Releases: {count}',
+  'catalog.seeders': 'seeds: {count}',
+  'catalog.series': 'Series',
+  'catalog.season': 'Season {number}',
+  'catalog.runtime': '{minutes} min',
+  'catalog.back': 'Back',
+  'catalog.no_indexer': 'No release-search address is set — add one in the settings',
+  'catalog.no_proxy': 'No metadata service address is set — add one in the settings',
+  'catalog.bad_proxy': 'The metadata service address is not a valid URL',
+  'catalog.insecure_proxy': 'The metadata service address must start with https://',
+  'catalog.unreachable': 'The service is not answering',
+  'catalog.failed': 'The search failed',
+  'catalog.no_key_hint':
+    'The metadata service is unreachable, so there are no posters or descriptions — the search goes straight to the releases.',
+  // Verbatim from the TMDB terms — see the note beside the Russian entry.
+  'catalog.tmdb_notice':
+    'This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.',
+  'catalog.setting': 'Film and series catalog',
+  'catalog.setting_hint':
+    'Adds a catalog search to the start screen: descriptions and posters come from TMDB, the release list from the service below. Both learn what you are looking for, which is why this is off by default.',
+  'catalog.tmdb_label': 'Metadata service',
+  'catalog.tmdb_hint':
+    'Posters and descriptions from TMDB come through it — the key lives there rather than in the player. Posters themselves load straight from TMDB, and through the service only where TMDB is unreachable. An empty field restores the default.',
+  'catalog.indexer_label': 'Release search service',
+  'catalog.indexer_hint':
+    'A JacRed-compatible indexer. The default is a public one, and it sees your queries. Your own instance can run on a sync of somebody else’s database, with no tracker accounts. An empty field restores the default.',
 
   'error.mpv': 'Could not start mpv',
   'error.mpv_hint':

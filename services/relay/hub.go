@@ -123,16 +123,31 @@ type bucket struct {
 }
 
 func (h *hub) allowJoin(addr string, now time.Time) bool {
+	return h.allow("j:"+addr, h.cfg.JoinPerSecond, h.cfg.JoinBurst, now)
+}
+
+// Whether this address may be told *whether a room exists*.
+//
+// The invitation page answers that, which makes it an oracle: without a limit,
+// a script could walk the code space at HTTP speed and find live rooms. Its own
+// budget rather than the join one, because a page view is not an attempt to
+// join and must not spend the allowance a real person needs for mistyping a
+// code.
+func (h *hub) allowProbe(addr string, now time.Time) bool {
+	return h.allow("p:"+addr, h.cfg.ProbePerSecond, h.cfg.ProbeBurst, now)
+}
+
+func (h *hub) allow(key string, rate, burst float64, now time.Time) bool {
 	h.limitMu.Lock()
 	defer h.limitMu.Unlock()
-	b, ok := h.limits[addr]
+	b, ok := h.limits[key]
 	if !ok {
-		b = &bucket{tokens: h.cfg.JoinBurst, last: now}
-		h.limits[addr] = b
+		b = &bucket{tokens: burst, last: now}
+		h.limits[key] = b
 	}
-	b.tokens += now.Sub(b.last).Seconds() * h.cfg.JoinPerSecond
-	if b.tokens > h.cfg.JoinBurst {
-		b.tokens = h.cfg.JoinBurst
+	b.tokens += now.Sub(b.last).Seconds() * rate
+	if b.tokens > burst {
+		b.tokens = burst
 	}
 	b.last = now
 	if b.tokens < 1 {

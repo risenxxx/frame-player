@@ -37,6 +37,7 @@
   import Controls from '$lib/components/Controls.svelte';
   import DiagnosisDialog from '$lib/components/DiagnosisDialog.svelte';
   import LinkDialog from '$lib/components/LinkDialog.svelte';
+  import CatalogDialog from '$lib/components/CatalogDialog.svelte';
   import TorrentPickDialog from '$lib/components/TorrentPickDialog.svelte';
   import TorrentUpdateDialog from '$lib/components/TorrentUpdateDialog.svelte';
   import { blockContextMenu, inTextField } from '$lib/dom';
@@ -104,6 +105,7 @@
     togglePortForward,
     toggleSeeding,
   } from '$lib/open.svelte';
+  import { catalog, closeCatalog, openCatalog } from '$lib/catalog.svelte';
   import {
     addTrackFile,
     applyDelays,
@@ -1223,6 +1225,7 @@
       {torrentResume}
       onOpenFile={openFileDialog}
       onOpenLink={openLinkDialog}
+      onOpenCatalog={catalog.enabled ? () => void openCatalog() : null}
       onOpenRecent={(item) => void openRecent(item)}
       onForgetRecent={(item) => forgetRecent(item.path)}
       onOpenTorrent={(row) => void openRememberedTorrent(row)}
@@ -1385,6 +1388,13 @@
         onclose={() => (opening.pick = null)}
         onPick={(i, file) => void playTorrentFile(i, file)}
       />
+    {/if}
+
+    <!-- Above the start screen and below everything a chosen release raises:
+         `playRelease` shuts this before handing the magnet over, so the torrent
+         picker that follows never has to sit on top of it. -->
+    {#if catalog.open}
+      <CatalogDialog onclose={closeCatalog} />
     {/if}
 
     {#if subs.open}
