@@ -34,6 +34,47 @@ import (
 	"frameplayer/relay/internal/wire"
 )
 
+// The tab icon: the player's own viewfinder mark, from
+// `src-tauri/icons/icon-master.svg`, with the comments and the 1024-canvas
+// transform dropped so the paths sit in their own 24-grid.
+//
+// **SVG rather than a PNG, and one file rather than a set.** A favicon is asked
+// for at 16, 32 and 64 depending on the browser, the tab bar and the display
+// scale, and a vector answers all of them from the same bytes — which is the
+// whole of the "what resolution" question.
+//
+// **One colour rather than a pair for light and dark.** The mark is a single
+// mid-tone indigo on nothing at all: no tile, no background, so what sits behind
+// it is the tab bar's own colour, and #6366f1 has enough contrast against both.
+// A `prefers-color-scheme` block inside the SVG would be machinery for a problem
+// this glyph does not have — the master file was drawn this way on purpose and
+// says so.
+//
+// The `viewBox` is tighter than the master's: the ink spans 2.0–22.0 of the
+// 24-grid, so starting at 1.2 with a 21.6 box leaves 0.8 of margin on every
+// side — about 3.7 %, which is what the master intends and what keeps the glyph
+// from shrinking to nothing inside a 16px tab.
+//
+// What this does not cover: Safari before 17, which ignores SVG favicons and
+// falls back to `/favicon.ico`, and gets the browser's default mark. A 32px PNG
+// beside this would close that, at the cost of a binary in the repository that
+// has to be kept in step with the master by hand. Not worth it for a page
+// opened once from a chat window.
+const faviconSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="1.2 1.2 21.6 21.6">` +
+	`<path fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"` +
+	` d="M3.2 7.6V5.9c0-1.5 1.2-2.7 2.7-2.7h1.7M16.4 3.2h1.7c1.5 0 2.7 1.2 2.7 2.7v1.7` +
+	`M20.8 16.4v1.7c0 1.5-1.2 2.7-2.7 2.7h-1.7M7.6 20.8H5.9c-1.5 0-2.7-1.2-2.7-2.7v-1.7"/>` +
+	`<path fill="#6366f1" stroke="#6366f1" stroke-width="1.6" stroke-linejoin="round"` +
+	` d="M10 9v6l5.4-3z"/></svg>`
+
+func (s *server) serveFavicon(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	// A brand mark changes with a rebrand, not with a release, and a browser
+	// asks for it on every tab.
+	w.Header().Set("Cache-Control", "public, max-age=604800")
+	_, _ = w.Write([]byte(faviconSVG))
+}
+
 // ---- what the page says -----------------------------------------------------
 
 // A page in one language. Two of them rather than a lookup per string: this is
@@ -108,11 +149,15 @@ func pageTextFor(header string) pageText {
 
 // Which installer to offer, from the User-Agent.
 //
-// A download link rather than a page, when the operator has configured one:
+// A direct download rather than a page, when the operator has configured one:
 // somebody who has just been sent an invitation wants the player, not a release
-// list. It does not take the tab with it — a browser navigating to something it
-// cannot render downloads it and stays where it was — so the code stays on
-// screen behind the download, which is the whole point of putting it there.
+// list.
+//
+// Either way the link opens in a new tab. A direct installer would not have
+// taken this one with it — a browser navigating to something it cannot render
+// downloads it and stays put — but the default is a *page*, and that does
+// navigate away. The code has to still be there when they come back, because
+// coming back is the entire point of the page.
 func (s *server) downloadFor(ua string) string {
 	ua = strings.ToLower(ua)
 	switch {
@@ -137,13 +182,32 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
 <meta name="robots" content="noindex">
 <meta name="color-scheme" content="dark">
 <title>{{.Code}} · {{.Brand}}</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@300..900&display=swap">
 <style>
   * { box-sizing: border-box }
   body {
-    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    margin: 0;
+    /* svh, not vh — and the plain vh above it is what older browsers get.
+       On a phone 100vh is the *large* viewport: the height the page would have
+       once the address bar has scrolled away. At load, while the bar is still
+       showing, content centred in it sits lower than the middle of what can
+       actually be seen, and rises as the bar collapses. That is the one
+       mechanism that matches "it starts nearer the centre and then jumps up",
+       and svh — the small viewport, with the bar always counted — removes it by
+       centring in the area that is visible the whole time.
+
+       Measured on desktop, live and local, at 430x800: the webfont swap moves
+       the top edge by 0 px and the block height by 1-2 px, so the font is not
+       the cause and font-display was left alone.
+
+       (No backticks anywhere in this file's CSS: the template is a raw string
+       literal and one would end it. This is the second time.) */
+    min-height: 100vh;
+    min-height: 100svh;
+    display: grid; place-items: center;
     background: #101016; color: #e8e8ec; padding: 24px;
     font: 400 15px/1.55 'Rubik', -apple-system, 'Segoe UI', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
@@ -160,11 +224,21 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
   p { margin: 0; color: #9a9aa6; font-size: 13.5px }
   .lead { color: #b9b9c3 }
 
+  /* The code and the button are one block, joined edge to edge with the corners
+     between them squared off. Apart, the box was a full-column container around
+     six characters and its width looked arbitrary — nothing explained why it was
+     that wide. Fused with the button the width belongs to the *block*, and the
+     box reads as the button's own label rather than as a panel that happens to
+     sit above it.
+
+     The bottom border goes with the gap: a hairline resting on a solid indigo
+     button reads as a seam rather than as an edge. */
   .codebox {
-    margin: 22px 0 20px;
+    margin: 22px 0 0;
     padding: 13px 16px 15px;
     border: 1px solid rgba(255, 255, 255, .09);
-    border-radius: 14px;
+    border-bottom: none;
+    border-radius: 14px 14px 0 0;
     background: rgba(255, 255, 255, .035);
   }
   .cap {
@@ -182,12 +256,21 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
   }
 
   .go {
-    display: block; padding: 11px 18px; border: 0; border-radius: 10px;
+    display: block; padding: 11px 18px; border: 0;
+    /* The outer corners keep the block's radius; the two that meet the box
+       above are square, which is what makes the pair one shape. */
+    border-radius: 0 0 14px 14px;
     background: #6366f1; color: #fff; font: inherit; font-weight: 500;
     text-decoration: none; transition: background .15s ease;
   }
   .go:hover { background: #818cf8 }
   .sub { margin-top: 13px; font-size: 12.5px }
+  /* The first line under the block stands as far from it as the block stands
+     from the text above — otherwise the prose crowds a shape that is now twice
+     as tall as it used to be. The paragraphs after it keep their own tighter
+     rhythm, which is what separates "a note about the block" from the run of
+     small print below. */
+  .go + .sub { margin-top: 22px }
   .get { color: #c7cbff; text-decoration: none; border-bottom: 1px solid rgba(199, 203, 255, .35) }
   .get:hover { border-bottom-color: #c7cbff }
   .foot { margin-top: 22px; font-size: 11.5px; color: #64646f }
@@ -211,7 +294,7 @@ var joinPage = template.Must(template.New("join").Parse(`<!doctype html>
   <p class="sub">{{.Manual}}</p>
 
   {{if .Download}}
-    <p class="sub">{{.NoPlayer}} <a class="get" href="{{.Download}}" rel="noopener">{{.Get}}</a></p>
+    <p class="sub">{{.NoPlayer}} <a class="get" href="{{.Download}}" target="_blank" rel="noopener">{{.Get}}</a></p>
   {{end}}
 
   <p class="foot">{{.Privacy}}</p>

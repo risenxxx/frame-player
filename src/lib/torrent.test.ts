@@ -13,7 +13,15 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { torrentPositions, torrentResume, type TorrentOnDisk } from './torrent.svelte';
+import { history } from './history.svelte';
+import {
+  markWatched,
+  rememberTorrent,
+  torrentPositions,
+  torrentResume,
+  watchedFiles,
+  type TorrentOnDisk,
+} from './torrent.svelte';
 
 const HASH = '08ada5a7a6183aae1e09d831df6748d566095a10';
 const OTHER = 'ffffffffffffffffffffffffffffffffffffffff';
@@ -122,5 +130,63 @@ describe('torrentPositions', () => {
 
   it('is empty rather than absent when nothing was watched', () => {
     expect(torrentPositions(HASH)).toEqual({});
+  });
+});
+
+/**
+ * **A finished episode leaves no trace anywhere else**, which is the whole
+ * reason this list exists: `frameplayer.positions` *deletes* its entry past the
+ * finished threshold, so a watched file is indistinguishable from one never
+ * opened. Two things read this — "delete the ones I have seen", and the mark in
+ * the file picker — and both fail silently and permanently if it is lost.
+ */
+describe('watched episodes', () => {
+  const info = (files: string[]) => ({
+    info_hash: HASH,
+    name: 'Season',
+    files: files.map((path, index) => ({ index, path, size: 1, url: `u/${index}` })),
+  });
+
+  beforeEach(() => {
+    history.prefs.enabled = true;
+  });
+
+  it('remembers an episode watched to the end', () => {
+    rememberTorrent(info(['ep1.mkv', 'ep2.mkv']), 'magnet:?xt=urn:btih:x');
+    markWatched(HASH, 'ep1.mkv');
+    expect(watchedFiles(HASH)).toEqual(new Set(['ep1.mkv']));
+  });
+
+  it('survives the torrent being opened again', () => {
+    // The failure this pins is invisible: `rememberTorrent` runs on *every*
+    // open, so a version that rebuilt the entry from scratch would forget every
+    // watched episode the next time the season was opened, and nothing on
+    // screen would say so.
+    rememberTorrent(info(['ep1.mkv']), 'magnet:?xt=urn:btih:x');
+    markWatched(HASH, 'ep1.mkv');
+    rememberTorrent(info(['ep1.mkv', 'ep2.mkv']), 'magnet:?xt=urn:btih:x');
+    expect(watchedFiles(HASH)).toEqual(new Set(['ep1.mkv']));
+  });
+
+  it('records nothing with history off', () => {
+    rememberTorrent(info(['ep1.mkv']), 'magnet:?xt=urn:btih:x');
+    history.prefs.enabled = false;
+    markWatched(HASH, 'ep1.mkv');
+    expect(watchedFiles(HASH)).toEqual(new Set());
+  });
+
+  it('does not invent an entry for a torrent it has never seen', () => {
+    // A half-entry would be a row with a name and no magnet: listed, and
+    // impossible to open.
+    markWatched(OTHER, 'ep1.mkv');
+    expect(watchedFiles(OTHER)).toEqual(new Set());
+    expect(localStorage.getItem('frameplayer.torrents')).toBeNull();
+  });
+
+  it('does not record the same episode twice', () => {
+    rememberTorrent(info(['ep1.mkv']), 'magnet:?xt=urn:btih:x');
+    markWatched(HASH, 'ep1.mkv');
+    markWatched(HASH, 'ep1.mkv');
+    expect([...watchedFiles(HASH)]).toEqual(['ep1.mkv']);
   });
 });

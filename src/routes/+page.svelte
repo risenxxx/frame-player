@@ -83,6 +83,7 @@
     cancelLoadFailure,
     clearTorrentCache,
     deleteTorrent,
+    deleteWatchedFiles,
     dropLink,
     openFileDialog,
     fixYtdlp,
@@ -209,6 +210,7 @@
     rememberedTorrent,
     torrentPositions,
     torrentResume,
+    watchedFiles,
     trackTorrentPlayback,
     loadTorrentPrefs,
   } from '$lib/torrent.svelte';
@@ -1226,6 +1228,7 @@
       onOpenTorrent={(row) => void openRememberedTorrent(row)}
       onUpdateTorrent={(known) => void openUpdateDialog(known)}
       onDeleteTorrent={(row) => void deleteTorrent(row)}
+      onDeleteWatched={(row) => void deleteWatchedFiles(row)}
     />
   {:else if endOfFile.ended}
     <EndScreen
@@ -1377,7 +1380,8 @@
       {@const info = opening.pick}
       <TorrentPickDialog
         {info}
-        watched={torrentPositions(info.info_hash)}
+        positions={torrentPositions(info.info_hash)}
+        finished={watchedFiles(info.info_hash)}
         onclose={() => (opening.pick = null)}
         onPick={(i, file) => void playTorrentFile(i, file)}
       />

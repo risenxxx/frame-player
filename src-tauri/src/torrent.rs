@@ -244,13 +244,72 @@ struct Inner {
     port_forward: bool,
 }
 
-impl TorrentService {
-    /// Where the pieces land.
-    ///
-    /// The cache directory rather than Downloads: this is a side effect of
-    /// watching, not a download the viewer asked to keep, and a cache directory
-    /// is the one place an OS and a user both understand as disposable.
-    fn download_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+/// Which directories this feature may read, write and delete in.
+///
+/// **Once the viewer can choose where the files go, "the torrent directory" is
+/// three different questions** and answering them with one path is how a media
+/// player deletes somebody's films. They are kept apart here so that every rule
+/// below can be stated against the right one.
+///
+/// `state` is ours unconditionally: the metadata cache, librqbit's session store
+/// and the record of the roots themselves. It stays in the app cache directory
+/// whatever the viewer picks, which keeps the chosen folder pure video, leaves
+/// `prune_orphaned_store` and the clear-cache button pointed where they always
+/// were, and means a removable drive going missing costs data and not the
+/// player's own bookkeeping.
+///
+/// `root` is where **new** torrents go. `roots` is everywhere data may already
+/// be — the current root, every root used before it, and `state` — because
+/// changing the setting must not orphan a season downloaded last week. Lookups
+/// scan all of them; nothing is ever moved by a change of setting.
+///
+/// **The dangerous half is what may be deleted**, and it is `is_ours` that
+/// decides. In `state` the player owns the whole directory, so a folder from the
+/// older name-based layout is still measurable and deletable there. In a root
+/// the viewer chose, the only folders that exist are `<Name> [<infohash>]` ones
+/// we created, and anything else is theirs: it is not listed, not measured, not
+/// counted and above all not deleted. Rather than trusting the UI to send only
+/// what it was shown, the check lives here, in front of every destructive path.
+#[derive(Clone, Debug)]
+pub struct Dirs {
+    pub state: PathBuf,
+    pub root: PathBuf,
+    pub roots: Vec<PathBuf>,
+}
+
+/// The chosen root, recorded beside the state rather than in localStorage.
+///
+/// A dot-name so `list` skips it, and read from disk on every use rather than
+/// pushed in at startup: `download_dir` is reached by commands that can arrive
+/// before the frontend has had a chance to say anything, and a preference that
+/// is only sometimes in effect would put files in two places.
+const ROOTS_FILE: &str = ".roots.json";
+
+#[derive(Serialize, serde::Deserialize, Default)]
+struct RootsRecord {
+    /// Absent means the default: `state` itself.
+    root: Option<String>,
+    /// Roots used before, so their data stays findable.
+    #[serde(default)]
+    seen: Vec<String>,
+}
+
+impl Dirs {
+    /// Everything in one directory, which is what a test wants and what the
+    /// player did before the root became a choice.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn single(dir: PathBuf) -> Self {
+        Self {
+            state: dir.clone(),
+            root: dir.clone(),
+            roots: vec![dir],
+        }
+    }
+
+    /// The cache directory rather than Downloads: watching a torrent is a side
+    /// effect, not a download the viewer asked to keep, and a cache directory is
+    /// the one place an OS and a user both understand as disposable.
+    fn state_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         let dir = app
             .path()
             .app_cache_dir()
@@ -258,6 +317,109 @@ impl TorrentService {
             .join("torrents");
         std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {dir:?}: {e}"))?;
         Ok(dir)
+    }
+
+    fn load(app: &tauri::AppHandle) -> Result<Self, String> {
+        let state = Self::state_dir(app)?;
+        let record: RootsRecord = std::fs::read(state.join(ROOTS_FILE))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+
+        let root = record
+            .root
+            .as_deref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| state.clone());
+
+        // `state` last and always: it is the one root that cannot go missing,
+        // and the one where a legacy folder can still be found.
+        let mut roots = vec![root.clone()];
+        roots.extend(record.seen.iter().map(PathBuf::from));
+        roots.push(state.clone());
+        roots.dedup_by(|a, b| a == b);
+        let mut seen = std::collections::HashSet::new();
+        roots.retain(|r| seen.insert(r.clone()) && r.is_dir());
+
+        Ok(Self { state, root, roots })
+    }
+
+    /// Record a new root, keeping the previous one in `seen` so its data stays
+    /// findable. Creating it is part of choosing it: a root that cannot be
+    /// written to is a setting that fails at the next torrent instead of now.
+    fn set_root(app: &tauri::AppHandle, root: Option<&str>) -> Result<(), String> {
+        let state = Self::state_dir(app)?;
+        let path = state.join(ROOTS_FILE);
+        let mut record: RootsRecord = std::fs::read(&path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+
+        if let Some(root) = root {
+            let root = PathBuf::from(root);
+            std::fs::create_dir_all(&root)
+                .map_err(|e| format!("cannot use {}: {e}", root.display()))?;
+            // Refuse the state directory as a "chosen" root: it is already a
+            // root, and recording it as one would make `is_ours` treat the whole
+            // of it as a viewer's folder.
+            let root = (root != state).then(|| root.to_string_lossy().into_owned());
+            if let Some(previous) = record.root.replace(root.clone().unwrap_or_default()) {
+                if !previous.is_empty() && Some(&previous) != root.as_ref() {
+                    record.seen.push(previous);
+                }
+            }
+            if root.is_none() {
+                record.root = None;
+            }
+        } else if let Some(previous) = record.root.take() {
+            record.seen.push(previous);
+        }
+
+        record.seen.sort();
+        record.seen.dedup();
+        record.seen.retain(|s| Some(s) != record.root.as_ref());
+
+        let bytes = serde_json::to_vec(&record).map_err(|e| format!("{e}"))?;
+        std::fs::write(&path, bytes).map_err(|e| format!("{e}"))
+    }
+
+    /// Is this directory one the player created, and may therefore delete?
+    ///
+    /// **The whole safety of a viewer-chosen root rests here.** Inside `state`
+    /// the answer is yes for anything: the player owns that directory, and a
+    /// folder from the older name-based layout has to stay deletable. Anywhere
+    /// else the name must parse back to an info hash, which is a folder this
+    /// build wrote and nothing a person would have made.
+    fn is_ours(&self, path: &std::path::Path) -> bool {
+        let Some(parent) = path.parent() else {
+            return false;
+        };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            return false;
+        };
+        if !self.roots.iter().any(|r| same_dir(r, parent)) {
+            return false;
+        }
+        same_dir(&self.state, parent) || folder_hash(name).is_some()
+    }
+}
+
+/// Two paths naming the same directory.
+///
+/// Canonicalised, so a root recorded as `/Users/x/Films` and a parent arriving
+/// as `/Users/x/./Films` — or through a symlinked home, which macOS hands out
+/// routinely — are one directory rather than two. A path that cannot be
+/// canonicalised does not exist, and nothing may be deleted under it.
+fn same_dir(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
+impl TorrentService {
+    fn download_dir(app: &tauri::AppHandle) -> Result<Dirs, String> {
+        Dirs::load(app)
     }
 
     /// The session and the HTTP server, created on first use.
@@ -315,10 +477,17 @@ impl TorrentService {
 
     async fn ensure_started(
         self: &Arc<Self>,
-        dir: PathBuf,
+        dirs: &Dirs,
         seeding: bool,
         port_forward: bool,
     ) -> Result<(Arc<Session>, u16), String> {
+        // **The session's own directory is `state`, never the chosen root.**
+        // librqbit's `output_folder` here is only a default for torrents added
+        // without one, and ours always carry an explicit folder — so what this
+        // actually decides is where the store and its resume data live, which
+        // belong with the player's bookkeeping and not in somebody's film
+        // library. It also means changing the root never moves the session.
+        let dir = dirs.state.clone();
         let port = self.ensure_server().await?;
         {
             let inner = self.inner.lock().await;
@@ -520,14 +689,13 @@ impl TorrentService {
     /// traffic is a request for it arriving at the server.
     pub async fn add(
         self: &Arc<Self>,
-        dir: PathBuf,
+        dirs: &Dirs,
         source: String,
         seeding: bool,
         port_forward: bool,
     ) -> Result<TorrentInfo, String> {
-        let (session, port) = self
-            .ensure_started(dir.clone(), seeding, port_forward)
-            .await?;
+        let (session, port) = self.ensure_started(dirs, seeding, port_forward).await?;
+        let dir = &dirs.state;
 
         let source = source.trim().to_string();
 
@@ -652,12 +820,12 @@ impl TorrentService {
         // per torrent, ever. A failed rename costs nothing at all: the old
         // folder is still found by hash on the next line.
         if let (Some(hash), Some(name)) = (hinted_hash.as_deref(), meta_name.as_deref()) {
-            self.rename_legacy_folder(&dir, hash, name).await;
+            self.rename_legacy_folder(dirs, hash, name).await;
         }
 
         let folder = hinted_hash
             .as_ref()
-            .map(|h| folder_for(&dir, h, meta_name.as_deref()));
+            .map(|h| folder_for(dirs, h, meta_name.as_deref()));
 
         let opts = |initial_peers: Option<Vec<SocketAddr>>| AddTorrentOptions {
             paused: true,
@@ -884,13 +1052,15 @@ impl TorrentService {
     /// leaves the old folder exactly as it was, and `folder_for` finds it by
     /// hash regardless — the readable name is a convenience, never the way back
     /// to the data.
-    async fn rename_legacy_folder(&self, dir: &std::path::Path, hash: &str, name: &str) {
+    async fn rename_legacy_folder(&self, dirs: &Dirs, hash: &str, name: &str) {
         let hash = hash.to_ascii_lowercase();
-        let from = dir.join(&hash);
-        if !from.is_dir() {
+        // In whichever root it turns up in, and renamed **in place** — moving it
+        // to the current root would be a copy across volumes for a folder that
+        // is working perfectly well where it is.
+        let Some(from) = dirs.roots.iter().map(|r| r.join(&hash)).find(|p| p.is_dir()) else {
             return;
-        }
-        let to = dir.join(folder_name(&hash, Some(name)));
+        };
+        let to = from.with_file_name(folder_name(&hash, Some(name)));
         if to == from || to.exists() {
             return;
         }
@@ -999,7 +1169,7 @@ impl TorrentService {
     /// start to end, may only run on a complete file; single frames may be
     /// decoded from an incomplete one, but only at a position `buffered()` says
     /// is there.
-    pub async fn local_path(&self, dir: &std::path::Path, info_hash: &str, index: usize) -> Option<LocalFile> {
+    pub async fn local_path(&self, dirs: &Dirs, info_hash: &str, index: usize) -> Option<LocalFile> {
         if !is_info_hash(info_hash) {
             return None;
         }
@@ -1012,7 +1182,7 @@ impl TorrentService {
             .with_metadata(|m| m.file_infos.get(index).map(|f| f.relative_filename.clone()))
             .ok()
             .flatten()?;
-        let path = folder_for(dir, info_hash, None).join(rel);
+        let path = folder_for(dirs, info_hash, None).join(rel);
         path.is_file().then(|| LocalFile {
             path: path.to_string_lossy().into_owned(),
             complete,
@@ -1110,36 +1280,47 @@ impl TorrentService {
     /// merely loaded is perfectly safe — `forget` takes it out of the session
     /// before removing the directory — so the only row that must refuse is the
     /// one mpv is streaming from, and that is the frontend's own fact.
-    pub fn list(&self, dir: &std::path::Path) -> Vec<TorrentOnDisk> {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Vec::new();
-        };
+    /// **Every root, and in a chosen one only what we created.** A viewer who
+    /// points this at their film library must not find their own folders listed
+    /// here with a delete button beside them — nor even measured, since walking
+    /// somebody's whole media drive to print a number is its own kind of rude.
+    /// `is_ours` is the rule, and it is the same one `forget` and
+    /// `torrent_clear_cache` are written against.
+    pub fn list(&self, dirs: &Dirs) -> Vec<TorrentOnDisk> {
         let mut out = Vec::new();
-        for entry in entries.flatten() {
-            let Some(folder) = entry.file_name().to_str().map(str::to_owned) else {
+        for dir in &dirs.roots {
+            let Ok(entries) = std::fs::read_dir(dir) else {
                 continue;
             };
-            if folder.starts_with('.') {
-                continue;
+            for entry in entries.flatten() {
+                let Some(folder) = entry.file_name().to_str().map(str::to_owned) else {
+                    continue;
+                };
+                if folder.starts_with('.') || !entry.path().is_dir() {
+                    continue;
+                }
+                if !dirs.is_ours(&entry.path()) {
+                    continue;
+                }
+                let info_hash = folder_hash(&folder);
+                // The metadata's own name first — the folder's is sanitized and
+                // truncated, so it is what a person reads in a file manager
+                // rather than what the torrent is called. But it is a far better
+                // fallback than nothing when the cache entry is missing: that
+                // row used to read "Раздача без названия" beside a directory
+                // that says on its face what it holds.
+                let name = info_hash
+                    .as_deref()
+                    .and_then(|h| cached_name(&dirs.state, h))
+                    .or_else(|| folder_label(&folder));
+                out.push(TorrentOnDisk {
+                    size: dir_size(&entry.path()),
+                    path: entry.path().to_string_lossy().into_owned(),
+                    info_hash,
+                    name,
+                    folder,
+                });
             }
-            let info_hash = folder_hash(&folder);
-            // The metadata's own name first — the folder's is sanitized and
-            // truncated, so it is what a person reads in a file manager rather
-            // than what the torrent is called. But it is a far better fallback
-            // than nothing when the cache entry is missing: that row used to
-            // read "Раздача без названия" beside a directory that says on its
-            // face what it holds.
-            let name = info_hash
-                .as_deref()
-                .and_then(|h| cached_name(dir, h))
-                .or_else(|| folder_label(&folder));
-            out.push(TorrentOnDisk {
-                size: dir_size(&entry.path()),
-                path: entry.path().to_string_lossy().into_owned(),
-                info_hash,
-                name,
-                folder,
-            });
         }
         out.sort_by(|a, b| b.size.cmp(&a.size));
         out
@@ -1170,7 +1351,7 @@ impl TorrentService {
     /// instead of this function guessing with the superseded torrent's name.
     pub async fn relocate(
         &self,
-        dir: &std::path::Path,
+        dirs: &Dirs,
         old_hash: &str,
         new_hash: &str,
     ) -> Result<(), String> {
@@ -1181,17 +1362,23 @@ impl TorrentService {
         if old_hash == new_hash {
             return Ok(());
         }
-        let Some(from) = find_folder(dir, &old_hash) else {
+        let Some(from) = find_folder(&dirs.roots, &old_hash) else {
             return Err("nothing to move".into());
         };
-        let to = dir.join(&new_hash);
+        // **Beside the folder it replaces, not in the current root.** The two
+        // may be different roots now, and `fs::rename` does not cross a volume —
+        // so aiming at the chosen root would turn a rename of a 7.5 GB season
+        // into a failure, or into a copy if somebody later "fixed" it that way.
+        // The data stays where it already is, and `find_folder` looks in every
+        // root regardless.
+        let to = from.with_file_name(&new_hash);
         if !from.is_dir() {
             return Err("nothing to move".into());
         }
         // Asked by hash, not by path: the replacement may already have a folder
         // under its readable name, which `to` would not collide with and we
         // would then hand it a second one.
-        if find_folder(dir, &new_hash).is_some() {
+        if find_folder(&dirs.roots, &new_hash).is_some() {
             // The replacement already has data of its own. Merging two folders
             // is a different, riskier operation than a rename, and the caller
             // loses nothing by simply opening the new torrent normally.
@@ -1212,7 +1399,7 @@ impl TorrentService {
         std::fs::rename(&from, &to).map_err(|e| format!("{e}"))?;
         // The cached metadata describes the torrent that no longer owns this
         // folder. Leaving it would hand the *old* file list to the next open.
-        let _ = std::fs::remove_file(meta_path(dir, &old_hash));
+        let _ = std::fs::remove_file(meta_path(&dirs.state, &old_hash));
         Ok(())
     }
 
@@ -1221,19 +1408,25 @@ impl TorrentService {
     /// Both halves, in that order: removing the directory while librqbit still
     /// holds the files open would leave it writing pieces into a folder that no
     /// longer exists, which on some filesystems recreates it.
-    pub async fn forget(&self, dir: &std::path::Path, folder: &str) -> Result<u64, String> {
-        // A delete-by-name command that accepts any name is one wrong argument
-        // away from removing something else — the same lock `subs_delete_file`
-        // puts on its extension. The name must be a single path component.
-        if folder.is_empty()
-            || folder.contains(['/', '\\'])
-            || folder.contains("..")
-            || folder.starts_with('.')
-        {
+    /// **This is the one command in the player that removes a directory tree,
+    /// and it now points wherever the viewer told the player to put files.** So
+    /// the guard is not "the name looks alright" but three separate facts, none
+    /// of which the caller supplies: the path's parent is a root the player
+    /// knows, the folder is one the player created (`is_ours`), and the whole
+    /// thing resolves — a path that cannot be canonicalised is refused rather
+    /// than guessed at. The UI only ever sends back a row it was given, but a
+    /// destructive command must not be safe *because* of what the UI does.
+    pub async fn forget(&self, dirs: &Dirs, path: &str) -> Result<u64, String> {
+        let path = PathBuf::from(path);
+        // Cheap and first: nothing below can turn a traversal into something
+        // safe, and refusing it here keeps the rest reading as one rule.
+        if path.components().any(|c| c == std::path::Component::ParentDir) {
             return Err("bad folder".into());
         }
-        let path = dir.join(folder);
-        if !path.starts_with(dir) || !path.is_dir() {
+        let Some(folder) = path.file_name().and_then(|n| n.to_str()).map(str::to_owned) else {
+            return Err("bad folder".into());
+        };
+        if !path.is_dir() || !dirs.is_ours(&path) {
             return Err("not a torrent folder".into());
         }
 
@@ -1241,7 +1434,7 @@ impl TorrentService {
         // the name now carries the hash in brackets, and a folder with no
         // readable hash at all is one from the older name-based layout, which
         // can be measured and deleted but was never in any session.
-        if let Some(hash) = folder_hash(folder) {
+        if let Some(hash) = folder_hash(&folder) {
             let session = {
                 let mut inner = self.inner.lock().await;
                 inner.torrents.remove(&hash);
@@ -1278,12 +1471,72 @@ impl TorrentService {
             // `prune_orphaned_store` to collect the next time one is built. It
             // has to run there anyway, so doing it twice would be two places
             // that must agree about librqbit's file format instead of one.
-            let _ = std::fs::remove_file(meta_path(dir, &hash));
+            let _ = std::fs::remove_file(meta_path(&dirs.state, &hash));
         }
 
         let size = dir_size(&path);
         std::fs::remove_dir_all(&path).map_err(|e| format!("{e}"))?;
         Ok(size)
+    }
+
+    /// Delete some files of a torrent and keep the rest.
+    ///
+    /// **What makes this safe is `validate_fastresume`, not care on our part.**
+    /// librqbit verifies at least one piece of every file its resume data claims
+    /// to hold, plus a random sample of the others, and a single failure throws
+    /// the whole bitfield away (`initializing.rs`). So a file removed behind its
+    /// back cannot be served as zeros: the next open re-checks and finds it
+    /// missing. The price is that re-check — measured at ~3.2 s for a 7.5 GB
+    /// season — paid once, on the next open of this torrent.
+    ///
+    /// **The order is the part that has to be right.** The torrent leaves the
+    /// session before anything is unlinked: on Windows an open file cannot be
+    /// deleted at all, and on macOS it can, which is worse — librqbit keeps
+    /// writing pieces through a handle to a file that no longer has a name.
+    ///
+    /// `.meta` is deliberately kept. The torrent is not being forgotten, only
+    /// pruned, and that cached metadata is what makes reopening it cost 4.5 ms
+    /// instead of a DHT lookup.
+    ///
+    /// Matching is by **file name against what is actually inside the folder**,
+    /// which is both the simplest thing the caller can supply — it has names,
+    /// not indices, and the two disagree the moment an uploader inserts an
+    /// episode — and the reason no name can escape: nothing is joined onto the
+    /// folder path, only entries found within it are considered.
+    pub async fn forget_files(
+        &self,
+        dirs: &Dirs,
+        path: &str,
+        names: &[String],
+    ) -> Result<u64, String> {
+        let path = PathBuf::from(path);
+        if path.components().any(|c| c == std::path::Component::ParentDir) {
+            return Err("bad folder".into());
+        }
+        if !path.is_dir() || !dirs.is_ours(&path) {
+            return Err("not a torrent folder".into());
+        }
+        if names.is_empty() {
+            return Ok(0);
+        }
+        let wanted: std::collections::HashSet<&str> = names.iter().map(String::as_str).collect();
+
+        if let Some(hash) = path.file_name().and_then(|n| n.to_str()).and_then(folder_hash) {
+            let session = {
+                let mut inner = self.inner.lock().await;
+                inner.torrents.remove(&hash);
+                inner.session.clone()
+            };
+            if let Some(session) = session {
+                if let Ok(id) = librqbit::api::TorrentIdOrHash::parse(&hash) {
+                    let _ = session.delete(id, false).await;
+                }
+            }
+        }
+
+        let mut freed = 0u64;
+        remove_named_files(&path, &wanted, &mut freed);
+        Ok(freed)
     }
 
     /// The one route: `/t/<infohash>/<index>/<anything>`.
@@ -1894,6 +2147,47 @@ fn folder_hash(folder: &str) -> Option<String> {
     is_info_hash(inner).then(|| inner.to_ascii_lowercase())
 }
 
+/// Delete every file under `dir` whose name is wanted, and any directory left
+/// empty by doing so. `dir` itself stays: the torrent is being pruned, not
+/// forgotten, and an absent folder would read as a torrent that vanished.
+fn remove_named_files(
+    dir: &std::path::Path,
+    wanted: &std::collections::HashSet<&str>,
+    freed: &mut u64,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // Never followed: a link inside the folder points somewhere we were not
+        // given permission to delete from.
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if meta.is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
+            remove_named_files(&path, wanted, freed);
+            // Best-effort and non-recursive: `remove_dir` refuses a directory
+            // that still holds anything, which is exactly the check wanted here.
+            let _ = std::fs::remove_dir(&path);
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !wanted.contains(name) {
+            continue;
+        }
+        let size = file_disk_size(&meta);
+        if std::fs::remove_file(&path).is_ok() {
+            *freed += size;
+        }
+    }
+}
+
 /// The readable half of a folder name, when it has one.
 fn folder_label(folder: &str) -> Option<String> {
     let (label, hash) = folder.strip_suffix(']')?.rsplit_once(" [")?;
@@ -1906,8 +2200,12 @@ fn folder_label(folder: &str) -> Option<String> {
 /// what lets the readable name arrive without a migration: a season downloaded
 /// under the old layout keeps its hash-named directory and keeps working, and
 /// nothing on disk is moved by an upgrade.
-fn folder_for(dir: &std::path::Path, hash: &str, name: Option<&str>) -> PathBuf {
-    find_folder(dir, hash).unwrap_or_else(|| dir.join(folder_name(hash, name)))
+/// Existing data is found in **any** root the player has ever used; new data
+/// goes to the current one. That is what keeps changing the setting from
+/// orphaning a season downloaded last week — nothing is moved, and the old
+/// folder answers to the same info hash it always did.
+fn folder_for(dirs: &Dirs, hash: &str, name: Option<&str>) -> PathBuf {
+    find_folder(&dirs.roots, hash).unwrap_or_else(|| dirs.root.join(folder_name(hash, name)))
 }
 
 /// The existing folder for an info hash, found by reading the directory.
@@ -1915,11 +2213,13 @@ fn folder_for(dir: &std::path::Path, hash: &str, name: Option<&str>) -> PathBuf 
 /// A scan rather than a lookup, and cheap enough: a torrent cache holds a
 /// handful of entries, and the alternative is the index file `folder_name`
 /// exists to avoid.
-fn find_folder(dir: &std::path::Path, hash: &str) -> Option<PathBuf> {
+fn find_folder(roots: &[PathBuf], hash: &str) -> Option<PathBuf> {
     let hash = hash.to_ascii_lowercase();
-    std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
-        let name = e.file_name().to_str()?.to_owned();
-        (folder_hash(&name)? == hash && e.path().is_dir()).then(|| e.path())
+    roots.iter().find_map(|dir| {
+        std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
+            let name = e.file_name().to_str()?.to_owned();
+            (folder_hash(&name)? == hash && e.path().is_dir()).then(|| e.path())
+        })
     })
 }
 
@@ -2027,11 +2327,11 @@ pub async fn torrent_add(
     seeding: bool,
     port_forward: bool,
 ) -> Result<TorrentInfo, String> {
-    let dir = TorrentService::download_dir(&app)?;
+    let dirs = TorrentService::download_dir(&app)?;
     service
         .inner()
         .clone()
-        .add(dir, source, seeding, port_forward)
+        .add(&dirs, source, seeding, port_forward)
         .await
 }
 
@@ -2107,8 +2407,8 @@ pub async fn torrent_local_path(
     info_hash: String,
     index: usize,
 ) -> Result<Option<LocalFile>, String> {
-    let dir = TorrentService::download_dir(&app)?;
-    Ok(service.local_path(&dir, &info_hash, index).await)
+    let dirs = TorrentService::download_dir(&app)?;
+    Ok(service.local_path(&dirs, &info_hash, index).await)
 }
 
 #[tauri::command]
@@ -2134,8 +2434,8 @@ pub async fn torrent_list(
     app: tauri::AppHandle,
     service: tauri::State<'_, Arc<TorrentService>>,
 ) -> Result<Vec<TorrentOnDisk>, String> {
-    let dir = TorrentService::download_dir(&app)?;
-    Ok(service.list(&dir))
+    let dirs = TorrentService::download_dir(&app)?;
+    Ok(service.list(&dirs))
 }
 
 #[tauri::command]
@@ -2145,18 +2445,18 @@ pub async fn torrent_relocate(
     old_hash: String,
     new_hash: String,
 ) -> Result<(), String> {
-    let dir = TorrentService::download_dir(&app)?;
-    service.relocate(&dir, &old_hash, &new_hash).await
+    let dirs = TorrentService::download_dir(&app)?;
+    service.relocate(&dirs, &old_hash, &new_hash).await
 }
 
 #[tauri::command]
 pub async fn torrent_forget(
     app: tauri::AppHandle,
     service: tauri::State<'_, Arc<TorrentService>>,
-    folder: String,
+    path: String,
 ) -> Result<u64, String> {
-    let dir = TorrentService::download_dir(&app)?;
-    service.forget(&dir, &folder).await
+    let dirs = TorrentService::download_dir(&app)?;
+    service.forget(&dirs, &path).await
 }
 
 /// Delete everything the torrent cache holds.
@@ -2164,25 +2464,81 @@ pub async fn torrent_forget(
 /// Streaming writes the pieces to disk, so a few films fill a cache directory
 /// the viewer never chose to fill. Offered next to the thumbnail cache in
 /// settings, for the same reason.
+///
+/// **This used to delete every entry in the directory, files included**, which
+/// was exactly right while that directory was ours alone and is a way to erase
+/// somebody's film library the moment they can point it at one. It now removes
+/// only what `is_ours` vouches for: a torrent folder we created, in a root we
+/// know. Loose files are swept in `state` and nowhere else — in the cache
+/// directory a stray file is our own leftover, and in a chosen root it is
+/// theirs.
 #[tauri::command]
 pub async fn torrent_clear_cache(app: tauri::AppHandle) -> Result<u64, String> {
-    let dir = TorrentService::download_dir(&app)?;
+    Ok(clear_all(&TorrentService::download_dir(&app)?))
+}
+
+/// The sweep itself, split from the command so a test can point it at a
+/// directory holding somebody's films and prove they survive it.
+fn clear_all(dirs: &Dirs) -> u64 {
     let mut freed = 0u64;
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Ok(0);
-    };
-    for entry in entries.flatten() {
-        let size = dir_size(&entry.path());
-        let removed = if entry.path().is_dir() {
-            std::fs::remove_dir_all(entry.path()).is_ok()
-        } else {
-            std::fs::remove_file(entry.path()).is_ok()
+    for dir in &dirs.roots {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
         };
-        if removed {
-            freed += size;
+        let in_state = same_dir(&dirs.state, dir);
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let removed = if path.is_dir() {
+                // `.meta` and `.session` are dot-named and `is_ours` refuses
+                // them for the same reason `list` skips them: they are the
+                // player's bookkeeping, not a torrent occupying space.
+                let named = entry.file_name();
+                let named = named.to_string_lossy();
+                if named.starts_with('.') || !dirs.is_ours(&path) {
+                    continue;
+                }
+                let size = dir_size(&path);
+                std::fs::remove_dir_all(&path).is_ok().then_some(size)
+            } else if in_state {
+                let size = dir_size(&path);
+                std::fs::remove_file(&path).is_ok().then_some(size)
+            } else {
+                None
+            };
+            freed += removed.unwrap_or(0);
         }
     }
-    Ok(freed)
+    freed
+}
+
+/// Delete some episodes of a torrent and keep the rest.
+#[tauri::command]
+pub async fn torrent_forget_files(
+    app: tauri::AppHandle,
+    service: tauri::State<'_, Arc<TorrentService>>,
+    path: String,
+    names: Vec<String>,
+) -> Result<u64, String> {
+    let dirs = TorrentService::download_dir(&app)?;
+    service.forget_files(&dirs, &path, &names).await
+}
+
+/// Where new torrents go. `null` puts them back in the cache directory.
+///
+/// The previous root is remembered rather than forgotten, so a season
+/// downloaded before the change stays findable and deletable — nothing is
+/// moved by choosing a new one.
+#[tauri::command]
+pub fn torrent_set_dir(app: tauri::AppHandle, path: Option<String>) -> Result<(), String> {
+    Dirs::set_root(&app, path.as_deref())
+}
+
+/// The current root and whether it is the default, for the settings row.
+#[tauri::command]
+pub fn torrent_dir(app: tauri::AppHandle) -> Result<(String, bool), String> {
+    let dirs = Dirs::load(&app)?;
+    let default = dirs.root == dirs.state;
+    Ok((dirs.root.to_string_lossy().into_owned(), default))
 }
 
 /// Bytes a file actually occupies, which is **not** its length.
@@ -2307,14 +2663,14 @@ mod tests {
         tauri::async_runtime::block_on(async {
             let dir = std::env::temp_dir().join("frameplayer-torrent-smoke");
             std::fs::create_dir_all(&dir).unwrap();
-            let dir_for_list = dir.clone();
+            let dirs = Dirs::single(dir.clone());
             let service = Arc::new(TorrentService::default());
 
             let t0 = std::time::Instant::now();
             // Never seeds, matching the shipped default — a test must not
             // quietly upload to strangers.
             let info = service
-                .add(dir, magnet, false, false)
+                .add(&dirs, magnet, false, false)
                 .await
                 .expect("resolve failed");
             println!("resolved in {:?}: {:?}", t0.elapsed(), info.name);
@@ -2371,7 +2727,7 @@ mod tests {
             // The folder is the info hash, and `list` is what the start screen
             // reads. Checking both here is what proves the storage UI is looking
             // at the same thing the streaming code wrote.
-            let listed = service.list(&dir_for_list);
+            let listed = service.list(&dirs);
             println!("\n--- torrent_list ---");
             for row in &listed {
                 println!("  {} hash={:?} size={}", row.folder, row.info_hash, row.size);
@@ -2453,10 +2809,11 @@ mod tests {
         tauri::async_runtime::block_on(async {
             let dir = std::env::temp_dir().join("frameplayer-swarm-probe");
             std::fs::create_dir_all(&dir).unwrap();
+            let dirs = Dirs::single(dir.clone());
             let service = Arc::new(TorrentService::default());
 
             let info = service
-                .add(dir, magnet, false, false)
+                .add(&dirs, magnet, false, false)
                 .await
                 .expect("resolve failed");
             let file = info
@@ -2698,6 +3055,146 @@ mod tests {
         assert_eq!(folder_name(HASH, Some("   ")), HASH);
     }
 
+    /// **The viewer points the player at their film library, and nothing of
+    /// theirs is listed, measured or deleted.**
+    ///
+    /// This is the test the whole chosen-root feature exists behind. Every
+    /// destructive path in the module is aimed at a directory that is now
+    /// somebody's media drive, and each of them is asked here to leave alone a
+    /// folder it did not create — including the sweep that used to remove every
+    /// entry it found, which was correct while the directory was ours alone and
+    /// is a way to erase a film collection the moment it is not.
+    #[test]
+    fn a_chosen_root_protects_what_it_did_not_create() {
+        const HASH: &str = "08ada5a7a6183aae1e09d831df6748d566095a10";
+        let base = std::env::temp_dir().join("frameplayer-chosen-root");
+        let _ = std::fs::remove_dir_all(&base);
+
+        let state = base.join("cache");
+        let library = base.join("Films");
+        // Ours, in the chosen root, exactly as `add` would have written it.
+        let ours = library.join(format!("Season [{HASH}]"));
+        // Theirs: a folder, and a loose file beside it.
+        let theirs = library.join("Holiday 2019");
+        let their_file = library.join("notes.txt");
+        // A folder from the older name-based layout, which lives in the state
+        // directory and must stay deletable there.
+        let legacy = state.join("Some.Release.2024.WEB-DL");
+        for d in [&state, &library, &ours, &theirs, &legacy] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(ours.join("ep1.mkv"), b"ours").unwrap();
+        std::fs::write(theirs.join("beach.mp4"), b"theirs").unwrap();
+        std::fs::write(&their_file, b"theirs").unwrap();
+        std::fs::write(legacy.join("film.mkv"), b"legacy").unwrap();
+
+        let dirs = Dirs {
+            state: state.clone(),
+            root: library.clone(),
+            roots: vec![library.clone(), state.clone()],
+        };
+        let service = Arc::new(TorrentService::default());
+
+        // Listing: ours from the chosen root, the legacy folder from the state
+        // directory, and nothing of theirs — not even measured, since walking a
+        // media drive to print a number is its own kind of rude.
+        let listed = service.list(&dirs);
+        let folders: Vec<&str> = listed.iter().map(|r| r.folder.as_str()).collect();
+        assert!(folders.contains(&format!("Season [{HASH}]").as_str()));
+        assert!(folders.contains(&"Some.Release.2024.WEB-DL"));
+        assert!(!folders.contains(&"Holiday 2019"), "listed a folder we did not create");
+        assert_eq!(folders.len(), 2, "listed something unexpected: {folders:?}");
+
+        // Deleting: refused for theirs, and the data is still there afterwards.
+        let forget = |p: &std::path::Path| {
+            tauri::async_runtime::block_on(service.forget(&dirs, &p.to_string_lossy()))
+        };
+        assert!(forget(&theirs).is_err(), "offered to delete a folder we did not create");
+        assert!(theirs.join("beach.mp4").is_file());
+        // Not a root of ours at all, and a traversal that lands inside one.
+        assert!(forget(&base).is_err());
+        assert!(forget(&library.join("..").join("Films").join("Holiday 2019")).is_err());
+        assert!(theirs.is_dir());
+
+        // The sweep: same rule, and the loose file in a chosen root is theirs
+        // too. Only the state directory is ours to tidy file by file.
+        clear_all(&dirs);
+        assert!(theirs.join("beach.mp4").is_file(), "cleared a folder we did not create");
+        assert!(their_file.is_file(), "cleared a file we did not write");
+        assert!(!ours.exists(), "did not clear our own torrent");
+        assert!(!legacy.exists(), "did not clear the older layout in our own directory");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// **Deleting the episodes you have watched keeps the ones you have not**,
+    /// and keeps the torrent openable afterwards — which is the whole point of
+    /// pruning rather than forgetting.
+    #[test]
+    fn watched_episodes_go_and_the_rest_stays() {
+        const HASH: &str = "08ada5a7a6183aae1e09d831df6748d566095a10";
+        let base = std::env::temp_dir().join("frameplayer-prune-files");
+        let _ = std::fs::remove_dir_all(&base);
+
+        let folder = base.join(format!("Season [{HASH}]"));
+        let extras = folder.join("extras");
+        std::fs::create_dir_all(&extras).unwrap();
+        for (path, bytes) in [
+            (folder.join("ep1.mkv"), &b"watched"[..]),
+            (folder.join("ep2.mkv"), &b"watched"[..]),
+            (folder.join("ep3.mkv"), &b"not yet"[..]),
+            // In a subfolder, to prove the walk reaches it and then takes the
+            // empty directory with it.
+            (extras.join("ep0.mkv"), &b"watched"[..]),
+        ] {
+            std::fs::write(path, bytes).unwrap();
+        }
+        // Ours, and it must survive: the torrent is being pruned, not forgotten,
+        // and this is what keeps reopening it free.
+        let meta = meta_path(&base, HASH);
+        std::fs::create_dir_all(meta.parent().unwrap()).unwrap();
+        std::fs::write(&meta, b"metadata").unwrap();
+
+        let dirs = Dirs::single(base.clone());
+        let service = Arc::new(TorrentService::default());
+        let names = ["ep1.mkv".to_string(), "ep2.mkv".to_string(), "ep0.mkv".to_string()];
+        let freed = tauri::async_runtime::block_on(service.forget_files(
+            &dirs,
+            &folder.to_string_lossy(),
+            &names,
+        ))
+        .unwrap();
+
+        assert!(!folder.join("ep1.mkv").exists());
+        assert!(!folder.join("ep2.mkv").exists());
+        assert!(folder.join("ep3.mkv").is_file(), "deleted an episode nobody watched");
+        assert!(!extras.exists(), "left an empty directory behind");
+        assert!(folder.is_dir(), "removed the torrent instead of pruning it");
+        assert!(meta.is_file(), "threw away the metadata that makes reopening free");
+        assert!(freed > 0);
+
+        // The same guards as `forget`: a folder we did not create, and a
+        // traversal, are refused before anything is unlinked.
+        let outside = base.join("Their Films");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("ep1.mkv"), b"theirs").unwrap();
+        let dirs = Dirs {
+            state: base.join("cache"),
+            root: base.clone(),
+            roots: vec![base.clone()],
+        };
+        std::fs::create_dir_all(&dirs.state).unwrap();
+        let refused = tauri::async_runtime::block_on(service.forget_files(
+            &dirs,
+            &outside.to_string_lossy(),
+            &names,
+        ));
+        assert!(refused.is_err(), "pruned a folder we did not create");
+        assert!(outside.join("ep1.mkv").is_file());
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     /// `torrent_forget` deletes a directory by name, so the name is the only
     /// thing standing between it and the rest of the disk. Escapes are refused
     /// before anything is touched.
@@ -2717,7 +3214,7 @@ mod tests {
             ".hidden",
             "sub/../../victim",
         ] {
-            let r = tauri::async_runtime::block_on(service.forget(&base, bad));
+            let r = tauri::async_runtime::block_on(service.forget(&Dirs::single(base.clone()), &base.join(bad).to_string_lossy()));
             assert!(r.is_err(), "{bad:?} should have been refused");
         }
         // The guard is not merely returning errors — nothing was removed.
@@ -2770,7 +3267,7 @@ mod tests {
 
             let service = Arc::new(TorrentService::default());
             let info = service
-                .add(base.clone(), format!("magnet:?xt=urn:btih:{hash}"), false, false)
+                .add(&Dirs::single(base.clone()), format!("magnet:?xt=urn:btih:{hash}"), false, false)
                 .await
                 .expect("add failed");
             assert_eq!(info.files.len(), 2);
@@ -2788,7 +3285,7 @@ mod tests {
             service.wait_ready(&handle).await.expect("never initialized");
 
             for file in &info.files {
-                let path = folder_for(&base, &hash, None).join(&file.path);
+                let path = folder_for(&Dirs::single(base.clone()), &hash, None).join(&file.path);
                 let meta = std::fs::metadata(&path)
                     .unwrap_or_else(|e| panic!("no file at {}: {e}", path.display()));
                 assert_eq!(
@@ -2847,7 +3344,7 @@ mod tests {
             // A magnet with no trackers: if anything reached for the network,
             // there is nowhere for it to go and this would hang rather than pass.
             let info = service
-                .add(base.clone(), format!("magnet:?xt=urn:btih:{hash}"), false, false)
+                .add(&Dirs::single(base.clone()), format!("magnet:?xt=urn:btih:{hash}"), false, false)
                 .await
                 .expect("add failed");
             assert_eq!(info.files.len(), 1);
@@ -2870,7 +3367,7 @@ mod tests {
             // A complete file is an ordinary file on disk, which is what makes
             // seekbar previews possible for a torrent at all.
             let local = service
-                .local_path(&base, &info.info_hash, file.index)
+                .local_path(&Dirs::single(base.clone()), &info.info_hash, file.index)
                 .await
                 .expect("local_path found nothing");
             // **Staged under the old layout and found under the new one.** The
@@ -2988,7 +3485,7 @@ mod tests {
 
             // First run: just add it, so the store is seeded.
             let first = Arc::new(TorrentService::default());
-            let info = first.add(base.clone(), magnet.clone(), false, false).await.unwrap();
+            let info = first.add(&Dirs::single(base.clone()), magnet.clone(), false, false).await.unwrap();
             first.shutdown_session().await;
 
             // Then say it was RUNNING when the app closed. Writing that into the
@@ -3014,7 +3511,7 @@ mod tests {
 
             // Second run: a fresh service over the same store.
             let second = Arc::new(TorrentService::default());
-            second.add(base.clone(), magnet, false, false).await.unwrap();
+            second.add(&Dirs::single(base.clone()), magnet, false, false).await.unwrap();
             let status = second.status(&info.info_hash, 0).await;
             assert_eq!(
                 status.state, "paused",
@@ -3065,7 +3562,7 @@ mod tests {
 
             // First run: opened once, which is what puts it in the store.
             let first = Arc::new(TorrentService::default());
-            first.add(base.clone(), magnet.clone(), false, false).await.unwrap();
+            first.add(&Dirs::single(base.clone()), magnet.clone(), false, false).await.unwrap();
             first.shutdown_session().await;
             let store = base.join(SESSION_DIR).join("session.json");
             assert!(
@@ -3080,17 +3577,17 @@ mod tests {
             // By the folder's own name, exactly as the start screen passes it
             // back from `list` — which by now is the readable one, since the
             // open above renamed it.
-            let folder = find_folder(&base, &hash).expect("no folder for the torrent");
+            let folder = find_folder(std::slice::from_ref(&base), &hash).expect("no folder for the torrent");
             let folder = folder.file_name().unwrap().to_string_lossy().into_owned();
-            second.forget(&base, &folder).await.unwrap();
-            assert!(find_folder(&base, &hash).is_none());
+            second.forget(&Dirs::single(base.clone()), &base.join(&folder).to_string_lossy()).await.unwrap();
+            assert!(find_folder(std::slice::from_ref(&base), &hash).is_none());
             assert!(!meta.exists(), "the cached metadata outlived the torrent");
 
             // The next session is where it used to reappear.
             let third = Arc::new(TorrentService::default());
-            third.ensure_started(base.clone(), false, false).await.unwrap();
+            third.ensure_started(&Dirs::single(base.clone()), false, false).await.unwrap();
             assert!(
-                find_folder(&base, &hash).is_none(),
+                find_folder(std::slice::from_ref(&base), &hash).is_none(),
                 "the deleted torrent was restored and its folder recreated"
             );
             assert!(
@@ -3133,7 +3630,7 @@ mod tests {
             std::fs::rename(&stage, base.join(&hash)).unwrap();
 
             let service = Arc::new(TorrentService::default());
-            let unnamed = service.list(&base);
+            let unnamed = service.list(&Dirs::single(base.clone()));
             assert_eq!(unnamed.len(), 1);
             assert_eq!(
                 unnamed[0].name, None,
@@ -3145,7 +3642,7 @@ mod tests {
             let meta = meta_path(&base, &hash);
             std::fs::create_dir_all(meta.parent().unwrap()).unwrap();
             std::fs::write(&meta, created.as_bytes().unwrap()).unwrap();
-            let named = service.list(&base);
+            let named = service.list(&Dirs::single(base.clone()));
             assert_eq!(named[0].name.as_deref(), Some("The Show S01 [1080p]"));
             assert_eq!(named[0].info_hash.as_deref(), Some(hash.as_str()));
 
@@ -3187,7 +3684,7 @@ mod tests {
 
             let first = Arc::new(TorrentService::default());
             first
-                .add(base.clone(), format!("magnet:?xt=urn:btih:{hash}"), false, false)
+                .add(&Dirs::single(base.clone()), format!("magnet:?xt=urn:btih:{hash}"), false, false)
                 .await
                 .unwrap();
             first.shutdown_session().await;
@@ -3195,10 +3692,10 @@ mod tests {
             // A later run that opens some other torrent, so the session exists
             // and this one is in it only because it was restored.
             let second = Arc::new(TorrentService::default());
-            second.ensure_started(base.clone(), false, false).await.unwrap();
-            let folder = find_folder(&base, &hash).expect("no folder for the torrent");
+            second.ensure_started(&Dirs::single(base.clone()), false, false).await.unwrap();
+            let folder = find_folder(std::slice::from_ref(&base), &hash).expect("no folder for the torrent");
             let folder = folder.file_name().unwrap().to_string_lossy().into_owned();
-            second.forget(&base, &folder).await.unwrap();
+            second.forget(&Dirs::single(base.clone()), &base.join(&folder).to_string_lossy()).await.unwrap();
 
             let store = base.join(SESSION_DIR).join("session.json");
             assert!(
@@ -3249,8 +3746,8 @@ pub fn torrent_offline_file(
         return None;
     }
     let hash = info_hash.to_ascii_lowercase();
-    let dir = TorrentService::download_dir(&app).ok()?;
-    let meta = meta_path(&dir, &hash);
+    let dirs = TorrentService::download_dir(&app).ok()?;
+    let meta = meta_path(&dirs.state, &hash);
     let bytes = match std::fs::read(&meta) {
         Ok(b) => b,
         Err(e) => {
@@ -3280,7 +3777,7 @@ pub fn torrent_offline_file(
         ),
         None => return None,
     };
-    let path = folder_for(&dir, &hash, None).join(&rel);
+    let path = folder_for(&dirs, &hash, None).join(&rel);
     let Ok(meta) = std::fs::metadata(&path) else {
         eprintln!("[poster] {hash}/{index}: no file at {}", path.display());
         return None;

@@ -51,6 +51,7 @@
   import { applyNormalize, player, readList } from '$lib/player.svelte';
   import { playlist, setPlaylistPref } from '$lib/playlist.svelte';
   import { refreshPortStatus, torrent, torrentPrefs } from '$lib/torrent.svelte';
+  import { pickTorrentDir, resetTorrentDir } from '$lib/open.svelte';
   import { castCacheCapGb, setCastCacheCapGb } from '$lib/cast.svelte';
   import { showOsd } from '$lib/osd.svelte';
   import { syncMenuChecks } from '$lib/window-prefs.svelte';
@@ -686,8 +687,28 @@
   /// visit rather than caching, because the answer legitimately changes — a
   /// mapping appears once the first torrent builds the session.
   $effect(() => {
-    if (settingsTab === 'torrents') void refreshPortStatus();
+    if (settingsTab === 'torrents') {
+      void refreshPortStatus();
+      void readTorrentDir();
+    }
   });
+
+  /// Where torrents are written, read from Rust rather than kept here: the
+  /// preference lives beside the data (a dot-file in the state directory) so
+  /// that a command arriving before this dialog has ever been opened still puts
+  /// files in the right place.
+  let torrentDir = $state<string | null>(null);
+  let torrentDirDefault = $state(true);
+  async function readTorrentDir() {
+    const answer = await invoke<[string, boolean]>('torrent_dir').catch(() => null);
+    if (!answer) return;
+    // Assigned one at a time rather than destructured: `check-runes` reads
+    // writes syntactically, and a destructuring assignment is not one it sees —
+    // which would report this state as never written and make the gate a
+    // warning people learn to ignore.
+    torrentDir = answer[0];
+    torrentDirDefault = answer[1];
+  }
 
   /// The sentence under the switch. `null` while it is off — a row that is off
   /// has nothing to report, and a line saying so would be noise on the setting
@@ -902,6 +923,63 @@
         >
           <span class="switch-knob"></span>
         </button>
+      </div>
+    </div>
+
+    <!-- **A setting rather than a question asked at the first torrent.** The
+         player has to work with nothing configured, and stopping somebody who
+         wants to watch an episode to ask about storage is a modal at the worst
+         moment — qBittorrent asks because it *is* a download manager. What the
+         default costs is discoverability: the cache directory is one the system
+         may empty and nobody browses by hand, so the path is printed here in
+         full and the folder button on the start screen opens it. -->
+    <div class="setting">
+      <div class="setting-label">{t('torrent.dir')}</div>
+      <div class="setting-hint">{t('torrent.dir_hint')}</div>
+      {#if torrentDir}
+        <div class="folders">
+          <div class="folder-row">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M2.5 12.2V4.6a.8.8 0 0 1 .8-.8h2.6l1.3 1.5h5.5a.8.8 0 0 1 .8.8v6.1a.8.8 0 0 1-.8.8H3.3a.8.8 0 0 1-.8-.8z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <!-- Same isolation as the excluded folders: the container is rtl so
+                 the ellipsis eats the head of the path rather than its tail, and
+                 without `bdi` the slashes drift. -->
+            <span class="folder-path" title={torrentDir}><bdi>{torrentDir}</bdi></span>
+          </div>
+        </div>
+        {#if torrentDirDefault}
+          <div class="setting-hint">{t('torrent.dir_default_note')}</div>
+        {/if}
+      {/if}
+      <!-- Both are actions, so both are buttons: `.settings-link` promises
+           navigation, and "back to the default" moves where files are written. -->
+      <div class="link-actions">
+        <button
+          class="btn-outline"
+          onclick={async () => {
+            if (await pickTorrentDir()) await readTorrentDir();
+          }}
+        >
+          {t('torrent.dir_change')}
+        </button>
+        {#if !torrentDirDefault}
+          <button
+            class="btn-outline"
+            onclick={async () => {
+              await resetTorrentDir();
+              await readTorrentDir();
+            }}
+          >
+            {t('torrent.dir_reset')}
+          </button>
+        {/if}
       </div>
     </div>
 

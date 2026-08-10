@@ -238,6 +238,9 @@ export function forgetDownloadedSub(path: string) {
 // ---- Recent links ---------------------------------------------------------
 
 const LINKS_KEY = 'frameplayer.links';
+/// Declared here rather than in torrent.svelte.ts because `IDENTIFIED_STORES`
+/// has to name it and the dependency runs torrent → history, never back.
+export const TORRENTS_KEY = 'frameplayer.torrents';
 const LINKS_LIMIT = 8;
 
 /// Links, most recent first. Kept apart from the watch positions because they
@@ -430,6 +433,16 @@ export function isPrivatePath(path: string): boolean {
   return history.prefs.excluded.some((root) => pathUnder(path, root));
 }
 
+/**
+ * Past this, a video counts as finished: its position record is deleted, so it
+ * leaves "continue watching" rather than sitting there at 99 %.
+ *
+ * Exported because that deletion is *why* a finished episode leaves no trace,
+ * and the torrent store keeps its own record of watched episodes precisely to
+ * fill the gap. Two thresholds that must agree would drift; one does not.
+ */
+export const FINISHED_FRACTION = 0.97;
+
 export function persistPosition(path: string, pos: number, dur: number, title?: string) {
   if (isPrivatePath(path)) return;
   try {
@@ -443,7 +456,7 @@ export function persistPosition(path: string, pos: number, dur: number, title?: 
     // two-hour film is 6 minutes, so the threshold stays those same 15 s.
     const startedAt = dur > 0 ? Math.min(15, dur * 0.05) : 15;
     const watched = pos >= startedAt;
-    const finished = dur > 0 && pos / dur > 0.97;
+    const finished = dur > 0 && pos / dur > FINISHED_FRACTION;
     if (!watched || finished) delete map[id];
     // The title is only overwritten by a real one: mpv reports `media-title` a
     // beat after the file opens, and a null in the meantime must not erase what
@@ -802,6 +815,13 @@ function singleStore(key: string, field: string): IdentifiedStore {
 
 const IDENTIFIED_STORES: IdentifiedStore[] = [
   mapStore(POSITIONS_KEY, (id, entry) => (entry as { src?: string } | null)?.src ?? id),
+  // Keyed by the bare info hash, so its identity is spelled the way a torrent's
+  // is everywhere else. **It was missing entirely** — "forget everything" left
+  // behind a magnet per torrent ever opened, which names what was watched as
+  // plainly as a position does, and now also which episodes were finished. The
+  // torrent purge reaches it through `forgetRememberedTorrent` as well; a
+  // second, harmless, route.
+  mapStore(TORRENTS_KEY, (id) => `torrent:${id}/`),
   mapStore(TRACKS_KEY),
   // Keyed by the folder rather than the file, which the predicates handle for
   // free: a folder is under itself, and a torrent id is not a folder.

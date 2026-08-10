@@ -26,7 +26,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { command } from 'tauri-plugin-libmpv-api';
 
 import { baseName, displayName, extensionOf } from './format';
-import { history, positionsLoad } from './history.svelte';
+import { FINISHED_FRACTION, TORRENTS_KEY, history, positionsLoad } from './history.svelte';
 import { latest } from './latest';
 import { SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, player } from './player.svelte';
 import { magnetFor, parseTorrentUrl, torrentId } from './source';
@@ -323,7 +323,7 @@ export async function attachTorrentSubtitles() {
 // what is taking space stays visible and deletable even with history switched
 // off and nothing remembered — this store only adds the ability to *reopen*.
 
-const STORE_KEY = 'frameplayer.torrents';
+const STORE_KEY = TORRENTS_KEY;
 /// Torrents whose data is gone are dropped on read, so this only bounds a list
 /// of strings that never grows on its own.
 const STORE_LIMIT = 100;
@@ -336,6 +336,23 @@ export interface RememberedTorrent {
   /// Video file count, for the row's "9 файлов" without resolving anything.
   videos: number;
   at: number;
+  /**
+   * Episodes watched to the end, by file name.
+   *
+   * **A finished episode leaves no trace anywhere else.** `frameplayer.positions`
+   * *deletes* its entry past the finished threshold — which is right for a
+   * "continue watching" list and leaves a watched file indistinguishable from
+   * one never opened. That is the fact both halves of this feature need: it is
+   * what "delete the ones I have seen" reads, and what marks an episode in the
+   * file picker so a season of nine near-identical names can be navigated.
+   *
+   * By **file name**, never by index: an uploader who inserts an episode
+   * renumbers everything after it, which is exactly why positions are re-keyed
+   * by name when a torrent is superseded. The name is the basename, decoded —
+   * which is also all the stream URL carries, so it can be recovered even when
+   * the file list is not loaded.
+   */
+  watched?: string[];
 }
 
 type Store = Record<string, RememberedTorrent>;
@@ -367,6 +384,10 @@ export function rememberTorrent(info: TorrentInfo, magnet: string) {
       name: info.name,
       videos: torrentVideos(info).length,
       at: Date.now(),
+      // Reopening a torrent must not forget which episodes were finished — this
+      // runs on every open, including the one that follows a magnet being
+      // pasted again.
+      watched: store[info.info_hash]?.watched,
     };
     const trimmed = Object.values(store)
       .sort((a, b) => b.at - a.at)
@@ -382,6 +403,58 @@ export function rememberTorrent(info: TorrentInfo, magnet: string) {
 
 export function rememberedTorrent(infoHash: string): RememberedTorrent | null {
   return readStore()[infoHash.toLowerCase()] ?? null;
+}
+
+/**
+ * Mark an episode as watched to the end.
+ *
+ * Privacy-gated like everything else in this store: with history off the player
+ * records nothing about what is being watched, and this is exactly that.
+ *
+ * It writes into an entry that may not exist — a torrent opened before this
+ * store did, or one whose magnet was never remembered — and does nothing in
+ * that case rather than inventing a half-entry with no way to reopen it.
+ */
+export function markWatched(infoHash: string, name: string) {
+  if (!history.prefs.enabled || !name) return;
+  try {
+    const store = readStore();
+    const entry = store[infoHash.toLowerCase()];
+    if (!entry) return;
+    const watched = entry.watched ?? [];
+    if (watched.includes(name)) return;
+    entry.watched = [...watched, name];
+    localStorage.setItem(STORE_KEY, JSON.stringify(store));
+  } catch {
+    // not critical
+  }
+}
+
+/// Episode names this torrent has been watched to the end of.
+export function watchedFiles(infoHash: string): Set<string> {
+  return new Set(rememberedTorrent(infoHash)?.watched ?? []);
+}
+
+/**
+ * The name of one file of a torrent, from the resolved list when it is loaded
+ * and from the playing URL when it is not.
+ *
+ * The fallback is what makes this work for a torrent opened straight out of the
+ * watch history: `torrent.info` is only filled by a resolve, while the stream
+ * URL always carries the file's name as its last component — percent-encoded,
+ * hence `displayName`'s decoding rather than a raw `baseName`.
+ */
+export function torrentFileName(infoHash: string, index: number): string {
+  const info = torrent.info;
+  if (info?.info_hash?.toLowerCase() === infoHash.toLowerCase()) {
+    const file = info.files.find((f) => f.index === index);
+    if (file) return baseName(file.path);
+  }
+  const ref = player.filePath ? parseTorrentUrl(player.filePath) : null;
+  if (ref && ref.infoHash.toLowerCase() === infoHash.toLowerCase() && ref.index === index) {
+    return decodeURIComponent(baseName(player.filePath!.split('?')[0]));
+  }
+  return '';
 }
 
 export function forgetRememberedTorrent(infoHash: string) {
@@ -504,6 +577,15 @@ export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
         });
         if (run.stale) return;
         torrent.status = status;
+        // **Recorded here rather than where positions are written**, and that
+        // is the dependency direction rather than convenience: the position
+        // store must not know what a torrent is, while this poll already knows
+        // the info hash, the index and how far playback has got. It ticks once a
+        // second for exactly as long as a torrent is playing, which is precisely
+        // when an episode can become finished.
+        if (player.duration > 0 && player.timePos / player.duration > FINISHED_FRACTION) {
+          markWatched(ref.infoHash, torrentFileName(ref.infoHash, ref.index));
+        }
         // The episode being watched is fully here, so the swarm is idle as far
         // as this file goes — the moment to get the next one ready, and the only
         // moment where doing so costs the current one nothing.
@@ -706,7 +788,11 @@ export function torrentPositions(
  * walk), so this returns the bytes freed and leaves the rest to it.
  */
 export async function forgetTorrent(row: TorrentRow): Promise<number> {
-  const freed = await invoke<number>('torrent_forget', { folder: row.folder }).catch(() => 0);
+  // **By path, not by name.** With the folder now possibly living in a
+  // directory the viewer chose, a bare name is ambiguous between roots — and
+  // the Rust side validates the path against the roots it knows rather than
+  // trusting that this row came from `list`.
+  const freed = await invoke<number>('torrent_forget', { path: row.path }).catch(() => 0);
   if (row.info_hash) {
     forgetRememberedTorrent(row.info_hash);
     if (torrent.info?.info_hash === row.info_hash) {

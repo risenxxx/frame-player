@@ -20,6 +20,7 @@
   import {
     rememberedTorrent,
     torrentIsPlaying,
+    watchedFiles,
     type RememberedTorrent,
     type TorrentRow,
   } from '$lib/torrent.svelte';
@@ -38,6 +39,7 @@
     onOpenTorrent: (row: TorrentRow) => void;
     onUpdateTorrent: (known: RememberedTorrent) => void;
     onDeleteTorrent: (row: TorrentRow) => void;
+    onDeleteWatched: (row: TorrentRow) => void;
   }
 
   let {
@@ -53,7 +55,12 @@
     onOpenTorrent,
     onUpdateTorrent,
     onDeleteTorrent,
+    onDeleteWatched,
   }: Props = $props();
+
+  /// Which row is asking what to delete. One at a time: two open panels would
+  /// be two questions on screen with one answer expected.
+  let deleteFor = $state<string | null>(null);
 
   /**
    * What a recents card is pointing at, for its tooltip.
@@ -389,12 +396,14 @@
             {/if}
             <button
               class="card-forget torrow-forget"
+              class:open={deleteFor === row.folder}
               disabled={torrentIsPlaying(row)}
               data-tip={torrentIsPlaying(row)
                 ? t('start.torrent_playing')
                 : t('start.torrent_delete')}
               aria-label={t('start.torrent_delete')}
-              onclick={() => onDeleteTorrent(row)}
+              onclick={() =>
+                (deleteFor = deleteFor === row.folder ? null : row.folder)}
             >
               <svg viewBox="0 0 10 10" aria-hidden="true">
                 <path
@@ -407,6 +416,33 @@
             </button>
             </div>
           </div>
+          {#if deleteFor === row.folder}
+            <!-- Expanded in place rather than in a floating menu, the same call
+                 the cast picker's per-device panel makes: a panel hoisted out of
+                 this list would need the context menu's hover bridge, its click
+                 guards and its drill-down for a narrow window, all for two
+                 buttons. It also turns the cross into a two-step action, which
+                 for something that deletes a season is a gain rather than a
+                 cost. -->
+            {@const seen = row.info_hash ? watchedFiles(row.info_hash).size : 0}
+            <div class="torrow-delete">
+              <span class="torrow-delete-q">{t('start.torrent_delete_what')}</span>
+              {#if seen > 0}
+                <button class="btn-outline" onclick={() => onDeleteWatched(row)}>
+                  {t('start.torrent_delete_watched', { count: seen })}
+                </button>
+              {/if}
+              <button
+                class="btn-danger"
+                onclick={() => {
+                  deleteFor = null;
+                  onDeleteTorrent(row);
+                }}
+              >
+                {t('start.torrent_delete_all')}
+              </button>
+            </div>
+          {/if}
         {/each}
       </div>
     </div>
@@ -645,6 +681,34 @@
   }
 
   .card-forget.torrow-forget:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    color: #e8e8ec;
+  }
+
+  /* The question the cross now asks, under the row it belongs to. Indented to
+     the row's own text so it reads as part of it rather than as a new row, and
+     laid out as one line because it is one question with two answers. */
+  .torrow-delete {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 14px 12px;
+    margin-top: -4px;
+  }
+
+  .torrow-delete-q {
+    flex: 1;
+    min-width: 0;
+    color: #8a8a95;
+    font-size: 12.5px;
+  }
+
+  /* Lit while its panel is open, so the row that is asking is obvious when two
+     are near each other. Written to beat `.torrow:hover .card-forget` (three
+     classes) rather than left to source order — the fight this file has now
+     lost twice. */
+  .card-forget.torrow-forget.open {
     background: rgba(255, 255, 255, 0.1);
     color: #e8e8ec;
   }

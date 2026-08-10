@@ -240,6 +240,7 @@ describe('purging', () => {
     subs: 'frameplayer.subs',
     resume: 'frameplayer.resume',
     links: 'frameplayer.links',
+    torrents: 'frameplayer.torrents',
   };
 
   /// Write one entry about a file into every store that holds one.
@@ -250,11 +251,22 @@ describe('purging', () => {
     localStorage.setItem(STORES.titles, JSON.stringify({ [path]: 'A Film' }));
     localStorage.setItem(STORES.subs, JSON.stringify([`${path}.ru.srt`]));
     localStorage.setItem(STORES.resume, JSON.stringify({ path, pos: 60 }));
+    // Not about this file, and that is the point: a magnet names a season as
+    // plainly as a position names a film, and it holds which episodes were
+    // finished. "Forget everything" left every one of them behind until this
+    // store joined the list.
+    localStorage.setItem(
+      STORES.torrents,
+      JSON.stringify({ abc: { infoHash: 'abc', magnet: 'magnet:?xt=urn:btih:abc', watched: ['e1'] } }),
+    );
   }
 
+  /// `links` and `torrents` are keyed by something that is not a path, so a
+  /// folder exclusion legitimately leaves them alone; `clearHistory` checks
+  /// them by name instead.
   const leftovers = () =>
     Object.entries(STORES)
-      .filter(([name]) => name !== 'links')
+      .filter(([name]) => name !== 'links' && name !== 'torrents')
       .filter(([, key]) => {
         const raw = localStorage.getItem(key);
         if (raw === null) return false;
@@ -304,6 +316,7 @@ describe('purging', () => {
     await clearHistory();
     expect(leftovers()).toEqual([]);
     expect(localStorage.getItem(STORES.links)).toBe(null);
+    expect(localStorage.getItem(STORES.torrents)).toBe(null);
   });
 
   describe('purgeTorrentHistory', () => {

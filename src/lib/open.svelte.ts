@@ -66,6 +66,7 @@ import {
   torrentResume,
   torrentVideos,
   updateTorrent,
+  watchedFiles,
   type RememberedTorrent,
   type TorrentFile,
   type TorrentInfo,
@@ -530,6 +531,39 @@ export async function clearTorrentCache() {
 }
 
 /**
+ * Where torrent files are written, and the two ways to change it.
+ *
+ * **Nothing is moved by a change**, which is what makes this safe to offer as a
+ * plain setting: the previous root is remembered on the Rust side, so a season
+ * downloaded last week is still listed, still resumable and still deletable
+ * from wherever it already is. Only new torrents follow the new choice.
+ *
+ * The folder is created when it is chosen rather than at the first torrent —
+ * a root that cannot be written to should fail while somebody is looking at
+ * the setting, not an hour later in the middle of opening a film.
+ */
+export async function pickTorrentDir(): Promise<boolean> {
+  // The same dimming flag as every other picker: the system dialog dims the
+  // window while it is up, and the chrome has to know.
+  const dir = await withFileDialog(() =>
+    pickPath({ directory: true, multiple: false }).catch(() => null),
+  );
+  if (typeof dir !== 'string') return false;
+  try {
+    await invoke('torrent_set_dir', { path: dir });
+    return true;
+  } catch (e) {
+    showOsd(t('torrent.dir_failed', { detail: String(e) }));
+    return false;
+  }
+}
+
+export async function resetTorrentDir(): Promise<boolean> {
+  await invoke('torrent_set_dir', { path: null }).catch(() => {});
+  return true;
+}
+
+/**
  * Open something from the watch history — and **give it back its queue**.
  *
  * A local file is its own address and opens directly, and gets the folder queue
@@ -613,6 +647,38 @@ export async function openRememberedTorrent(row: TorrentRow) {
     opening.linkOpen = true;
   } finally {
     opening.rowOpening = null;
+  }
+}
+
+/**
+ * Delete the episodes of a torrent that have been watched to the end, and keep
+ * the rest.
+ *
+ * **The one thing that makes this offerable is that the list exists at all.** A
+ * finished video has its position record *deleted* — that is what takes it out
+ * of "continue watching" — so "which ones have I seen" cannot be answered from
+ * the history, and the torrent store keeps its own record for exactly this.
+ *
+ * The torrent itself stays: its folder, its cached metadata and its magnet are
+ * all still there, so it reopens for nothing and the episodes that were kept
+ * play immediately. What it costs is one re-check on that next open, because
+ * removing files behind librqbit's back invalidates its resume data — see
+ * `forget_files`.
+ */
+export async function deleteWatchedFiles(row: TorrentRow) {
+  if (torrentIsPlaying(row) || opening.rowBusy || !row.info_hash) return;
+  const names = [...watchedFiles(row.info_hash)];
+  if (!names.length) return;
+  opening.rowBusy = row.folder;
+  try {
+    const freed = await invoke<number>('torrent_forget_files', {
+      path: row.path,
+      names,
+    }).catch(() => 0);
+    await refreshTorrents();
+    showOsd(t('torrent.cache_cleared', { size: fmtSize(freed) }));
+  } finally {
+    opening.rowBusy = null;
   }
 }
 

@@ -38,6 +38,7 @@ func startRelay(t *testing.T, tweak func(*Config)) (*server, string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /ws", s.serveWS)
 	mux.HandleFunc("GET /j/{code}", s.serveJoinPage)
+	mux.HandleFunc("GET /favicon.svg", s.serveFavicon)
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	return s, "ws" + strings.TrimPrefix(ts.URL, "http")
@@ -405,8 +406,14 @@ func TestSomebodyWithoutThePlayerIsGivenSomewhereToGo(t *testing.T) {
 		s.serveJoinPage(rec, req)
 		return rec.Body.String()
 	}
-	if !strings.Contains(render(), defaultDownloadPage) {
+	page := render()
+	if !strings.Contains(page, defaultDownloadPage) {
 		t.Error("an out-of-the-box relay offers no way to get the player")
+	}
+	// In a tab of its own: the default is a page, and following it in place
+	// would take the code away from somebody who has not used it yet.
+	if !strings.Contains(page, `target="_blank"`) {
+		t.Error("the download link navigates away from the code")
 	}
 
 	// ...and an operator who wants it gone can still say so. Checked on the
@@ -441,5 +448,42 @@ func TestTheProductNameNeverBreaks(t *testing.T) {
 		if strings.Contains(body, broken) {
 			t.Errorf("%s: an ordinary space survives inside the product name", lang)
 		}
+	}
+}
+
+func TestTheTabIcon(t *testing.T) {
+	s, _ := startRelay(t, nil)
+	rec := httptest.NewRecorder()
+	s.serveFavicon(rec, httptest.NewRequest("GET", "/favicon.svg", nil))
+	if rec.Code != 200 {
+		t.Fatalf("→ %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/svg+xml" {
+		t.Errorf("content type %q — a browser will not render it as an icon", ct)
+	}
+	icon := rec.Body.String()
+	// The player's own accent, not a colour drifted from it: the mark is the
+	// same glyph the application shows in its own title bar.
+	if !strings.Contains(icon, "#6366f1") {
+		t.Error("the icon is not drawn in the player's accent")
+	}
+	// No tile and no background rectangle. What sits behind the glyph has to be
+	// the tab bar's own colour, or the icon is right on one theme and a dark
+	// smudge on the other.
+	if strings.Contains(icon, "<rect") || strings.Contains(icon, "background") {
+		t.Error("the icon carries a background, which only works on one theme")
+	}
+	// A vector answers 16, 32 and 64 from the same bytes, which is the whole
+	// reason there is one file rather than a set.
+	if !strings.Contains(icon, "viewBox") {
+		t.Error("the icon does not scale")
+	}
+
+	page := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/j/ABC123", nil)
+	req.SetPathValue("code", "ABC123")
+	s.serveJoinPage(page, req)
+	if !strings.Contains(page.Body.String(), `href="/favicon.svg"`) {
+		t.Error("the page does not point at the icon this relay serves")
 	}
 }
