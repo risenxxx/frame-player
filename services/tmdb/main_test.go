@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -107,6 +109,48 @@ func TestImagePathValidationRefusesEscapes(t *testing.T) {
 			t.Errorf("refused %q/%q, which is an ordinary TMDB image", c.size, c.file)
 		}
 	}
+}
+
+// A cache directory that cannot be opened must degrade, not kill the service.
+// The `/3/` half needs no disk at all, and dying there turns a misconfigured
+// mount into no service — which is exactly what happened on the first deploy
+// (`mkdir /cache/images: permission denied` on a root-owned bind mount).
+func TestUnwritableCacheDirDoesNotKillTheService(t *testing.T) {
+	// A file where a directory is wanted: `MkdirAll` refuses it on every
+	// platform, and unlike a chmod it does not depend on the test running as an
+	// unprivileged user — as root, mode 0 would be writable anyway.
+	blocked := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newImageCache(filepath.Join(blocked, "images"), time.Hour); err == nil {
+		t.Fatal("expected the cache to refuse a path under a regular file")
+	}
+
+	// What `main` does with that error: carry on with no image cache.
+	s := &server{json: newJSONCache(8), images: nil}
+
+	rec := httptest.NewRecorder()
+	s.health(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if body := rec.Body.String(); !strings.Contains(body, `"cache":"off"`) {
+		t.Errorf("health must report the degraded cache, got %s", body)
+	}
+
+	// And the image route says so rather than proxying uncached, which would
+	// spend the 20-connection upstream budget on every poster.
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/img/w342/poster.jpg", nil)
+	req.SetPathValue("size", "w342")
+	req.SetPathValue("file", "poster.jpg")
+	s.serveImage(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("image route returned %d, want 503", rec.Code)
+	}
+
+	// The sweeper must not panic on the nil cache either — it runs in its own
+	// goroutine, so a nil dereference there would take the process down a few
+	// hours after a deploy that looked fine.
+	s.sweepImages()
 }
 
 func TestJSONCacheEvictsAndExpires(t *testing.T) {

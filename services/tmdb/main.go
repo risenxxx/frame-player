@@ -118,9 +118,22 @@ func main() {
 		log.Fatal("FP_TMDB_KEY is not set — this service is the only place the key lives")
 	}
 
+	// **A cache that cannot be opened is not a reason to refuse to start.** The
+	// job this service exists for — holding the API key and answering /3/ — needs
+	// no disk at all; the image cache is a bandwidth optimisation for the
+	// viewers TMDB is unreachable from. Dying here turns a misconfigured mount
+	// into no service at all, which is what `mkdir /cache/images: permission
+	// denied` did on the first deploy.
+	//
+	// So it degrades instead, loudly: the reason is logged, /health reports the
+	// cache as off, and the image route answers 503 rather than pretending. The
+	// one thing it must not do is fail quietly.
 	images, err := newImageCache(*cacheDir, ttlImage)
 	if err != nil {
-		log.Fatalf("image cache: %v", err)
+		log.Printf("WARNING: image cache unavailable at %s: %v", *cacheDir, err)
+		log.Printf("WARNING: posters will not be proxied. If this is a bind mount, "+
+			"chown it to the container's user (65534) or use a named volume instead.")
+		images = nil
 	}
 
 	s := &server{
@@ -187,9 +200,15 @@ func envOr(name, fallback string) string {
 // the instance is alive; not enough to reconstruct what anybody watched.
 func (s *server) health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	// `cache` is here so a degraded instance is visible from outside rather than
+	// only in a log line somebody read once at deploy time.
+	cache := "on"
+	if s.images == nil {
+		cache = "off"
+	}
 	fmt.Fprintf(w,
-		`{"ok":true,"json":{"hits":%d,"misses":%d,"entries":%d},"images":{"hits":%d,"misses":%d}}`,
-		s.hits.Load(), s.misses.Load(), s.json.len(), s.imageHits.Load(), s.imageMisses.Load())
+		`{"ok":true,"json":{"hits":%d,"misses":%d,"entries":%d},"images":{"hits":%d,"misses":%d,"cache":%q}}`,
+		s.hits.Load(), s.misses.Load(), s.json.len(), s.imageHits.Load(), s.imageMisses.Load(), cache)
 }
 
 func (s *server) allowed(r *http.Request) bool {
@@ -309,6 +328,15 @@ func (s *server) serveImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	// Answered rather than proxied uncached: without a cache every poster would
+	// be a fresh upstream fetch against a 20-connection budget, which is the one
+	// way this service can take TMDB's rate limit down for everybody. The client
+	// falls back to loading posters from TMDB directly, which is what it does by
+	// default anyway.
+	if s.images == nil {
+		http.Error(w, "image cache unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	size, file := r.PathValue("size"), r.PathValue("file")
 	if !sizePattern.MatchString(size) || !filePattern.MatchString(file) {
 		http.Error(w, "bad image path", http.StatusBadRequest)
@@ -422,6 +450,9 @@ func contentTypeFor(file string) string {
 // Expired images are removed on a timer, because a read only ever touches the
 // keys somebody still wants and the sweep is about the ones nobody does.
 func (s *server) sweepImages() {
+	if s.images == nil {
+		return
+	}
 	for {
 		time.Sleep(6 * time.Hour)
 		if n, err := s.images.sweep(); err != nil {

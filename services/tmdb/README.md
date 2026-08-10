@@ -89,6 +89,56 @@ at is re-serving the API to third parties — which is the sublicensing this who
 design exists to avoid. It is a statement of scope rather than a security
 boundary, and the code says so rather than letting the name imply otherwise.
 
+## Deploying, and the one thing that bites first
+
+The image runs as an unprivileged user (uid 65534) and keeps its poster cache in
+a volume. Those two facts collide in a way that produces exactly one error:
+
+```
+image cache: mkdir /cache/images: permission denied
+```
+
+`scratch` has no shell, so the cache directory is created in the build stage and
+carried over with `COPY --chown=65534:65534`. What happens next depends on how
+the volume is attached, and the difference is not obvious:
+
+| Mount | Ownership comes from | Works out of the box |
+|---|---|---|
+| none | the image | yes — but the cache is lost on every redeploy |
+| **named volume** (`-v tmdb-cache:/cache`) | the image, copied in when the volume is **first created** | **yes** |
+| bind mount (`-v /host/path:/cache`) | the host directory | no — the host path must be chowned |
+
+**Prefer a named volume.** In Dokploy that is a *Volume Mount* rather than a
+*Bind Mount*, with mount path `/cache`.
+
+**A named volume is seeded once, at creation.** Rebuilding the image after a
+failed deploy does not re-seed a volume that already exists — it was created
+from the old root-owned directory and stays root-owned. Remove it and let it be
+recreated:
+
+```bash
+docker volume rm <name>     # or delete it in Dokploy, then redeploy
+```
+
+**If it must be a bind mount**, fix the host directory once:
+
+```bash
+mkdir -p /host/path/images && chown -R 65534:65534 /host/path
+```
+
+To check what the image itself carries:
+
+```bash
+docker run --rm --entrypoint "" <image> /tmdb -h   # scratch has no shell to ls with
+docker run --rm -e FP_TMDB_KEY=x <image> &         # then: curl .../health
+```
+
+`"images":{"cache":"off"}` in `/health` is the service telling you the cache is
+not working. It keeps serving `/3/` regardless — that half needs no disk, and a
+misconfigured mount should not mean no service — but `/img/…` answers 503 and
+posters are not proxied, which for a viewer behind a TMDB block means no posters
+at all.
+
 ## What it does not do
 
 **It does not log queries.** A proxy sees what everybody is searching for, which

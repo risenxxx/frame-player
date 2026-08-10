@@ -11,6 +11,12 @@ COPY go.mod ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /tmdb .
+# The cache directory is made **here**, where there is still a shell. `scratch`
+# has none, so a `VOLUME` declared against a path that does not exist in the
+# image is created by Docker owned by root — and the unprivileged user below
+# then cannot create anything inside it. That is the whole of
+# `mkdir /cache/images: permission denied` at first start.
+RUN mkdir -p /cache/images
 
 FROM scratch
 COPY --from=build /tmdb /tmdb
@@ -18,10 +24,17 @@ COPY --from=build /tmdb /tmdb
 # Taken from the build stage rather than installed, so the final image still
 # carries no package manager and nothing to keep patched.
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-# The cache directory has to exist and be writable by the unprivileged uid.
-# `scratch` has no shell to `mkdir` with, so it arrives as a volume — which is
-# where it belongs anyway, since losing it on every deploy would mean re-fetching
-# every poster.
+# Carried over from the build stage **with its ownership**, which is what makes
+# the unprivileged user able to write to it. A fresh *named* volume is seeded
+# from the image at this path — contents, ownership and mode — so `-v
+# name:/cache` inherits this and works with no setup.
+#
+# A **bind mount does not**: there the host directory's ownership wins and the
+# image's is irrelevant. Dokploy and most Compose setups bind-mount by default,
+# so if the error comes back after this, the host path is the thing to fix —
+# `chown -R 65534:65534 <path>` — or drop the mount and let a named volume do
+# it. See the README.
+COPY --from=build --chown=65534:65534 /cache /cache
 VOLUME ["/cache"]
 USER 65534:65534
 ENV TMDB_CACHE_DIR=/cache/images
