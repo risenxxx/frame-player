@@ -255,7 +255,7 @@ A room holds a **timeline** — what is playing, whether it is paused, where in 
 and at what speed. Everyone fetches the film themselves, so no media passes
 between the players and none passes through the relay.
 
-Open the context menu → **Смотреть вместе** (Watch together). Create a room and
+Open the context menu → **Watch together**. Create a room and
 you get a six-character code and a link; either one gets somebody else in. A
 `frameplayer://join/ABC123` link opens the player straight into the join dialog
 with the code filled in — it is *offered* rather than obeyed, because a custom
@@ -288,7 +288,7 @@ says who it is waiting for; a member who never reports stops holding it up after
 **The relay** is a small Go server in [`server/`](server/) — no database,
 nothing written to disk, and a room ceases to exist a few minutes after the last
 person leaves. Builds point at a default instance; the address is a field in
-**Settings → Основные**, so running your own is a setting rather than a fork.
+**Settings → General**, so running your own is a setting rather than a fork.
 See [server/README.md](server/README.md) to deploy one and
 [docs/watch-together.md](docs/watch-together.md) for the design.
 
