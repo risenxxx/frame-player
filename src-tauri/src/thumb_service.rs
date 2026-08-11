@@ -73,7 +73,7 @@ const MAX_CONTINUE_SECS: f64 = 6.0;
 /// shorter than a typical GOP.
 const MAX_EXACT_CONTINUE_SECS: f64 = 1.0;
 const PTS_EPS: f64 = 1e-4;
-/// "KTB5". v3 was the bump for keyframe-only caches (v2 held duplicates instead
+/// "KTB6". v3 was the bump for keyframe-only caches (v2 held duplicates instead
 /// of frames at the requested positions on long-GOP files). v4 is when the
 /// source path joined the header: the file
 /// name is a hash of path + size + mtime, so without the path inside there was
@@ -84,8 +84,11 @@ const PTS_EPS: f64 = 1e-4;
 /// serving frames made with the wrong matrix — permanently, and for exactly the
 /// files the change was made for, since a Dolby Vision release is one somebody
 /// has already hovered over. Old caches are simply not read and get regenerated
-/// in the background.
-const CACHE_MAGIC: u32 = 0x4B54_4235;
+/// in the background. **v6 is the exposure calibration in `DOLBY_WHITE`**, and
+/// the rule generalises: this cache is keyed by the file, so *any* change to
+/// how a frame is turned into a picture has to come with a bump, or the files
+/// the change was for keep the answer it replaced.
+const CACHE_MAGIC: u32 = 0x4B54_4236;
 
 struct ThumbSession {
     ictx: ffmpeg::format::context::Input,
@@ -1416,7 +1419,7 @@ fn container_title(path: &str) -> Option<String> {
 /// the colour conversion existed is a wrongly-coloured picture of the right
 /// film, and nothing else would ever replace it — this one is captured once,
 /// while the file plays, and then kept.
-const POSTER_MAGIC: &[u8; 4] = b"FPP2";
+const POSTER_MAGIC: &[u8; 4] = b"FPP3";
 
 /// Mean luma and its mean absolute deviation, on a packed RGB buffer.
 fn rgb_stats(rgb: &[u8]) -> (f64, f64) {

@@ -41,14 +41,31 @@ pub enum Primaries {
     Bt2020,
 }
 
-/// The 99.5th percentile of the frame's own light is what becomes white, and it
-/// is never lifted above this floor for content whose levels are meaningful:
-/// 203 nits is the ITU reference white, i.e. what a correctly graded HDR frame
-/// puts a sheet of paper at. Without the floor a dim night scene would be
-/// exposed like daylight; without the percentile a Dolby Vision frame — whose
-/// absolute levels mean nothing until the RPU has been applied — comes out
-/// almost black.
+/// ITU reference white: what a correctly graded HDR frame puts a sheet of paper
+/// at, and therefore what becomes white on an SDR thumbnail. Applies to PQ and
+/// HLG, whose code values mean nits.
 const DIFFUSE_WHITE: f32 = 203.0 / 10_000.0;
+
+/// The same anchor for a Dolby Vision profile 5 base layer, which is a fitted
+/// number rather than a standard one: its levels only mean nits once the RPU
+/// has reshaped them, and a plain decoder never does that.
+///
+/// Fitted against the player's own output — mpv renders these files correctly
+/// through libplacebo — on four scenes of one episode spanning the range worth
+/// spanning: a sunlit park, a warm interior, a dim greenhouse and a near-black
+/// night exterior. Reading a profile 5 frame at 203 like PQ renders that
+/// interior almost black; the robe that carries the scene measures **2.9 nits**
+/// in this signal.
+///
+/// **60 rather than the 40 the screenshots alone gave**, which is worth
+/// recording because it says what the fitting can and cannot settle: a still
+/// compared side by side gets the *hue* exact and leaves half a stop of
+/// brightness inside the noise, and half a stop is precisely what reads as "a
+/// bit bright" once the previews are in front of somebody in the player. The
+/// number is a knob, not a derivation — one constant, and raising it darkens
+/// everything by the same amount, which is the point of anchoring per file
+/// rather than per frame.
+const DOLBY_WHITE: f32 = 60.0 / 10_000.0;
 
 /// How far above white the roll-off reaches before it clips, in units of white.
 /// Extended Reinhard: highlights compress instead of turning into flat patches,
@@ -86,12 +103,27 @@ pub fn hlg_eotf(v: f32) -> f32 {
     e.powf(1.2) * 0.1
 }
 
-/// ICtCp → LMS' (BT.2100), i.e. still PQ-encoded.
-fn ictcp_to_lms(i: f32, ct: f32, cp: f32) -> [f32; 3] {
+/// IPT → LMS' (still PQ-encoded), the inverse of the Ebner–Fairchild matrix.
+///
+/// **This is IPT and not ICtCp, and the difference is not academic.** The two
+/// are near neighbours — ICtCp is BT.2100's requantised descendant of IPT — and
+/// the ICtCp inverse is the one every reference to "Dolby Vision uses ICtCp"
+/// leads to. Fitting both against a frame whose colours are known (a
+/// greenhouse the player renders green) settles it: over the bank of leaves,
+/// the ICtCp inverse gives `r/g/b 0.53 / 0.27 / 0.20` — foliage rendered red —
+/// while IPT gives `0.40 / 0.44 / 0.15`. The failure is not subtle once there
+/// is something in frame whose colour is not negotiable, and it is invisible on
+/// interiors and skin, which is exactly where it was first judged "plausible".
+///
+/// The plane order goes with it: `I, P, T`, so the **U plane is P** (the
+/// red–green axis, where a Y'CbCr reader expects blue–yellow) and the V plane
+/// is T. Reading them the ICtCp way — Ct then Cp — is a second, independent way
+/// to get the same class of wrongness.
+fn ipt_to_lms(i: f32, p: f32, t: f32) -> [f32; 3] {
     [
-        i + 0.008_609_04 * ct + 0.111_03 * cp,
-        i - 0.008_609_04 * ct - 0.111_03 * cp,
-        i + 0.560_031 * ct - 0.320_627 * cp,
+        i + 0.097_569 * p + 0.205_226 * t,
+        i - 0.113_876 * p + 0.133_217 * t,
+        i + 0.032_615 * p - 0.676_887 * t,
     ]
 }
 
@@ -165,31 +197,35 @@ fn ycbcr_to_rgb(y: f32, cb: f32, cr: f32, bt2020: bool) -> [f32; 3] {
 /// reshaped: the RPU carries polynomial and MMR curves that map these codes
 /// back to the mastered signal, and libavcodec does not apply them (libplacebo
 /// does, which is why the picture is right in the player and wrong here). So
-/// both the colour and the *level* of what comes out are approximations. The
-/// colour approximation is good — the ICtCp inverse plus the cross-talk undo
-/// removes the magenta cast that makes these previews unusable — while the
-/// level is not, which is what `expose` is for.
-fn dolby5_to_linear(i: f32, ct: f32, cp: f32) -> [f32; 3] {
-    let lms = ictcp_to_lms(i, ct, cp);
+/// both the colour and the *level* of what comes out are approximations — the
+/// colour a good one, once the matrix above is the right one, and the level a
+/// calibration, which is what `DOLBY_WHITE` is.
+fn dolby5_to_linear(i: f32, p: f32, t: f32) -> [f32; 3] {
+    let lms = ipt_to_lms(i, p, t);
     let linear = [pq_eotf(lms[0]), pq_eotf(lms[1]), pq_eotf(lms[2])];
     lms_to_bt2020(undo_crosstalk(linear))
 }
 
 /// Where white sits for this frame.
 ///
-/// `trust_levels` says whether the encoded luminance means nits. For PQ and HLG
-/// it does, so the exposure is anchored at reference white and only a brighter
-/// frame moves it — a dark scene stays dark, exactly as it does in the player.
-/// For Dolby Vision it does not, so the frame's own light is all there is to go
-/// on.
-fn white_point(lum: &mut [f32], trust_levels: bool) -> f32 {
-    if lum.is_empty() {
-        return DIFFUSE_WHITE;
+/// **One number for the whole file, never the frame's own light.** Exposing
+/// each frame from its own percentile was the first shape of this and it is
+/// wrong in the way that gets reported: it hands every frame the same average
+/// brightness, so a night scene comes back as a grey afternoon. Measured across
+/// four scenes of one episode, the 99.5th percentile runs from 4.8 nits (jets
+/// at dusk) to 95.8 (a sunlit park) — a factor of twenty, i.e. twenty times the
+/// wrong gain — while what the viewer wants from a preview is precisely the
+/// difference between those two scenes.
+///
+/// For PQ and HLG the encoded value means nits, so the anchor is the ITU
+/// reference white of 203 and there is nothing to calibrate. A profile 5 base
+/// layer means nothing until the RPU has reshaped it, so its anchor is fitted
+/// instead — see `DOLBY_WHITE`.
+fn white_point(kind: Hdr) -> f32 {
+    match kind {
+        Hdr::Dolby5 => DOLBY_WHITE,
+        Hdr::Pq | Hdr::Hlg => DIFFUSE_WHITE,
     }
-    lum.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let p = lum[((lum.len() - 1) as f32 * 0.995) as usize];
-    let floor = if trust_levels { DIFFUSE_WHITE } else { 1e-6 };
-    p.max(floor)
 }
 
 /// Everything above white rolls off towards `HIGHLIGHT_HEADROOM` instead of
@@ -202,9 +238,11 @@ fn expose(x: f32, white: f32) -> f32 {
 
 /// A whole frame of planar 16-bit YUV → packed sRGB bytes.
 ///
-/// `planes` are Y, U (or Ct), V (or Cp) as little-endian 16-bit samples with
-/// their own strides in *samples*; `full_range` is the frame's own flag. The
-/// output is `w * h * 3` bytes, tight.
+/// `planes` are Y, U, V as little-endian 16-bit samples with their own strides
+/// in *samples* — for Dolby Vision that is I, P, T rather than luma and two
+/// chroma difference signals, which is what `ipt_to_lms` is about.
+/// `full_range` is the frame's own flag. The output is `w * h * 3` bytes,
+/// tight.
 pub fn yuv444_16_to_srgb(
     planes: [&[u16]; 3],
     strides: [usize; 3],
@@ -219,8 +257,9 @@ pub fn yuv444_16_to_srgb(
     // is what the format specifies — and being wrong costs a little contrast
     // rather than the hue.
     let full = full_range || kind == Hdr::Dolby5;
-    let mut linear = vec![0f32; w * h * 3];
-    let mut lum = vec![0f32; w * h];
+    let white = white_point(kind);
+    let wide = primaries == Primaries::Bt2020 || kind == Hdr::Dolby5;
+    let mut out = vec![0u8; w * h * 3];
     for y in 0..h {
         for x in 0..w {
             let s = |p: usize| planes[p][y * strides[p] + x] as f32 / 65535.0;
@@ -230,7 +269,7 @@ pub fn yuv444_16_to_srgb(
                 b /= 224.0 / 255.0;
                 c /= 224.0 / 255.0;
             }
-            let rgb = match kind {
+            let linear = match kind {
                 Hdr::Dolby5 => dolby5_to_linear(a, b, c),
                 Hdr::Pq | Hdr::Hlg => {
                     let e = ycbcr_to_rgb(a, b, c, primaries == Primaries::Bt2020);
@@ -238,28 +277,18 @@ pub fn yuv444_16_to_srgb(
                     [f(e[0]), f(e[1]), f(e[2])]
                 }
             };
+            let mut v = [
+                expose(linear[0].max(0.0), white),
+                expose(linear[1].max(0.0), white),
+                expose(linear[2].max(0.0), white),
+            ];
+            if wide {
+                v = bt2020_to_bt709(v);
+            }
             let o = (y * w + x) * 3;
             for ch in 0..3 {
-                linear[o + ch] = rgb[ch].max(0.0);
+                out[o + ch] = (srgb_oetf(v[ch].clamp(0.0, 1.0)) * 255.0).round() as u8;
             }
-            // BT.2020 luma weights: this only picks the exposure, so the exact
-            // primaries matter less than picking one and staying with it.
-            lum[y * w + x] = 0.2627 * linear[o] + 0.678 * linear[o + 1] + 0.0593 * linear[o + 2];
-        }
-    }
-    let white = white_point(&mut lum, kind != Hdr::Dolby5);
-    let mut out = vec![0u8; w * h * 3];
-    for p in 0..w * h {
-        let mut v = [
-            expose(linear[p * 3], white),
-            expose(linear[p * 3 + 1], white),
-            expose(linear[p * 3 + 2], white),
-        ];
-        if primaries == Primaries::Bt2020 || kind == Hdr::Dolby5 {
-            v = bt2020_to_bt709(v);
-        }
-        for ch in 0..3 {
-            out[p * 3 + ch] = (srgb_oetf(v[ch].clamp(0.0, 1.0)) * 255.0).round() as u8;
         }
     }
     out
@@ -324,16 +353,24 @@ mod tests {
         }
     }
 
-    /// Levels are trusted for PQ and not for Dolby Vision, and that difference
-    /// is the whole reason a dark DV frame comes out visible while a dark HDR10
-    /// one stays dark — as it does in the player.
+    /// **A dark frame has to come back dark.** This is the bug that shipped in
+    /// the first version of this module: the white point was the frame's own
+    /// 99.5th percentile, so a night exterior was scaled up until it looked
+    /// like an overcast afternoon, and every scene of a film arrived at the
+    /// same average brightness. The exposure now depends on the encoding and
+    /// nothing else, which is what makes two scenes comparable.
     #[test]
-    fn exposure_trusts_pq_levels_and_not_dolby() {
-        let mut dark = vec![0.000_5f32; 100];
-        assert_eq!(white_point(&mut dark.clone(), true), DIFFUSE_WHITE);
-        assert!(white_point(&mut dark, false) < DIFFUSE_WHITE);
-        // A bright frame moves the white point in both modes.
-        let mut bright = vec![0.5f32; 100];
-        assert!(white_point(&mut bright, true) > DIFFUSE_WHITE);
+    fn exposure_does_not_depend_on_the_frame() {
+        let level = |nits: f32| (srgb_oetf(expose(nits / 10_000.0, DOLBY_WHITE)) * 255.0) as u8;
+        // The medians of two real scenes of the calibration episode, in this
+        // signal: jets at dusk against a sunlit park.
+        let night = level(0.45);
+        let day = level(4.94);
+        // Deliberately loose, and about the *relationship* rather than the
+        // level: `DOLBY_WHITE` is a calibration and will be nudged again, while
+        // what must never come back is a night frame arriving at the same
+        // brightness as a daylight one.
+        assert!(night < 40, "a night frame came back at {night}");
+        assert!(day > night + 40, "day {day} is not clear of night {night}");
     }
 }
