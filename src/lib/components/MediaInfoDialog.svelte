@@ -13,14 +13,13 @@
   import { t } from '$lib/i18n.svelte';
   import {
     colorLine,
-    COUNTERS,
     isHdr,
     loadMediaInfo,
     overallBitrate,
-    type CounterKey,
     type MediaInfo,
   } from '$lib/mediainfo';
   import { player } from '$lib/player.svelte';
+  import { stalls } from '$lib/stall.svelte';
   import { torrent } from '$lib/torrent.svelte';
   import { fmtFps, fmtRate, fmtSize, fmtSpeed } from '$lib/units';
 
@@ -32,21 +31,13 @@
 
   let mediaInfo = $state<MediaInfo | null>(null);
 
-  /// When each drop counter last moved, and by how much.
-  ///
-  /// The totals on their own answer nothing about a rare stall: it happens
-  /// while the viewer is watching the video rather than this panel, so by the
-  /// time the panel is read the number has long since moved and looks like an
-  /// old, harmless one. What is actually being asked is "was that hitch a
-  /// dropped frame", which is a question about *when* — hence the moment of the
-  /// last increase is what sits beside the total.
-  let moves = $state<Partial<Record<CounterKey, { delta: number; at: number }>>>({});
-  /// The previous reading. Not `$state`: nothing renders it, and it must not
-  /// make the render depend on a value that changes every second.
-  let prev: Partial<Record<CounterKey, number>> = {};
   /// The largest desync seen since this file opened. A stall of the picture is
   /// a step in `avsync` that mpv then works off over the next few seconds, so
   /// the current value is almost always back to nothing by the time it is read.
+  /// Only ever as good as the panel's own uptime, unlike the drop counters —
+  /// which is exactly why those live in `player` and this does not: a peak is
+  /// worth having when you are watching for one, an event has to be caught
+  /// whether anybody was watching or not.
   let worstSync = $state(0);
   /// Refreshed with the readings, so "47 s ago" ticks with the panel rather
   /// than needing a clock of its own.
@@ -58,13 +49,10 @@
     return () => clearInterval(timer);
   });
 
-  // mpv's counters restart with the file, so the record of what moved has to as
-  // well — otherwise the previous episode's drops are reported as this one's,
-  // with a timestamp that makes them look like they happened moments ago.
+  // The peak belongs to one file. Nothing else here is remembered across a file
+  // change, so this must not be either.
   $effect(() => {
     void player.filePath;
-    prev = {};
-    moves = {};
     worstSync = 0;
   });
 
@@ -76,31 +64,27 @@
     const info = await loadMediaInfo().catch(() => null);
     mediaInfo = info;
     now = Date.now();
-    if (!info) return;
 
-    for (const key of COUNTERS) {
-      const value = info.playback[key];
-      if (value === null) continue;
-      const was = prev[key];
-      prev[key] = value;
-      // A first reading is not a movement, and neither is a counter going
-      // backwards — which is what a file change looks like from here if the
-      // reset effect has not run yet.
-      if (was === undefined || value <= was) continue;
-      moves[key] = { delta: value - was, at: now };
-    }
-
-    const { avsync } = info.playback;
-    if (avsync !== null) worstSync = Math.max(worstSync, Math.abs(avsync));
+    const avsync = info?.playback.avsync;
+    if (avsync !== null && avsync !== undefined) worstSync = Math.max(worstSync, Math.abs(avsync));
   }
 
-  /// A counter and, when it has moved while the panel was open, how long ago.
-  function counter(key: CounterKey, value: number | null): string | null {
-    if (value === null) return null;
-    const moved = moves[key];
-    if (!moved) return String(value);
-    const secs = Math.max(0, Math.round((now - moved.at) / 1000));
-    return `${value} · ${t('info.moved', { delta: moved.delta, secs })}`;
+  /// The last time this process was stopped, and the worst it has been.
+  ///
+  /// "Nothing" is a real answer here rather than a missing value, and is said
+  /// out loud: a quiet watchdog beside a drop counter that moved is what points
+  /// at mpv rather than at the machine.
+  function stallLine(): string {
+    if (!stalls.last) return t('info.stall_none');
+    const secs = Math.max(0, Math.round((now - stalls.last.at) / 1000));
+    return t('info.stall_value', { ms: stalls.last.ms, secs, max: stalls.worst });
+  }
+
+  /// A drop counter and, when something has actually been lost, how long ago.
+  function counter(drops: { count: number; last: { delta: number; at: number } | null }): string {
+    if (!drops.last) return String(drops.count);
+    const secs = Math.max(0, Math.round((now - drops.last.at) / 1000));
+    return `${drops.count} · ${t('info.moved', { delta: drops.last.delta, secs })}`;
   }
 </script>
 
@@ -170,9 +154,11 @@
       t('info.fps_actual'),
       info.playback.fpsActual ? fmtFps(info.playback.fpsActual) : null,
     )}
-    {@render infoRow(t('info.drop_decoder'), counter('dropDecoder', info.playback.dropDecoder))}
-    {@render infoRow(t('info.drop_vo'), counter('dropVo', info.playback.dropVo))}
-    {@render infoRow(t('info.delayed_vo'), counter('delayedVo', info.playback.delayedVo))}
+    {@render infoRow(t('info.drop_decoder'), counter(player.dropDecoder))}
+    {@render infoRow(t('info.drop_vo'), counter(player.dropVo))}
+    <!-- Read together with the two rows above, never on its own: which of them
+         moved at the same moment is the whole diagnosis. -->
+    {@render infoRow(t('info.stalls'), stallLine())}
     {@render infoRow(
       t('info.cache_ahead'),
       info.playback.cacheAhead === null

@@ -42,36 +42,27 @@ export interface MediaInfo {
 /**
  * How playback is actually going, as opposed to what the file is.
  *
- * This exists to answer one question the player could not answer at all: a
- * video that freezes for a fraction of a second while the audio keeps running
- * has stalled in exactly one of four places, and each of them has its own
- * number here — the decoder (`dropDecoder`), the video output (`dropVo`,
- * `delayedVo`), the source (`cacheAhead` collapsing), or nowhere mpv can see,
- * which points below it at the render path, the display or the machine. A
- * counter that stays flat is as much of an answer as one that moves.
+ * These are the live numbers only; the drop counters that go beside them are
+ * **not** here, and that is deliberate. A stall lasts a fraction of a second,
+ * so anything that only reads while this panel is open has missed it — the
+ * counters are observed continuously in `player.svelte.ts` and the panel merely
+ * displays what was recorded. What is left here is what is worth *sampling*,
+ * because it describes the present rather than an event.
  *
- * `avsync` is the one live number worth watching beside them: audio does not
- * stop for a dropped frame, so a stall of the picture shows up there as a step
- * even when it costs no counted drop at all.
+ * `avsync` is the one to watch: audio does not stop for a stalled picture, so a
+ * freeze shows up there as a step even when it costs no counted drop at all.
  */
 export interface Playback {
   avsync: number | null;
   /// What is actually reaching the screen, averaged over recent frames — it
-  /// dips for seconds after a stall, which is what makes a rare one visible in
-  /// a panel nobody was looking at when it happened.
+  /// dips for seconds after a stall, which is what makes a rare one visible to
+  /// somebody who opened the panel just afterwards.
   fpsActual: number | null;
-  dropVo: number | null;
-  dropDecoder: number | null;
-  delayedVo: number | null;
   /// Seconds of demuxed data ahead of the playhead. For a torrent (or any
   /// other network source) this is what separates "the picture stalled" from
   /// "the bytes stopped arriving" — the second one takes the audio with it.
   cacheAhead: number | null;
 }
-
-/// The three cumulative counters, which are the ones a movement is tracked for.
-export const COUNTERS = ['dropVo', 'dropDecoder', 'delayedVo'] as const;
-export type CounterKey = (typeof COUNTERS)[number];
 
 const str = (name: string) =>
   getProperty(name, 'string')
@@ -124,9 +115,6 @@ export async function loadMediaInfo(): Promise<MediaInfo> {
     playback: {
       avsync: await num('avsync'),
       fpsActual: await num('estimated-vf-fps'),
-      dropVo: await int('frame-drop-count'),
-      dropDecoder: await int('decoder-frame-drop-count'),
-      delayedVo: await int('vo-delayed-frame-count'),
       cacheAhead: await num('demuxer-cache-duration'),
     },
   };

@@ -195,6 +195,19 @@ const OBSERVED = [
   ['video-rotate', 'int64', 'none'],
   ['video-aspect-override', 'double', 'none'],
   ['panscan', 'double', 'none'],
+  // Frames that were lost, and where. Observed rather than read when the media
+  // info panel opens, and that is the whole point of them: a stall lasts a
+  // fraction of a second and happens while the viewer is watching the video,
+  // so a counter that only runs while a dialog is up has already missed every
+  // event worth recording by the time it is read. What the panel needs is not
+  // the total — a few drops are the ordinary cost of a seek — but *when the
+  // last one landed*, which only something running the whole time can answer.
+  //
+  // `vo-delayed-frame-count` is deliberately not here: it only ever moves under
+  // `video-sync=display-*`, and with mpv's default `audio` it would be a row
+  // reading zero whatever went wrong.
+  ['frame-drop-count', 'int64', 'none'],
+  ['decoder-frame-drop-count', 'int64', 'none'],
 ] as const satisfies ReadonlyArray<MpvObservableProperty>;
 
 export type ObservedName = (typeof OBSERVED)[number][0];
@@ -249,6 +262,13 @@ const RESYNC: Record<ObservedName, boolean> = {
   // dropped `false` leaves that sentence standing over playing video with
   // nothing left to take it down.
   'paused-for-cache': true,
+  // Swept, even though the sweep dates a drop to the tick that noticed it
+  // rather than to the moment it happened. The error is under a second and the
+  // readout is measured in "was that hitch just now"; against it, a lost event
+  // leaves the count standing until the *next* drop, and the events are most
+  // likely to be lost during exactly the load being diagnosed.
+  'frame-drop-count': true,
+  'decoder-frame-drop-count': true,
 
   // Re-reported by mpv on its own, so a dropped one costs a tick at most.
   'time-pos': false,
@@ -275,6 +295,32 @@ const RESYNC: Record<ObservedName, boolean> = {
   'track-list/count': false,
   'chapter-list/count': false,
 };
+
+/**
+ * One of mpv's cumulative drop counters, plus when it last moved.
+ *
+ * The total on its own answers nothing: a seek costs a handful of frames, so
+ * every file carries a nonzero count within seconds of opening and it says
+ * only that the file was seeked in. What separates that from a fault is
+ * whether the number moved *just now* — which is why the increase is recorded
+ * with its moment rather than merely accumulated.
+ */
+class DropCounter {
+  count = $state(0);
+  /// The last increase and when it landed, or null if nothing has been lost
+  /// since this file opened.
+  last = $state<{ delta: number; at: number } | null>(null);
+
+  note(value: number | null) {
+    const next = value ?? 0;
+    // Going backwards is mpv starting a new file, not a correction — these
+    // counters are per file. The record has to go with it, or a stall in the
+    // previous episode is dated to this one and reads as having just happened.
+    if (next < this.count) this.last = null;
+    else if (next > this.count) this.last = { delta: next - this.count, at: Date.now() };
+    this.count = next;
+  }
+}
 
 class Player {
   ready = $state(false);
@@ -315,6 +361,14 @@ class Player {
   cacheBuffering = $state<number | null>(null);
   /// Playback is stopped waiting for the network, not by the viewer.
   stalled = $state(false);
+
+  /// Frames thrown away by the video output because they arrived too late to
+  /// show, and by the decoder because it could not keep up. Which of the two
+  /// moves is the difference between "the picture cannot be produced fast
+  /// enough" and "it was produced and could not be put on screen", and nothing
+  /// else in the player can tell those apart.
+  dropVo = new DropCounter();
+  dropDecoder = new DropCounter();
 
   /// A–B loop points in seconds, or null when unset.
   loopA = $state<number | null>(null);
@@ -684,6 +738,8 @@ function applyProperty(ev: PropertyChange) {
     case 'video-rotate': player.videoRotate = ev.data ?? 0; break;
     case 'video-aspect-override': player.aspectOverride = ev.data ?? -2; break;
     case 'panscan': player.panscan = ev.data ?? 0; break;
+    case 'frame-drop-count': player.dropVo.note(ev.data); break;
+    case 'decoder-frame-drop-count': player.dropDecoder.note(ev.data); break;
   }
 }
 

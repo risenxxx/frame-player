@@ -69,6 +69,7 @@
     startResize,
     toggleFullscreen,
   } from '$lib/chrome.svelte';
+  import { initStallWatch } from '$lib/stall.svelte';
   import { initSubShift, subShift } from '$lib/sub-shift.svelte';
   import {
     cancelAdvance,
@@ -1033,6 +1034,9 @@
   initEndScreen();
   // Keeps the window shell told what is over the video.
   initOverlays();
+  // Measures how late this process's own timer runs, which is the only way to
+  // tell a block of the whole machine from one inside mpv — see stall.svelte.ts.
+  initStallWatch();
   // Restores the remembered audio/subtitle choice as the track list fills up —
   // a standing effect, not a one-shot, because external subtitles arrive after
   // `file-loaded`.
