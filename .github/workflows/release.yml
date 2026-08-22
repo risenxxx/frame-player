@@ -105,8 +105,17 @@ jobs:
             src-tauri/tools
           key: native-sdks-${{ runner.os }}-${{ hashFiles('scripts/fetch-libs.ps1') }}
 
+      # The two `releases/latest` lookups in that script go to the GitHub API,
+      # which gives an anonymous caller 60 requests an hour counted **per IP** —
+      # and a hosted runner's address is shared with every other build on the
+      # machine, so the allowance is regularly gone before this job starts. That
+      # is a release failing on somebody else's traffic. The token below is
+      # automatic (nothing to configure, no secret to rotate) and raises it to
+      # 1000 an hour for this repository, which one run cannot approach.
       - name: Fetch native SDKs (Windows)
         if: runner.os == 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1
 
       # --- macOS native libs ---------------------------------------------------

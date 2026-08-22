@@ -12,8 +12,81 @@ $tmp = Join-Path $env:TEMP "frameplayer-libs-$([guid]::NewGuid().ToString('n').S
 New-Item -ItemType Directory -Force $libDir | Out-Null
 New-Item -ItemType Directory -Force $tmp | Out-Null
 
+# GitHub allows an **unauthenticated** caller 60 API requests an hour, counted
+# per IP — and a hosted runner shares its address with every other build on that
+# machine, so the two lookups below routinely meet an allowance somebody else
+# has already spent. That is what "API rate limit exceeded for <address>" is,
+# and it is the one failure retrying cannot pass: the window is an hour wide and
+# the job has minutes. A token raises the limit to 1000 an hour per repository,
+# which a release run cannot come close to.
+#
+# In Actions the token exists with no setup and nothing to configure, so the fix
+# is simply to pass it in. Locally there is usually none and 60 an hour is ample
+# for one developer, so the header is added when a token is present rather than
+# being required — a checkout with no token still fetches.
+#
+# **Only the API calls carry it, never the asset downloads.** Those redirect to
+# a storage host which rejects a request bearing a GitHub Authorization header,
+# and PowerShell forwards headers across redirects — so authenticating a
+# download would break exactly what works today.
+function Get-GitHubHeaders {
+    $headers = @{ 'User-Agent' = 'frame-player-fetch-libs' }
+    $token = $env:GITHUB_TOKEN
+    if (-not $token) { $token = $env:GH_TOKEN }
+    if ($token) { $headers['Authorization'] = "Bearer $token" }
+    return $headers
+}
+
+# Retries what is worth retrying — a 5xx, a dropped connection — and refuses to
+# retry what is not. An exhausted allowance answers the same way for the rest of
+# the hour, so the useful thing to do with it is name it and say what raises it,
+# rather than spend three attempts proving it again.
+function Invoke-GitHubApi($url) {
+    $headers = Get-GitHubHeaders
+    $authed = $headers.ContainsKey('Authorization')
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            return Invoke-RestMethod $url -Headers $headers -UseBasicParsing
+        }
+        catch {
+            $err = $_
+            $limited = $false
+            $when = 'shortly'
+            # Defensive because this runs only on a failure path: a diagnosis
+            # that throws would replace the real error with its own.
+            try {
+                $resp = $err.Exception.Response
+                if ($resp) {
+                    $status = [int]$resp.StatusCode
+                    $left = $resp.Headers['X-RateLimit-Remaining']
+                    if (($status -eq 403 -or $status -eq 429) -and $left -eq '0') {
+                        $limited = $true
+                        $reset = $resp.Headers['X-RateLimit-Reset']
+                        if ($reset) {
+                            $at = [DateTimeOffset]::FromUnixTimeSeconds([int64]$reset)
+                            $when = $at.LocalDateTime.ToString('HH:mm:ss')
+                        }
+                    }
+                }
+            }
+            catch { }
+            if ($limited) {
+                if ($authed) {
+                    throw "GitHub API rate limit exceeded for $url, and a token was sent - so this is the repository's own 1000/hour allowance. It resets at $when."
+                }
+                $hint = 'This call was unauthenticated: 60 requests an hour, shared with everything else building from the same address. '
+                $hint += 'Set GITHUB_TOKEN to raise it to 1000; in GitHub Actions, pass ${{ secrets.GITHUB_TOKEN }} to the step that runs this script. '
+                throw "GitHub API rate limit exceeded for $url. $hint" + "The anonymous allowance resets at $when."
+            }
+            if ($attempt -eq 3) { throw $err }
+            Write-Host "  $url failed (attempt $attempt of 3), retrying..."
+            Start-Sleep -Seconds (3 * $attempt)
+        }
+    }
+}
+
 function Get-LatestAsset($repo, $pattern) {
-    $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
+    $release = Invoke-GitHubApi "https://api.github.com/repos/$repo/releases/latest"
     $asset = $release.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
     if ($null -eq $asset) { throw "Asset matching '$pattern' not found in $repo" }
     return $asset.browser_download_url
