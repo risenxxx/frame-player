@@ -16,7 +16,7 @@ import { t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
 import { type Attempt, latest } from './latest';
 import { isNetworkSource, player, type TrackWish } from './player.svelte';
-import { parseTorrentUrl, sourceId } from './source';
+import { parseTorrentUrl, sourceId, torrentFolderKey } from './source';
 
 /// Seconds to rewind when resuming, so playback starts just before where the
 /// viewer left off rather than exactly on it.
@@ -289,12 +289,46 @@ export function forgetLinks() {
 // memory would carry an anime's Japanese track onto an unrelated film; a
 // per-queue one would not survive a restart. A folder of assorted downloads
 // degrades to roughly "the last thing I picked", which is a fair answer there.
+//
+// **A torrent has a folder too, and reading it as a stream cost this exactly
+// where it is wanted most.** An episode plays from
+// `http://127.0.0.1:<port>/t/<hash>/<index>/<name>`, so `isNetworkSource` is
+// true for it and both halves of the folder scope were skipped — every episode
+// of a season an island, a dub picked on the first forgotten by the second, and
+// mpv's own `alang` quietly taking the first track of the right language
+// instead (on a release carrying seven Russian dubs, reliably the wrong one).
+// The guard is right about a *site* and wrong about a torrent: an info hash is
+// the most exact folder there is, one torrent being one season, and
+// `parseTorrentUrl` already reads it out of the URL.
+//
+// So the question is "which folder is this in", asked once. It used to be
+// spelled out at both call sites, which is what let them be a pair that could
+// disagree — and a scope guarded on two sides is only ever as good as the
+// looser one.
 
 const FOLDER_TRACKS_KEY = 'frameplayer.tracks.folder';
 
-/// Case-insensitive, like the privacy roots and for the same reason: the same
-/// folder comes back spelled differently depending on how the file was opened.
-function folderKey(path: string): string {
+/**
+ * The folder scope a source belongs to, or null for one that has none.
+ *
+ * A local path gives its directory, case-insensitively — like the privacy roots
+ * and for the same reason: the same folder comes back spelled differently
+ * depending on how the file was opened. A torrent gives `torrent:<hash>/`,
+ * which is the folder its episodes sit in. Any other URL gives null, because a
+ * site is not a folder: taking one would put every video on it into a single
+ * `youtube.com/watch` bucket deciding the dub for all of them.
+ *
+ * **The trailing slash on the torrent key is load-bearing rather than
+ * cosmetic**: it makes the key its own `torrent:<hash>/` prefix, which is the
+ * question `purgeTorrentHistory` asks — so forgetting a torrent takes the dub
+ * chosen for that season with it, and the purge needed no widening to reach a
+ * store that until now could never hold anything it was looking for.
+ */
+function folderScopeKey(path: string): string | null {
+  const torrent = parseTorrentUrl(path);
+  // `parseTorrentUrl` lower-cases the hash, exactly as `sourceId` does.
+  if (torrent) return torrentFolderKey(torrent.infoHash);
+  if (isNetworkSource(path)) return null;
   const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
   return (cut > 0 ? path.slice(0, cut) : path).toLowerCase();
 }
@@ -331,10 +365,8 @@ function entriesSave(key: string, map: Record<string, TrackEntry>, limit: number
 export function rememberTrack(path: string, kind: 'audio' | 'sub', wish: TrackWish) {
   if (isPrivatePath(path)) return;
   const scopes: [string, string, number][] = [[TRACKS_KEY, sourceId(path), 300]];
-  // A stream has no folder. Taking one from a URL would put every video on a
-  // site into a single scope — one `youtube.com/watch` bucket deciding the dub
-  // for everything watched there.
-  if (!isNetworkSource(path)) scopes.push([FOLDER_TRACKS_KEY, folderKey(path), 200]);
+  const folder = folderScopeKey(path);
+  if (folder) scopes.push([FOLDER_TRACKS_KEY, folder, 200]);
   for (const [key, id, limit] of scopes) {
     const map = entriesLoad(key);
     map[id] = { ...map[id], [kind]: wish, ts: Date.now() };
@@ -375,8 +407,10 @@ export function delaysFor(path: string): { sub: number; audio: number } {
 export function trackWishFor(path: string, kind: 'audio' | 'sub'): TrackWish | null {
   if (isPrivatePath(path)) return null;
   const own = entriesLoad(TRACKS_KEY)[sourceId(path)]?.[kind];
-  if (own || isNetworkSource(path)) return own ?? null;
-  return entriesLoad(FOLDER_TRACKS_KEY)[folderKey(path)]?.[kind] ?? null;
+  if (own) return own;
+  const folder = folderScopeKey(path);
+  if (!folder) return null;
+  return entriesLoad(FOLDER_TRACKS_KEY)[folder]?.[kind] ?? null;
 }
 
 /// `title` is what the player itself displayed — mpv's `media-title`, i.e. the
@@ -847,8 +881,9 @@ const IDENTIFIED_STORES: IdentifiedStore[] = [
   // second, harmless, route.
   mapStore(TORRENTS_KEY, (id) => `torrent:${id}/`),
   mapStore(TRACKS_KEY),
-  // Keyed by the folder rather than the file, which the predicates handle for
-  // free: a folder is under itself, and a torrent id is not a folder.
+  // Keyed by the folder rather than the file, which both predicates handle for
+  // free: a folder is under itself, and a torrent's folder key *is* the
+  // `torrent:<hash>/` prefix the torrent purge asks about.
   mapStore(FOLDER_TRACKS_KEY),
   mapStore(TITLES_KEY),
   listStore(DOWNLOADED_SUBS_KEY),
@@ -905,12 +940,17 @@ async function purgeFolder(dir: string) {
  * under `torrent:<hash>/<index>` (see `sourceId`), so a prefix match over the
  * identity is the whole rule — where excluding a folder asks the same stores a
  * path-shaped question, this asks an id-shaped one and the stores do not care
- * which. The path-keyed ones (the folder track scope, the downloaded subtitles,
- * the resume snapshot) simply match nothing, which is the right answer: a
- * torrent has no folder, and its snapshot holds a loopback URL.
+ * which.
+ *
+ * The folder track scope answers it too, and used to be listed here as one of
+ * the stores that could not: a torrent's folder key is `torrent:<hash>/`, i.e.
+ * this prefix exactly (`torrentFolderKey` is what both sides call), so
+ * forgetting a season takes the dub chosen for it. The genuinely path-keyed
+ * ones — the downloaded subtitles, the resume snapshot — still match nothing,
+ * which is the right answer: a torrent's snapshot holds a loopback URL.
  */
 export function purgeTorrentHistory(infoHash: string) {
-  const prefix = `torrent:${infoHash.toLowerCase()}/`;
+  const prefix = torrentFolderKey(infoHash);
   const mine = (id: string) => id.toLowerCase().startsWith(prefix);
   purgeStores(mine);
   for (const item of history.recent) {

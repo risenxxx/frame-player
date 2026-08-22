@@ -105,6 +105,20 @@ export function torrentId(infoHash: string, index: number): string {
 }
 
 /**
+ * The scope every episode of one torrent shares: `torrent:<infohash>/`.
+ *
+ * Two things are the same string here, and keeping them one expression is the
+ * point rather than a tidiness. It is the folder key the remembered-track store
+ * files a season's dub under (`folderScopeKey`), and it is the prefix
+ * `purgeTorrentHistory` matches an episode id against — so forgetting a torrent
+ * reaches that dub for free, and the day the two are spelled apart the leak is
+ * silent: a purge that misses one store looks exactly like one that worked.
+ */
+export function torrentFolderKey(infoHash: string): string {
+  return `torrent:${infoHash.toLowerCase()}/`;
+}
+
+/**
  * A stable key for a source.
  *
  * Local paths pass through untouched. A URL is canonicalised: the scheme and

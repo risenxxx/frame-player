@@ -171,6 +171,50 @@ describe('remembered tracks', () => {
     expect(trackWishFor('https://youtube.com/watch?v=one', 'audio')).toMatchObject({ lang: 'ru' });
   });
 
+  it('gives a torrent a folder scope, so the next episode inherits the dub', () => {
+    // The bug this exists for: an episode plays from a loopback URL, so it read
+    // as a network source and lost the folder scope on both sides — every
+    // episode of a season an island. Picking a dub on the first one taught the
+    // second nothing, and mpv's `alang` then took the first track of the right
+    // language, which on a release carrying seven Russian dubs is the wrong one.
+    const HASH = '78bcf88ca2dca689d8e0ac2551b7a38e9a404773';
+    const ep = (i: number) => `http://127.0.0.1:51234/t/${HASH}/${i}/ep${i}.mkv`;
+    rememberTrack(ep(0), 'audio', {
+      lang: 'rus',
+      title: 'Lostfilm',
+      codec: 'eac3',
+      forced: false,
+      index: 2,
+    });
+    // The next episode of the same torrent, which has no entry of its own.
+    expect(trackWishFor(ep(1), 'audio')).toMatchObject({ title: 'Lostfilm' });
+    // A different torrent does not inherit it.
+    const other = `http://127.0.0.1:51234/t/${'a'.repeat(40)}/1/ep1.mkv`;
+    expect(trackWishFor(other, 'audio')).toBeNull();
+    // And the port is not part of the scope: it belongs to the session and is a
+    // different number next launch, which is the whole reason ids are not URLs.
+    expect(trackWishFor(ep(1).replace('51234', '60000'), 'audio')).toMatchObject({
+      title: 'Lostfilm',
+    });
+  });
+
+  it('files a torrent under the same string the torrent purge asks about', () => {
+    // The folder key doubles as `purgeTorrentHistory`'s prefix, so forgetting a
+    // season takes the dub chosen for it. Spelled apart, the leak is silent —
+    // a purge that misses one store looks exactly like one that worked.
+    const HASH = '78bcf88ca2dca689d8e0ac2551b7a38e9a404773';
+    rememberTrack(`http://127.0.0.1:51234/t/${HASH}/0/ep0.mkv`, 'audio', {
+      lang: 'rus',
+      title: 'Lostfilm',
+      codec: 'eac3',
+      forced: false,
+      index: 2,
+    });
+    expect(localStorage.getItem('frameplayer.tracks.folder')).not.toBeNull();
+    purgeTorrentHistory(HASH);
+    expect(JSON.parse(localStorage.getItem('frameplayer.tracks.folder')!)).toEqual({});
+  });
+
   it('records nothing for a private path, and answers nothing about one', () => {
     history.prefs = { enabled: true, excluded: ['/Private'] };
     rememberTrack('/Private/a.mkv', 'audio', {
