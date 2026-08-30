@@ -325,6 +325,10 @@ class DropCounter {
 class Player {
   ready = $state(false);
   initError = $state<string | null>(null);
+  /// mpv refused something in the viewer's own mpv.conf, and the player is
+  /// running without that file. Carries mpv's message, which names the option.
+  /// Distinct from `initError`, which means there is no player at all.
+  confError = $state<string | null>(null);
 
   /// False, matching mpv: pause is never set at init, so an idle player is
   /// unpaused. The old `true` showed a Play icon over already-running video
@@ -624,24 +628,73 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
   };
 
   // The user's mpv.conf (%APPDATA%/<app>/mpv.conf) goes on top of the defaults,
-  // mpv-style: the last line wins. Applied at startup.
+  // mpv-style: the last line wins. Kept as a map of its own rather than merged
+  // in place, because it is the half that may be wrong — see `start` below.
+  let userOptions: Record<string, string> = {};
   try {
     const conf = await invoke<{ path: string; options: [string, string][] }>('user_mpv_conf');
     player.mpvConfPath = conf.path;
-    for (const [k, v] of conf.options) initialOptions[k] = v;
+    userOptions = Object.fromEntries(conf.options);
   } catch (e) {
     console.warn('user_mpv_conf failed:', e);
   }
 
-  const mpvConfig: MpvConfig = { initialOptions, observedProperties: OBSERVED };
+  /**
+   * Start mpv, and do not let somebody's mpv.conf be the reason there is no
+   * player.
+   *
+   * mpv refuses an option it does not know, and refuses *initialization* when
+   * it does — so one bad line takes the whole player down. Calling that a typo
+   * misses what actually happens: options are **removed between mpv versions**
+   * (0.41 dropped `--alpha` in favour of `--background`), so a config that
+   * worked for a year stops working on an upgrade the viewer never asked for,
+   * and it takes the player with it.
+   *
+   * The failure is also the worst shape it could be. Nothing crashes: the
+   * window opens, the start screen draws, everything looks alive — and then the
+   * first file hangs for ever on "opening…", because it is being handed to an
+   * mpv that was never initialized. Nothing on screen connects that to a line
+   * in a text file.
+   *
+   * So the viewer's half is dropped and init is retried without it, with mpv's
+   * own message kept: it names the offending option, which is the one thing
+   * needed to fix the file. Our own defaults stay strict — a failure there is a
+   * bug in this file rather than a configuration, and starting anyway would
+   * hide it. Retrying after a failed `init` may itself not be allowed by the
+   * plugin, and that costs nothing: the second failure lands on the same
+   * `initError` the single attempt used to produce.
+   */
+  const start = async (): Promise<boolean> => {
+    const attempt = async (options: Record<string, string | number | boolean>) => {
+      const config: MpvConfig = { initialOptions: options, observedProperties: OBSERVED };
+      await init(config);
+    };
 
-  try {
-    await init(mpvConfig);
-  } catch (e) {
-    player.initError = String(e);
-    return unlisteners;
-  }
+    if (Object.keys(userOptions).length > 0) {
+      try {
+        await attempt({ ...initialOptions, ...userOptions });
+        return true;
+      } catch (e) {
+        player.confError = String(e);
+        console.warn('mpv refused something from mpv.conf; starting without it:', e);
+      }
+    }
+
+    try {
+      await attempt(initialOptions);
+      return true;
+    } catch (e) {
+      player.initError = String(e);
+      return false;
+    }
+  };
+
+  if (!(await start())) return unlisteners;
   player.ready = true;
+  // Said out loud rather than left in the console: the viewer's settings are
+  // silently not in force, and the alternative to a popup is finding out weeks
+  // later that the subtitle size in that file never applied.
+  if (player.confError) showOsd(t('osd.conf_ignored'), { sub: player.confError });
   // The user's mpv.conf is merged over `initialOptions`, so a `loop-file` line
   // in it would win — and the repeat button would then be lying about what the
   // player is doing. A control with its own persisted state has to be the

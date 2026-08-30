@@ -73,6 +73,7 @@ const ru = {
   'error.mpv_hint':
     'Проверьте, что libmpv-2.dll и libmpv-wrapper.dll лежат в src-tauri/lib/ (см. README).',
 
+  'osd.conf_ignored': 'mpv.conf не применён',
   'osd.settings_failed': 'Не удалось открыть параметры',
   'osd.setting_failed': 'Не удалось сохранить настройку',
   'osd.display_hdr': 'Дисплей: HDR',
@@ -235,6 +236,8 @@ const ru = {
   'torrent.cache_hint':
     'Просмотр торрента пишет куски файла на диск. Удаляются все скачанные данные — начатые фильмы придётся качать заново. Из выбранной вами папки удаляется только то, что скачал плеер.',
   'torrent.cache_cleared': 'Освобождено {size}',
+  'torrent.delete_failed': 'Не удалось удалить: {reason}',
+  'torrent.delete_stuck': 'плеер не дождался ответа, перезапустите его',
 
   'subs.title': 'Поиск субтитров',
   'subs.placeholder': 'Название фильма или сериала',
@@ -534,6 +537,11 @@ const ru = {
   'set.hwdec_sw':
     'программное (аппаратное недоступно для этого кодека — точная перемотка будет медленнее)',
   'set.hwdec_hw': 'аппаратное, {name}',
+  // Says «файл целиком» on purpose: mpv refuses initialization over one bad
+  // option, so the loss is never just that line — and a viewer who reads it as
+  // "one setting was skipped" will go looking for the wrong thing.
+  'set.conf_ignored':
+    'mpv отверг настройку из mpv.conf, поэтому файл не применён целиком — плеер запущен с настройками по умолчанию. Ответ mpv:',
   'set.conf_foot':
     'Настройки mpv сохраняются в mpv.conf и применяются сразу. Тонкая настройка — в самом файле:',
   'set.conf_reveal_mac': 'показать mpv.conf в Finder',
@@ -842,6 +850,7 @@ const en: Record<MessageKey, string> = {
   'error.mpv_hint':
     'Check that libmpv-2.dll and libmpv-wrapper.dll are in src-tauri/lib/ (see README).',
 
+  'osd.conf_ignored': 'mpv.conf was not applied',
   'osd.settings_failed': 'Could not open settings',
   'osd.setting_failed': 'Could not save the setting',
   'osd.display_hdr': 'Display: HDR',
@@ -1002,6 +1011,8 @@ const en: Record<MessageKey, string> = {
   'torrent.cache_hint':
     'Streaming a torrent writes pieces to disk. This deletes all of them — films you started will download again from scratch. In a folder you chose, only what the player downloaded is removed.',
   'torrent.cache_cleared': 'Freed {size}',
+  'torrent.delete_failed': 'Could not delete: {reason}',
+  'torrent.delete_stuck': 'the player gave up waiting — restart it',
 
   'subs.title': 'Find subtitles',
   'subs.placeholder': 'Film or series title',
@@ -1288,6 +1299,8 @@ const en: Record<MessageKey, string> = {
   'set.hwdec_sw':
     'software (hardware decoding is unavailable for this codec — exact seeking will be slower)',
   'set.hwdec_hw': 'hardware, {name}',
+  'set.conf_ignored':
+    'mpv refused a setting in mpv.conf, so the whole file was left unapplied — the player started with its defaults. What mpv said:',
   'set.conf_foot':
     'mpv settings are stored in mpv.conf and applied immediately. Fine-tuning lives in the file itself:',
   'set.conf_reveal_mac': 'show mpv.conf in Finder',

@@ -1404,6 +1404,15 @@
       </div>
     {/if}
     {/if}
+    <!-- The durable half of the report. The popup at startup is easy to miss,
+         and this is the one place a viewer comes to when a setting of theirs is
+         not doing anything — with the file that caused it one click away. -->
+    {#if player.confError}
+      <div class="settings-foot conf-error">
+        {t('set.conf_ignored')}
+        <span class="conf-error-detail">{player.confError}</span>
+      </div>
+    {/if}
     <div class="settings-foot">
       {t('set.conf_foot')}
       <button
@@ -1428,6 +1437,22 @@
 </Dialog>
 
 <style>
+  /* Written to beat `.settings-foot` in app.css rather than left to whichever
+     stylesheet lands later — two bugs in this project came from a lone modifier
+     class of equal weight losing that race. */
+  .settings-foot.conf-error {
+    color: #f87171;
+  }
+
+  /* mpv's own words, which name the option. Its own line and its own colour:
+     it is evidence to read, not part of the sentence above it. */
+  .conf-error-detail {
+    display: block;
+    margin-top: 4px;
+    color: #9a9aa5;
+    overflow-wrap: anywhere;
+  }
+
   /* ---- Toggle row ---- */
 
 

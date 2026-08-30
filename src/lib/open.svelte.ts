@@ -52,6 +52,7 @@ import { queueTorrent } from './playlist.svelte';
 import { isMagnet, isTorrentLink, magnetFor } from './source';
 import {
   addTorrent,
+  DELETE_STUCK,
   findSupersededTorrent,
   forgetTorrent,
   listTorrents,
@@ -67,6 +68,7 @@ import {
   torrentVideos,
   updateTorrent,
   watchedFiles,
+  withDeadline,
   type CatalogOrigin,
   type RememberedTorrent,
   type TorrentFile,
@@ -546,8 +548,15 @@ export async function togglePortForward() {
 }
 
 export async function clearTorrentCache() {
-  const freed = await invoke<number>('torrent_clear_cache').catch(() => 0);
-  showOsd(t('torrent.cache_cleared', { size: fmtSize(freed) }));
+  // Reported rather than swallowed, like the two per-row deletions: this walks
+  // every root and can fail per folder, and "Freed 0 B" over a cache that is
+  // still full is the same lie in a different place.
+  try {
+    const freed = await withDeadline(invoke<number>('torrent_clear_cache'));
+    showOsd(t('torrent.cache_cleared', { size: fmtSize(freed) }));
+  } catch (e) {
+    reportDeleteFailure(e);
+  }
 }
 
 /**
@@ -691,15 +700,29 @@ export async function deleteWatchedFiles(row: TorrentRow) {
   if (!names.length) return;
   opening.rowBusy = row.folder;
   try {
-    const freed = await invoke<number>('torrent_forget_files', {
-      path: row.path,
-      names,
-    }).catch(() => 0);
-    await refreshTorrents();
+    const freed = await withDeadline(
+      invoke<number>('torrent_forget_files', { path: row.path, names }),
+    );
     showOsd(t('torrent.cache_cleared', { size: fmtSize(freed) }));
+  } catch (e) {
+    reportDeleteFailure(e);
   } finally {
+    // **In `finally`, so a failure re-reads the disk too.** A deletion that
+    // stopped halfway has changed what is there, and the row is the only place
+    // that says so.
+    await refreshTorrents();
     opening.rowBusy = null;
   }
+}
+
+/// Say which deletion failed and why, rather than reporting that nothing was
+/// freed — see `forgetTorrent` for how that message came to be the same one
+/// success shows. The console line is for the case the sentence cannot carry:
+/// Rust's own error text is English and often a path.
+function reportDeleteFailure(e: unknown) {
+  console.error('[torrent] delete failed:', e);
+  const reason = e === DELETE_STUCK ? t('torrent.delete_stuck') : String(e);
+  showOsd(t('torrent.delete_failed', { reason }));
 }
 
 /// Delete a torrent completely — data, history, magnet. One action, because a
@@ -714,10 +737,14 @@ export async function deleteTorrent(row: TorrentRow) {
       purgeTorrentHistory(row.info_hash);
       if (row.known) forgetLink(row.known.magnet);
     }
-    await refreshTorrents();
     opening.box.recent = recentLinks();
     showOsd(t('torrent.cache_cleared', { size: fmtSize(freed) }));
+  } catch (e) {
+    // The history is deliberately kept: the data is still there, so the
+    // positions and the magnet are still about something.
+    reportDeleteFailure(e);
   } finally {
+    await refreshTorrents();
     opening.rowBusy = null;
   }
 }

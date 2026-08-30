@@ -808,6 +808,35 @@ export function torrentPositions(
   return out;
 }
 
+/// How long a deletion may take before the player stops waiting on it.
+///
+/// **A backstop against "never", not a bound on the work.** Removing a season is
+/// seconds, and the Rust side now puts its own deadline on the one step that
+/// could sit for ever — but a command that never answers at all (a panic inside
+/// it resolves nothing, which is a real failure mode of the crate underneath)
+/// would leave `rowBusy` set for the rest of the run, and every button on that
+/// row dead with nothing on screen to say why. That is the one failure a viewer
+/// cannot get out of without restarting the player, which is why it is worth a
+/// timer even though it should never fire.
+const DELETE_DEADLINE_MS = 60_000;
+
+/// What a deadline rejects with, so the caller can say *that* rather than print
+/// the word "timeout" at somebody.
+export const DELETE_STUCK = 'delete_stuck';
+
+/// Stop waiting after `ms`. The work is **not** cancelled — nothing here can
+/// recall a command already in flight — this only stops the UI from waiting on
+/// an answer that may never come.
+export function withDeadline<T>(work: Promise<T>, ms = DELETE_DEADLINE_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    work.finally(() => clearTimeout(timer)),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(DELETE_STUCK), ms);
+    }),
+  ]);
+}
+
 /**
  * Delete a torrent completely: its data, and everything remembered about it.
  *
@@ -816,13 +845,21 @@ export function torrentPositions(
  * supplies the history removal (positions and tracks live in history.svelte.ts
  * and are keyed by `torrent:<hash>/<index>`, which only that module knows how to
  * walk), so this returns the bytes freed and leaves the rest to it.
+ *
+ * **It throws rather than answering zero.** This used to end in
+ * `.catch(() => 0)`, which turned every possible failure — a refused path, a
+ * directory that would not go, a command that never returned — into the same
+ * "Freed 0 B" the successful case shows, with nothing written anywhere. So a
+ * torrent that could not be deleted reported the deletion and stayed in the
+ * list, which is indistinguishable from a torrent that was deleted and came
+ * back, and neither the viewer nor a log could tell which had happened.
  */
 export async function forgetTorrent(row: TorrentRow): Promise<number> {
   // **By path, not by name.** With the folder now possibly living in a
   // directory the viewer chose, a bare name is ambiguous between roots — and
   // the Rust side validates the path against the roots it knows rather than
   // trusting that this row came from `list`.
-  const freed = await invoke<number>('torrent_forget', { path: row.path }).catch(() => 0);
+  const freed = await withDeadline(invoke<number>('torrent_forget', { path: row.path }));
   if (row.info_hash) {
     forgetRememberedTorrent(row.info_hash);
     if (torrent.info?.info_hash === row.info_hash) {

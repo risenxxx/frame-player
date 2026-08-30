@@ -98,6 +98,12 @@ const SEED_ANNOUNCE_TRACKERS: usize = 4;
 /// on piece arrival rather than on the buffer.
 const STREAM_CHUNK: usize = 65536;
 
+/// How long a torrent may take to leave the session before its files are
+/// touched anyway. See `drop_from_session` for why that is a deadline and not a
+/// wait: everything on the other side of it is a deletion the viewer asked for,
+/// and a step that only ever *helps* must not be able to cancel one.
+const SESSION_DROP_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// librqbit's own session store, inside our cache so `torrent_clear_cache`
 /// takes it with everything else. A dot name so `torrent_list` skips it — it is
 /// ours, not a torrent occupying space.
@@ -1065,16 +1071,7 @@ impl TorrentService {
             return;
         }
 
-        let session = {
-            let mut inner = self.inner.lock().await;
-            inner.torrents.remove(&hash);
-            inner.session.clone()
-        };
-        if let Some(session) = session {
-            if let Ok(id) = librqbit::api::TorrentIdOrHash::parse(&hash) {
-                let _ = session.delete(id, false).await;
-            }
-        }
+        self.drop_from_session(&hash).await;
         match std::fs::rename(&from, &to) {
             Ok(()) => eprintln!("[torrent] {hash} renamed to {:?}", to.file_name()),
             Err(e) => eprintln!("[torrent] could not rename {hash}: {e}"),
@@ -1254,14 +1251,30 @@ impl TorrentService {
     /// so re-opening the same magnet continues instead of starting over. What it
     /// does end is the uploading and the peer connections, which must not
     /// outlive the viewing.
+    ///
+    /// **The lock is dropped before the wait, and that is not tidiness.**
+    /// `session.pause` reaches `ManagedTorrent::pause`, which blocks on the
+    /// torrent's own state lock — a lock a stream read holds for the whole of
+    /// its `pread`, and which upstream refuses outright while the storage is
+    /// still borrowed. Held across that await, `inner` would be unavailable for
+    /// as long as any of it takes, and **every** torrent command waits on
+    /// `inner`: deleting a torrent, pruning its watched episodes, the status
+    /// poll, opening the next magnet. This runs at exactly the wrong moment for
+    /// that — leaving a film for the start screen — which is the click before
+    /// the viewer reaches for the delete button beside it. Every other lock in
+    /// this file is already taken this way; this was the one that was not.
     pub async fn release(&self, info_hash: &str) {
-        let inner = self.inner.lock().await;
-        let (Some(session), Some(entry)) = (inner.session.clone(), inner.torrents.get(info_hash))
-        else {
-            return;
+        let (session, handle) = {
+            let inner = self.inner.lock().await;
+            let (Some(session), Some(entry)) =
+                (inner.session.clone(), inner.torrents.get(info_hash))
+            else {
+                return;
+            };
+            (session, entry.handle.clone())
         };
-        if !entry.handle.is_paused() {
-            let _ = session.pause(&entry.handle).await;
+        if !handle.is_paused() {
+            let _ = session.pause(&handle).await;
         }
     }
 
@@ -1326,6 +1339,66 @@ impl TorrentService {
         out
     }
 
+    /// Take a torrent out of the session — and never let that step decide
+    /// whether its files may be touched.
+    ///
+    /// Everything below this has to get librqbit's hands off the data first: on
+    /// Windows an open file cannot be removed at all, and on macOS it can, which
+    /// is worse, since it leaves pieces being written through a handle to a path
+    /// that no longer has a name. What none of those callers may do is make the
+    /// disk work *conditional* on this succeeding, and two properties of
+    /// `Session::delete` are why.
+    ///
+    /// It blocks on the torrent's own state lock, which a stream read holds for
+    /// the whole of its `pread`, so on a torrent something is still reading it
+    /// can sit there — and a bare `.await` sits with it, holding nothing but
+    /// costing the caller everything. And it carries an `expect` on metadata
+    /// that a magnet still resolving does not have; **a panic inside a Tauri
+    /// command never resolves the promise at all**, so the frontend waits for
+    /// ever, and the row it disabled while it waited stays disabled for the rest
+    /// of the run. Both failures look identical from outside, and identical to
+    /// each other: a delete button that does nothing, silently.
+    ///
+    /// Hence a spawned task with a deadline — spawning is what turns a panic
+    /// into an error and a blocking call into somebody else's stuck thread — and
+    /// a failure that is logged rather than returned. The directory is ours to
+    /// remove whatever librqbit thinks of it, and a torrent left in the session
+    /// store with no folder on disk is precisely what `prune_orphaned_store`
+    /// collects at the next launch.
+    async fn drop_from_session(&self, hash: &str) {
+        let session = {
+            let mut inner = self.inner.lock().await;
+            inner.torrents.remove(hash);
+            inner.session.clone()
+        };
+        // Lazy session, and deleting from the start screen rarely follows
+        // opening something — so this is the common path, and it is free.
+        let Some(session) = session else {
+            return;
+        };
+        // **By hash, never by the handle we happen to be holding.** `torrents`
+        // is filled by `add` alone, so a handle covers a torrent opened in *this*
+        // run and nothing else — a torrent the session restored at startup was
+        // invisible to it, and deleting one therefore left librqbit's own record
+        // behind, which restored the folder at the next launch as a nameless
+        // zero-byte row. `Session::delete` resolves a hash against its own db,
+        // which holds the restored ones too.
+        //
+        // `delete_files: false` — the files are the caller's to remove or to
+        // keep, and doing it here would depend on librqbit agreeing with us
+        // about which of them belong to this torrent.
+        let Ok(id) = librqbit::api::TorrentIdOrHash::parse(hash) else {
+            return;
+        };
+        let task = tauri::async_runtime::spawn(async move { session.delete(id, false).await });
+        match tokio::time::timeout(SESSION_DROP_TIMEOUT, task).await {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(e))) => eprintln!("[torrent] {hash} could not leave the session: {e:#}"),
+            Ok(Err(e)) => eprintln!("[torrent] {hash} panicked leaving the session: {e}"),
+            Err(_) => eprintln!("[torrent] {hash} did not leave the session in time"),
+        }
+    }
+
     /// Hand one torrent's data over to its replacement.
     ///
     /// **BitTorrent has no way to add a file to a torrent** — the info hash
@@ -1386,15 +1459,7 @@ impl TorrentService {
         }
 
         // The old torrent must not be holding the files open across the rename.
-        let (session, entry) = {
-            let mut inner = self.inner.lock().await;
-            (inner.session.clone(), inner.torrents.remove(&old_hash))
-        };
-        if let (Some(session), Some(entry)) = (session, entry) {
-            let _ = session
-                .delete(librqbit::api::TorrentIdOrHash::Id(entry.handle.id()), false)
-                .await;
-        }
+        self.drop_from_session(&old_hash).await;
 
         std::fs::rename(&from, &to).map_err(|e| format!("{e}"))?;
         // The cached metadata describes the torrent that no longer owns this
@@ -1435,31 +1500,12 @@ impl TorrentService {
         // readable hash at all is one from the older name-based layout, which
         // can be measured and deleted but was never in any session.
         if let Some(hash) = folder_hash(&folder) {
-            let session = {
-                let mut inner = self.inner.lock().await;
-                inner.torrents.remove(&hash);
-                inner.session.clone()
-            };
-            if let Some(session) = session {
-                // **By hash, never by the handle we happen to be holding.** This
-                // used to look the torrent up in `inner.torrents`, which is
-                // filled by `add` alone — so it covered a torrent opened in
-                // *this* run and nothing else. A torrent the session restored
-                // from its own store was invisible to it, and deleting one
-                // therefore removed the directory and our record of it while
-                // leaving librqbit's: the next session restored it, and
-                // restoring **recreates the folder** (see `prune_orphaned_store`
-                // for why), so it came back as a nameless zero-byte row on the
-                // start screen. `Session::delete` resolves a hash against its
-                // own db, which holds restored torrents too.
-                //
-                // `delete_files: false` — the directory is ours to remove below,
-                // and doing it here would depend on librqbit agreeing with us
-                // about which files belong to this torrent.
-                if let Ok(id) = librqbit::api::TorrentIdOrHash::parse(&hash) {
-                    let _ = session.delete(id, false).await;
-                }
-            }
+            // Bounded, and its failure is only ever logged — see
+            // `drop_from_session`. What must not happen is that a torrent the
+            // session cannot let go of makes the data undeletable: the folder
+            // below is ours by every check above, and a store entry pointing at
+            // a folder that is gone is collected at the next launch.
+            self.drop_from_session(&hash).await;
             // The cached metadata describes a torrent that is being thrown away.
             // Left behind it is a couple of hundred kilobytes per deleted
             // torrent, in a directory whose whole point is that its size is
@@ -1522,16 +1568,7 @@ impl TorrentService {
         let wanted: std::collections::HashSet<&str> = names.iter().map(String::as_str).collect();
 
         if let Some(hash) = path.file_name().and_then(|n| n.to_str()).and_then(folder_hash) {
-            let session = {
-                let mut inner = self.inner.lock().await;
-                inner.torrents.remove(&hash);
-                inner.session.clone()
-            };
-            if let Some(session) = session {
-                if let Ok(id) = librqbit::api::TorrentIdOrHash::parse(&hash) {
-                    let _ = session.delete(id, false).await;
-                }
-            }
+            self.drop_from_session(&hash).await;
         }
 
         let mut freed = 0u64;
