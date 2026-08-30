@@ -401,6 +401,17 @@
     { id: 'tv', label: t('set.tab_tv') },
     { id: 'keys', label: t('set.tab_keys') },
   ]);
+  /// The row scrolls sideways when the labels do not fit — which is invisible
+  /// by design (`scrollbar-width: none`), so a tab past the edge is simply
+  /// gone. That is fine for a row you can reach with a drag and wrong for the
+  /// one tab that has to be legible at all times, hence: whichever section is
+  /// showing is brought into the row. `nearest` on both axes, so a tab already
+  /// in view moves nothing at all and the sheet's own vertical scroll is never
+  /// touched.
+  const tabEls: Partial<Record<SettingsTab, HTMLButtonElement>> = {};
+  $effect(() => {
+    tabEls[settingsTab]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
 
   // ---- Watching together ----
   // Written on `change` rather than on every keystroke: a half-typed host is a
@@ -755,7 +766,11 @@
   });
 </script>
 
-<Dialog title={t('set.title')} scrollable {onclose}>
+<!-- The tab row is passed to the shell rather than written as the first thing
+     in the body, which is the whole of what makes it stay on screen: the shell
+     pins its head and this together, so the row that says which of the eight
+     sections you are reading cannot scroll away from the section itself. -->
+{#snippet tabs(toTop: () => void)}
   <div class="tabs" role="tablist">
     {#each SETTINGS_TABS as tab (tab.id)}
       <button
@@ -763,12 +778,19 @@
         class:sel={settingsTab === tab.id}
         role="tab"
         aria-selected={settingsTab === tab.id}
-        onclick={() => (settingsTab = tab.id)}
+        bind:this={tabEls[tab.id]}
+        onclick={() => {
+          settingsTab = tab.id;
+          toTop();
+        }}
       >
         {tab.label}
       </button>
     {/each}
   </div>
+{/snippet}
+
+<Dialog title={t('set.title')} scrollable header={tabs} {onclose}>
   {#if settingsTab === 'general'}
     <div class="setting">
       <div class="setting-label">{t('set.language')}</div>
