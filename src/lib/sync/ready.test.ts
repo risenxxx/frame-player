@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isBusy, type Readiness } from './ready';
+import { isBusy, readinessOf, type Readiness } from './ready';
 
 /// A guest in a room that is watching something, with their own copy playing.
 function guest(over: Partial<Readiness> = {}): Readiness {
@@ -75,5 +75,43 @@ describe('holding the room up', () => {
     // Opening outranks a failure and an unopenable reference alike: those
     // describe the *previous* answer, and this one has not come back yet.
     expect(isBusy(guest({ opening: true, failed: true, unopenable: true }))).toBe(true);
+  });
+});
+
+// What the others are told. Not decoration: "loading" for all of it is what
+// made a room unable to distinguish somebody two minutes into a download from
+// somebody whose torrent never resolved, and the second is when you stop
+// waiting and start talking to them.
+describe('what the room is told', () => {
+  const reason = (over: Partial<Readiness> = {}) => readinessOf(guest(over)).reason;
+
+  it('says nothing while the film is running', () => {
+    expect(reason()).toBe('');
+  });
+
+  it('separates fetching the film from waiting for its bytes', () => {
+    expect(reason({ opening: true })).toBe('opening');
+    expect(reason({ hasFile: false, playing: false })).toBe('opening');
+    expect(reason({ stalled: true })).toBe('buffering');
+    expect(reason({ playing: false })).toBe('buffering');
+  });
+
+  it('says why it stopped waiting, which is the half a ready flag cannot carry', () => {
+    const empty = { hasFile: false, playing: false };
+    expect(readinessOf(guest({ ...empty, failed: true }))).toEqual({
+      ready: true,
+      reason: 'failed',
+    });
+    expect(readinessOf(guest({ ...empty, unopenable: true }))).toEqual({
+      ready: true,
+      reason: 'unopenable',
+    });
+  });
+
+  it('says nothing about the room once this viewer is watching something else', () => {
+    // A failure that a viewer has answered by opening their own copy is over.
+    // What the room needs from them now is a position, not an excuse.
+    expect(reason({ failed: true })).toBe('');
+    expect(reason({ unopenable: true })).toBe('');
   });
 });

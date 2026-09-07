@@ -72,10 +72,24 @@ export function isMagnet(src: string): boolean {
  *
  * The `dn` is a display name and nothing more — it is what keeps a recents row
  * readable, and it is exactly what a tracker's own magnet carries.
+ *
+ * **Trackers are optional and are for the magnet that leaves this machine.**
+ * Everything remembered here reopens against the metadata cached beside the
+ * data, so locally the bare hash is enough and the callers that store one pass
+ * nothing — which also keeps a magnet built today identical to one built last
+ * year, so the recents list does not grow a second row for the same torrent.
+ * What needs them is `contentOf`: a guest handed a hash and no trackers has the
+ * DHT and nothing else, and on a network that filters UDP that is the whole
+ * difference between resolving and timing out.
  */
-export function magnetFor(infoHash: string, name?: string | null): string {
+export function magnetFor(
+  infoHash: string,
+  name?: string | null,
+  trackers?: readonly string[],
+): string {
   const dn = name ? `&dn=${encodeURIComponent(name)}` : '';
-  return `magnet:?xt=urn:btih:${infoHash}${dn}`;
+  const tr = (trackers ?? []).map((t) => `&tr=${encodeURIComponent(t)}`).join('');
+  return `magnet:?xt=urn:btih:${infoHash}${dn}${tr}`;
 }
 
 /**

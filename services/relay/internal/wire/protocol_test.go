@@ -114,7 +114,7 @@ func TestWireFieldsMatchSharedContract(t *testing.T) {
 		v    any
 	}{
 		{"timeline", tl},
-		{"member", Member{ID: "m1", Name: "n", Ready: true}},
+		{"member", Member{ID: "m1", Name: "n", Ready: true, Reason: "buffering"}},
 
 		{"client:hello", ClientMsg{T: "hello", Ver: 1, Room: "ABC123", Name: "n"}},
 		{"client:timeline", ClientMsg{T: "timeline", Timeline: &tl}},

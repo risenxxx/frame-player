@@ -43,7 +43,7 @@ import { addTorrent, torrent, torrentFailureText, torrentVideos } from '../torre
 import { followRoomTrack } from '../tracks.svelte';
 import { compareLocal, contentOf, sameContent, type MatchVerdict } from './content';
 import { correctionFor, deadbandFor, speedChanged } from './drift';
-import { isBusy } from './ready';
+import { readinessOf } from './ready';
 import type { ContentRef, Timeline, TrackKind } from './protocol';
 
 /// Both kinds, in one place, so a loop over them cannot forget one.
@@ -146,7 +146,7 @@ export function initSync() {
   // every mistake is invisible from outside, so it is pinned by tests rather
   // than by reading an effect.
   $effect(() => {
-    const busy = isBusy({
+    const { ready, reason } = readinessOf({
       hasFile: player.hasFile,
       // See `startedSrc`: "a file is open" is not "playback began".
       playing: startedSrc === player.filePath,
@@ -156,7 +156,7 @@ export function initSync() {
       unopenable: sync.unopenable !== null,
       roomHasContent: wire.timeline.content !== null,
     });
-    reportReady(!busy, busy ? 'buffering' : '');
+    reportReady(ready, reason);
   });
 
   // The room's track choices, per kind and only for the kinds the room shares.
@@ -327,6 +327,24 @@ async function openContent(ref: ContentRef | null) {
   } finally {
     if (!run.stale) sync.opening = false;
   }
+}
+
+/**
+ * Have another go at what the room is watching.
+ *
+ * **A failed open is never retried by itself, and that is deliberate rather
+ * than an omission**: the room re-states the same content with every pause and
+ * every seek, so anything automatic would be a magnet resolve every few
+ * seconds for as long as the film runs. But it left the only way back into the
+ * evening as leaving the room and joining it again — for a swarm that was slow
+ * once, or a VPN that has since been switched, which is most of them.
+ *
+ * Reachable from the panel's failure line, which is where the failure still
+ * exists: the popup that announced it is long gone.
+ */
+export function retryOpen() {
+  if (!wire.on || !sync.failed) return;
+  void openContent(wire.timeline.content);
 }
 
 /**

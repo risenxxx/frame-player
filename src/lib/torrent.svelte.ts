@@ -45,6 +45,10 @@ export interface TorrentInfo {
   info_hash: string;
   name: string | null;
   files: TorrentFile[];
+  /// The trackers the torrent itself names, capped in Rust (`trackers_of`).
+  /// Only ever used to build a magnet for somebody *else* to open — see
+  /// `magnetFor`.
+  trackers: string[];
 }
 
 export interface TorrentStatus {
@@ -206,6 +210,14 @@ class TorrentState {
   info = $state<TorrentInfo | null>(null);
   /// Live figures for the file being played. Null when nothing is polling.
   status = $state<TorrentStatus | null>(null);
+  /// Since when the swarm has had nobody in it, or 0.
+  ///
+  /// A count of zero is an ordinary reading for the first few seconds of any
+  /// torrent and a diagnosis after half a minute, and the player had no way to
+  /// tell those apart: "Подключаемся к раздаче…" stood unchanged for as long as
+  /// it took the viewer to give up. Kept here rather than derived because it is
+  /// a fact about *time*, and the status object is what carries the moment.
+  peerlessSince = $state(0);
   /// A magnet is being resolved: the DHT lookup that turns an info hash into a
   /// file list, which routinely takes ten seconds and can take ninety.
   resolving = $state(false);
@@ -622,6 +634,7 @@ export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
     if (!ref) {
       torrent.status = null;
       torrent.buffered = [];
+      torrent.peerlessSince = 0;
       return;
     }
 
@@ -633,6 +646,11 @@ export function trackTorrentPlayback(onFileComplete: () => void = () => {}) {
         });
         if (run.stale) return;
         torrent.status = status;
+        // Only a *live* torrent with nobody in its swarm is evidence of
+        // anything: `initializing` is librqbit hashing what is already on disk,
+        // where a peer count of zero is what it should be.
+        if (status.state !== 'live' || status.peers > 0) torrent.peerlessSince = 0;
+        else if (!torrent.peerlessSince) torrent.peerlessSince = Date.now();
         // **Recorded here rather than where positions are written**, and that
         // is the dependency direction rather than convenience: the position
         // store must not know what a torrent is, while this poll already knows

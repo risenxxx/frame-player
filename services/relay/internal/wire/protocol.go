@@ -96,6 +96,15 @@ type Member struct {
 	// False while this member is buffering or opening. A room with anyone not
 	// ready is frozen — see `room.reconcileReady`.
 	Ready bool `json:"ready"`
+	// What they last said they were doing, passed through untouched.
+	//
+	// The relay does not interpret it — the vocabulary is the client's and a
+	// new one must not need a redeploy here, the same rule `Content` follows.
+	// It exists because "not ready" on its own is a member who might be
+	// buffering, might still be looking for the torrent, and might have given
+	// up on it — three different situations that were showing as one word on
+	// everybody else's screen, with no way to tell which.
+	Reason string `json:"reason,omitempty"`
 }
 
 // ---- client → relay ---------------------------------------------------------

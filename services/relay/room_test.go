@@ -64,8 +64,8 @@ func roomWithTwo(t *testing.T, now time.Time) (*room, *client, *client) {
 	if _, err := r.join(b, 16, now); err != nil {
 		t.Fatal(err)
 	}
-	r.setReady(a.id, true, now)
-	r.setReady(b.id, true, now)
+	r.setReady(a.id, true, "", now)
+	r.setReady(b.id, true, "", now)
 	if err := r.setTimeline(a.id, playing(0), now); err != nil {
 		t.Fatal(err)
 	}
@@ -140,10 +140,62 @@ func TestJoiningFreezesTheRoomUntilTheNewcomerIsReady(t *testing.T) {
 		t.Fatalf("waiting = %v, want [%s]", members["waiting"], c.id)
 	}
 
-	r.setReady(c.id, true, now)
+	r.setReady(c.id, true, "", now)
 	if r.snapshot().Paused {
 		t.Fatal("the room stayed frozen after everyone was ready")
 	}
+}
+
+// What a member is doing reaches the others, and it reaches them when it
+// changes rather than only when their readiness does.
+//
+// Worth pinning because the failure is a silent one on somebody else's machine:
+// a guest goes from looking for a torrent to downloading it without ever
+// becoming ready in between, and without this the room shows one unchanging
+// word for both — which is exactly the difference between a room that is making
+// progress and one that has hung.
+func TestWhatAMemberIsWaitingOnReachesTheOthers(t *testing.T) {
+	now := time.Now()
+	r, a, _ := roomWithTwo(t, now)
+
+	c := testClient(testHub(), "c")
+	if _, err := r.join(c, 16, now); err != nil {
+		t.Fatal(err)
+	}
+	r.setReady(c.id, false, "opening", now)
+	if got := memberReason(t, a, c.id); got != "opening" {
+		t.Fatalf("reason = %q, want %q", got, "opening")
+	}
+
+	// The readiness answer is the same on both sides of this; only the reason
+	// moved, and that alone has to be broadcast.
+	drainOf(t, a, "members")
+	r.setReady(c.id, false, "buffering", now)
+	if got := memberReason(t, a, c.id); got != "buffering" {
+		t.Fatalf("reason = %q, want %q", got, "buffering")
+	}
+
+	// And it is dropped when there is nothing left to say, rather than standing
+	// next to a member the room is no longer waiting for.
+	r.setReady(c.id, true, "", now)
+	if got := memberReason(t, a, c.id); got != "" {
+		t.Fatalf("reason = %q after becoming ready, want it gone", got)
+	}
+}
+
+// The reason `id` carries in the newest `members` message `c` received.
+func memberReason(t *testing.T, c *client, id string) string {
+	t.Helper()
+	members, _ := lastOf(t, c, "members")["members"].([]any)
+	for _, m := range members {
+		row, _ := m.(map[string]any)
+		if row["id"] == id {
+			reason, _ := row["reason"].(string)
+			return reason
+		}
+	}
+	t.Fatalf("%s is not in the member list", id)
+	return ""
 }
 
 func TestFreezingKeepsThePositionItHadReached(t *testing.T) {
@@ -181,7 +233,7 @@ func TestAHumanPauseSurvivesTheThawing(t *testing.T) {
 	if err := r.setTimeline(a.id, paused, now); err != nil {
 		t.Fatal(err)
 	}
-	r.setReady(c.id, true, now)
+	r.setReady(c.id, true, "", now)
 
 	if !r.snapshot().Paused {
 		t.Fatal("a pause somebody asked for was lifted by the relay when buffering ended")
@@ -203,7 +255,7 @@ func TestResumingWhileSomebodyLoadsMeansResumeWhenTheyAreDone(t *testing.T) {
 	if !r.snapshot().Paused {
 		t.Fatal("the room resumed while a member was still loading")
 	}
-	r.setReady(c.id, true, now)
+	r.setReady(c.id, true, "", now)
 	if r.snapshot().Paused {
 		t.Fatal("the room did not resume once everyone was ready")
 	}
@@ -340,7 +392,7 @@ func TestASlowMemberCostsOnlyThemselves(t *testing.T) {
 		if _, err := r.join(c, 16, now); err != nil {
 			t.Fatal(err)
 		}
-		r.setReady(c.id, true, now)
+		r.setReady(c.id, true, "", now)
 	}
 
 	// The slow member's outbox fills immediately and stays full. The room must
@@ -378,7 +430,7 @@ func TestAMemberAgeingOutOfTheGraceIsAnnounced(t *testing.T) {
 	if _, err := r.join(watcher, 16, now); err != nil {
 		t.Fatal(err)
 	}
-	r.setReady(watcher.id, true, now)
+	r.setReady(watcher.id, true, "", now)
 	if _, err := r.join(stuck, 16, now); err != nil {
 		t.Fatal(err)
 	}

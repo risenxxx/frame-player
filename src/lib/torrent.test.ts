@@ -145,6 +145,7 @@ describe('watched episodes', () => {
     info_hash: HASH,
     name: 'Season',
     files: files.map((path, index) => ({ index, path, size: 1, url: `u/${index}` })),
+    trackers: [],
   });
 
   beforeEach(() => {

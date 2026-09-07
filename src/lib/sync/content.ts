@@ -184,11 +184,20 @@ export async function contentOf(
     // trackers, which is what finds peers quickly), and one built from the hash
     // where there is not. The second still works: the info hash is the torrent.
     const known = rememberedTorrent(torrent.infoHash);
+    const live = info.torrent?.info_hash === torrent.infoHash ? info.torrent : null;
     const file = info.torrent?.files.find((f) => f.index === torrent.index);
     const name = info.torrent?.name ?? known?.name ?? null;
     return {
       kind: 'torrent',
-      magnet: known?.magnet ?? magnetFor(torrent.infoHash, name),
+      // **The trackers matter more here than anywhere else in the player.**
+      // Locally a magnet reopens against the metadata cached beside the data
+      // and never asks anybody; this one is opened by somebody who has neither.
+      // Where nothing was remembered — a `.torrent` file, or history switched
+      // off — the fallback used to be the bare info hash, i.e. a DHT-only
+      // magnet, and a guest whose network filters UDP then sat through ninety
+      // seconds of nothing. The torrent itself names the tracker the host found
+      // it through, so it travels with the hash.
+      magnet: known?.magnet ?? magnetFor(torrent.infoHash, name, live?.trackers),
       infoHash: torrent.infoHash.toLowerCase(),
       index: torrent.index,
       file: file?.path ?? '',

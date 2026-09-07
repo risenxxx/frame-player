@@ -93,7 +93,7 @@ func TestSweepUnfreezesARoomHeldByAStuckMember(t *testing.T) {
 	if _, err := r.join(a, 16, now); err != nil {
 		t.Fatal(err)
 	}
-	r.setReady(a.id, true, now)
+	r.setReady(a.id, true, "", now)
 	if err := r.setTimeline(a.id, playing(0), now); err != nil {
 		t.Fatal(err)
 	}

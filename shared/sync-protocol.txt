@@ -33,7 +33,7 @@
 timeline	content,tracks,paused,position,speed,at,rev,by
 
 # One participant, as everyone else sees them.
-member	id,name,ready
+member	id,name,ready,reason
 
 # client → relay
 client:hello	t,ver,room,name

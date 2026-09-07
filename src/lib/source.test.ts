@@ -123,6 +123,21 @@ describe('torrent links', () => {
     expect(magnetFor(HASH, null)).toBe(`magnet:?xt=urn:btih:${HASH}`);
   });
 
+  it('carries trackers only when it is asked to', () => {
+    // The default has to stay byte-identical: every caller that *stores* a
+    // magnet passes no trackers, and a changed string there would put a second
+    // recents row next to the same torrent.
+    expect(magnetFor(HASH, 'S01')).toBe(
+      `magnet:?xt=urn:btih:${HASH}&dn=S01`,
+    );
+    const shared = magnetFor(HASH, 'S01', ['udp://tracker.test:451/announce']);
+    expect(shared).toContain('&tr=udp%3A%2F%2Ftracker.test%3A451%2Fannounce');
+    // Which is what a guest with no DHT has to go on — see `contentOf`.
+    expect(magnetFor(HASH, null, ['http://a.test/x', 'udp://b.test'])).toBe(
+      `magnet:?xt=urn:btih:${HASH}&tr=http%3A%2F%2Fa.test%2Fx&tr=udp%3A%2F%2Fb.test`,
+    );
+  });
+
   it('agrees with sourceId about what a torrent id looks like', () => {
     // The two are written in different places and a drift between them would
     // file a torrent's episodes under keys nothing else can find.

@@ -155,11 +155,31 @@ export interface TrackDescriptor {
   index: number;
 }
 
+/**
+ * What a member is waiting on, in the vocabulary this player speaks.
+ *
+ * The relay stores it and passes it back without looking at it, so adding one
+ * is a frontend change and never a redeploy — the rule `ContentRef` already
+ * follows. An unknown value therefore has to degrade to "something", not to a
+ * blank: a room whose members run different builds is the ordinary case.
+ */
+export type ReadyReason = 'opening' | 'buffering' | 'failed' | 'unopenable' | '';
+
 export interface Member {
   id: string;
   name: string;
   /** False while this member is buffering or still opening the file. */
   ready: boolean;
+  /**
+   * What they are doing about it, when there is anything to say.
+   *
+   * Optional because it is a field the relay may not send: it is omitted when
+   * empty, and a relay older than this build does not know about it at all.
+   * "Not ready" on its own conflates buffering, still looking for the torrent
+   * and having given up on it — three situations that need three answers from
+   * whoever is waiting.
+   */
+  reason?: ReadyReason;
 }
 
 /**
@@ -329,7 +349,7 @@ type Complete<T, F extends readonly string[]> =
   Missing<T, F> extends never ? true : ['missing from the field list:', Missing<T, F>];
 
 const TIMELINE_FIELDS = ['content', 'tracks', 'paused', 'position', 'speed', 'at', 'rev', 'by'] as const;
-const MEMBER_FIELDS = ['id', 'name', 'ready'] as const;
+const MEMBER_FIELDS = ['id', 'name', 'ready', 'reason'] as const;
 const HELLO_FIELDS = ['t', 'ver', 'room', 'name'] as const;
 const CLIENT_TIMELINE_FIELDS = ['t', 'timeline'] as const;
 const READY_FIELDS = ['t', 'ready', 'reason'] as const;

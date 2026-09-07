@@ -214,7 +214,7 @@ func (c *client) readLoop(ctx context.Context, conn *websocket.Conn, room *room)
 				c.sendError(err.Error(), nil)
 			}
 		case "ready":
-			room.setReady(c.id, *msg.Ready, now)
+			room.setReady(c.id, *msg.Ready, msg.Reason, now)
 		case "mode":
 			if err := room.setMode(c.id, &msg, now); err != nil {
 				c.sendError(err.Error(), nil)

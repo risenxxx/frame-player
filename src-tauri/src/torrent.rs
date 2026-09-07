@@ -142,6 +142,11 @@ pub struct TorrentInfo {
     /// name for a single one. `None` for a magnet that carried no `dn`.
     pub name: Option<String>,
     pub files: Vec<TorrentFile>,
+    /// The trackers this torrent names, so a magnet rebuilt from its info hash
+    /// can carry them. See `trackers_of`: the hash alone is a DHT-only magnet,
+    /// and on a network where the DHT is filtered that is the difference
+    /// between resolving in a second and not resolving at all.
+    pub trackers: Vec<String>,
 }
 
 /// A torrent's data as it exists **on disk**, which is deliberately a separate
@@ -922,7 +927,12 @@ impl TorrentService {
         // The fallback path above resolved from the swarm and nothing has cached
         // it — and a `.torrent` URL only learns its own hash here. Best-effort:
         // failing to write it costs a lookup on the next open and nothing else.
+        // The same bytes answer two questions, which is why they are read back
+        // from the handle rather than kept from above: what to cache, and which
+        // trackers this torrent names.
+        let mut trackers = Vec::new();
         if let Ok(bytes) = handle.with_metadata(|m| m.torrent_bytes.clone()) {
+            trackers = trackers_of(&bytes);
             let path = meta_path(&dir, &handle.info_hash().as_string());
             if !path.is_file() {
                 if let Some(parent) = path.parent() {
@@ -968,6 +978,7 @@ impl TorrentService {
             info_hash,
             name,
             files,
+            trackers,
         })
     }
 
@@ -1966,6 +1977,44 @@ async fn pause_restored(session: &Arc<Session>) {
 /// A file that will not parse gives no name and no error — it is a cache, the
 /// row still measures and deletes, and `add` already falls back to the magnet
 /// when these bytes turn out to be unusable.
+/// The trackers a torrent names, out of its own metadata.
+///
+/// **What this is for is somebody else's machine.** A magnet rebuilt from an
+/// info hash alone (`magnetFor`) has no trackers in it, and that is exactly the
+/// magnet a room hands to every guest when the host's own copy was not
+/// remembered — a `.torrent` file, or history switched off. The host found the
+/// swarm through a tracker whose address is sitting in these bytes; dropping it
+/// leaves the guest with the DHT and nothing else, which on a network that
+/// filters UDP is the difference between resolving in a second and timing out
+/// after ninety.
+///
+/// Bounded and filtered, because `announce_list` is a list of *tiers* and a
+/// public release routinely names dozens: what travels is a room message, and
+/// four trackers is already more than `announce_peers` will ask.
+fn trackers_of(bytes: &[u8]) -> Vec<String> {
+    const MAX: usize = 6;
+    let Ok(meta) = librqbit::torrent_from_bytes::<librqbit::ByteBuf>(bytes) else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = Vec::new();
+    for raw in meta.iter_announce() {
+        let url = String::from_utf8_lossy(raw).trim().to_string();
+        // Only what a tracker client can actually speak. An unknown scheme is
+        // dead weight in every magnet built from this afterwards.
+        let usable = url.starts_with("http://")
+            || url.starts_with("https://")
+            || url.starts_with("udp://");
+        if !usable || out.iter().any(|t| t == &url) {
+            continue;
+        }
+        out.push(url);
+        if out.len() == MAX {
+            break;
+        }
+    }
+    out
+}
+
 fn cached_name(dir: &std::path::Path, info_hash: &str) -> Option<String> {
     let bytes = std::fs::read(meta_path(dir, info_hash)).ok()?;
     let meta = librqbit::torrent_from_bytes::<librqbit::ByteBuf>(&bytes).ok()?;

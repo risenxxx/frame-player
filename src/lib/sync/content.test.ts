@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import { DURATION_TOLERANCE, compareLocal, contentIdOf, sameContent } from './content';
+import { DURATION_TOLERANCE, compareLocal, contentIdOf, contentOf, sameContent } from './content';
 import type { ContentRef } from './protocol';
 
 // What a room is watching is the one thing here whose wrong answer is both
@@ -139,5 +139,45 @@ describe('compareLocal', () => {
     expect(compareLocal(file(), null)).toBe('unknown');
     // Nothing to compare: a duration nobody knows yet.
     expect(compareLocal(file({ hash: '', duration: 0 }), { src: '/f.mkv', duration: 0 })).toBe('unknown');
+  });
+});
+
+// What the room is handed for a torrent nobody remembered.
+//
+// The failure is entirely on the *other* machine and cannot be seen from this
+// one: a magnet built from an info hash alone is DHT-only, so a guest on a
+// network that filters UDP waits out the ninety-second resolve and gets
+// nothing, while the host — whose metadata is cached beside the data — sees a
+// room working perfectly.
+describe('the magnet a room is handed', () => {
+  const HASH = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const live = {
+    info_hash: HASH,
+    name: 'Season',
+    files: [{ index: 0, path: 'S01E01.mkv', size: 1, url: 'u/0' }],
+    trackers: ['udp://tracker.test:451/announce'],
+  };
+
+  beforeEach(() => localStorage.clear());
+
+  it('carries the trackers the torrent itself named', async () => {
+    const ref = await contentOf(`http://127.0.0.1:9000/t/${HASH}/0/S01E01.mkv`, {
+      title: 'Episode 1',
+      duration: 1400,
+      torrent: live,
+    });
+    expect(ref?.kind).toBe('torrent');
+    expect(ref).toHaveProperty('magnet', expect.stringContaining('&tr=udp%3A%2F%2Ftracker.test'));
+  });
+
+  it('does not borrow them from a different torrent', async () => {
+    // `torrent.info` is whatever the client last resolved, and during a switch
+    // that is legitimately not the file being published.
+    const ref = await contentOf(`http://127.0.0.1:9000/t/${'b'.repeat(40)}/0/S01E01.mkv`, {
+      title: 'Episode 1',
+      duration: 1400,
+      torrent: live,
+    });
+    expect(ref).toHaveProperty('magnet', expect.not.stringContaining('&tr='));
   });
 });

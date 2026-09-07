@@ -1286,7 +1286,7 @@
   {#if opening.busy || (sync.opening && !player.hasFile)}
     <LoadingOverlay
       label={opening.label}
-      sub={opening.torrentLabel ?? (sync.opening ? t('sync.opening') : null)}
+      sub={opening.swarmAdvice ?? opening.torrentLabel ?? (sync.opening ? t('sync.opening') : null)}
       since={opening.since}
     />
   {/if}

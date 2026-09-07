@@ -49,7 +49,7 @@ import {
   ytdlp,
 } from './player.svelte';
 import { queueTorrent } from './playlist.svelte';
-import { isMagnet, isTorrentLink, magnetFor } from './source';
+import { isMagnet, isTorrentLink, magnetFor, parseTorrentUrl } from './source';
 import {
   addTorrent,
   DELETE_STUCK,
@@ -88,6 +88,17 @@ import {
  * `cancelLoadFailure` (from `onFileLoaded`) cancels it and nobody hears about it.
  */
 const LOAD_FAIL_GRACE = 2500;
+
+/// How long a swarm may be empty before the readout stops describing it and
+/// starts explaining it.
+///
+/// Zero peers is the ordinary reading for the first seconds of any torrent —
+/// measured on a healthy public swarm, thirteen peers arrive within about ten —
+/// so anything shorter would accuse a working network. Past that it is no
+/// longer a wait, it is a diagnosis: whatever is on screen has stopped being
+/// true, and the viewer is looking at an unchanging line deciding whether the
+/// player is broken.
+const PEERLESS_ADVICE_MS = 20000;
 
 /// How long to wait before asking a site for a title mpv has not produced.
 const TITLE_LOOKUP_DELAY = 1500;
@@ -207,6 +218,31 @@ class Opening {
     // would otherwise sit at 100% for the rest of the film.
     if (s.file_size > 0 && s.file_done >= s.file_size) return null;
     return s;
+  });
+
+  /**
+   * The sentence that names a likely cause, once "connecting…" has stopped
+   * being an answer.
+   *
+   * Deliberately **not** part of `torrentLabel`: that line is also the top-right
+   * chip, which is a readout beside the picture and cannot grow into a
+   * paragraph. This one is for the loading overlay, where there is room and
+   * where the question is being asked.
+   *
+   * What it says is what the counters already show and nobody can read: peers
+   * *seen* against peers *connected*. Addresses arriving while no connection is
+   * made is the signature of BitTorrent being filtered — a VPN that forbids it,
+   * an ISP that throttles it — and it is the one cause a viewer can act on,
+   * because everything else about it looks exactly like a slow film.
+   */
+  swarmAdvice = $derived.by(() => {
+    const s = torrent.status;
+    if (!s || s.state !== 'live' || s.peers > 0) return null;
+    const since = torrent.peerlessSince;
+    // Re-read every second with the status, which is what makes the threshold
+    // arrive on its own rather than at the next thing the viewer does.
+    if (!since || Date.now() - since < PEERLESS_ADVICE_MS) return null;
+    return s.peers_seen > 0 ? t('torrent.connecting_hint') : t('torrent.no_peers_hint');
   });
 
   /**
@@ -365,6 +401,23 @@ export function reportLoadFailure() {
     // usually one button, and the dialog is where the user just was. Judged by
     // what was being opened, and only while nothing has opened since.
     if (isNetworkSource(opening.attempting) && !player.hasFile) {
+      // **A torrent stream is a network source by its URL and nothing else.**
+      // It is our own loopback server, so yt-dlp has no part in what just
+      // failed — and the dialog's other branch says the opposite, in the most
+      // confident wording in the player: "usually this means yt-dlp is out of
+      // date". For a swarm nobody is seeding, that is a false lead sent to
+      // somebody who was already lost. It also must not become `lastLink`: that
+      // is what the retry button reloads, and a dead loopback URL is not the
+      // magnet this came from.
+      if (parseTorrentUrl(opening.attempting)) {
+        const why = opening.swarmAdvice;
+        opening.box.torrentError = why
+          ? `${t('torrent.stream_failed')} ${why}`
+          : t('torrent.stream_failed');
+        opening.box.failed = false;
+        opening.linkOpen = true;
+        return;
+      }
       opening.lastLink = opening.attempting;
       opening.box.failed = true;
       opening.linkOpen = true;

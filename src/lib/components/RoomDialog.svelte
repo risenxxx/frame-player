@@ -17,9 +17,15 @@
   import { formatTime } from '$lib/format';
   import { t } from '$lib/i18n.svelte';
   import { showOsd } from '$lib/osd.svelte';
-  import { sync } from '$lib/sync/apply.svelte';
+  import { retryOpen, sync } from '$lib/sync/apply.svelte';
   import { invite } from '$lib/sync/link.svelte';
-  import { CODE_LENGTH, formatCode, normalizeCode, type RoomRules } from '$lib/sync/protocol';
+  import {
+    CODE_LENGTH,
+    formatCode,
+    normalizeCode,
+    type Member,
+    type RoomRules,
+  } from '$lib/sync/protocol';
   import {
     displayName,
     joinRoom,
@@ -117,6 +123,29 @@
     return { title: content.title, note: '' };
   });
 
+  /**
+   * The word next to a name, or none.
+   *
+   * Two things it has to survive, both ordinary in a room: **a relay older than
+   * this build sends no reason at all**, and a member running a newer one may
+   * send a word this build has never heard of. Either way an unready member
+   * gets the badge they always had — the fallback is the general case, not an
+   * error case.
+   *
+   * A *ready* member gets one only for the two verdicts that end the wait
+   * without ending the problem: they could not open what the room is watching,
+   * or they cannot at all. That is the difference between a room that stopped
+   * waiting because everything is fine and one that stopped waiting because
+   * somebody needs telling.
+   */
+  function badgeFor(member: Member): string {
+    const reason = member.reason ?? '';
+    if (reason === 'failed') return t('sync.badge_failed');
+    if (reason === 'unopenable') return t('sync.badge_unopenable');
+    if (member.ready) return '';
+    return reason === 'opening' ? t('sync.badge_opening') : t('sync.loading_badge');
+  }
+
   const verdict = $derived.by(() => {
     if (!wire.timeline.content || sync.match === 'unknown') return '';
     return t(`sync.match_${sync.match}` as 'sync.match_exact');
@@ -171,6 +200,11 @@
              seconds — and it is the difference between "this player is broken"
              and "this torrent has nobody on it". -->
         {#if sync.failedReason}<div class="room-sub">{sync.failedReason}</div>{/if}
+        <!-- Nothing retries this on its own (see `retryOpen`), so without a
+             button the only way back into the evening is leaving the room and
+             joining it again. An outline button because it is a second chance
+             at something, not the thing this panel is for. -->
+        <button class="btn-outline room-retry" onclick={retryOpen}>{t('sync.retry')}</button>
       {/if}
     </div>
 
@@ -184,6 +218,9 @@
       <div class="setting-label">{t('sync.members', { count: wire.members.length })}</div>
       <ul class="room-list">
         {#each wire.members as member (member.id)}
+          <!-- Hoisted to the top of the block because `{@const}` may only be an
+               immediate child of one, not of the `<li>` it is used in. -->
+          {@const badge = badgeFor(member)}
           <li class="room-person">
             <svg class="room-person-ico" viewBox="0 0 16 16" aria-hidden="true">
               <path
@@ -197,7 +234,12 @@
             <span class="room-name">{member.name || t('sync.anon')}</span>
             {#if member.id === wire.host}<span class="room-badge">{t('sync.host_badge')}</span>{/if}
             {#if member.id === wire.me}<span class="room-badge">{t('sync.you')}</span>{/if}
-            {#if !member.ready}<span class="room-badge loading">{t('sync.loading_badge')}</span>{/if}
+            <!-- The accent is for the member the room is actually standing
+                 still for; a verdict about somebody it has stopped waiting for
+                 is a note, not an alarm. -->
+            {#if badge}
+              <span class="room-badge" class:loading={!member.ready}>{badge}</span>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -564,6 +606,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Its own line under the reason, not beside it: the sentence above wraps, and
+     a button sharing that line would move as it did. */
+  .room-retry {
+    margin-top: 8px;
   }
 
   .room-badge {
