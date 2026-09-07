@@ -1,17 +1,22 @@
 use std::{
     io::Write,
     marker::PhantomData,
-    net::{Ipv4Addr, SocketAddrV4},
+    net::{SocketAddr, SocketAddrV4, SocketAddrV6},
 };
 
 use bencode::{ByteBuf, ByteBufOwned};
-use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
+use buffers::ByteBufT;
 use bytes::Bytes;
 use clone_to_owned::CloneToOwned;
-use librqbit_core::hash_id::Id20;
+use librqbit_core::{
+    compact_ip::{
+        Compact, CompactListInBuffer, CompactSerialize, CompactSerializeFixedLen, CompactSocketAddr,
+    },
+    hash_id::Id20,
+};
 use serde::{
-    de::{IgnoredAny, Unexpected},
     Deserialize, Deserializer, Serialize,
+    de::{IgnoredAny, Unexpected},
 };
 
 #[derive(Debug)]
@@ -162,137 +167,156 @@ struct RawMessage<BufT, Args = IgnoredAny, Resp = IgnoredAny> {
     #[serde(rename = "v", skip_serializing_if = "Option::is_none")]
     version: Option<BufT>,
     #[serde(rename = "ip", skip_serializing_if = "Option::is_none")]
-    ip: Option<CompactPeerInfo>,
+    ip: Option<CompactSocketAddr>,
 }
 
-pub struct Node {
+pub struct Node<A> {
     pub id: Id20,
-    pub addr: SocketAddrV4,
+    pub addr: A,
 }
 
-impl core::fmt::Debug for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}={:?}", self.addr, self.id)
+impl<A: Into<SocketAddr> + Copy> Node<A> {
+    pub fn as_socketaddr(&self) -> Node<SocketAddr> {
+        Node {
+            id: self.id,
+            addr: self.addr.into(),
+        }
     }
 }
 
-pub struct CompactNodeInfo {
-    pub nodes: Vec<Node>,
-}
+pub type CompactNodeInfo<Buf, A> = CompactListInBuffer<Buf, Node<A>>;
+pub type CompactNodeInfoOwned<A> = CompactNodeInfo<ByteBufOwned, A>;
 
-impl core::fmt::Debug for CompactNodeInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.nodes)
+impl CompactSerialize for Node<SocketAddrV4> {
+    type Slice = [u8; 26];
+
+    fn expecting() -> &'static str {
+        "26 bytes"
+    }
+
+    fn as_slice(&self) -> Self::Slice {
+        let mut data = [0u8; 26];
+        data[..20].copy_from_slice(&self.id.0);
+        data[20..26].copy_from_slice(self.addr.as_slice().as_ref());
+        data
+    }
+
+    fn from_slice(buf: &[u8]) -> Option<Self> {
+        if buf.len() != 26 {
+            return None;
+        }
+        Some(Self::from_slice_unchecked_len(buf))
+    }
+
+    fn from_slice_unchecked_len(buf: &[u8]) -> Self {
+        Node {
+            id: Id20::from_bytes(&buf[..20]).unwrap(),
+            addr: SocketAddrV4::from_slice_unchecked_len(&buf[20..26]),
+        }
     }
 }
 
-impl Serialize for CompactNodeInfo {
+impl<A: CompactSerializeFixedLen> CompactSerializeFixedLen for Node<A> {
+    fn fixed_len() -> usize {
+        20 + A::fixed_len()
+    }
+}
+
+impl CompactSerialize for Node<SocketAddrV6> {
+    type Slice = [u8; 38];
+
+    fn expecting() -> &'static str {
+        "38 bytes"
+    }
+
+    fn as_slice(&self) -> Self::Slice {
+        let mut data = [0u8; 38];
+        data[..20].copy_from_slice(&self.id.0);
+        data[20..38].copy_from_slice(self.addr.as_slice().as_ref());
+        data
+    }
+
+    fn from_slice(buf: &[u8]) -> Option<Self> {
+        if buf.len() != 38 {
+            return None;
+        }
+        Some(Self::from_slice_unchecked_len(buf))
+    }
+
+    fn from_slice_unchecked_len(buf: &[u8]) -> Self {
+        Node {
+            id: Id20::from_bytes(&buf[..20]).unwrap(),
+            addr: SocketAddrV6::from_slice_unchecked_len(&buf[20..38]),
+        }
+    }
+}
+
+impl<A: core::fmt::Debug> core::fmt::Debug for Node<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}={:?}", self.addr, self.id)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Want {
+    V4,
+    V6,
+    Both,
+    None,
+}
+
+impl Serialize for Want {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let mut buf = Vec::<u8>::with_capacity(self.nodes.len() * 26);
-        for node in self.nodes.iter() {
-            buf.extend_from_slice(&node.id.0);
-            let ip_octets = node.addr.ip().octets();
-            let port = node.addr.port();
-            buf.extend_from_slice(&ip_octets);
-            buf.write_u16::<BigEndian>(port).unwrap();
+        match self {
+            Want::V4 => ["n4"][..].serialize(serializer),
+            Want::V6 => ["n6"][..].serialize(serializer),
+            Want::Both => ["n4", "n6"][..].serialize(serializer),
+            Want::None => {
+                const EMPTY: [&str; 0] = [];
+                EMPTY[..].serialize(serializer)
+            }
         }
-        serializer.serialize_bytes(&buf)
     }
 }
 
-impl<'de> Deserialize<'de> for CompactNodeInfo {
+impl<'de> Deserialize<'de> for Want {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct Visitor;
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = CompactNodeInfo;
+        struct V;
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = Want;
 
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                write!(formatter, "compact node info with length multiple of 26")
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, r#"a list with "n4", "n6" or both"#)
             }
-            fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> Result<Self::Value, E>
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where
-                E: serde::de::Error,
+                A: serde::de::SeqAccess<'de>,
             {
-                if v.len() % 26 != 0 {
-                    return Err(E::invalid_length(v.len(), &self));
+                let mut want_v4 = false;
+                let mut want_v6 = false;
+                while let Some(item) = seq.next_element::<&[u8]>()? {
+                    match item {
+                        b"n4" => want_v4 = true,
+                        b"n6" => want_v6 = true,
+                        _ => continue,
+                    }
                 }
-                let mut buf = Vec::<Node>::with_capacity(v.len() / 26);
-                for chunk in v.chunks_exact(26) {
-                    let mut node_id = [0u8; 20];
-                    node_id.copy_from_slice(&chunk[..20]);
-                    let ip = Ipv4Addr::new(chunk[20], chunk[21], chunk[22], chunk[23]);
-                    let port = BigEndian::read_u16(&chunk[24..26]);
-                    buf.push(Node {
-                        id: Id20::new(node_id),
-                        addr: SocketAddrV4::new(ip, port),
-                    })
+                match (want_v4, want_v6) {
+                    (true, true) => Ok(Want::Both),
+                    (true, false) => Ok(Want::V4),
+                    (false, true) => Ok(Want::V6),
+                    (false, false) => Ok(Want::None),
                 }
-                Ok(CompactNodeInfo { nodes: buf })
             }
         }
-        deserializer.deserialize_bytes(Visitor)
-    }
-}
-
-pub struct CompactPeerInfo {
-    pub addr: SocketAddrV4,
-}
-
-impl core::fmt::Debug for CompactPeerInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.addr)
-    }
-}
-
-impl Serialize for CompactPeerInfo {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let octets = self.addr.ip().octets();
-        let port = self.addr.port();
-        let mut buf = [0u8; 6];
-        buf[..4].copy_from_slice(&octets);
-        BigEndian::write_u16(&mut buf[4..], port);
-
-        serializer.serialize_bytes(&buf)
-    }
-}
-
-impl<'de> Deserialize<'de> for CompactPeerInfo {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct Visitor;
-        impl serde::de::Visitor<'_> for Visitor {
-            type Value = CompactPeerInfo;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                write!(formatter, "6 bytes of peer info")
-            }
-            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                if v.len() != 6 {
-                    return Err(E::invalid_length(v.len(), &self));
-                }
-                let ip = Ipv4Addr::new(v[0], v[1], v[2], v[3]);
-                let port = BigEndian::read_u16(&v[4..6]); // Read the port number as big-endian from the last 2 bytes
-
-                Ok(CompactPeerInfo {
-                    addr: SocketAddrV4::new(ip, port),
-                })
-            }
-        }
-        deserializer.deserialize_bytes(Visitor {})
+        deserializer.deserialize_seq(V)
     }
 }
 
@@ -300,15 +324,19 @@ impl<'de> Deserialize<'de> for CompactPeerInfo {
 pub struct FindNodeRequest {
     pub id: Id20,
     pub target: Id20,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub want: Option<Want>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
-pub struct Response<BufT> {
+pub struct Response<BufT: ByteBufT> {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub values: Option<Vec<CompactPeerInfo>>,
+    pub values: Option<Vec<CompactSocketAddr>>,
     pub id: Id20,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nodes: Option<CompactNodeInfo>,
+    pub nodes: Option<CompactNodeInfo<BufT, SocketAddrV4>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nodes6: Option<CompactNodeInfo<BufT, SocketAddrV6>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<BufT>,
 }
@@ -317,6 +345,8 @@ pub struct Response<BufT> {
 pub struct GetPeersRequest {
     pub id: Id20,
     pub info_hash: Id20,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub want: Option<Want>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -333,38 +363,27 @@ pub struct AnnouncePeer<BufT> {
     pub token: BufT,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(bound(serialize = "BufT: AsRef<[u8]> + Serialize"))]
-#[serde(bound(deserialize = "BufT: From<&'de [u8]> + Deserialize<'de>"))]
-pub struct GetPeersResponse<BufT> {
-    pub id: Id20,
-    pub token: BufT,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub values: Option<Vec<CompactPeerInfo>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nodes: Option<CompactNodeInfo>,
-}
-
 #[derive(Debug)]
-pub struct Message<BufT> {
+pub struct Message<BufT: ByteBufT> {
     pub kind: MessageKind<BufT>,
     pub transaction_id: BufT,
     pub version: Option<BufT>,
-    pub ip: Option<SocketAddrV4>,
+    pub ip: Option<SocketAddr>,
 }
 
 impl Message<ByteBufOwned> {
     // This implies that the transaction id was generated by us.
     pub fn get_our_transaction_id(&self) -> Option<u16> {
-        if self.transaction_id.len() != 2 {
+        let tid = self.transaction_id.as_ref();
+        if tid.len() != 2 {
             return None;
         }
-        let tid = ((self.transaction_id[0] as u16) << 8) + (self.transaction_id[1] as u16);
+        let tid = ((tid[0] as u16) << 8) + (tid[1] as u16);
         Some(tid)
     }
 }
 
-pub enum MessageKind<BufT> {
+pub enum MessageKind<BufT: ByteBufT> {
     Error(ErrorDescription<BufT>),
     GetPeersRequest(GetPeersRequest),
     FindNodeRequest(FindNodeRequest),
@@ -373,7 +392,7 @@ pub enum MessageKind<BufT> {
     AnnouncePeer(AnnouncePeer<BufT>),
 }
 
-impl<BufT: core::fmt::Debug> core::fmt::Debug for MessageKind<BufT> {
+impl<BufT: ByteBufT> core::fmt::Debug for MessageKind<BufT> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Error(e) => write!(f, "{e:?}"),
@@ -386,14 +405,14 @@ impl<BufT: core::fmt::Debug> core::fmt::Debug for MessageKind<BufT> {
     }
 }
 
-pub fn serialize_message<'a, W: Write, BufT: Serialize + From<&'a [u8]>>(
+pub fn serialize_message<'a, W: Write, BufT: ByteBufT + From<&'a [u8]>>(
     writer: &mut W,
     transaction_id: BufT,
     version: Option<BufT>,
-    ip: Option<SocketAddrV4>,
+    ip: Option<SocketAddr>,
     kind: MessageKind<BufT>,
-) -> anyhow::Result<()> {
-    let ip = ip.map(|ip| CompactPeerInfo { addr: ip });
+) -> crate::Result<()> {
+    let ip = ip.map(Compact);
     match kind {
         MessageKind::Error(e) => {
             let msg: RawMessage<BufT, (), ()> = RawMessage {
@@ -478,82 +497,91 @@ pub fn serialize_message<'a, W: Write, BufT: Serialize + From<&'a [u8]>>(
 
 pub fn deserialize_message<'de, BufT>(buf: &'de [u8]) -> anyhow::Result<Message<BufT>>
 where
-    BufT: Deserialize<'de> + AsRef<[u8]>,
+    BufT: ByteBufT + Deserialize<'de>,
 {
-    let de: RawMessage<ByteBuf> = bencode::from_bytes(buf)?;
+    let de: RawMessage<ByteBuf> = bencode::from_bytes(buf).map_err(|e| e.into_anyhow())?;
     match de.message_type {
         MessageType::Request => match (&de.arguments, &de.method_name, &de.response, &de.error) {
             (Some(_), Some(method_name), None, None) => match method_name.as_ref() {
                 b"find_node" => {
-                    let de: RawMessage<BufT, FindNodeRequest> = bencode::from_bytes(buf)?;
+                    let de: RawMessage<BufT, FindNodeRequest> =
+                        bencode::from_bytes(buf).map_err(|e| e.into_anyhow())?;
                     Ok(Message {
                         transaction_id: de.transaction_id,
                         version: de.version,
-                        ip: de.ip.map(|c| c.addr),
+                        ip: de.ip.map(|c| c.0),
                         kind: MessageKind::FindNodeRequest(de.arguments.unwrap()),
                     })
                 }
                 b"get_peers" => {
-                    let de: RawMessage<BufT, GetPeersRequest> = bencode::from_bytes(buf)?;
+                    let de: RawMessage<BufT, GetPeersRequest> =
+                        bencode::from_bytes(buf).map_err(|e| e.into_anyhow())?;
                     Ok(Message {
                         transaction_id: de.transaction_id,
                         version: de.version,
-                        ip: de.ip.map(|c| c.addr),
+                        ip: de.ip.map(|c| c.0),
                         kind: MessageKind::GetPeersRequest(de.arguments.unwrap()),
                     })
                 }
                 b"ping" => {
-                    let de: RawMessage<BufT, PingRequest> = bencode::from_bytes(buf)?;
+                    let de: RawMessage<BufT, PingRequest> =
+                        bencode::from_bytes(buf).map_err(|e| e.into_anyhow())?;
                     Ok(Message {
                         transaction_id: de.transaction_id,
                         version: de.version,
-                        ip: de.ip.map(|c| c.addr),
+                        ip: de.ip.map(|c| c.0),
                         kind: MessageKind::PingRequest(de.arguments.unwrap()),
                     })
                 }
                 b"announce_peer" => {
-                    let de: RawMessage<BufT, AnnouncePeer<BufT>> = bencode::from_bytes(buf)?;
+                    let de: RawMessage<BufT, AnnouncePeer<BufT>> =
+                        bencode::from_bytes(buf).map_err(|e| e.into_anyhow())?;
                     Ok(Message {
                         transaction_id: de.transaction_id,
                         version: de.version,
-                        ip: de.ip.map(|c| c.addr),
-                        kind: MessageKind::AnnouncePeer(de.arguments.unwrap())
+                        ip: de.ip.map(|c| c.0),
+                        kind: MessageKind::AnnouncePeer(de.arguments.unwrap()),
                     })
                 }
                 other => anyhow::bail!("unsupported method {:?}", ByteBuf(other)),
             },
             _ => anyhow::bail!(
-                "cannot deserialize message as request, expected exactly \"a\" and \"q\" to be set. Message: {:?}", de
+                "cannot deserialize message as request, expected exactly \"a\" and \"q\" to be set. Message: {:?}",
+                de
             ),
         },
         MessageType::Response => match (&de.arguments, &de.method_name, &de.response, &de.error) {
             // some peers are sending method name against the protocol, so ignore it.
             (None, _, Some(_), None) => {
-                let de: RawMessage<BufT, IgnoredAny, Response<BufT>> = bencode::from_bytes(buf)?;
+                let de: RawMessage<BufT, IgnoredAny, Response<BufT>> =
+                    bencode::from_bytes(buf).map_err(|e| e.into_anyhow())?;
                 Ok(Message {
                     transaction_id: de.transaction_id,
                     version: de.version,
-                    ip: de.ip.map(|c| c.addr),
+                    ip: de.ip.map(|c| c.0),
                     kind: MessageKind::Response(de.response.unwrap()),
                 })
             }
             _ => anyhow::bail!(
-                "cannot deserialize message as response, expected exactly \"r\" to be set. Message: {:?}", de
+                "cannot deserialize message as response, expected exactly \"r\" to be set. Message: {:?}",
+                de
             ),
         },
         MessageType::Error => match (&de.arguments, &de.method_name, &de.response, &de.error) {
             // some peers are sending method name against the protocol, so ignore it.
             (None, _, None, Some(_)) => {
-                let de: RawMessage<BufT, IgnoredAny, Response<BufT>> = bencode::from_bytes(buf)?;
+                let de: RawMessage<BufT, IgnoredAny, Response<BufT>> =
+                    bencode::from_bytes(buf).map_err(|e| e.into_anyhow())?;
                 Ok(Message {
                     transaction_id: de.transaction_id,
                     version: de.version,
-                    ip: de.ip.map(|c| c.addr),
+                    ip: de.ip.map(|c| c.0),
                     kind: MessageKind::Error(de.error.unwrap()),
                 })
             }
             _ => anyhow::bail!(
-                "cannot deserialize message as error, expected exactly \"e\" to be set. Message: {:?}", de
+                "cannot deserialize message as error, expected exactly \"e\" to be set. Message: {:?}",
+                de
             ),
         },
     }
@@ -563,17 +591,22 @@ where
 mod tests {
     use std::io::Write;
 
-    use crate::bprotocol;
-    use bencode::ByteBuf;
+    use crate::bprotocol::{self, Want};
+    use bencode::{ByteBuf, bencode_serialize_to_writer};
 
     // Dumped with wireshark.
-    const FIND_NODE_REQUEST: &[u8] = b"64313a6164323a696432303abd7b477cfbcd10f30b705da20201e7101d8df155363a74617267657432303abd7b477cfbcd10f30b705da20201e7101d8df15565313a71393a66696e645f6e6f6465313a74323a0005313a79313a7165";
-    const GET_PEERS_REQUEST: &[u8] = b"64313a6164323a696432303abd7b477cfbcd10f30b705da20201e7101d8df155393a696e666f5f6861736832303acab507494d02ebb1178b38f2e9d7be299c86b86265313a71393a6765745f7065657273313a74323a0006313a79313a7165";
-    const FIND_NODE_RESPONSE: &[u8] = b"64313a7264323a696432303a3c00727348b3b8ed70baa1e1411b3869d8481321353a6e6f6465733230383a67a312defb7d429086bfdcd5a209684ee13f59615cbe360bc8d567a312defb7d429086bfdcd5a209684ee13f59615cbe360bc8d567a312defb7d429086bfdcd5a209684ee13f59615cbe360bc8d567a312defb7d429086bfdcd5a209684ee13f59615cbe360bc8d567a312defb7d429086bfdcd5a209684ee13f59615cbe360bc8d567a312defb7d429086bfdcd5a209684ee13f59615cbe360bc8d567a312defb7d429086bfdcd5a209684ee13f59615cbe360bc8d567a312defb7d429086bfdcd5a209684ee13f59615cbe360bc8d565313a74323a0005313a76343a4a420000313a79313a7265";
-    const FIND_NODE_RESPONSE_2: &[u8] = b"64323a6970363a081ab440e935313a7264323a696432303a32f54e697351ff4aec29cdbaabf2fbe3467cc267353a6e6f6465733431363a54133f7f6d77567ff210fe88d49839107d1a955956aaa625e9ee438e4a0af6b324d9672886052c856b26b25835a689afbbdf5436b643eb20605e1d18f848b32cd275a117afb52d3a474d18541ae18dd20d3fbd936983af4ea87135d785d0661de2f4c4bf7925c59269105c05caa68658851c018d8890f73604e334afdfb8e556fd7ca8f3e0211bd2af91c4af4eee69415a273c0bd1c2b02e8b9ba827139b6c6ebc6dcb6ee53aac3c5147530a432e1b62c9116e1316e9364d7fd2f10f2499f47e862d847937e39a51aed74bb6e8f1c491d520868f1893aaa007d1af19b5328f1b4840759e5743aa59a6bf090c76b846145c6895303b7a49be387fd609a9212eb6541b1ae1fd2ddcf776b4688dd359c8157120809ac8b6651e5e6e8d58b4a80fa124e1f4ed536d61e4ee25d5a702fc8ab70cdf45852708c999215cc406c4caa862bcd0a6b88e58128d2b280ac74631b3591ae1fa4484a5560c31de4fc046b97b4c6ac31dc324ab2ef20952049bfcecdbc8cf79e4cfd378a89779c605559b79b8ae25ba326249e5629f7b9cc0ad33143832e1bca63da63cdb8a940117f0adc2c41965313a74323a0002313a79313a7265";
-    const FIND_NODE_RESPONSE_3: &[u8] = b"64323a6970363a081ab440e935313a7264323a696432303a32f54e697351ff4aec29cdbaabf2fbe3467cc267353a6e6f6465733431363a26d4302a32aecf28f3fee9f6caf8867d762e28b963b5a531c4917373b33fb43c9d7c0d3daf45ee22ab947d4511c054364d4a904464878fc4a31e88b41d7ea953f7dc91d8017dafee5d0f8a4d2fa19fd3ec1c37c6807cad0a5601698909e7a487532fb9408928afaa7ca5e376bee87c4caafa88f2f9a9cc2ed992cd48be68771b48bb6efc225561c00dc3f40d04ab08d93c21a1b89097bd06fa4d1d122d6f1d86e041a5525a69b26d265d039cd52c8bebc923bf1bc3e9f71c7ed05e349d54465cca22233147f21d4c1cc531e461254249ea653909abe367bc25efab70bbe28cd38cbafc2e6db11df5d66bc20bc8a4c9490d84bf29f09ceb44c230dd2ced8b5cec47c71ae1ff66e9ed230e165873b0bef32163ad52c66edce28a7c9c8ae8647af27ba1eac73737ac167e21ed9116b1ef8104a7c28f89606be6f36d7584b791128793e8f8a0e6b48897a6463532547e400ef3a7067237d4d77bf40f1c09773ea85dd269adf35eeebca89b6993cdb116c0512abc2cbc74973d5e5f09940d0bbdf4e047ce15101ae13d794b1230188404a9fd2a5a10ccefb0622057bc6d7eeae5fb8565313a74323a0003313a79313a7265";
-
-    const WHAT_IS_THAT: &[u8]= b"64313a6164323a696432303abd7b477cfbcd10f30b705da20201e7101d8df155393a696e666f5f6861736832303acab507494d02ebb1178b38f2e9d7be299c86b86265313a71393a6765745f7065657273313a74323a0007313a79313a7165";
+    const FIND_NODE_REQUEST: &[u8] =
+        include_bytes!("../resources/test_requests/find_node_request.bin");
+    const GET_PEERS_REQUEST_0: &[u8] =
+        include_bytes!("../resources/test_requests/get_peers_request_0.bin");
+    const GET_PEERS_REQUEST_1: &[u8] =
+        include_bytes!("../resources/test_requests/get_peers_request_1.bin");
+    const FIND_NODE_RESPONSE_1: &[u8] =
+        include_bytes!("../resources/test_requests/find_node_response_1.bin");
+    const FIND_NODE_RESPONSE_2: &[u8] =
+        include_bytes!("../resources/test_requests/find_node_response_2.bin");
+    const FIND_NODE_RESPONSE_3: &[u8] =
+        include_bytes!("../resources/test_requests/find_node_response_3.bin");
 
     fn write(filename: &str, data: &[u8]) {
         let full = format!("/tmp/{filename}.bin");
@@ -586,18 +619,11 @@ mod tests {
         f.write_all(data).unwrap()
     }
 
-    fn debug_hex_bencode(name: &str, data: &[u8]) {
-        println!("{name}");
-        let data = hex::decode(data).unwrap();
-
+    fn debug_bencode(name: &str, data: &[u8]) {
         println!(
-            "{:#?}",
-            bencode::dyn_from_bytes::<ByteBuf>(data.as_slice()).unwrap()
+            "{name}: {:#?}",
+            bencode::dyn_from_bytes::<ByteBuf>(data).unwrap()
         );
-    }
-
-    fn test_deserialize_then_serialize_hex(data: &[u8], name: &'static str) {
-        test_deserialize_then_serialize(&hex::decode(data).unwrap(), name);
     }
 
     fn test_deserialize_then_serialize(data: &[u8], name: &'static str) {
@@ -655,32 +681,32 @@ mod tests {
 
     #[test]
     fn deserialize_request_find_node() {
-        test_deserialize_then_serialize_hex(FIND_NODE_REQUEST, "find_node_request")
+        test_deserialize_then_serialize(FIND_NODE_REQUEST, "find_node_request")
     }
 
     #[test]
     fn deserialize_request_get_peers() {
-        test_deserialize_then_serialize_hex(GET_PEERS_REQUEST, "get_peers_request")
+        test_deserialize_then_serialize(GET_PEERS_REQUEST_0, "get_peers_request_0")
     }
 
     #[test]
     fn deserialize_response_find_node() {
-        test_deserialize_then_serialize_hex(FIND_NODE_RESPONSE, "find_node_response")
+        test_deserialize_then_serialize(FIND_NODE_RESPONSE_1, "find_node_response")
     }
 
     #[test]
     fn deserialize_response_find_node_2() {
-        test_deserialize_then_serialize_hex(FIND_NODE_RESPONSE_2, "find_node_response_2")
+        test_deserialize_then_serialize(FIND_NODE_RESPONSE_2, "find_node_response_2")
     }
 
     #[test]
     fn deserialize_response_find_node_3() {
-        test_deserialize_then_serialize_hex(FIND_NODE_RESPONSE_3, "find_node_response_3")
+        test_deserialize_then_serialize(FIND_NODE_RESPONSE_3, "find_node_response_3")
     }
 
     #[test]
-    fn deserialize_request_what_is_that() {
-        test_deserialize_then_serialize_hex(WHAT_IS_THAT, "what_is_that")
+    fn deserialize_request_get_peers_request_1() {
+        test_deserialize_then_serialize(GET_PEERS_REQUEST_1, "get_peers_request_1")
     }
 
     #[test]
@@ -701,11 +727,44 @@ mod tests {
 
     #[test]
     fn deserialize_bencode_packets_captured_from_wireshark() {
-        debug_hex_bencode("req: find_node", FIND_NODE_REQUEST);
-        debug_hex_bencode("req: get_peers", GET_PEERS_REQUEST);
-        debug_hex_bencode("resp from the requesting node", FIND_NODE_RESPONSE);
-        debug_hex_bencode("resp from some random IP", FIND_NODE_RESPONSE_2);
-        debug_hex_bencode("another resp from some random IP", FIND_NODE_RESPONSE_3);
-        debug_hex_bencode("req to another node", WHAT_IS_THAT);
+        debug_bencode("req: find_node", FIND_NODE_REQUEST);
+        debug_bencode("req: get_peers", GET_PEERS_REQUEST_0);
+        debug_bencode("resp from the requesting node", FIND_NODE_RESPONSE_1);
+        debug_bencode("resp from some random IP", FIND_NODE_RESPONSE_2);
+        debug_bencode("another resp from some random IP", FIND_NODE_RESPONSE_3);
+        debug_bencode("req to another node", GET_PEERS_REQUEST_1);
+    }
+
+    #[test]
+    fn serde_want_deserialize() {
+        assert_eq!(bencode::from_bytes::<Want>(b"l2:n4e").unwrap(), Want::V4);
+        assert_eq!(bencode::from_bytes::<Want>(b"l2:n6e").unwrap(), Want::V6);
+        assert_eq!(
+            bencode::from_bytes::<Want>(b"l2:n42:n6e").unwrap(),
+            Want::Both
+        );
+        assert_eq!(
+            bencode::from_bytes::<Want>(b"l2:aa2:bbe").unwrap(),
+            Want::None
+        );
+    }
+
+    #[test]
+    fn serde_want_serialize() {
+        let mut w = Vec::new();
+        bencode_serialize_to_writer(Want::V6, &mut w).unwrap();
+        assert_eq!(&w, b"l2:n6e");
+
+        let mut w = Vec::new();
+        bencode_serialize_to_writer(Want::V4, &mut w).unwrap();
+        assert_eq!(&w, b"l2:n4e");
+
+        let mut w = Vec::new();
+        bencode_serialize_to_writer(Want::Both, &mut w).unwrap();
+        assert_eq!(&w, b"l2:n42:n6e");
+
+        let mut w = Vec::new();
+        bencode_serialize_to_writer(Want::None, &mut w).unwrap();
+        assert_eq!(&w, b"le")
     }
 }

@@ -88,6 +88,8 @@
   } from '$lib/endscreen.svelte';
   import {
     abandonOpening,
+    applyEncryption,
+    applyProxy,
     cancelLoadFailure,
     clearTorrentCache,
     deleteTorrent,
@@ -1459,6 +1461,8 @@
       onclose={() => (overlays.settings = false)}
       onToggleSeeding={() => void toggleSeeding()}
       onTogglePortForward={() => void togglePortForward()}
+      onSetProxy={(url) => void applyProxy(url)}
+      onSetEncryption={(mode) => void applyEncryption(mode)}
       onClearTorrentCache={() => void clearTorrentCache()}
       onLicenses={() => (overlays.licenses = true)}
     />

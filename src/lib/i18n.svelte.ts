@@ -204,6 +204,18 @@ const ru = {
   'torrent.port_hint':
     'Выключено по умолчанию. Плеер попросит роутер открыть порт для себя (UPnP) — большинство участников раздачи сидят за NAT и могут подключиться только сами, поэтому без этого до них не достучаться. Взамен порт становится виден из интернета, пока открыта раздача. Переключение закрывает текущий торрент. Работает, только если UPnP включён на самом роутере.',
   'torrent.port_restarted': 'Настройка применена, торрент закрыт',
+  'torrent.proxy': 'SOCKS5-прокси',
+  'torrent.proxy_hint':
+    'Соединения с пирами и HTTP-анонсы пойдут через этот адрес — способ увести торрент-трафик с обычного маршрута, если на нём его режут. Мимо прокси остаются DHT и UDP-трекеры, а сам протокол не шифруется: блокировку по содержимому, а не по адресу, это не обходит.',
+  'torrent.proxy_bad': 'Нужен адрес вида socks5://хост:порт',
+  'torrent.proxy_restarted': 'Прокси применён, торрент закрыт',
+  'torrent.enc': 'Шифрование соединений',
+  'torrent.enc_hint':
+    'Обычное рукопожатие BitTorrent открытое, и оборвать его умеет любой фильтр по протоколу — именно так это выглядит у части провайдеров. С шифрованием (MSE) первыми на провод уходят ключи, а не имя протокола. «Как получится» откатывается на открытое соединение с теми, кто не умеет иначе, и хуже точно не делает. Не прячет, с кем идёт обмен, и не покрывает DHT и трекеры.',
+  'torrent.enc_off': 'Выключено',
+  'torrent.enc_on': 'Когда возможно',
+  'torrent.enc_only': 'Только шифрованные',
+  'torrent.enc_restarted': 'Шифрование применено, торрент закрыт',
   'torrent.port_checking': 'Спрашиваем роутер…',
   'torrent.port_mapped': 'Порт {port} открыт → {detail}',
   'torrent.port_unmapped': 'Роутер отвечает, но порт {port} не открыт — похоже, UPnP на нём запрещён.',
@@ -990,6 +1002,18 @@ const en: Record<MessageKey, string> = {
   'torrent.port_hint':
     'Off by default. The player asks the router to open a port for it (UPnP) — most peers in a swarm sit behind NAT and can only ever connect to you, so without this they are unreachable. In exchange the port is visible from the internet for as long as a torrent is open. Switching it closes the current torrent. It only works if UPnP is enabled on the router itself.',
   'torrent.port_restarted': 'Applied, the torrent was closed',
+  'torrent.proxy': 'SOCKS5 proxy',
+  'torrent.proxy_hint':
+    'Peer connections and HTTP announces go through this address — a way to take torrent traffic off the ordinary route when something on it blocks them. The DHT and UDP trackers stay outside the proxy, and the protocol itself is not encrypted, so this gets around blocking by destination and not by content.',
+  'torrent.proxy_bad': 'Needs an address like socks5://host:port',
+  'torrent.proxy_restarted': 'Proxy applied, the torrent was closed',
+  'torrent.enc': 'Connection encryption',
+  'torrent.enc_hint':
+    'An ordinary BitTorrent handshake is in the clear, and anything filtering on the protocol can cut it — which is what some ISPs measurably do. With encryption (MSE) the first bytes on the wire are a key exchange rather than the name of the protocol. "When possible" falls back to a plain connection with peers that cannot do it, so it is never worse. It does not hide who is being talked to, and it does not cover the DHT or the trackers.',
+  'torrent.enc_off': 'Off',
+  'torrent.enc_on': 'When possible',
+  'torrent.enc_only': 'Encrypted only',
+  'torrent.enc_restarted': 'Encryption applied, the torrent was closed',
   'torrent.port_checking': 'Asking the router…',
   'torrent.port_mapped': 'Port {port} is open → {detail}',
   'torrent.port_unmapped': 'The router answered, but port {port} is not open — UPnP looks disabled on it.',

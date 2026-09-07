@@ -92,6 +92,13 @@ const PREFS_KEY = 'frameplayer.torrent';
  * membership of the swarm is still observable. It removes the serving, not the
  * presence.
  */
+/// How peer connections are encrypted. Our own vocabulary rather than
+/// librqbit's `MseMode`, because this is what gets persisted — see the Rust
+/// `Encryption` for the same argument from the other side.
+export type Encryption = 'off' | 'on' | 'only';
+
+const ENCRYPTION_CHOICES: readonly Encryption[] = ['off', 'on', 'only'];
+
 class TorrentPrefs {
   seeding = $state(false);
 
@@ -113,6 +120,41 @@ class TorrentPrefs {
    * can *start* a connection, not about what goes out.
    */
   portForward = $state(false);
+
+  /**
+   * Whether to obfuscate the peer stream (MSE/PE).
+   *
+   * **On by default, and that is the point of it.** A plaintext BitTorrent
+   * handshake opens with `\x13BitTorrent protocol`, which is what a middlebox
+   * matches on — and cutting the connection right after it is what several
+   * ISPs measurably do, showing up here as a peer that connects and then dies.
+   * With MSE the first bytes are a Diffie-Hellman exchange instead. `on` falls
+   * back to a plaintext redial when a peer will not encrypt, so it is never
+   * worse than what shipped before; `only` drops such peers, which is for a
+   * network where the plaintext handshake is the thing being cut.
+   *
+   * It does not hide *who* is being talked to, and it does not cover the DHT or
+   * the trackers — those are their own plaintext sockets.
+   */
+  encryption = $state<Encryption>('on');
+
+  /**
+   * A SOCKS5 proxy for the torrent traffic, or empty for none.
+   *
+   * **The honest form of "send torrents somewhere other than the VPN".** It is
+   * a route the viewer chooses — a VPN provider's own SOCKS5 endpoint, a VPS —
+   * rather than the player deciding to leave a tunnel that was turned on
+   * deliberately, which is what a real split tunnel would be and which would
+   * put this machine's address in front of the swarm without saying so.
+   *
+   * Two limits worth knowing before it disappoints somebody. It carries the
+   * peer connections and the HTTP announces and **nothing else**: the DHT and
+   * the UDP trackers are their own sockets and keep going out the ordinary way.
+   * And what travels through it is unencrypted BitTorrent, so a network that
+   * filters on the protocol rather than on where it is going is unaffected —
+   * that one needs MSE, which librqbit does not implement.
+   */
+  proxy = $state('');
 }
 
 export const torrentPrefs = new TorrentPrefs();
@@ -121,9 +163,20 @@ export function loadTorrentPrefs() {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return;
-    const saved = JSON.parse(raw) as { seeding?: boolean; portForward?: boolean };
+    const saved = JSON.parse(raw) as {
+      seeding?: boolean;
+      portForward?: boolean;
+      proxy?: string;
+      encryption?: Encryption;
+    };
     if (typeof saved.seeding === 'boolean') torrentPrefs.seeding = saved.seeding;
     if (typeof saved.portForward === 'boolean') torrentPrefs.portForward = saved.portForward;
+    if (typeof saved.proxy === 'string') torrentPrefs.proxy = saved.proxy;
+    // A value from a build that spelled it differently must not turn encryption
+    // off — an unknown one is nothing, and the field keeps its default.
+    if (saved.encryption && ENCRYPTION_CHOICES.includes(saved.encryption)) {
+      torrentPrefs.encryption = saved.encryption;
+    }
   } catch {
     // A corrupted preference must not cost the safe default.
   }
@@ -133,7 +186,12 @@ function persistPrefs() {
   try {
     localStorage.setItem(
       PREFS_KEY,
-      JSON.stringify({ seeding: torrentPrefs.seeding, portForward: torrentPrefs.portForward }),
+      JSON.stringify({
+        seeding: torrentPrefs.seeding,
+        portForward: torrentPrefs.portForward,
+        proxy: torrentPrefs.proxy,
+        encryption: torrentPrefs.encryption,
+      }),
     );
   } catch {
     // not critical
@@ -156,6 +214,23 @@ export async function setPortForward(on: boolean): Promise<boolean> {
   torrentPrefs.portForward = on;
   persistPrefs();
   return await invoke<boolean>('torrent_set_port_forward', { on }).catch(() => false);
+}
+
+/// And again for the proxy, which is baked into the session like the other two:
+/// switching one off while pieces still arrive straight from the swarm would be
+/// a lie about where this machine's traffic is going.
+export async function setProxy(url: string): Promise<boolean> {
+  torrentPrefs.proxy = url.trim();
+  persistPrefs();
+  return await invoke<boolean>('torrent_set_proxy', { url: torrentPrefs.proxy }).catch(() => false);
+}
+
+/// The fourth of them, and the cheapest to change one's mind about — but still
+/// baked into the session, so still worth saying that the torrent stopped.
+export async function setEncryption(mode: Encryption): Promise<boolean> {
+  torrentPrefs.encryption = mode;
+  persistPrefs();
+  return await invoke<boolean>('torrent_set_encryption', { mode }).catch(() => false);
 }
 
 export interface PortStatus {
@@ -289,10 +364,17 @@ export async function addTorrent(source: string): Promise<TorrentInfo> {
   torrent.resolving = true;
   torrent.resolvingSince = Date.now();
   try {
+    // One object rather than a field per preference: Rust compares it whole to
+    // decide whether the live session can be reused, and a value left out here
+    // would be a session quietly running with the previous one.
     const info = await invoke<TorrentInfo>('torrent_add', {
       source,
-      seeding: torrentPrefs.seeding,
-      portForward: torrentPrefs.portForward,
+      prefs: {
+        seeding: torrentPrefs.seeding,
+        portForward: torrentPrefs.portForward,
+        proxy: torrentPrefs.proxy,
+        encryption: torrentPrefs.encryption,
+      },
     });
     torrent.info = info;
     return info;

@@ -50,8 +50,14 @@
   } from '$lib/history.svelte';
   import { applyNormalize, player, readList } from '$lib/player.svelte';
   import { playlist, setPlaylistPref } from '$lib/playlist.svelte';
-  import { refreshPortStatus, torrent, torrentPrefs } from '$lib/torrent.svelte';
+  import {
+    refreshPortStatus,
+    torrent,
+    torrentPrefs,
+    type Encryption,
+  } from '$lib/torrent.svelte';
   import { pickTorrentDir, resetTorrentDir } from '$lib/open.svelte';
+  import { proxyLooksValid } from '$lib/source';
   import { castCacheCapGb, setCastCacheCapGb } from '$lib/cast.svelte';
   import { showOsd } from '$lib/osd.svelte';
   import { syncMenuChecks } from '$lib/window-prefs.svelte';
@@ -75,6 +81,8 @@
     /// data off the disk.
     onToggleSeeding: () => void;
     onTogglePortForward: () => void;
+    onSetProxy: (url: string) => void;
+    onSetEncryption: (mode: Encryption) => void;
     onClearTorrentCache: () => void;
     /// Raises the third-party notices, which are a layer above this sheet. A
     /// callback rather than reaching for `overlays`: no component in this
@@ -82,7 +90,15 @@
     onLicenses: () => void;
   }
 
-  let { onclose, onToggleSeeding, onTogglePortForward, onClearTorrentCache, onLicenses }: Props =
+  let {
+    onclose,
+    onToggleSeeding,
+    onTogglePortForward,
+    onSetProxy,
+    onSetEncryption,
+    onClearTorrentCache,
+    onLicenses,
+  }: Props =
     $props();
 
   // Interactive settings editor: descriptions of the options mirrored into
@@ -425,6 +441,37 @@
     // slash, and an empty entry falls back to the default — so the field has to
     // show what will actually be used, not what was typed.
     relayVal = relayUrl();
+  }
+
+  // ---- Torrents ----
+  /// The three encryption modes, in the order they escalate. A table rather
+  /// than three hand-written buttons: the labels and the values then cannot
+  /// drift apart, which is the whole failure a pill row has.
+  const ENCRYPTION_MODES: readonly {
+    id: Encryption;
+    label: 'torrent.enc_off' | 'torrent.enc_on' | 'torrent.enc_only';
+  }[] = [
+    { id: 'off', label: 'torrent.enc_off' },
+    { id: 'on', label: 'torrent.enc_on' },
+    { id: 'only', label: 'torrent.enc_only' },
+  ];
+
+  // The same shape as the relay above: written on `change` rather than on every
+  // keystroke, since applying it tears the session down and a half-typed host
+  // would do that for a value nobody meant to save.
+  let proxyVal = $state(torrentPrefs.proxy);
+  const proxyOk = $derived(proxyLooksValid(proxyVal));
+
+  function saveProxy(next: string) {
+    const url = next.trim();
+    proxyVal = url;
+    // Judged from the local rather than from the derived beside it. A `$derived`
+    // does re-evaluate the moment it is read again, so `proxyOk` here would be
+    // the new value — but that is a rule to lean on knowingly, and this reads
+    // the same either way. A shape that cannot work is kept in the field and
+    // not applied: the session would refuse it, and losing a working proxy over
+    // a typo in progress is worse than waiting for the address to be finished.
+    if (proxyLooksValid(url)) onSetProxy(url);
   }
 
   // ---- The catalog ----
@@ -1008,6 +1055,31 @@
       </div>
     </div>
 
+    <!-- **A pill and not a switch, because the middle value is the answer.**
+         Off / when possible / encrypted only: the middle one prefers MSE and
+         redials in the clear for a peer that will not do it, which is why it is
+         the default and why nobody should have to find this setting. The strict
+         one is for a network where the plaintext handshake is precisely what
+         gets cut — measured against the live Sintel swarm, a magnet still
+         resolved from the swarm in 840 ms and the file streamed at 2.2 MB/s
+         from 24 peers with every unencrypted peer refused, so it is a usable
+         setting rather than a way to sit alone. -->
+    <div class="setting">
+      <div class="setting-label">{t('torrent.enc')}</div>
+      <div class="setting-hint">{t('torrent.enc_hint')}</div>
+      <div class="segmented">
+        {#each ENCRYPTION_MODES as mode (mode.id)}
+          <button
+            class="segopt"
+            class:sel={torrentPrefs.encryption === mode.id}
+            onclick={() => onSetEncryption(mode.id)}
+          >
+            {t(mode.label)}
+          </button>
+        {/each}
+      </div>
+    </div>
+
     <!-- The only large lever left on peer count, and it is measured rather
          than believed: of ~30 addresses one tracker's announce returned, 20–22
          never answered a SYN — peers behind NAT, which can only ever dial us.
@@ -1040,6 +1112,40 @@
           <span class="switch-knob"></span>
         </button>
       </div>
+    </div>
+
+    <!-- **The one control here that decides where the traffic goes**, which is
+         why it is a field and not a switch: the address is somebody's own — a
+         VPN provider's SOCKS5 endpoint, a VPS — and there is nothing sensible
+         to guess on their behalf. Written on `change` like the relay and the
+         indexer above, and for the same reason: a half-typed host is a host,
+         and this one costs the running torrent to apply.
+
+         The hint carries what the proxy does *not* cover, because both halves
+         are found the hard way otherwise — the DHT and the UDP trackers keep
+         their own sockets, and BitTorrent inside a SOCKS5 tunnel is still
+         plaintext BitTorrent, so a network filtering on the protocol rather
+         than on the destination sees exactly what it saw before. -->
+    <div class="setting">
+      <div class="setting-label">{t('torrent.proxy')}</div>
+      <div class="setting-hint">{t('torrent.proxy_hint')}</div>
+      <input
+        class="link-input"
+        value={proxyVal}
+        placeholder="socks5://127.0.0.1:1080"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        aria-label={t('torrent.proxy')}
+        onchange={(e) => saveProxy(e.currentTarget.value)}
+      />
+      <!-- Only the shape, and only for a value that cannot work at all:
+           `http://…` is what people paste out of habit and librqbit takes
+           SOCKS5 alone. Whether the proxy is *running* is the session's
+           question, and it answers it by refusing to start. -->
+      {#if !proxyOk}
+        <div class="link-error">{t('torrent.proxy_bad')}</div>
+      {/if}
     </div>
 
     <!-- **A setting rather than a question asked at the first torrent.** The

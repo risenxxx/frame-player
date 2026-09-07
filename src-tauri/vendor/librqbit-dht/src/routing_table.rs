@@ -1,8 +1,8 @@
 use std::{net::SocketAddr, time::Instant};
 
 use librqbit_core::hash_id::Id20;
-use rand::RngCore;
-use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+use rand::Rng;
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 use tracing::{debug, trace};
 
 use crate::INACTIVITY_TIMEOUT;
@@ -158,30 +158,15 @@ fn compute_split_start_end(
     };
     debug_assert!(
         start < new_left_end,
-        "expected start({:?}) < new_left_end({:?}); start={:?}, end={:?}, bits={}",
-        start,
-        new_left_end,
-        start,
-        end_inclusive,
-        bits
+        "expected start({start:?}) < new_left_end({new_left_end:?}); start={start:?}, end={end_inclusive:?}, bits={bits}",
     );
     debug_assert!(
         new_left_end < new_right_start,
-        "expected new_left_end({:?}) < new_right_start({:?}); start={:?}, end={:?}, bits={}",
-        new_left_end,
-        new_right_start,
-        start,
-        end_inclusive,
-        bits
+        "expected new_left_end({new_left_end:?}) < new_right_start({new_right_start:?}); start={start:?}, end={end_inclusive:?}, bits={bits}",
     );
     debug_assert!(
         new_right_start < end_inclusive,
-        "expected new_right_start({:?}) < end_inclusive({:?}); start={:?}, end={:?}, bits={}",
-        new_right_start,
-        end_inclusive,
-        start,
-        end_inclusive,
-        bits
+        "expected new_right_start({new_right_start:?}) < end_inclusive({end_inclusive:?}); start={start:?}, end={end_inclusive:?}, bits={bits}",
     );
     ((start, new_left_end), (new_right_start, end_inclusive))
 }
@@ -234,13 +219,19 @@ impl BucketTree {
         }
     }
 
-    pub fn get_mut(&mut self, id: &Id20, refresh: bool) -> Option<&mut RoutingTableNode> {
+    pub fn get_mut(
+        &mut self,
+        id: &Id20,
+        refresh: Option<Instant>,
+    ) -> Option<&mut RoutingTableNode> {
         let idx = self.get_leaf(id);
         match &mut self.data[idx].data {
             BucketTreeNodeData::Leaf(leaf) => {
                 let r = leaf.nodes.iter_mut().find(|b| b.id == *id);
-                if r.is_some() && refresh {
-                    leaf.last_refreshed = Instant::now()
+                if r.is_some()
+                    && let Some(refresh) = refresh
+                {
+                    leaf.last_refreshed = refresh;
                 }
                 r
             }
@@ -252,6 +243,7 @@ impl BucketTree {
         let idx = self.get_leaf(&id);
         self.insert_into_leaf(idx, self_id, id, addr)
     }
+
     fn insert_into_leaf(
         &mut self,
         mut idx: usize,
@@ -265,6 +257,7 @@ impl BucketTree {
         // for the new node.
         // The loop is to remove the recursion. NOTE: it might have compiled to tail recursion
         // anyway, but whatever, did not check.
+        let now = Instant::now();
         loop {
             let leaf = &mut self.data[idx];
             let nodes = match &mut leaf.data {
@@ -286,7 +279,7 @@ impl BucketTree {
             };
 
             // Try replace a bad node
-            let now = Instant::now();
+
             if let Some(bad_node) = nodes
                 .nodes
                 .iter_mut()
@@ -295,7 +288,7 @@ impl BucketTree {
                 std::mem::swap(bad_node, &mut new_node);
                 nodes.nodes.sort_by_key(|n| n.id);
                 debug!("replaced bad node {:?}", new_node);
-                nodes.last_refreshed = Instant::now();
+                nodes.last_refreshed = now;
                 return InsertResult::ReplacedBad(new_node);
             }
 
@@ -311,7 +304,7 @@ impl BucketTree {
             if nodes.nodes.len() < 8 {
                 nodes.nodes.push(new_node);
                 nodes.nodes.sort_by_key(|n| n.id);
-                nodes.last_refreshed = Instant::now();
+                nodes.last_refreshed = now;
                 self.size += 1;
                 return InsertResult::Added;
             }
@@ -454,16 +447,15 @@ impl RoutingTableNode {
         }
     }
 
-    pub fn mark_outgoing_request(&mut self) {
-        self.last_request = Some(Instant::now());
+    pub fn mark_outgoing_request(&mut self, now: Instant) {
+        self.last_request = Some(now);
     }
 
-    pub fn mark_last_query(&mut self) {
-        self.last_query = Some(Instant::now());
+    pub fn mark_last_query(&mut self, now: Instant) {
+        self.last_query = Some(now);
     }
 
-    pub fn mark_response(&mut self) {
-        let now = Instant::now();
+    pub fn mark_response(&mut self, now: Instant) {
         self.last_response = Some(now);
         if self.last_request.is_none() {
             self.last_request = Some(now);
@@ -500,12 +492,11 @@ impl RoutingTable {
     pub fn len(&self) -> usize {
         self.size
     }
-    pub fn sorted_by_distance_from(&self, id: Id20) -> Vec<&RoutingTableNode> {
+    pub fn sorted_by_distance_from(&self, id: Id20, now: Instant) -> Vec<&RoutingTableNode> {
         let mut result = Vec::with_capacity(self.size);
         for node in self.buckets.iter() {
             result.push(node);
         }
-        let now = Instant::now();
         result.sort_by_key(|n| {
             // Query decent nodes first.
             let status = match n.status(now) {
@@ -540,26 +531,26 @@ impl RoutingTable {
         }
         res
     }
-    pub fn mark_outgoing_request(&mut self, id: &Id20) -> bool {
-        let r = match self.buckets.get_mut(id, false) {
+    pub fn mark_outgoing_request(&mut self, id: &Id20, now: Instant) -> bool {
+        let r = match self.buckets.get_mut(id, None) {
             Some(r) => r,
             None => return false,
         };
-        r.mark_outgoing_request();
+        r.mark_outgoing_request(now);
         true
     }
 
-    pub fn mark_response(&mut self, id: &Id20) -> bool {
-        let r = match self.buckets.get_mut(id, true) {
+    pub fn mark_response(&mut self, id: &Id20, now: Instant) -> bool {
+        let r = match self.buckets.get_mut(id, Some(now)) {
             Some(r) => r,
             None => return false,
         };
-        r.mark_response();
+        r.mark_response(now);
         true
     }
 
     pub fn mark_error(&mut self, id: &Id20) -> bool {
-        let r = match self.buckets.get_mut(id, false) {
+        let r = match self.buckets.get_mut(id, None) {
             Some(r) => r,
             None => return false,
         };
@@ -567,12 +558,12 @@ impl RoutingTable {
         true
     }
 
-    pub fn mark_last_query(&mut self, id: &Id20) -> bool {
-        let r = match self.buckets.get_mut(id, false) {
+    pub fn mark_last_query(&mut self, id: &Id20, now: Instant) -> bool {
+        let r = match self.buckets.get_mut(id, None) {
             Some(r) => r,
             None => return false,
         };
-        r.mark_last_query();
+        r.mark_last_query(now);
         true
     }
 }
@@ -583,14 +574,15 @@ mod tests {
         io::Cursor,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         str::FromStr,
+        time::Instant,
     };
 
     use librqbit_core::hash_id::Id20;
-    use rand::Rng;
+    use rand::RngExt;
 
     use crate::routing_table::compute_split_start_end;
 
-    use super::{generate_random_id, RoutingTable};
+    use super::{RoutingTable, generate_random_id};
 
     #[test]
     fn compute_split_start_end_root() {
@@ -689,7 +681,10 @@ mod tests {
     fn test_sorted_by_distance_from() {
         let id = random_id_20();
         let rtable = generate_table(None);
-        assert_eq!(rtable.sorted_by_distance_from(id).len(), rtable.size);
+        assert_eq!(
+            rtable.sorted_by_distance_from(id, Instant::now()).len(),
+            rtable.size
+        );
     }
 
     #[test]

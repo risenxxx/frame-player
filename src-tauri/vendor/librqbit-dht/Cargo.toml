@@ -9,25 +9,10 @@
 # will likely look very different (and much more reasonable).
 # See Cargo.toml.orig for the original contents.
 
-# Warnings from code we do not maintain.
-#
-# A crate from the registry is compiled with `--cap-lints allow`; one reached
-# through `[patch.crates-io]` is a *local* package and gets none of that, so
-# upstream's own nits print on every build of this project and bury ours. These
-# two are upstream's: a redundant pair of parentheses in `dht.rs`, and a protocol
-# struct this build never constructs.
-#
-# Named individually rather than silencing `warnings` wholesale: our patch to
-# `dht.rs` lives in this crate too, and a warning it causes — now or after a
-# version bump — is one we do want to see.
-[lints.rust]
-unused_parens = "allow"
-dead_code = "allow"
-
 [package]
-edition = "2021"
+edition = "2024"
 name = "librqbit-dht"
-version = "5.3.1"
+version = "9.0.1"
 build = false
 autolib = false
 autobins = false
@@ -39,17 +24,7 @@ documentation = "https://docs.rs/librqbit-dht"
 readme = "README.md"
 license = "Apache-2.0"
 repository = "https://github.com/ikatson/rqbit"
-
-[features]
-default = ["sha1-crypto-hash"]
-sha1-crypto-hash = [
-    "bencode/sha1-crypto-hash",
-    "librqbit-core/sha1-crypto-hash",
-]
-sha1-ring = [
-    "bencode/sha1-ring",
-    "librqbit-core/sha1-ring",
-]
+resolver = "2"
 
 [lib]
 name = "librqbit_dht"
@@ -62,26 +37,28 @@ path = "examples/dht.rs"
 [dependencies.anyhow]
 version = "1"
 
-[dependencies.backoff]
-version = "0.4.0"
+[dependencies.backon]
+version = "1.5"
+features = ["tokio-sleep"]
 
 [dependencies.bencode]
-version = "3.1"
+version = "9.0.1"
 default-features = false
 package = "librqbit-bencode"
 
-[dependencies.byteorder]
-version = "1.5.0"
+[dependencies.buffers]
+version = "9.0.1"
+package = "librqbit-buffers"
 
 [dependencies.bytes]
-version = "1.7.1"
+version = "1"
 
 [dependencies.chrono]
-version = "0.4.31"
+version = "0.4"
 features = ["serde"]
 
 [dependencies.clone_to_owned]
-version = "3"
+version = "9.0.1"
 package = "librqbit-clone-to-owned"
 
 [dependencies.dashmap]
@@ -91,9 +68,6 @@ features = ["serde"]
 [dependencies.futures]
 version = "0.3"
 
-[dependencies.hex]
-version = "0.4"
-
 [dependencies.indexmap]
 version = "2"
 
@@ -101,21 +75,29 @@ version = "2"
 version = "1.1"
 
 [dependencies.librqbit-core]
-version = "5"
+version = "9.0.1"
 default-features = false
+
+[dependencies.librqbit-dualstack-sockets]
+version = "0.7"
 
 [dependencies.parking_lot]
 version = "0.12"
 
 [dependencies.rand]
-version = "0.9"
+version = "0.10"
 
 [dependencies.serde]
 version = "1"
-features = ["derive"]
+
+[dependencies.serde_derive]
+version = "1"
 
 [dependencies.serde_json]
 version = "1"
+
+[dependencies.thiserror]
+version = "2"
 
 [dependencies.tokio]
 version = "1"
@@ -131,10 +113,11 @@ version = "0.1"
 features = ["sync"]
 
 [dependencies.tokio-util]
-version = "0.7.10"
+version = "0.7"
 
 [dependencies.tracing]
 version = "0.1"
 
 [dev-dependencies.tracing-subscriber]
 version = "0.3"
+default-features = false

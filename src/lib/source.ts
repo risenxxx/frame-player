@@ -93,6 +93,25 @@ export function magnetFor(
 }
 
 /**
+ * Whether a SOCKS5 address can possibly work.
+ *
+ * A shape check and nothing more, for the settings field to answer before the
+ * session does. Whether the proxy is *running* cannot be known without trying
+ * it, and the place that tries it is librqbit — which refuses to build a
+ * session and says what it could not parse. What this catches is the value that
+ * could never work: `http://…` and `socks5h://…` are what people paste out of
+ * habit, and librqbit takes the one scheme. Empty is valid and means no proxy.
+ */
+export function proxyLooksValid(url: string): boolean {
+  const v = url.trim();
+  if (!v) return true;
+  // Optional `user:password@`, a host with no scheme decoration left in it, and
+  // a port — which librqbit requires rather than defaulting (`missing port`).
+  const m = /^socks5:\/\/(?:[^@/]*@)?([^@/:]+):(\d{1,5})$/.exec(v);
+  return !!m && Number(m[2]) > 0 && Number(m[2]) <= 65535;
+}
+
+/**
  * A torrent stream served by our own local server, taken apart.
  *
  * The route is `http://127.0.0.1:<port>/t/<infohash>/<index>/<name>` (torrent.rs

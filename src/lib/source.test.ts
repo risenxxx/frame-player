@@ -11,7 +11,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isMagnet, isTorrentLink, magnetFor, parseTorrentUrl, sourceId, torrentId } from './source';
+import {
+  isMagnet,
+  isTorrentLink,
+  magnetFor,
+  parseTorrentUrl,
+  proxyLooksValid,
+  sourceId,
+  torrentId,
+} from './source';
 
 const HASH = '08ada5a7a6183aae1e09d831df6748d566095a10';
 
@@ -121,6 +129,23 @@ describe('torrent links', () => {
     expect(magnetFor(HASH, 'A & B / C')).toContain('dn=A%20%26%20B%20%2F%20C');
     // No `dn` at all rather than an empty one.
     expect(magnetFor(HASH, null)).toBe(`magnet:?xt=urn:btih:${HASH}`);
+  });
+
+  it('accepts the proxy addresses librqbit can actually take', () => {
+    // Empty is the ordinary state and means no proxy at all.
+    expect(proxyLooksValid('')).toBe(true);
+    expect(proxyLooksValid('  ')).toBe(true);
+    expect(proxyLooksValid('socks5://127.0.0.1:1080')).toBe(true);
+    expect(proxyLooksValid('socks5://user:pass@proxy.test:9050')).toBe(true);
+    // The port is required rather than defaulted — librqbit answers "missing
+    // port" — and the scheme is the one it parses. `http://` and `socks5h://`
+    // are what a person pastes from another client's settings.
+    expect(proxyLooksValid('socks5://127.0.0.1')).toBe(false);
+    expect(proxyLooksValid('http://127.0.0.1:8080')).toBe(false);
+    expect(proxyLooksValid('socks5h://127.0.0.1:1080')).toBe(false);
+    expect(proxyLooksValid('127.0.0.1:1080')).toBe(false);
+    expect(proxyLooksValid('socks5://127.0.0.1:0')).toBe(false);
+    expect(proxyLooksValid('socks5://127.0.0.1:99999')).toBe(false);
   });
 
   it('carries trackers only when it is asked to', () => {

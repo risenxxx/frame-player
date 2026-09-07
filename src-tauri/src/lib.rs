@@ -979,6 +979,8 @@ pub fn run() {
             torrent::torrent_status,
             torrent::torrent_set_seeding,
             torrent::torrent_set_port_forward,
+            torrent::torrent_set_proxy,
+            torrent::torrent_set_encryption,
             torrent::torrent_port_status,
             torrent::torrent_prefetch,
             torrent::torrent_local_path,

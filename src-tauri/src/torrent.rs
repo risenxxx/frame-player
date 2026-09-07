@@ -109,6 +109,34 @@ const SESSION_DROP_TIMEOUT: Duration = Duration::from_secs(10);
 /// ours, not a torrent occupying space.
 const SESSION_DIR: &str = ".session";
 
+/// Ports asked for, in order, before falling back to whatever the OS gives.
+///
+/// A stable port is what makes a router mapping worth anything — UPnP renews
+/// the one it mapped, and somebody who forwarded a port by hand forwarded a
+/// number — so this is a range of our own rather than an ephemeral port.
+const LISTEN_PORTS: std::ops::Range<u16> = 42800..42900;
+
+/// The port the incoming listener asks for.
+///
+/// **The walk over the range is ours now.** 8.x took a `listen_port_range` and
+/// bound the first port that was free; 9.x takes one address, and a listener
+/// that cannot bind is fatal to the whole session — which for this player means
+/// the torrent feature is dead until the app is restarted, and the seeding and
+/// port-forwarding switches rebuild the session often enough for that to matter.
+///
+/// Falling back to `0` is the important half rather than the tidy one: a stable
+/// port is only *nicer*, while a session that will not start takes everything
+/// with it. The probe is IPv4, which is the family another BitTorrent client on
+/// this machine would be holding; a port that frees up between the probe and
+/// the bind is a race nobody can close from here, and it costs the same error
+/// 8.x gave when its whole range was busy.
+fn listen_port() -> u16 {
+    LISTEN_PORTS
+        .clone()
+        .find(|p| std::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, *p)).is_ok())
+        .unwrap_or(0)
+}
+
 /// How long `pause_restored` waits for one restored torrent to leave
 /// `Initializing`. Generous in tries and tiny in step: with `fastresume` there
 /// is nothing to hash, so this normally settles on the first or second look,
@@ -247,12 +275,79 @@ struct Inner {
     port: u16,
     /// By info hash, lower-case hex.
     torrents: HashMap<String, Entry>,
-    /// Whether the **live session** was built to seed. Not the preference —
-    /// what is actually running, which is the only thing that can be trusted to
-    /// answer "are we uploading right now".
-    seeding: bool,
-    /// Likewise for the port mapping: baked into the session when it is built.
-    port_forward: bool,
+    /// What the **live session** was built with. Not the preferences — what is
+    /// actually running, which is the only thing that can be trusted to answer
+    /// "are we uploading right now".
+    prefs: SessionPrefs,
+}
+
+/// The preferences that are baked into a session when it is built.
+///
+/// **One struct rather than three parameters, because they share the rule that
+/// matters about them**: not one of them can be changed on a live session, so
+/// changing any means tearing it down and losing the running torrent. Spelled
+/// out as separate terms, the reuse check in `ensure_started` is one `&&` per
+/// preference, and the one added next is the one somebody forgets — which fails
+/// in the quietest way available, as a setting that appears to save and does
+/// nothing at all until the app is restarted. Here it is one `==`.
+#[derive(Clone, Default, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPrefs {
+    /// Upload to other peers while streaming. Off by default — see `set_seeding`.
+    pub seeding: bool,
+    /// Ask the router to forward the listening port. See `set_port_forward`.
+    pub port_forward: bool,
+    /// How peer connections are encrypted. See `Encryption`.
+    pub encryption: Encryption,
+    /// `socks5://[user:pass@]host:port`, or empty for a direct connection.
+    ///
+    /// **What it covers is outgoing TCP and the HTTP announces, and nothing
+    /// else.** librqbit sends peer connections through the proxy and builds its
+    /// tracker client with it, but the DHT and the UDP trackers are their own
+    /// sockets — SOCKS5 carries UDP only through an ASSOCIATE that neither side
+    /// uses here — so those keep going out the ordinary way. That is the half
+    /// the settings hint has to say out loud rather than leave to be discovered.
+    pub proxy: String,
+}
+
+/// Whether to obfuscate the peer stream (MSE/PE), in this player's own words.
+///
+/// **A vocabulary of ours rather than librqbit's**, for the reason every
+/// persisted value in this app has one: this is written to localStorage and
+/// travels over the Tauri boundary, so tying it to a third-party enum's variant
+/// names would break somebody's stored preference the day that enum is renamed
+/// — or the day the patch carrying it is dropped.
+///
+/// What it buys is the thing a plaintext BitTorrent handshake cannot survive on
+/// a filtered network: the first bytes on the wire are a Diffie-Hellman
+/// exchange rather than `\x13BitTorrent protocol`, so a middlebox matching on
+/// the protocol has nothing to match. What it does **not** hide is who is being
+/// talked to, nor the DHT and the trackers, which are their own plaintext
+/// sockets — see `SessionPrefs::proxy` for the other half of that story.
+#[derive(Clone, Copy, Default, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Encryption {
+    /// Plaintext only, which is what every release before this one did.
+    Off,
+    /// **The default**: prefer MSE and fall back to a plaintext redial when a
+    /// peer will not do it. Nothing is lost against `Off` — an old peer is
+    /// still reached — so there is no reason to make anyone find this setting.
+    #[default]
+    On,
+    /// MSE or nothing: a peer that will not encrypt is dropped. For a network
+    /// where the plaintext handshake is what gets cut, and the honest cost is
+    /// the peers that do not speak it.
+    Only,
+}
+
+impl Encryption {
+    fn mode(self) -> librqbit::MseMode {
+        match self {
+            Encryption::Off => librqbit::MseMode::Disabled,
+            Encryption::On => librqbit::MseMode::Enabled,
+            Encryption::Only => librqbit::MseMode::Forced,
+        }
+    }
 }
 
 /// Which directories this feature may read, write and delete in.
@@ -489,8 +584,7 @@ impl TorrentService {
     async fn ensure_started(
         self: &Arc<Self>,
         dirs: &Dirs,
-        seeding: bool,
-        port_forward: bool,
+        prefs: &SessionPrefs,
     ) -> Result<(Arc<Session>, u16), String> {
         // **The session's own directory is `state`, never the chosen root.**
         // librqbit's `output_folder` here is only a default for torrents added
@@ -502,12 +596,13 @@ impl TorrentService {
         let port = self.ensure_server().await?;
         {
             let inner = self.inner.lock().await;
-            // Only reuse a session that matches the current preferences. Both
-            // `disable_upload` and the port forwarder are fixed when the session
-            // is built, so a session that seeds cannot be talked out of it and
-            // one built without a mapping cannot grow one — see `set_seeding`.
+            // Only reuse a session that matches the current preferences. Every
+            // one of them is fixed when the session is built, so a session that
+            // seeds cannot be talked out of it, one built without a mapping
+            // cannot grow one, and one built without a proxy cannot start using
+            // it — see `SessionPrefs` and `set_seeding`.
             if let Some(session) = inner.session.clone() {
-                if inner.seeding == seeding && inner.port_forward == port_forward {
+                if inner.prefs == *prefs {
                     return Ok((session, port));
                 }
             }
@@ -565,7 +660,10 @@ impl TorrentService {
                 // only for a torrent genuinely being opened for the first time,
                 // where a bootstrap of a few hundred milliseconds disappears
                 // into a ten-second lookup.
-                disable_dht_persistence: true,
+                dht: Some(librqbit::DhtSessionConfig {
+                    persistence: None,
+                    ..Default::default()
+                }),
                 // Off by default, and that default is a safety decision rather
                 // than a technical one: in Germany and several other
                 // jurisdictions the exposure from *uploading* copyrighted
@@ -574,7 +672,7 @@ impl TorrentService {
                 // What the flag does is thorough — librqbit stops advertising
                 // which pieces it has (no bitfield, no `have`), refuses piece
                 // requests outright, and drops peers once the file is complete.
-                disable_upload: !seeding,
+                disable_upload: !prefs.seeding,
                 // Without a listener the session announces `port=0`, and
                 // trackers refuse that outright (opentrackr answers "Port
                 // can't be 0", the tracker 403s) — so every tracker announce was
@@ -582,22 +680,53 @@ impl TorrentService {
                 // which is exactly the redundancy failure that made its
                 // Windows death (see vendor/README.md) a total outage. A real
                 // port also lets NAT-ed seeds connect to us, which is how a
-                // home-seeded swarm often reaches a leecher at all. A range,
-                // not one port: the seeding switch rebuilds the session and
-                // librqbit takes the first port that binds. No UPnP — a video
-                // player does not open router ports behind the user's back.
-                listen_port_range: Some(42800..42900),
-                // **Off by default and opt-in, because it changes the machine
-                // rather than the app**: a mapping makes this port reachable
-                // from the internet for as long as the session lives. What it
-                // buys is measured and large — of ~30 addresses one tracker
-                // announce returned, 20–22 never answered a SYN, i.e. they are
-                // behind NAT and can only ever be reached if they dial us. A
-                // reachable client turns those from unreachable into possible.
-                // See upnp.rs, which is what lets the setting say whether the
-                // router actually did it: librqbit's forwarder reports to
-                // nobody, and a switch that cannot tell is worse than none.
-                enable_upnp_port_forwarding: port_forward,
+                // home-seeded swarm often reaches a leecher at all.
+                listen: Some(librqbit::ListenerOptions {
+                    // One address where 8.x took a range — see `listen_port`
+                    // for why the walk over that range is now ours. Unspecified
+                    // IPv6 is upstream's own default and asks for a dual-stack
+                    // socket, so this listens on both families.
+                    listen_addr: (std::net::Ipv6Addr::UNSPECIFIED, listen_port()).into(),
+                    // **Off by default and opt-in, because it changes the
+                    // machine rather than the app**: a mapping makes this port
+                    // reachable from the internet for as long as the session
+                    // lives. What it buys is measured and large — of ~30
+                    // addresses one tracker announce returned, 20–22 never
+                    // answered a SYN, i.e. they are behind NAT and can only
+                    // ever be reached if they dial us. A reachable client turns
+                    // those from unreachable into possible. See upnp.rs, which
+                    // is what lets the setting say whether the router actually
+                    // did it: librqbit's forwarder reports to nobody, and a
+                    // switch that cannot tell is worse than none.
+                    enable_upnp_port_forwarding: prefs.port_forward,
+                    ..Default::default()
+                }),
+                // **The one setting here that sends the traffic somewhere else
+                // entirely.** It is opt-in and empty by default, because a
+                // proxy is somebody's own — a VPN provider's SOCKS5 endpoint,
+                // a VPS — and there is no sane guess to make on their behalf.
+                // What it buys is a route for the peer traffic that is not the
+                // system's, which is the honest half of "send torrents around
+                // the VPN": the packets still leave through whatever tunnel is
+                // up, but they leave as one connection to one host. What it
+                // does not buy is invisibility — the payload inside is
+                // unencrypted BitTorrent, so a network filtering on the
+                // protocol rather than on the destination is unaffected. See
+                // `SessionPrefs::proxy` for what stays outside it.
+                // **What a filtered network cannot match on.** The handshake
+                // that used to open every peer connection is `\x13BitTorrent
+                // protocol` in the clear, and cutting it mid-stream is what DPI
+                // on several ISPs actually does — measured on one such swarm as
+                // a peer that completes a TCP connection and then dies. With
+                // MSE the first bytes are a Diffie-Hellman exchange instead.
+                // Default `Enabled` rather than `Forced` because the fallback
+                // costs nothing: a peer that will not encrypt is redialled in
+                // the clear, so this is never worse than what shipped before.
+                mse_mode: prefs.encryption.mode(),
+                connect: Some(librqbit::ConnectionOptions {
+                    proxy_url: (!prefs.proxy.is_empty()).then(|| prefs.proxy.clone()),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
         )
@@ -613,8 +742,7 @@ impl TorrentService {
 
         let mut inner = self.inner.lock().await;
         inner.session = Some(session.clone());
-        inner.seeding = seeding;
-        inner.port_forward = port_forward;
+        inner.prefs = prefs.clone();
         Ok((session, port))
     }
 
@@ -628,7 +756,7 @@ impl TorrentService {
         inner
             .session
             .as_ref()
-            .and_then(|s| s.tcp_listen_port())
+            .and_then(|s| s.listen_addr().map(|a| a.port()))
             .unwrap_or(0)
     }
 
@@ -662,7 +790,7 @@ impl TorrentService {
     /// Turning it **on** needs no such urgency, but goes down the same path so
     /// there is only one rule to reason about.
     pub async fn set_seeding(&self, seeding: bool) -> bool {
-        self.rebuild_if(|inner| inner.seeding != seeding).await
+        self.rebuild_if(|inner| inner.prefs.seeding != seeding).await
     }
 
     /// Apply the port-mapping preference, on the same terms as seeding.
@@ -676,7 +804,29 @@ impl TorrentService {
     /// The mapping itself lapses by itself once the forwarder stops renewing it
     /// (librqbit takes a 60 s lease).
     pub async fn set_port_forward(&self, on: bool) -> bool {
-        self.rebuild_if(|inner| inner.port_forward != on).await
+        self.rebuild_if(|inner| inner.prefs.port_forward != on).await
+    }
+
+    /// Apply the proxy preference, on the same terms as the two above.
+    ///
+    /// The proxy is chosen when the session is built and there is no way to
+    /// change it afterwards, so switching one on — or off, which is the
+    /// direction that matters — costs the running torrent. That is the honest
+    /// trade rather than an implementation detail: a field reading "through
+    /// this proxy" while pieces keep arriving straight from the swarm would be
+    /// a lie about where this machine's traffic is going, which is the whole
+    /// reason somebody typed an address into it.
+    pub async fn set_proxy(&self, url: String) -> bool {
+        self.rebuild_if(|inner| inner.prefs.proxy != url).await
+    }
+
+    /// Apply the encryption preference, on the same terms as the three above:
+    /// the mode is fixed when the session is built, so changing it costs the
+    /// running torrent. Cheapest of the four to change one's mind about, and
+    /// the only one where the *middle* setting is the answer for almost
+    /// everybody — see `Encryption`.
+    pub async fn set_encryption(&self, mode: Encryption) -> bool {
+        self.rebuild_if(|inner| inner.prefs.encryption != mode).await
     }
 
     /// Tear the session down when a preference baked into it has changed.
@@ -702,10 +852,9 @@ impl TorrentService {
         self: &Arc<Self>,
         dirs: &Dirs,
         source: String,
-        seeding: bool,
-        port_forward: bool,
+        prefs: &SessionPrefs,
     ) -> Result<TorrentInfo, String> {
-        let (session, port) = self.ensure_started(dirs, seeding, port_forward).await?;
+        let (session, port) = self.ensure_started(dirs, prefs).await?;
         let dir = &dirs.state;
 
         let source = source.trim().to_string();
@@ -736,7 +885,7 @@ impl TorrentService {
         // layout get.
         let hinted_hash = match file_bytes.as_deref() {
             Some(bytes) => Some(
-                librqbit::torrent_from_bytes::<librqbit::ByteBuf>(bytes)
+                librqbit::torrent_from_bytes(bytes)
                     .map_err(|e| format!("not a torrent file: {e:#}"))?
                     .info_hash
                     .as_string(),
@@ -774,11 +923,11 @@ impl TorrentService {
         let mut seed = None;
         if meta_bytes.is_none() {
             if let Some(hash) = hinted_hash.as_deref() {
-                let port = session.tcp_listen_port().unwrap_or(0);
+                let port = session.listen_addr().map(|a| a.port()).unwrap_or(0);
                 // See `announce_peers`: a torrent added paused announces
                 // `port=0`, which trackers answer with almost nothing, so the
                 // peers for the metadata fetch are asked for directly.
-                seed = Some(announce_peers(&source, hash, port).await);
+                seed = Some(announce_peers(&source, hash, port, &prefs.proxy).await);
                 let probe = AddTorrentOptions {
                     list_only: true,
                     initial_peers: seed.clone(),
@@ -813,8 +962,10 @@ impl TorrentService {
         }
 
         let meta_name = meta_bytes.as_deref().and_then(|b| {
-            let meta = librqbit::torrent_from_bytes::<librqbit::ByteBuf>(b).ok()?;
-            let name = String::from_utf8_lossy(&meta.info.name?).trim().to_string();
+            let meta = librqbit::torrent_from_bytes(b).ok()?;
+            let name = String::from_utf8_lossy(meta.info.data.name?.as_ref())
+                .trim()
+                .to_string();
             (!name.is_empty()).then_some(name)
         });
 
@@ -1118,11 +1269,13 @@ impl TorrentService {
     /// one of these ranges can be decoded, one outside cannot.
     ///
     /// **No fork of librqbit was needed for it, contrary to first appearances.**
-    /// `with_chunk_tracker` is `pub(crate)`, but `Api::api_dump_haves` is public
-    /// and hands the same bitmap out — as a `format!("{:?}")` of a `BitSlice`,
-    /// evidently meant for debugging. That is undignified rather than fragile:
-    /// the format is pinned by Cargo.lock, `parse_haves` is unit-tested against
-    /// the real string, and a parse failure costs the map and nothing else.
+    /// `with_chunk_tracker` is `pub(crate)`, but `Api::api_dump_haves` is
+    /// public and hands the same bitmap out. Under librqbit 8 it did so as a
+    /// `format!("{:?}")` of a `BitSlice`, which this scanned back into a
+    /// `Vec<bool>` — undignified rather than fragile, since the format was
+    /// pinned by Cargo.lock and a parse failure cost the map and nothing else.
+    /// 9.x returns the bitfield itself with the piece count beside it, so the
+    /// scanner and its test are gone.
     pub async fn buffered(
         &self,
         info_hash: &str,
@@ -1141,9 +1294,12 @@ impl TorrentService {
 
         let dump = librqbit::Api::new(session, None)
             .api_dump_haves(librqbit::api::TorrentIdOrHash::Id(handle.id()));
-        let Ok(have) = dump.map(|s| parse_haves(&s)) else {
+        let Ok((bits, pieces)) = dump else {
             return Vec::new();
         };
+        // A bitfield is rounded up to a whole byte, so anything past the piece
+        // count is padding rather than a piece nobody has.
+        let have: Vec<bool> = bits.iter().take(pieces as usize).map(|b| *b).collect();
 
         handle
             .with_metadata(|m| {
@@ -1152,7 +1308,7 @@ impl TorrentService {
                 };
                 file_ranges(
                     &have,
-                    m.lengths.default_piece_length() as u64,
+                    m.lengths().default_piece_length() as u64,
                     fi.offset_in_torrent,
                     fi.len,
                 )
@@ -1245,8 +1401,8 @@ impl TorrentService {
         TorrentStatus {
             state: stats.state.to_string(),
             error: stats.error.clone(),
-            peers,
-            peers_seen,
+            peers: peers as usize,
+            peers_seen: peers_seen as usize,
             down_bps,
             up_bps,
             file_done: stats.file_progress.get(index).copied().unwrap_or(0),
@@ -1643,7 +1799,7 @@ impl TorrentService {
             }
         };
 
-        let mut stream = match handle.stream(index) {
+        let mut stream = match handle.stream(index).await {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("[torrent] stream {hash}/{index} failed: {e:#}");
@@ -1732,7 +1888,12 @@ impl TorrentService {
 /// The peer id is a throwaway rather than the session's, which is private. The
 /// cost is that a tracker may briefly list two ids from this address; they
 /// expire, and a client that restarts does the same thing.
-async fn announce_peers(magnet: &str, info_hash: &str, port: u16) -> Vec<SocketAddr> {
+async fn announce_peers(
+    magnet: &str,
+    info_hash: &str,
+    port: u16,
+    proxy: &str,
+) -> Vec<SocketAddr> {
     let (Some(hash), Ok(parsed)) = (hex_bytes(info_hash), librqbit::Magnet::parse(magnet)) else {
         return Vec::new();
     };
@@ -1748,7 +1909,22 @@ async fn announce_peers(magnet: &str, info_hash: &str, port: u16) -> Vec<SocketA
     }
 
     let peer_id = format!("-rQ0000-{:012x}", rand::random::<u64>() & 0xffff_ffff_ffff);
-    let client = reqwest::Client::new();
+    // **Through the proxy as well, when there is one.** This is the only
+    // tracker request the player makes for itself — librqbit's own go through
+    // the session's client, which it builds with the proxy — and one direct
+    // announce would hand a tracker this machine's address while every other
+    // packet went somewhere else, which is precisely the leak the setting is
+    // there to close. An address that will not parse is left off rather than
+    // reported: the session refuses to start on the same value and says so,
+    // and a second, worse message about it helps nobody.
+    let mut builder = reqwest::Client::builder();
+    if let Some(p) = (!proxy.is_empty())
+        .then(|| reqwest::Proxy::all(proxy).ok())
+        .flatten()
+    {
+        builder = builder.proxy(p);
+    }
+    let client = builder.build().unwrap_or_else(|_| reqwest::Client::new());
     let asked = urls.len();
     let results = futures_util::future::join_all(
         urls.iter()
@@ -1864,27 +2040,6 @@ fn hex_bytes(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-/// The piece bitmap out of `Api::api_dump_haves`.
-///
-/// The string is a `BitSlice` debug print — a header naming the type, its
-/// address and length, then the bits: `… { addr: 0x…, head: 000, bits: 10 }
-/// [1, 0, 1, 1, 0, 0, 0, 1, 1, 0]`. Only the bracketed tail is wanted, hence
-/// `rfind`: the header contains brackets of its own on some builds, and taking
-/// the *last* one cannot pick up the wrong list.
-fn parse_haves(dump: &str) -> Vec<bool> {
-    let Some(start) = dump.rfind('[') else {
-        return Vec::new();
-    };
-    let body = &dump[start + 1..];
-    let body = body.split(']').next().unwrap_or("");
-    body.split(',')
-        .filter_map(|t| match t.trim() {
-            "1" | "true" => Some(true),
-            "0" | "false" => Some(false),
-            _ => None,
-        })
-        .collect()
-}
 
 /// Turn a piece bitmap into the fractions of ONE file that are present.
 ///
@@ -1993,12 +2148,12 @@ async fn pause_restored(session: &Arc<Session>) {
 /// four trackers is already more than `announce_peers` will ask.
 fn trackers_of(bytes: &[u8]) -> Vec<String> {
     const MAX: usize = 6;
-    let Ok(meta) = librqbit::torrent_from_bytes::<librqbit::ByteBuf>(bytes) else {
+    let Ok(meta) = librqbit::torrent_from_bytes(bytes) else {
         return Vec::new();
     };
     let mut out: Vec<String> = Vec::new();
     for raw in meta.iter_announce() {
-        let url = String::from_utf8_lossy(raw).trim().to_string();
+        let url = String::from_utf8_lossy(raw.as_ref()).trim().to_string();
         // Only what a tracker client can actually speak. An unknown scheme is
         // dead weight in every magnet built from this afterwards.
         let usable = url.starts_with("http://")
@@ -2017,9 +2172,9 @@ fn trackers_of(bytes: &[u8]) -> Vec<String> {
 
 fn cached_name(dir: &std::path::Path, info_hash: &str) -> Option<String> {
     let bytes = std::fs::read(meta_path(dir, info_hash)).ok()?;
-    let meta = librqbit::torrent_from_bytes::<librqbit::ByteBuf>(&bytes).ok()?;
-    let name = meta.info.name?;
-    let name = String::from_utf8_lossy(&name).trim().to_string();
+    let meta = librqbit::torrent_from_bytes(&bytes).ok()?;
+    let name = meta.info.data.name?;
+    let name = String::from_utf8_lossy(name.as_ref()).trim().to_string();
     (!name.is_empty()).then_some(name)
 }
 
@@ -2410,15 +2565,10 @@ pub async fn torrent_add(
     app: tauri::AppHandle,
     service: tauri::State<'_, Arc<TorrentService>>,
     source: String,
-    seeding: bool,
-    port_forward: bool,
+    prefs: SessionPrefs,
 ) -> Result<TorrentInfo, String> {
     let dirs = TorrentService::download_dir(&app)?;
-    service
-        .inner()
-        .clone()
-        .add(&dirs, source, seeding, port_forward)
-        .await
+    service.inner().clone().add(&dirs, source, &prefs).await
 }
 
 /// Returns true if a running session had to be torn down to apply this — the
@@ -2438,6 +2588,24 @@ pub async fn torrent_set_port_forward(
     on: bool,
 ) -> Result<bool, String> {
     Ok(service.set_port_forward(on).await)
+}
+
+/// Returns true if a running session had to be torn down — see `set_proxy`.
+#[tauri::command]
+pub async fn torrent_set_proxy(
+    service: tauri::State<'_, Arc<TorrentService>>,
+    url: String,
+) -> Result<bool, String> {
+    Ok(service.set_proxy(url).await)
+}
+
+/// Returns true if a running session had to be torn down — see `set_encryption`.
+#[tauri::command]
+pub async fn torrent_set_encryption(
+    service: tauri::State<'_, Arc<TorrentService>>,
+    mode: Encryption,
+) -> Result<bool, String> {
+    Ok(service.set_encryption(mode).await)
 }
 
 /// What the router says about the BitTorrent port.
@@ -2752,13 +2920,23 @@ mod tests {
             let dirs = Dirs::single(dir.clone());
             let service = Arc::new(TorrentService::default());
 
+            // `FP_TEST_MSE=only` is what proves the encryption interoperates
+            // with the real world rather than with our own tests: forced, every
+            // peer that will not do MSE is dropped, so bytes arriving at all
+            // means they arrived over an encrypted stream from somebody else's
+            // client. `off` is the control.
+            let prefs = SessionPrefs {
+                encryption: match std::env::var("FP_TEST_MSE").unwrap_or_default().as_str() {
+                    "only" => Encryption::Only,
+                    "off" => Encryption::Off,
+                    _ => Encryption::On,
+                },
+                ..Default::default()
+            };
             let t0 = std::time::Instant::now();
             // Never seeds, matching the shipped default — a test must not
             // quietly upload to strangers.
-            let info = service
-                .add(&dirs, magnet, false, false)
-                .await
-                .expect("resolve failed");
+            let info = service.add(&dirs, magnet, &prefs).await.expect("resolve failed");
             println!("resolved in {:?}: {:?}", t0.elapsed(), info.name);
             for f in &info.files {
                 println!("  [{}] {} ({} bytes)\n      {}", f.index, f.path, f.size, f.url);
@@ -2835,6 +3013,33 @@ mod tests {
                 status.file_size
             );
 
+            // **The buffer map, through the same call the seekbar polls**, and
+            // asserted rather than printed because this is where a silent wrong
+            // answer lives. The bitfield arrives as bits rather than as a
+            // number: a bit order that disagreed with the piece index would
+            // still produce a plausible list of bands, in the wrong places, and
+            // read as a slow swarm rather than as a bug. The two reads above
+            // are what make it checkable — the **tail** was fetched, so a
+            // correct map has to end at the end of the file, and `file_ranges`
+            // clamps the last piece to exactly 1.0.
+            let bands = service.buffered(&info.info_hash, video.index).await;
+            println!("buffered: {bands:?}");
+            assert!(!bands.is_empty(), "nothing buffered after two reads");
+            for (s, e) in &bands {
+                assert!(
+                    (0.0..=1.0).contains(s) && (0.0..=1.0).contains(e) && s < e,
+                    "band out of range: {s}..{e}"
+                );
+            }
+            assert!(
+                bands.windows(2).all(|w| w[0].1 < w[1].0),
+                "bands are unsorted or touching, which the merge should have joined"
+            );
+            assert!(
+                bands.last().unwrap().1 > 0.999,
+                "the tail was read but the map does not reach the end of the file: {bands:?}"
+            );
+
             // What the container itself says, read through the very server mpv
             // uses. This is the half that attributes a complaint: if a chapter
             // list is wrong *here*, it is wrong in the file, because ffprobe and
@@ -2899,7 +3104,7 @@ mod tests {
             let service = Arc::new(TorrentService::default());
 
             let info = service
-                .add(&dirs, magnet, false, false)
+                .add(&dirs, magnet, &SessionPrefs::default())
                 .await
                 .expect("resolve failed");
             let file = info
@@ -3338,7 +3543,9 @@ mod tests {
                 librqbit::CreateTorrentOptions {
                     name: Some("season"),
                     piece_length: Some(32 * 1024),
+                    trackers: Vec::new(),
                 },
+                &librqbit::spawn_utils::BlockingSpawner::new(1),
             )
             .await
             .unwrap();
@@ -3353,7 +3560,7 @@ mod tests {
 
             let service = Arc::new(TorrentService::default());
             let info = service
-                .add(&Dirs::single(base.clone()), format!("magnet:?xt=urn:btih:{hash}"), false, false)
+                .add(&Dirs::single(base.clone()), format!("magnet:?xt=urn:btih:{hash}"), &SessionPrefs::default())
                 .await
                 .expect("add failed");
             assert_eq!(info.files.len(), 2);
@@ -3413,7 +3620,9 @@ mod tests {
                 librqbit::CreateTorrentOptions {
                     name: Some("offline"),
                     piece_length: Some(32 * 1024),
+                    trackers: Vec::new(),
                 },
+                &librqbit::spawn_utils::BlockingSpawner::new(1),
             )
             .await
             .unwrap();
@@ -3430,7 +3639,7 @@ mod tests {
             // A magnet with no trackers: if anything reached for the network,
             // there is nowhere for it to go and this would hang rather than pass.
             let info = service
-                .add(&Dirs::single(base.clone()), format!("magnet:?xt=urn:btih:{hash}"), false, false)
+                .add(&Dirs::single(base.clone()), format!("magnet:?xt=urn:btih:{hash}"), &SessionPrefs::default())
                 .await
                 .expect("add failed");
             assert_eq!(info.files.len(), 1);
@@ -3482,22 +3691,6 @@ mod tests {
         });
     }
 
-    /// The debug string `api_dump_haves` hands back. Pinned by a test because
-    /// it is a third-party `Debug` impl rather than a documented format — if a
-    /// bitvec upgrade changes it, this fails instead of the seekbar quietly
-    /// losing its buffer map.
-    #[test]
-    fn haves_parsing() {
-        // Verbatim from a real run (see the module doc on `buffered`).
-        let real = "BitSlice<u8, bitvec::order::Msb0> { addr: 0x10a9ee760, head: 000,                     bits: 10 } [1, 0, 1, 1, 0, 0, 0, 1, 1, 0]";
-        assert_eq!(
-            parse_haves(real),
-            vec![true, false, true, true, false, false, false, true, true, false]
-        );
-        // Degrades to "nothing is buffered" rather than to a wrong map.
-        assert_eq!(parse_haves("nonsense"), Vec::<bool>::new());
-        assert_eq!(parse_haves(""), Vec::<bool>::new());
-    }
 
     /// Pieces cover the whole torrent, so a file's first and last are usually
     /// shared with its neighbours. Getting that intersection wrong would draw
@@ -3558,7 +3751,12 @@ mod tests {
             std::fs::write(stage.join("clip.mkv"), &payload).unwrap();
             let created = librqbit::create_torrent(
                 &stage,
-                librqbit::CreateTorrentOptions { name: Some("resume"), piece_length: Some(65536) },
+                librqbit::CreateTorrentOptions {
+                    name: Some("resume"),
+                    piece_length: Some(65536),
+                    trackers: Vec::new(),
+                },
+                &librqbit::spawn_utils::BlockingSpawner::new(1),
             )
             .await
             .unwrap();
@@ -3571,7 +3769,7 @@ mod tests {
 
             // First run: just add it, so the store is seeded.
             let first = Arc::new(TorrentService::default());
-            let info = first.add(&Dirs::single(base.clone()), magnet.clone(), false, false).await.unwrap();
+            let info = first.add(&Dirs::single(base.clone()), magnet.clone(), &SessionPrefs::default()).await.unwrap();
             first.shutdown_session().await;
 
             // Then say it was RUNNING when the app closed. Writing that into the
@@ -3597,7 +3795,7 @@ mod tests {
 
             // Second run: a fresh service over the same store.
             let second = Arc::new(TorrentService::default());
-            second.add(&Dirs::single(base.clone()), magnet, false, false).await.unwrap();
+            second.add(&Dirs::single(base.clone()), magnet, &SessionPrefs::default()).await.unwrap();
             let status = second.status(&info.info_hash, 0).await;
             assert_eq!(
                 status.state, "paused",
@@ -3635,7 +3833,9 @@ mod tests {
                 librqbit::CreateTorrentOptions {
                     name: Some("ghost"),
                     piece_length: Some(65536),
+                    trackers: Vec::new(),
                 },
+                &librqbit::spawn_utils::BlockingSpawner::new(1),
             )
             .await
             .unwrap();
@@ -3648,7 +3848,7 @@ mod tests {
 
             // First run: opened once, which is what puts it in the store.
             let first = Arc::new(TorrentService::default());
-            first.add(&Dirs::single(base.clone()), magnet.clone(), false, false).await.unwrap();
+            first.add(&Dirs::single(base.clone()), magnet.clone(), &SessionPrefs::default()).await.unwrap();
             first.shutdown_session().await;
             let store = base.join(SESSION_DIR).join("session.json");
             assert!(
@@ -3671,7 +3871,7 @@ mod tests {
 
             // The next session is where it used to reappear.
             let third = Arc::new(TorrentService::default());
-            third.ensure_started(&Dirs::single(base.clone()), false, false).await.unwrap();
+            third.ensure_started(&Dirs::single(base.clone()), &SessionPrefs::default()).await.unwrap();
             assert!(
                 find_folder(std::slice::from_ref(&base), &hash).is_none(),
                 "the deleted torrent was restored and its folder recreated"
@@ -3708,7 +3908,9 @@ mod tests {
                 librqbit::CreateTorrentOptions {
                     name: Some("The Show S01 [1080p]"),
                     piece_length: Some(65536),
+                    trackers: Vec::new(),
                 },
+                &librqbit::spawn_utils::BlockingSpawner::new(1),
             )
             .await
             .unwrap();
@@ -3756,7 +3958,9 @@ mod tests {
                 librqbit::CreateTorrentOptions {
                     name: Some("forget"),
                     piece_length: Some(65536),
+                    trackers: Vec::new(),
                 },
+                &librqbit::spawn_utils::BlockingSpawner::new(1),
             )
             .await
             .unwrap();
@@ -3770,7 +3974,7 @@ mod tests {
 
             let first = Arc::new(TorrentService::default());
             first
-                .add(&Dirs::single(base.clone()), format!("magnet:?xt=urn:btih:{hash}"), false, false)
+                .add(&Dirs::single(base.clone()), format!("magnet:?xt=urn:btih:{hash}"), &SessionPrefs::default())
                 .await
                 .unwrap();
             first.shutdown_session().await;
@@ -3778,7 +3982,7 @@ mod tests {
             // A later run that opens some other torrent, so the session exists
             // and this one is in it only because it was restored.
             let second = Arc::new(TorrentService::default());
-            second.ensure_started(&Dirs::single(base.clone()), false, false).await.unwrap();
+            second.ensure_started(&Dirs::single(base.clone()), &SessionPrefs::default()).await.unwrap();
             let folder = find_folder(std::slice::from_ref(&base), &hash).expect("no folder for the torrent");
             let folder = folder.file_name().unwrap().to_string_lossy().into_owned();
             second.forget(&Dirs::single(base.clone()), &base.join(&folder).to_string_lossy()).await.unwrap();
@@ -3841,21 +4045,24 @@ pub fn torrent_offline_file(
             return None;
         }
     };
-    let parsed = match librqbit::torrent_from_bytes::<librqbit::ByteBuf>(&bytes) {
+    let parsed = match librqbit::torrent_from_bytes(&bytes) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("[poster] cached metadata for {hash} unreadable: {e:#}");
             return None;
         }
     };
-    let info = parsed.info;
+    // `validate` is what turns the parsed info dict into something that can be
+    // walked: it computes the piece lengths, detects the name encoding and
+    // refuses a torrent whose file names climb out of their own folder — the
+    // same check librqbit runs before it will add one.
+    let info = parsed.info.data.validate().ok()?;
 
     // Single-file torrents have no file list; the torrent itself is the file.
-    let (rel, length) = match info.iter_file_details().ok()?.nth(index) {
+    let (rel, length) = match info.iter_file_details().nth(index) {
         Some(f) => (
             f.filename
                 .iter_components()
-                .flatten()
                 .map(|c| c.to_string())
                 .collect::<Vec<_>>()
                 .join(std::path::MAIN_SEPARATOR_STR),
