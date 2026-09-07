@@ -39,10 +39,11 @@ import { showOsd } from '../osd.svelte';
 import { loadFiles, player, positionNow } from '../player.svelte';
 import { queueTorrent } from '../playlist.svelte';
 import { issueSeek, seek, wantExact } from '../seek.svelte';
-import { addTorrent, torrent, torrentVideos } from '../torrent.svelte';
+import { addTorrent, torrent, torrentFailureText, torrentVideos } from '../torrent.svelte';
 import { followRoomTrack } from '../tracks.svelte';
 import { compareLocal, contentOf, sameContent, type MatchVerdict } from './content';
 import { correctionFor, deadbandFor, speedChanged } from './drift';
+import { isBusy } from './ready';
 import type { ContentRef, Timeline, TrackKind } from './protocol';
 
 /// Both kinds, in one place, so a loop over them cannot forget one.
@@ -82,6 +83,13 @@ class Sync {
   /// looking at a room that is playing something while their own window sits
   /// empty with nothing to explain it. The panel and the chip both read this.
   failed = $state(false);
+  /// Why, when there is something more useful to say than "it did not work".
+  ///
+  /// The reason used to reach `console.warn` and nowhere else, which left the
+  /// one case that actually happens — a swarm that never answered inside
+  /// ninety seconds — indistinguishable from a bug in the player. Empty when
+  /// the failure has nothing to add beyond `sync.open_failed`.
+  failedReason = $state('');
 
   /// This player is holding the room up.
   get holdingUp(): boolean {
@@ -102,6 +110,17 @@ const opens = latest();
 /// reopen anything.
 let openedFor: ContentRef | null = null;
 let loadedAt = 0;
+/// The source mpv last actually started producing frames for.
+///
+/// **"A file is open" is not "playback began", and the gap between them is
+/// where this feature was reporting a lie.** `filename` and `path` are set the
+/// moment a load *starts*, so a torrent whose first byte never arrives looks —
+/// to `player.hasFile` and therefore to everything downstream — exactly like
+/// one that is playing. A guest sitting in front of a black window was
+/// reporting themselves ready on that basis and the room played on without
+/// them. `playback-restart` is the event that means frames are being produced;
+/// it fires again on every seek, which only re-states what is already true.
+let startedSrc = $state<string | null>(null);
 /// The speed last written for drift correction, so the reconciler does not
 /// rewrite mpv's `speed` every second with a value a hair from the last.
 let correctedSpeed = 0;
@@ -122,21 +141,21 @@ export function initSync() {
   // Readiness. The relay freezes the room while anybody is not ready, which is
   // what makes watching a torrent together bearable — so this has to be honest
   // in both directions: too eager and the others watch ahead of a viewer who is
-  // still buffering, too shy and one slow machine holds an evening.
+  // still buffering, too shy and one slow machine holds an evening. The rule
+  // itself is `ready.ts`, a leaf: this is the decision in the feature whose
+  // every mistake is invisible from outside, so it is pinned by tests rather
+  // than by reading an effect.
   $effect(() => {
-    // Nothing open yet counts as busy — we are about to open what the room is
-    // watching, and holding it until we have is the whole point. Except when
-    // there is nothing we *can* open: for a local file or a hidden one, waiting
-    // changes nothing, and making an evening stop for somebody who is off
-    // looking for their own copy is worse than letting it run. They are told
-    // what to open; the panel says so.
-    // ...and only when there is something to open. A viewer sitting on the
-    // start screen of a room where nothing is playing is not holding anybody
-    // up — there is nothing to be ready *for* — and reporting otherwise made
-    // creating a room from the start screen announce "waiting for you" about a
-    // wait that did not exist and could not end.
-    const willOpen = !player.hasFile && !sync.unopenable && wire.timeline.content !== null;
-    const busy = sync.opening || player.stalled || willOpen;
+    const busy = isBusy({
+      hasFile: player.hasFile,
+      // See `startedSrc`: "a file is open" is not "playback began".
+      playing: startedSrc === player.filePath,
+      stalled: player.stalled,
+      opening: sync.opening,
+      failed: sync.failed,
+      unopenable: sync.unopenable !== null,
+      roomHasContent: wire.timeline.content !== null,
+    });
     reportReady(!busy, busy ? 'buffering' : '');
   });
 
@@ -226,6 +245,7 @@ function onRoom() {
     sync.unopenable = null;
     sync.opening = false;
     sync.failed = false;
+    sync.failedReason = '';
     openedFor = null;
     followed.audio = null;
     followed.sub = null;
@@ -250,19 +270,29 @@ async function openContent(ref: ContentRef | null) {
   openedFor = ref;
   sync.unopenable = null;
   sync.failed = false;
+  sync.failedReason = '';
 
   // A different film has different tracks, so whatever was followed for the
   // last one must not suppress the first choice made for this one.
   followed.audio = null;
   followed.sub = null;
-  if (!ref) return;
-  if (ref.kind === 'file' || ref.kind === 'hidden') {
-    sync.unopenable = ref;
-    return;
-  }
 
-  sync.opening = true;
+  // **Every path out of here has to leave `opening` false**, which is why the
+  // two cases that open nothing at all are inside the `try` rather than in
+  // front of it. A previous, now stale, attempt may have raised the flag: its
+  // own `finally` declines to clear it (correctly — the newer run owns the
+  // flag now), so an early return here left the chip saying "opening what the
+  // room is watching" for the rest of the session, and with it a viewer
+  // reporting themselves permanently not ready. Reachable by doing nothing
+  // wrong: resolve a magnet, have the host switch to a local file.
   try {
+    if (!ref) return;
+    if (ref.kind === 'file' || ref.kind === 'hidden') {
+      sync.unopenable = ref;
+      return;
+    }
+
+    sync.opening = true;
     if (ref.kind === 'url') {
       await loadFiles([ref.url]);
       if (run.stale) return;
@@ -278,8 +308,7 @@ async function openContent(ref: ContentRef | null) {
         videos.find((f) => f.path === ref.file) ??
         null;
       if (!file) {
-        sync.failed = true;
-        showOsd(t('sync.no_such_file'));
+        reportOpenFailure(t('sync.no_such_file'));
         return;
       }
       await loadFiles([file.url]);
@@ -288,14 +317,30 @@ async function openContent(ref: ContentRef | null) {
     }
     loadedAt = performance.now();
   } catch (e) {
-    if (!run.stale) {
-      sync.failed = true;
-      showOsd(t('sync.open_failed'));
-    }
+    // A torrent is the case with something to say, and `torrentFailureText` is
+    // the same sentence the link box shows for the same call — above all the
+    // ninety-second timeout, which is what a blocked or dead swarm actually
+    // produces and which used to reach the console and nothing else. A URL
+    // failure is mpv's, and it has no reason worth putting in front of anyone.
+    if (!run.stale) reportOpenFailure(ref?.kind === 'torrent' ? torrentFailureText(e) : '');
     console.warn('[sync] could not open what the room is watching:', e);
   } finally {
     if (!run.stale) sync.opening = false;
   }
+}
+
+/**
+ * Say that opening the room's content did not work, in all three places at once.
+ *
+ * The popup is what a viewer sees if they are looking; the state is what the
+ * chip and the panel read afterwards, because an OSD is gone long before
+ * somebody opens the panel to find out why their window is empty while the room
+ * plays on.
+ */
+function reportOpenFailure(reason: string) {
+  sync.failed = true;
+  sync.failedReason = reason;
+  showOsd(t('sync.open_failed'), reason ? { sub: reason } : undefined);
 }
 
 // ---- keeping in step --------------------------------------------------------
@@ -399,6 +444,18 @@ function restoreSpeed() {
 }
 
 // ---- what this player is watching -------------------------------------------
+
+/**
+ * mpv started producing frames.
+ *
+ * Called from the page's `playbackRestart` hook, which is the only signal in
+ * the player that means playback actually began — `file-loaded` means the
+ * demuxer opened, and `filename` means a load was *issued*. What this is for is
+ * the readiness report; see `startedSrc`.
+ */
+export function syncNotePlaybackRestart() {
+  startedSrc = player.filePath;
+}
 
 /**
  * Tell the room what has just been opened here.

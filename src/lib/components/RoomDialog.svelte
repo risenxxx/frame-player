@@ -164,7 +164,14 @@
       <!-- A failure has to stand, not fade: a viewer whose window is empty
            while the room plays on needs to know it was tried and why it did
            not work, and an OSD is gone before they open this panel. -->
-      {#if sync.failed}<div class="link-error">{t('sync.open_failed')}</div>{/if}
+      {#if sync.failed}
+        <div class="link-error">{t('sync.open_failed')}</div>
+        <!-- And why, when the call had something to say. The timeout is the one
+             that actually happens — a swarm that never answered in ninety
+             seconds — and it is the difference between "this player is broken"
+             and "this torrent has nobody on it". -->
+        {#if sync.failedReason}<div class="room-sub">{sync.failedReason}</div>{/if}
+      {/if}
     </div>
 
     <!-- A heading and hairline rows rather than another bordered box: the

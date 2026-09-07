@@ -41,7 +41,12 @@
   import TorrentPickDialog from '$lib/components/TorrentPickDialog.svelte';
   import TorrentUpdateDialog from '$lib/components/TorrentUpdateDialog.svelte';
   import { blockContextMenu, inTextField } from '$lib/dom';
-  import { initSync, syncNoteFileLoaded } from '$lib/sync/apply.svelte';
+  import {
+    initSync,
+    sync,
+    syncNoteFileLoaded,
+    syncNotePlaybackRestart,
+  } from '$lib/sync/apply.svelte';
   import { initDeepLinks, invite } from '$lib/sync/link.svelte';
   import {
     initSeek,
@@ -609,6 +614,10 @@
         playbackRestart: () => {
           armVideoReady();
           notePlaybackRestart();
+          // The one event that means frames are actually being produced, which
+          // is what a room has to be told about — a file mpv has merely been
+          // handed looks identical from every other angle.
+          syncNotePlaybackRestart();
         },
       })),
     );
@@ -1261,8 +1270,25 @@
     />
   {/if}
 
-  {#if opening.busy}
-    <LoadingOverlay label={opening.label} torrentLabel={opening.torrentLabel} />
+  <!-- The second half of this condition is the room's own open, and it is the
+       one wait in the player that had nothing on screen at all: joining a room
+       that is watching a torrent is a magnet resolve of up to ninety seconds,
+       during which `beforeLoad` has not run — mpv has not been handed anything
+       yet — so `busy` was false and the viewer sat on the start screen with a
+       single line in the room chip for the whole of it. Reported, correctly, as
+       a player that does nothing.
+
+       Gated on there being no file, which is the same trade the casting screen
+       makes: while the room switches films this player is still legitimately
+       playing the previous one, and covering a moving picture with a status
+       plate for ninety seconds reads as the player dying. There the chip is
+       enough, because there is something to look at. -->
+  {#if opening.busy || (sync.opening && !player.hasFile)}
+    <LoadingOverlay
+      label={opening.label}
+      sub={opening.torrentLabel ?? (sync.opening ? t('sync.opening') : null)}
+      since={opening.since}
+    />
   {/if}
 
   <!-- The casting screen: while the TV plays, this window is a remote, and

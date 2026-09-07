@@ -1,19 +1,49 @@
 <script lang="ts">
-  /// Shown while a network source is resolving and buffering.
+  /// Shown while a network source is resolving and buffering — and while the
+  /// room's own content is being opened, which is the longest of those waits
+  /// and the one that used to show nothing at all.
   ///
   /// It reports a real figure rather than a guess: mpv's `cache-buffering-state`
   /// is the cache fill and is *absent* while there is no cache yet, which means
-  /// "still resolving" and not "0 %".
-  import { t } from '$lib/i18n.svelte';
+  /// "still resolving" and not "0 %". Where there is no figure to report at all
+  /// — a magnet resolve — it reports the one thing it does know, which is how
+  /// long it has been going.
+  import { formatTime } from '$lib/format';
 
   interface Props {
     /// The sentence under the title — what is being waited on right now.
     label: string;
-    /// A torrent's peers and rate, when that is what is being opened.
-    torrentLabel: string | null;
+    /// Why it is waiting: a torrent's peers and rate, or — while the room's own
+    /// content is being opened — what this player is opening and why.
+    sub: string | null;
+    /// When the wait began, for a wait with nothing to count but seconds. Zero
+    /// for one that reports a figure of its own, where a clock adds nothing.
+    since?: number;
   }
 
-  let { label, torrentLabel }: Props = $props();
+  let { label, sub, since = 0 }: Props = $props();
+
+  /// Seconds on screen. A timer rather than something derived, because while a
+  /// magnet resolves **nothing else on this box changes** — no percentage, no
+  /// peer count, no rate — and a plate that never moves for ninety seconds is
+  /// exactly what reads as a player that has hung rather than one still looking.
+  let elapsed = $state(0);
+
+  // Writes `elapsed` and never reads it: an effect that read its own state back
+  // would re-register itself on every tick (the ScrollFade lesson), and here it
+  // would also restart the interval a second at a time.
+  $effect(() => {
+    if (!since) {
+      elapsed = 0;
+      return;
+    }
+    const tick = () => {
+      elapsed = Math.max(0, Math.round((Date.now() - since) / 1000));
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  });
 </script>
 
 <div class="overlay loading-overlay">
@@ -23,11 +53,17 @@
          That is what makes them share a left edge structurally instead of
          by an offset someone has to keep correct. -->
     <span class="loading-text">
-      <span class="loading-title">{label}</span>
+      <!-- The clock rides in the title rather than under it: it is not a
+           second fact about the wait, it is how long *this* wait has been
+           going on, and on its own line it would read as a duration of
+           something. -->
+      <span class="loading-title"
+        >{label}{#if since}<span class="loading-clock">{formatTime(elapsed)}</span>{/if}</span
+      >
       <!-- Why it is waiting, when the answer is a swarm. Without it a
            torrent stall is indistinguishable from a hung player. -->
-      {#if torrentLabel}
-        <span class="loading-sub">{torrentLabel}</span>
+      {#if sub}
+        <span class="loading-sub">{sub}</span>
       {/if}
     </span>
   </div>
@@ -84,6 +120,15 @@
 
   .loading-title {
     line-height: 1.3;
+  }
+
+  /* Dimmer than the sentence it follows, because it is a measurement rather
+     than part of it. The gap is a margin and not a space in the markup: the two
+     are one line of text, and this way the distance is a chosen 7px rather than
+     whatever the font's word space happens to be. */
+  .loading-clock {
+    margin-left: 7px;
+    color: #9a9aa6;
   }
 
   /* The state is the title ("waiting for data"); this is the evidence for it.

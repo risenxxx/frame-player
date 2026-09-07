@@ -62,6 +62,7 @@ import {
   setPortForward,
   setSeeding,
   torrent,
+  torrentFailureText,
   torrentIsPlaying,
   torrentPrefs,
   torrentResume,
@@ -170,10 +171,25 @@ class Opening {
   /// What the indicator says. mpv reports the cache fill only while there is a
   /// cache, so an absent figure means "still resolving", not "0%".
   label = $derived.by(() => {
+    // **The magnet resolve is asked about first, because it happens before mpv
+    // has been given anything at all**: there is no cache to report a fill for
+    // and nothing to be stalled on, so every other branch here would answer
+    // "Opening the link…" for a wait that is a DHT lookup and can run to a
+    // minute and a half. That is what made the longest wait in the player also
+    // the emptiest-looking one.
+    if (torrent.resolving) return t('torrent.resolving');
     if (player.stalled) return t('load.stalled');
     const pct = player.cacheBuffering;
     return pct !== null && pct < 100 ? t('load.buffering', { percent: pct }) : t('load.opening');
   });
+
+  /// When the wait now on screen began, or 0 for one that should not be timed.
+  ///
+  /// Only the resolve: everything else the overlay reports has a figure of its
+  /// own — a buffering percentage, a peer count — and a figure beats a clock.
+  /// What a clock is for is the wait with nothing to count, where the only
+  /// question is whether anything is still happening.
+  since = $derived(torrent.resolving ? torrent.resolvingSince : 0);
 
   /**
    * The live torrent readout, or null when there is nothing to report.
@@ -467,12 +483,10 @@ export async function openTorrent(source: string, origin?: CatalogOrigin) {
     opening.linkOpen = false;
     opening.pick = info;
   } catch (e) {
-    // The one failure worth naming: a swarm that never answered is a fact about
-    // the torrent, and "try a different magnet" is the actual advice.
-    opening.box.torrentError =
-      String(e) === 'resolve_timeout'
-        ? t('torrent.timeout')
-        : t('torrent.failed', { reason: String(e) });
+    // The one failure worth naming is the timeout, and naming it is
+    // `torrentFailureText`'s job — shared with the room panel, which shows the
+    // same reason for the same call.
+    opening.box.torrentError = torrentFailureText(e);
     // A torrent does not only arrive from the box that shows this message: a
     // dropped `.torrent` reaches here with no dialog open, and a corrupt file
     // would then fail in complete silence. Raising it is the same answer the
@@ -669,10 +683,7 @@ export async function openRememberedTorrent(row: TorrentRow) {
     }
     opening.pick = info;
   } catch (e) {
-    opening.box.torrentError =
-      String(e) === 'resolve_timeout'
-        ? t('torrent.timeout')
-        : t('torrent.failed', { reason: String(e) });
+    opening.box.torrentError = torrentFailureText(e);
     opening.linkOpen = true;
   } finally {
     opening.rowOpening = null;

@@ -27,6 +27,7 @@ import { command } from 'tauri-plugin-libmpv-api';
 
 import { baseName, displayName, extensionOf } from './format';
 import { FINISHED_FRACTION, TORRENTS_KEY, history, positionsLoad } from './history.svelte';
+import { t } from './i18n.svelte';
 import { latest } from './latest';
 import { SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, player } from './player.svelte';
 import { magnetFor, parseTorrentUrl, torrentId } from './source';
@@ -206,8 +207,16 @@ class TorrentState {
   /// Live figures for the file being played. Null when nothing is polling.
   status = $state<TorrentStatus | null>(null);
   /// A magnet is being resolved: the DHT lookup that turns an info hash into a
-  /// file list, which routinely takes ten seconds and can take a minute.
+  /// file list, which routinely takes ten seconds and can take ninety.
   resolving = $state(false);
+  /// When that resolve started, so the wait can show a clock.
+  ///
+  /// It is the longest wait anywhere in the player — `RESOLVE_TIMEOUT` is 90 s,
+  /// and a cached-metadata add that times out falls through to a second one —
+  /// and it is the one wait with no percentage to report, because nothing can be
+  /// counted until the metadata arrives whole. A number that moves is the whole
+  /// difference between a player that is still looking and one that has hung.
+  resolvingSince = $state(0);
   /// What the router last said about the forwarded port, and whether an answer
   /// is being waited for. Read only by the settings row — see `refreshPortStatus`.
   portStatus = $state<PortStatus | null>(null);
@@ -266,6 +275,7 @@ export function torrentVideos(info: TorrentInfo): TorrentFile[] {
  */
 export async function addTorrent(source: string): Promise<TorrentInfo> {
   torrent.resolving = true;
+  torrent.resolvingSince = Date.now();
   try {
     const info = await invoke<TorrentInfo>('torrent_add', {
       source,
@@ -277,6 +287,22 @@ export async function addTorrent(source: string): Promise<TorrentInfo> {
   } finally {
     torrent.resolving = false;
   }
+}
+
+/**
+ * Turn what `addTorrent` threw into a sentence.
+ *
+ * One place rather than one per caller, because there are two now — the link
+ * box and the room panel — and the distinction worth keeping is the same on
+ * both: **a swarm that never answered is a fact about the torrent**, and "try a
+ * different magnet" is different advice from librqbit's own message. The room
+ * used to log its reason to the console and show a bare "could not open it",
+ * which is the one thing a viewer whose window is empty cannot act on.
+ */
+export function torrentFailureText(e: unknown): string {
+  return String(e) === 'resolve_timeout'
+    ? t('torrent.timeout')
+    : t('torrent.failed', { reason: String(e) });
 }
 
 /// Guard so one file's subtitles are attached once, not on every `file-loaded`

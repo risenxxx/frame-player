@@ -210,7 +210,8 @@ const ru = {
   'torrent.port_no_router': 'Роутер не ответил на запрос UPnP.',
   'torrent.port_no_session': 'Порт откроется, когда вы откроете раздачу.',
   'torrent.resolving': 'Ищем раздачу…',
-  'torrent.resolving_hint': 'Список файлов приходит от других участников раздачи — это занимает до минуты.',
+  'torrent.resolving_hint':
+    'Список файлов приходит от других участников раздачи — это занимает до полутора минут.',
   'torrent.pick_title': 'Что смотрим',
   'torrent.pick_hint': 'Остальные файлы встанут в очередь — скачиваться будет только тот, который играет.',
   'torrent.no_video': 'В этой раздаче нет видеофайлов.',
@@ -985,7 +986,8 @@ const en: Record<MessageKey, string> = {
   'torrent.port_no_router': 'The router did not answer a UPnP request.',
   'torrent.port_no_session': 'The port opens when you open a torrent.',
   'torrent.resolving': 'Finding the torrent…',
-  'torrent.resolving_hint': 'The file list comes from other peers, which can take up to a minute.',
+  'torrent.resolving_hint':
+    'The file list comes from other peers, which can take up to a minute and a half.',
   'torrent.pick_title': 'What to watch',
   'torrent.pick_hint': 'The rest go in the queue — only the one playing is downloaded.',
   'torrent.no_video': 'This torrent holds no video files.',
