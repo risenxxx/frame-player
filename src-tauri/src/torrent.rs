@@ -2260,6 +2260,35 @@ fn prune_orphaned_store(session_dir: &std::path::Path) {
     );
 }
 
+/// Put a `.torrent` fetched from somewhere else where `add` looks first.
+///
+/// For the RSS path (`feed.rs`): a feed hands over a `.torrent` URL, which is
+/// the one source `add` cannot name a folder for — so the bytes are validated,
+/// cached under their own info hash, and the torrent is then opened as a magnet
+/// built from that hash, which finds this file and reaches no network at all.
+/// Returns the hash and the torrent's own name.
+pub(crate) fn cache_metadata(
+    app: &tauri::AppHandle,
+    bytes: &[u8],
+) -> Result<(String, Option<String>), String> {
+    let meta = librqbit::torrent_from_bytes(bytes).map_err(|_| "not_torrent".to_string())?;
+    let hash = meta.info_hash.as_string();
+    let name = meta
+        .info
+        .data
+        .name
+        .as_ref()
+        .map(|n| String::from_utf8_lossy(n.as_ref()).trim().to_string())
+        .filter(|n| !n.is_empty());
+    let dirs = TorrentService::download_dir(app)?;
+    let path = meta_path(&dirs.state, &hash);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("{e}"))?;
+    }
+    std::fs::write(&path, bytes).map_err(|e| format!("{e}"))?;
+    Ok((hash, name))
+}
+
 /// Where the cached torrent metadata for an info hash lives.
 ///
 /// Beside the data folders rather than inside one, under a dot-name so

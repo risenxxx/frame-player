@@ -268,9 +268,38 @@ different problems that must not look the same.
 handshakes mid-stream, which shows up as handshake noise in logs even when
 everything works.
 
-**Discovery of new episodes is out of scope.** A torrent cannot gain a file —
-adding one changes the infohash and publishes a different torrent — so the
+**Discovery of new episodes works only through a feed.** A torrent cannot gain a
+file — adding one changes the infohash and publishes a different torrent — so the
 player supports *replacing* a torrent with its successor, moving the data and
-re-keying watch positions by file name. Learning that a successor exists would
-need feed polling, which is the resident BitTorrent client this application
-declines to be.
+re-keying watch positions by file name. Learning that a successor exists needs
+the release's RSS feed: pasted instead of a magnet (or into the update dialog), it
+is remembered with the torrent and read again when the start screen lists it —
+never on a timer, and never applied without the viewer confirming. A torrent that
+arrived by magnet with no feed attached still learns nothing by itself.
+
+## RSS feeds
+
+A per-release feed is the tracker answering "has this been re-uploaded" in a form
+a program can read. What the player takes from it and why:
+
+- **Which item is the successor is decided by the stem**, the title with its
+  episode range removed and everything else required equal. The reference feed
+  carries the same season as AVC and HEVC side by side; any similarity score
+  that accepts `1-11` → `1-12` also accepts AVC → HEVC, so similarity is not used
+  for an offer the player makes on its own. Lone episode numbers are kept, so
+  feeds that publish one torrent per episode never produce an offer — replacing
+  episode 11's torrent with episode 12's would move data into the wrong folder.
+- **An item's `.torrent` is fetched into the metadata cache** and opened as a
+  magnet built from its hash. That is what makes a feed item open like a
+  remembered magnet — instant, hash-named folder, history — instead of like a
+  `.torrent` URL, which `add` cannot name a folder for.
+- **The feed's hash is checked against the file's.** `FP_TEST_FEED=<url> cargo
+  test --lib feed::tests::live_feed -- --nocapture` reads a feed, fetches the
+  first five `.torrent`s and asserts the two agree. Measured on the reference
+  feed (hash in `<guid>`) and on nyaa (`nyaa:infoHash`): all equal.
+- **Dialects handled**: `<enclosure>`, `<link>` with a magnet or a `.torrent`,
+  Atom `rel="enclosure"`, `nyaa:`, EZTV's `torrent:`, `showrss:`, Torznab
+  attributes, base32 magnets (normalised to hex) and windows-1251 declarations.
+  A topic feed that only says a page changed carries nothing to open and is
+  reported as such rather than guessed at.
+- **Through the proxy**, like the tracker announce the player makes itself.

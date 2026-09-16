@@ -1,6 +1,6 @@
 [package]
 name = "frameplayer"
-version = "1.7.0"
+version = "1.8.0"
 description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
 authors = ["Evgenii Zakharov"]
 edition = "2021"
@@ -43,6 +43,12 @@ tauri-plugin-process = "2.3.1"
 # Only for StreamExt::next over the download body.
 futures-util = { version = "0.3", default-features = false }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "charset", "stream", "json", "socks"] }
+# Torrent RSS feeds (feed.rs). Both already in the tree — quick-xml via
+# librqbit's UPnP and plist, encoding_rs via reqwest's `charset` — so this names
+# them rather than adding anything. A real parser because feeds come in a
+# handful of namespaced dialects, which is past what string scanning survives.
+quick-xml = { version = "0.41", default-features = false }
+encoding_rs = "0.8"
 # OpenSubtitles credentials in the OS keychain (macOS Keychain, Windows
 # Credential Manager) rather than in a file of ours: a reused password is the
 # most sensitive thing this app will ever hold. Native backends only — the

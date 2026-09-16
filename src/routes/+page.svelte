@@ -39,6 +39,7 @@
   import LinkDialog from '$lib/components/LinkDialog.svelte';
   import CatalogDialog from '$lib/components/CatalogDialog.svelte';
   import TorrentPickDialog from '$lib/components/TorrentPickDialog.svelte';
+  import FeedPickDialog from '$lib/components/FeedPickDialog.svelte';
   import TorrentUpdateDialog from '$lib/components/TorrentUpdateDialog.svelte';
   import { blockContextMenu, inTextField } from '$lib/dom';
   import {
@@ -103,6 +104,8 @@
     openRememberedTorrent,
     openTorrent,
     openUpdateDialog,
+    checkFeedUpdate,
+    pickFeedItem,
     opening,
     pickTorrentFile,
     playTorrentFile,
@@ -1250,6 +1253,8 @@
       torrentTotal={opening.total}
       torrentBusy={opening.rowBusy}
       torrentOpening={opening.rowOpening}
+      feedUpdates={torrent.feedUpdates}
+      feedChecking={opening.feedChecking}
       {torrentResume}
       onOpenFile={openFileDialog}
       onOpenLink={openLinkDialog}
@@ -1257,7 +1262,10 @@
       onOpenRecent={(item) => void openRecent(item)}
       onForgetRecent={(item) => forgetRecent(item.path)}
       onOpenTorrent={(row) => void openRememberedTorrent(row)}
-      onUpdateTorrent={(known) => void checkTorrentUpdate(known)}
+      onUpdateTorrent={(known) =>
+        void (torrent.feedUpdates[known.infoHash] || known.feed
+          ? checkFeedUpdate(known)
+          : checkTorrentUpdate(known))}
       onDeleteTorrent={(row) => void deleteTorrent(row)}
       onDeleteWatched={(row) => void deleteWatchedFiles(row)}
     />
@@ -1394,6 +1402,7 @@
         link={opening.box}
         ytdlpBusy={opening.ytdlpBusy}
         ytdlpPct={opening.ytdlpPct}
+        feedBusy={opening.feedBusy}
         onclose={() => (opening.linkOpen = false)}
         onSubmit={(url) => submitLink(url)}
         onForget={(url) => dropLink(url)}
@@ -1411,6 +1420,8 @@
       <TorrentUpdateDialog
         {known}
         suggested={opening.updateSuggested}
+        feedItem={opening.updateFeedItem}
+        note={opening.updateNote}
         busy={opening.updateBusy}
         error={opening.updateError}
         value={opening.updateValue}
@@ -1424,6 +1435,18 @@
     <!-- A torrent holding more than one video is a question only the viewer can
          answer. The rest still become queue entries, which is free: nothing is
          downloaded until mpv reads one (see torrent.rs). -->
+    <!-- A feed holding more than one release. Picking one resolves it into an
+         ordinary torrent, whose own file picker may follow. -->
+    {#if opening.feedPick}
+      {@const pick = opening.feedPick}
+      <FeedPickDialog
+        feed={pick.feed}
+        items={pick.items}
+        onclose={() => (opening.feedPick = null)}
+        onPick={(item) => void pickFeedItem(pick.url, item)}
+      />
+    {/if}
+
     {#if opening.pick}
       {@const info = opening.pick}
       <TorrentPickDialog

@@ -1,9 +1,11 @@
 <script lang="ts">
-  /// The "open a link" box: a URL, a magnet, or a .torrent — plus the way in for
+  /// The "open a link" box: a URL, a magnet, a .torrent or a torrent RSS feed —
+  /// plus the way in for
   /// a .torrent *file*, which is the one thing a box that takes text cannot
   /// accept and the reason torrent support used to be invisible here.
   import Dialog from '$lib/components/Dialog.svelte';
   import ScrollFade from '$lib/components/ScrollFade.svelte';
+  import { isFeedLink } from '$lib/feed';
   import { displayName, readableLink } from '$lib/format';
   import { t } from '$lib/i18n.svelte';
   import { torrent } from '$lib/torrent.svelte';
@@ -24,6 +26,8 @@
     /// download outlives this dialog being closed and reopened.
     ytdlpBusy: boolean;
     ytdlpPct: number | null;
+    /// A feed is being read or one of its torrents fetched.
+    feedBusy: boolean;
     onclose: () => void;
     onSubmit: (url?: string) => void;
     onForget: (url: string) => void;
@@ -31,7 +35,7 @@
     onFixYtdlp: () => void;
   }
 
-  let { link, ytdlpBusy, ytdlpPct, onclose, onSubmit, onForget, onPickTorrentFile, onFixYtdlp }: Props = $props();
+  let { link, ytdlpBusy, ytdlpPct, feedBusy, onclose, onSubmit, onForget, onPickTorrentFile, onFixYtdlp }: Props = $props();
 </script>
 
 <Dialog title={t('link.title')} variant="link" {onclose}>
@@ -55,7 +59,14 @@
   <!-- Resolving a magnet is a DHT lookup, routinely ten seconds and
        occasionally a minute, so the dialog stays up and says what it is
        waiting for rather than closing on a black window. -->
-  {#if torrent.resolving}
+  <!-- A feed read comes first because it comes first in time: the magnet
+       resolve that may follow it has its own line below. -->
+  {#if feedBusy}
+    <div class="link-progress">
+      <span class="loading-spin"></span>
+      <span>{t('feed.reading')}</span>
+    </div>
+  {:else if torrent.resolving}
     <div class="link-progress">
       <span class="loading-spin"></span>
       <span>{t('torrent.resolving')}</span>
@@ -67,6 +78,11 @@
     <div class="link-error">
       {t(ytdlp.present ? 'link.failed_stale' : 'link.failed_missing')}
     </div>
+  {:else if isFeedLink(link.value)}
+    <!-- Said as soon as the link is recognised, so what pressing "Open" will do
+         differently — remember the feed and watch it — is known before it is
+         done rather than discovered in the torrent list a week later. -->
+    <div class="setting-hint">{t('link.feed_tip')}</div>
   {:else}
     <div class="setting-hint">{t(ytdlp.present ? 'link.hint_ytdlp' : 'link.hint_plain')}</div>
   {/if}
@@ -117,7 +133,7 @@
     <button
       class="btn-outline link-torrent"
       data-tip={t('link.torrent_file_tip')}
-      disabled={torrent.resolving}
+      disabled={torrent.resolving || feedBusy}
       onclick={onPickTorrentFile}
     >{t('link.torrent_file')}</button>
     <!-- Offered only for the copy we installed: someone else's yt-dlp is
@@ -144,7 +160,7 @@
     {/if}
     <button
       class="primary"
-      disabled={!link.value.trim() || torrent.resolving}
+      disabled={!link.value.trim() || torrent.resolving || feedBusy}
       onclick={() => onSubmit()}
     >{t('link.open')}</button>
   </div>

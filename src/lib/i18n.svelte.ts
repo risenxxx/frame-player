@@ -142,7 +142,7 @@ const ru = {
   'load.stalled': 'Ждём данные…',
 
   'link.title': 'Ссылка или торрент',
-  'link.placeholder': 'https://…  ·  magnet:?xt=…',
+  'link.placeholder': 'https://…  ·  magnet:?xt=…  ·  RSS-лента',
   'link.open': 'Открыть',
   'link.failed_missing':
     'Не удалось открыть. Для YouTube и подобных сайтов нужен yt-dlp — его можно установить прямо отсюда.',
@@ -156,12 +156,31 @@ const ru = {
   'link.ytdlp_failed': 'Не удалось установить yt-dlp',
   'start.link': 'Открыть ссылку',
   'link.hint_plain':
-    'Прямые ссылки, потоки и magnet-ссылки. Для YouTube и подобных сайтов нужен yt-dlp — он не найден.',
+    'Прямые ссылки, потоки, magnet-ссылки и RSS-ленты раздач. Для YouTube и подобных сайтов нужен yt-dlp — он не найден.',
   'link.hint_ytdlp':
-    'Прямые ссылки, потоки, magnet-ссылки, а также YouTube и другие сайты — через yt-dlp.',
+    'Прямые ссылки, потоки, magnet-ссылки, RSS-ленты раздач, а также YouTube и другие сайты — через yt-dlp.',
   'link.forget': 'Убрать из списка',
+  'feed.reading': 'Читаем RSS-ленту…',
+  'feed.pick_title': 'RSS-лента',
+  'feed.pick_hint':
+    'В ленте несколько раздач — выберите нужную. Плеер запомнит ленту и сам заметит, когда выйдет новая версия этой раздачи.',
+  'feed.pick_known': 'уже открыта',
+  'feed.empty': 'В этой RSS-ленте нет раздач, которые можно открыть: ни magnet-ссылок, ни торрент-файлов.',
+  'feed.not_feed': 'По этой ссылке не RSS-лента.',
+  'feed.not_torrent':
+    'Трекер вместо торрент-файла вернул что-то другое — возможно, для скачивания нужно войти на сайт.',
+  'feed.http': 'Сайт не отдал RSS-ленту (ошибка {status}).',
+  'feed.failed': 'Не удалось прочитать RSS-ленту: {reason}',
+  'feed.update_none': 'В RSS-ленте новых серий пока нет',
+  'feed.check_failed': 'Не удалось проверить RSS-ленту',
+  'feed.not_this_torrent':
+    'В этой ленте нет раздачи, которая сейчас на диске, — непонятно, какую из её раздач считать обновлением. Вставьте magnet-ссылку на новую версию.',
+  'feed.attached':
+    'Лента запомнена. Новых серий в ней пока нет — когда появятся, это будет видно в списке раздач.',
   'link.torrent_file': 'Файл .torrent…',
   'link.torrent_file_tip': 'Торрент-файл можно просто перетащить в окно',
+  'link.feed_tip':
+    'RSS-ленту раздачи можно вставить вместо magnet-ссылки. Когда выйдет новая серия, плеер заметит её сам и предложит обновить раздачу.',
 
   'start.rail_prev': 'Предыдущие',
   'start.rail_next': 'Следующие',
@@ -170,6 +189,9 @@ const ru = {
   'start.torrent_unknown': 'Ссылка не сохранена — можно только удалить',
   'start.torrent_unnamed': 'Раздача без названия',
   'start.torrent_files': '{count} видео',
+  'start.torrent_feed': 'RSS',
+  'start.torrent_feed_tip': 'Раздача открыта из RSS-ленты — плеер проверяет её на новые серии',
+  'start.torrent_update': 'Вышла новая версия',
   'start.torrent_resume': '{name} — осталось {time}',
   'start.torrent_continue_tip': 'Продолжить: {name}',
   'start.torrent_delete': 'Удалить раздачу и файлы',
@@ -183,11 +205,15 @@ const ru = {
   'torrent.update': 'Обновить раздачу',
   'torrent.update_found': 'Нашлось обновление раздачи',
   'torrent.update_none': 'Обновлений не нашлось',
-  'torrent.update_manual': 'Эта раздача открыта не из каталога — вставьте ссылку вручную',
+  'torrent.update_manual': 'Эта раздача открыта не из каталога и не из RSS — вставьте ссылку вручную',
   'torrent.update_check_failed': 'Не удалось проверить обновления',
-  'torrent.update_tip': 'Появились новые серии — вставить ссылку на обновлённую раздачу',
+  'torrent.update_tip': 'Появились новые серии — вставить ссылку на обновлённую раздачу или её RSS-ленту',
+  'torrent.update_tip_feed': 'Проверить RSS-ленту на новые серии',
+  'torrent.update_tip_found': 'В RSS-ленте вышла новая версия раздачи — обновить',
   'torrent.update_why':
-    'В BitTorrent нельзя дописать серию в существующую раздачу: при добавлении файла меняется её идентификатор, и это уже другая раздача с другой ссылкой. Возьмите новую ссылку с трекера и вставьте сюда.',
+    'В BitTorrent нельзя дописать серию в существующую раздачу: при добавлении файла меняется её идентификатор, и это уже другая раздача с другой ссылкой. Возьмите новую ссылку с трекера и вставьте сюда. Можно вставить и RSS-ленту раздачи — тогда дальше плеер будет следить за новыми сериями сам.',
+  'torrent.update_feed_found':
+    'В RSS-ленте вышла новая версия раздачи «{name}»: {item}. Скачанные серии и история просмотра перенесутся.',
   'torrent.update_suggested':
     'Похоже, это обновлённая версия раздачи «{name}». Если так — плеер перенесёт уже скачанное и историю просмотра. Если нет, откройте её отдельно.',
   'torrent.update_keeps': 'Скачанные серии и позиции просмотра сохранятся — заново качать их не придётся.',
@@ -195,6 +221,7 @@ const ru = {
   'torrent.update_as_new': 'Открыть отдельно',
   'torrent.update_not_magnet': 'Это не похоже на magnet-ссылку.',
   'torrent.update_same': 'Это та же самая раздача — новых серий в ней нет.',
+  'torrent.update_placeholder': 'magnet:?xt=…  ·  RSS-лента',
   'torrent.updated': 'Раздача обновлена: перенесено {matched}, новых {added}',
   'torrent.seed': 'Раздавать при просмотре',
   'torrent.seed_hint':
@@ -940,7 +967,7 @@ const en: Record<MessageKey, string> = {
   'load.stalled': 'Waiting for data…',
 
   'link.title': 'Link or torrent',
-  'link.placeholder': 'https://…  ·  magnet:?xt=…',
+  'link.placeholder': 'https://…  ·  magnet:?xt=…  ·  RSS feed',
   'link.open': 'Open',
   'link.failed_missing':
     'Could not open it. YouTube and sites like it need yt-dlp, which can be installed from here.',
@@ -954,12 +981,31 @@ const en: Record<MessageKey, string> = {
   'link.ytdlp_failed': 'Could not install yt-dlp',
   'start.link': 'Open a link',
   'link.hint_plain':
-    'Direct video links, streams and magnet links. YouTube and sites like it need yt-dlp, which was not found.',
+    'Direct video links, streams, magnet links and torrent RSS feeds. YouTube and sites like it need yt-dlp, which was not found.',
   'link.hint_ytdlp':
-    'Direct links, streams, magnet links, and YouTube and other sites through yt-dlp.',
+    'Direct links, streams, magnet links, torrent RSS feeds, and YouTube and other sites through yt-dlp.',
   'link.forget': 'Remove from the list',
+  'feed.reading': 'Reading the RSS feed…',
+  'feed.pick_title': 'RSS feed',
+  'feed.pick_hint':
+    'This feed holds several torrents — choose one. The player remembers the feed and notices when a newer upload of that torrent appears.',
+  'feed.pick_known': 'already opened',
+  'feed.empty': 'This RSS feed has nothing that can be opened: no magnet links and no torrent files.',
+  'feed.not_feed': 'That link is not an RSS feed.',
+  'feed.not_torrent':
+    'The tracker returned something other than a torrent file — downloading may need you to be signed in on the site.',
+  'feed.http': 'The site did not return the feed (error {status}).',
+  'feed.failed': 'Could not read the RSS feed: {reason}',
+  'feed.update_none': 'No new episodes in the RSS feed yet',
+  'feed.check_failed': 'Could not check the RSS feed',
+  'feed.not_this_torrent':
+    'This feed does not list the torrent on disk, so there is no telling which of its torrents would be the update. Paste a magnet link to the new upload.',
+  'feed.attached':
+    'Feed saved. No new episodes in it yet — when there are, the torrent list will say so.',
   'link.torrent_file': '.torrent file…',
   'link.torrent_file_tip': 'A torrent file can also just be dropped on the window',
+  'link.feed_tip':
+    'A torrent’s RSS feed can be pasted instead of a magnet link. When a new episode is out, the player notices it and offers to update the torrent.',
 
   'start.rail_prev': 'Previous',
   'start.rail_next': 'Next',
@@ -968,6 +1014,9 @@ const en: Record<MessageKey, string> = {
   'start.torrent_unknown': 'No link saved — this one can only be deleted',
   'start.torrent_unnamed': 'Unnamed torrent',
   'start.torrent_files': '{count} videos',
+  'start.torrent_feed': 'RSS',
+  'start.torrent_feed_tip': 'Opened from an RSS feed — the player checks it for new episodes',
+  'start.torrent_update': 'Newer upload out',
   'start.torrent_resume': '{name} — {time} left',
   'start.torrent_continue_tip': 'Continue: {name}',
   'start.torrent_delete': 'Delete the torrent and its files',
@@ -981,11 +1030,15 @@ const en: Record<MessageKey, string> = {
   'torrent.update': 'Update the torrent',
   'torrent.update_found': 'Found an updated torrent',
   'torrent.update_none': 'No update found',
-  'torrent.update_manual': 'This torrent did not come from the catalog — paste the link yourself',
+  'torrent.update_manual': 'This torrent did not come from the catalog or a feed — paste the link yourself',
   'torrent.update_check_failed': 'Could not check for updates',
-  'torrent.update_tip': 'New episodes out — paste the link to the updated torrent',
+  'torrent.update_tip': 'New episodes out — paste the link to the updated torrent or its RSS feed',
+  'torrent.update_tip_feed': 'Check the RSS feed for new episodes',
+  'torrent.update_tip_found': 'A newer upload is in the RSS feed — update',
   'torrent.update_why':
-    'BitTorrent cannot add a file to an existing torrent: adding one changes its identifier, which makes it a different torrent with a different link. Get the new link from the tracker and paste it here.',
+    'BitTorrent cannot add a file to an existing torrent: adding one changes its identifier, which makes it a different torrent with a different link. Get the new link from the tracker and paste it here. A torrent’s RSS feed works too — the player then watches it for new episodes itself.',
+  'torrent.update_feed_found':
+    'A newer upload of “{name}” is in its RSS feed: {item}. Downloaded episodes and watch history are carried over.',
   'torrent.update_suggested':
     'This looks like a newer release of “{name}”. If it is, the player will carry over what is already downloaded along with your watch history. If not, open it separately.',
   'torrent.update_keeps': 'Downloaded episodes and watch positions are kept — nothing is fetched twice.',
@@ -993,6 +1046,7 @@ const en: Record<MessageKey, string> = {
   'torrent.update_as_new': 'Open separately',
   'torrent.update_not_magnet': 'That does not look like a magnet link.',
   'torrent.update_same': 'That is the same torrent — it holds no new episodes.',
+  'torrent.update_placeholder': 'magnet:?xt=…  ·  RSS feed',
   'torrent.updated': 'Torrent updated: {matched} carried over, {added} new',
   'torrent.seed': 'Upload while watching',
   'torrent.seed_hint':

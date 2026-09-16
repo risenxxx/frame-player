@@ -51,14 +51,28 @@ import {
 import { queueTorrent } from './playlist.svelte';
 import { isMagnet, isTorrentLink, magnetFor, parseTorrentUrl } from './source';
 import {
+  findFeedUpdate,
+  isFeedLink,
+  isOpenable,
+  itemForHash,
+  sortFeedItems,
+  type Feed,
+  type FeedItem,
+} from './feed';
+import {
   addTorrent,
   DELETE_STUCK,
+  expectFeed,
   findSupersededTorrent,
   forgetTorrent,
   listTorrents,
+  readFeed,
   refreshPortStatus,
+  rememberedTorrents,
   rememberTorrent,
+  resolveFeedItem,
   resolveTorrentFile,
+  setTorrentFeed,
   setEncryption,
   setPortForward,
   setProxy,
@@ -105,6 +119,13 @@ const PEERLESS_ADVICE_MS = 20000;
 
 /// How long to wait before asking a site for a title mpv has not produced.
 const TITLE_LOOKUP_DELAY = 1500;
+
+/// How long a feed's answer stands before the start screen asks it again.
+///
+/// The start screen is re-entered every time a film is closed, and a feed that
+/// changes once a week does not need a request each time. The update button
+/// ignores this — somebody pressing it wants to know now.
+const FEED_RECHECK_MS = 10 * 60 * 1000;
 
 class Opening {
   linkOpen = $state(false);
@@ -162,6 +183,20 @@ class Opening {
   /// Set when a link typed into the ordinary "Open link…" box looks like a newer
   /// release of something already in the list — see `submitLink`.
   updateSuggested = $state(false);
+  /// The feed item the suggested link came from, when a feed found it — the
+  /// dialog names it, since "a newer upload in your feed" is a stronger claim
+  /// than a resemblance between two names.
+  updateFeedItem = $state<string | null>(null);
+  /// A remark that is not an error: a feed pasted into the update dialog was
+  /// attached, and had nothing newer yet.
+  updateNote = $state<string | null>(null);
+
+  /// A feed is being read, or one of its items turned into a torrent.
+  feedBusy = $state(false);
+  /// A feed holding more than one release, waiting for the viewer to choose.
+  feedPick = $state<{ url: string; feed: Feed; items: FeedItem[] } | null>(null);
+  /// The torrent whose feed the update button is reading right now.
+  feedChecking = $state<string | null>(null);
 
   /// The torrent list on the start screen.
   rows = $state<TorrentRow[]>([]);
@@ -341,6 +376,16 @@ export function submitLink(url = opening.box.value.trim()) {
   // Dispatched by shape, not by a separate box: a magnet and a YouTube link are
   // the same gesture — the viewer has a link — and which protocol reaches the
   // video is the player's problem, not theirs.
+  // A feed is asked first and handed on if it turns out not to be one — the
+  // shape of a URL is only a hint, and a wrong guess costs one request.
+  if (isFeedLink(url) && !isTorrentLink(url)) {
+    void openFeed(url);
+    return;
+  }
+  openOrdinaryLink(url);
+}
+
+function openOrdinaryLink(url: string) {
   if (isTorrentLink(url)) {
     // A re-upload usually arrives here rather than through the update button,
     // because pasting a link into the box that takes the recents list is the
@@ -740,6 +785,9 @@ export async function openRecent(item: RecentItem) {
 
 export async function refreshTorrents() {
   opening.rows = await listTorrents();
+  // Behind the list rather than before it: the rows are the screen, and an
+  // update line arriving a moment later is the lesser fault.
+  void checkFeedUpdates(opening.rows);
 }
 
 /**
@@ -870,17 +918,23 @@ export async function deleteTorrent(row: TorrentRow) {
 
 /// The dialog focuses its own field once it is on screen — see the note in
 /// TorrentUpdateDialog.svelte for why that is not done from here.
-export function openUpdateDialog(known: RememberedTorrent, magnet = '') {
+export function openUpdateDialog(known: RememberedTorrent, magnet = '', feedItem: string | null = null) {
   opening.updateFor = known;
   opening.updateValue = magnet;
   opening.updateError = null;
+  opening.updateNote = null;
   opening.updateSuggested = !!magnet;
+  opening.updateFeedItem = feedItem;
 }
 
 export async function submitUpdate() {
   const magnet = opening.updateValue.trim();
   const known = opening.updateFor;
   if (!magnet || !known || opening.updateBusy) return;
+  if (isFeedLink(magnet) && !isTorrentLink(magnet)) {
+    await attachFeedInUpdate(known, magnet);
+    return;
+  }
   if (!isTorrentLink(magnet)) {
     opening.updateError = t('torrent.update_not_magnet');
     return;
@@ -905,6 +959,241 @@ export async function submitUpdate() {
       : reason.includes('no_hash')
         ? t('torrent.update_not_magnet')
         : t('torrent.failed', { reason });
+  } finally {
+    opening.updateBusy = false;
+  }
+}
+
+// ---- RSS feeds ------------------------------------------------------------
+//
+// A feed is a link to a *release* rather than to one torrent: the same URL
+// names this week's upload and next week's. So it is both a way in — pasted
+// where a magnet goes — and the one thing that lets the player notice a
+// re-upload without the viewer fetching the new magnet by hand.
+//
+// **Read on the viewer's own gestures and never on a timer**: when it is
+// pasted, when the start screen lists its torrent, and when the update button
+// is pressed. A feed polled in the background is a resident client, which is
+// the line this player draws. And an update found is only ever *offered* —
+// replacing a season's torrent re-checks everything on disk.
+
+/// Turn a feed error into a sentence for the link box.
+function feedFailureText(e: unknown): string {
+  const reason = String(e);
+  if (reason.includes('not_torrent')) return t('feed.not_torrent');
+  if (reason.includes('feed_item_empty')) return t('feed.empty');
+  if (/http_\d+/.test(reason)) {
+    return t('feed.http', { status: reason.replace(/.*http_(\d+).*/, '$1') });
+  }
+  return t('feed.failed', { reason });
+}
+
+export async function openFeed(url: string) {
+  if (opening.feedBusy) return;
+  opening.feedBusy = true;
+  opening.box.torrentError = null;
+  opening.box.failed = false;
+  let feed: Feed;
+  try {
+    feed = await readFeed(url);
+  } catch (e) {
+    opening.feedBusy = false;
+    // Not a feed after all: an ordinary link that happened to look like one.
+    if (String(e).includes('not_feed')) {
+      openOrdinaryLink(url);
+      return;
+    }
+    opening.box.torrentError = feedFailureText(e);
+    opening.linkOpen = true;
+    return;
+  }
+  opening.feedBusy = false;
+  const items = sortFeedItems(feed.items.filter(isOpenable));
+  if (!items.length) {
+    opening.box.torrentError = t('feed.empty');
+    opening.linkOpen = true;
+    return;
+  }
+  if (items.length === 1) {
+    await pickFeedItem(url, items[0]);
+    return;
+  }
+  // The box has done its job; the picker is the next question, and leaving the
+  // box under it would bring it back when the picker is dismissed.
+  opening.linkOpen = false;
+  opening.feedPick = { url, feed, items };
+}
+
+/**
+ * Open one item of a feed as a torrent, remembering the feed with it.
+ *
+ * Before anything is added it asks whether this is the **next upload of a
+ * season already on disk** — the same question `submitLink` asks a pasted
+ * magnet, answered better here: a torrent opened from this very feed with the
+ * same release stem is the one being replaced, not a resemblance of names.
+ */
+export async function pickFeedItem(url: string, item: FeedItem) {
+  opening.feedPick = null;
+  opening.feedBusy = true;
+  opening.box.torrentError = null;
+  let resolved: { magnet: string; infoHash: string };
+  try {
+    resolved = await resolveFeedItem(item);
+  } catch (e) {
+    opening.box.torrentError = feedFailureText(e);
+    opening.linkOpen = true;
+    return;
+  } finally {
+    opening.feedBusy = false;
+  }
+  const { magnet, infoHash } = resolved;
+  if (infoHash) expectFeed(infoHash, { url, item: item.title });
+
+  const predecessor = rememberedTorrents().find(
+    (known) =>
+      known.feed?.url === url &&
+      known.infoHash !== infoHash.toLowerCase() &&
+      findFeedUpdate([item], known.infoHash, known.feed.item) === item,
+  );
+  // The name resemblance is still asked for a season that arrived some other
+  // way — but never about a torrent from this same feed, where the stem has
+  // already given the exact answer and a resemblance would only be the other
+  // codec beside it.
+  const lookalike = predecessor ? null : findSupersededTorrent(magnet);
+  const superseded = predecessor ?? (lookalike?.feed?.url === url ? null : lookalike);
+  if (superseded) {
+    opening.linkOpen = false;
+    openUpdateDialog(superseded, magnet, predecessor ? item.title : null);
+    return;
+  }
+  await openTorrent(magnet);
+}
+
+/**
+ * Ask the feeds of the torrents on the start screen whether anything newer is
+ * out. One request per feed, not per torrent, and at most once per
+ * `FEED_RECHECK_MS`; sequential, because it runs behind a screen the viewer is
+ * already using and nothing about it is urgent.
+ */
+const feedReadAt = new Map<string, number>();
+let feedSweep = false;
+
+export async function checkFeedUpdates(rows: TorrentRow[]) {
+  if (feedSweep) return;
+  const byFeed = new Map<string, RememberedTorrent[]>();
+  for (const row of rows) {
+    const feed = row.known?.feed;
+    if (!feed) continue;
+    if (Date.now() - (feedReadAt.get(feed.url) ?? 0) < FEED_RECHECK_MS) continue;
+    byFeed.set(feed.url, [...(byFeed.get(feed.url) ?? []), row.known!]);
+  }
+  if (!byFeed.size) return;
+  feedSweep = true;
+  try {
+    for (const [url, knowns] of byFeed) {
+      feedReadAt.set(url, Date.now());
+      const feed = await readFeed(url).catch((e) => {
+        // A feed that is down today says nothing about the torrent; the row
+        // simply offers no update, and the button can still be pressed.
+        console.warn('[feed] check failed:', url, e);
+        return null;
+      });
+      if (feed) noteFeedUpdates(feed, knowns);
+    }
+  } finally {
+    feedSweep = false;
+  }
+}
+
+function noteFeedUpdates(feed: Feed, knowns: RememberedTorrent[]) {
+  for (const known of knowns) {
+    if (!known.feed) continue;
+    const found = findFeedUpdate(feed.items, known.infoHash, known.feed.item);
+    if (found) torrent.feedUpdates[known.infoHash] = found;
+    else delete torrent.feedUpdates[known.infoHash];
+  }
+}
+
+/**
+ * The update button on a torrent that came from a feed: read the feed now,
+ * and offer what it holds.
+ *
+ * Every outcome other than "found one" falls through to the manual dialog, as
+ * the catalog's check does — it is the honest answer when the feed has nothing
+ * newer, and it is where a different link can still be pasted.
+ */
+export async function checkFeedUpdate(known: RememberedTorrent) {
+  const origin = known.feed;
+  if (!origin || opening.feedChecking) return;
+  opening.feedChecking = known.infoHash;
+  try {
+    const feed = await readFeed(origin.url);
+    feedReadAt.set(origin.url, Date.now());
+    noteFeedUpdates(feed, [known]);
+    const found = torrent.feedUpdates[known.infoHash];
+    if (found) {
+      const { magnet, infoHash } = await resolveFeedItem(found);
+      if (infoHash) expectFeed(infoHash, { url: origin.url, item: found.title });
+      openUpdateDialog(known, magnet, found.title);
+      return;
+    }
+    showOsd(t('feed.update_none'));
+  } catch (e) {
+    console.warn('[feed] update check failed:', e);
+    showOsd(t('feed.check_failed'));
+  } finally {
+    opening.feedChecking = null;
+  }
+  openUpdateDialog(known);
+}
+
+/**
+ * A feed pasted into the update dialog: attach it, and look for the upload.
+ *
+ * This is how a season that arrived by magnet becomes one the player can watch
+ * for. The item the torrent came from is found **by hash** where the feed names
+ * one, which is exact; otherwise the feed cannot be tied to this torrent with
+ * any confidence and the dialog says so rather than attaching a guess.
+ *
+ * Nothing is applied: a found upload is put in the field as a magnet, and the
+ * viewer presses the button again — the same confirmation every other path to
+ * an update asks for.
+ */
+async function attachFeedInUpdate(known: RememberedTorrent, url: string) {
+  opening.updateBusy = true;
+  opening.updateError = null;
+  opening.updateNote = null;
+  try {
+    const feed = await readFeed(url);
+    const own = itemForHash(feed.items, known.infoHash);
+    const base = own?.title ?? known.feed?.item;
+    if (!base) {
+      opening.updateError = t('feed.not_this_torrent');
+      return;
+    }
+    setTorrentFeed(known.infoHash, { url, item: base });
+    const updated = { ...known, feed: { url, item: base } };
+    opening.updateFor = updated;
+    const found = findFeedUpdate(feed.items, known.infoHash, base);
+    feedReadAt.set(url, Date.now());
+    if (!found) {
+      delete torrent.feedUpdates[known.infoHash];
+      opening.updateValue = '';
+      opening.updateNote = t('feed.attached');
+      void refreshTorrents();
+      return;
+    }
+    torrent.feedUpdates[known.infoHash] = found;
+    const { magnet, infoHash } = await resolveFeedItem(found);
+    if (infoHash) expectFeed(infoHash, { url, item: found.title });
+    opening.updateValue = magnet;
+    opening.updateSuggested = true;
+    opening.updateFeedItem = found.title;
+    void refreshTorrents();
+  } catch (e) {
+    opening.updateError = String(e).includes('not_feed')
+      ? t('feed.not_feed')
+      : feedFailureText(e);
   } finally {
     opening.updateBusy = false;
   }

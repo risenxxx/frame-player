@@ -27,12 +27,17 @@
     type TorrentRow,
   } from '$lib/torrent.svelte';
   import { fmtSize } from '$lib/units';
+  import type { FeedItem } from '$lib/feed';
 
   interface Props {
     torrentRows: TorrentRow[];
     torrentTotal: number;
     torrentBusy: string | null;
     torrentOpening: string | null;
+    /// Newer uploads found in the feeds torrents came from, by info hash.
+    feedUpdates: Record<string, FeedItem>;
+    /// The torrent whose feed is being read for the update button.
+    feedChecking: string | null;
     torrentResume: (row: TorrentRow) => { name: string; pos: number; dur: number; index: number } | null;
     onOpenFile: () => void;
     onOpenLink: () => void;
@@ -54,6 +59,8 @@
     torrentTotal,
     torrentBusy,
     torrentOpening,
+    feedUpdates,
+    feedChecking,
     torrentResume,
     onOpenFile,
     onOpenLink,
@@ -443,6 +450,7 @@
         {#each torrentRows as row (row.folder)}
           {@const resume = torrentResume(row)}
           {@const opening = torrentOpening === row.folder}
+          {@const update = row.info_hash ? feedUpdates[row.info_hash] : undefined}
           <div class="torrow" class:busy={torrentBusy === row.folder}>
             <!-- Openable on the magnet, which the info hash supplies when
                  nothing was remembered — a torrent on this disk that our own
@@ -469,6 +477,18 @@
                     {t('torrent.resolving')}
                   </span>
                 {:else}
+                  <!-- The feed is named on the row because it changes what the
+                       row does: this is the one kind of torrent the player
+                       watches for new episodes, and without a mark nothing on
+                       screen says so until one arrives. -->
+                  {#if row.known?.feed}
+                    <span class="torrow-feed" data-tip={t('start.torrent_feed_tip')}>
+                      {t('start.torrent_feed')}
+                    </span>
+                  {/if}
+                  {#if update}
+                    <span class="torrow-update-line">{t('start.torrent_update')}</span>
+                  {/if}
                   {#if row.known}
                     <span>{t('start.torrent_files', { count: row.known.videos })}</span>
                   {/if}
@@ -528,8 +548,14 @@
               {@const known = row.known}
               <button
                 class="card-forget torrow-forget torrow-update"
-                data-tip={t('torrent.update_tip')}
-                aria-label={t('torrent.update')}
+                class:found={!!update}
+                disabled={feedChecking === known.infoHash}
+                data-tip={update
+                  ? t('start.torrent_update') + ': ' + update.title
+                  : known.feed
+                    ? t('torrent.update_tip_feed')
+                    : t('torrent.update_tip')}
+                aria-label={update ? t('torrent.update_tip_found') : t('torrent.update')}
                 onclick={() => onUpdateTorrent(known)}
               >
                 <!-- The same plus as "add an excluded folder", deliberately
@@ -943,6 +969,23 @@
     color: #9a9aa6;
   }
 
+  /* A tag rather than a word in the sentence: it names what kind of torrent
+     this is, and it sits beside the counts rather than among them. */
+  .torrow-feed {
+    padding: 0 5px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 4px;
+    color: #9a9aa6;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+
+  /* Indigo, and the one place on the row that is: an update is the thing on
+     this screen worth acting on, and the button it belongs to is lit the same. */
+  .torrow-update-line {
+    color: #a5b4fc;
+  }
+
   .torrow-working {
     display: flex;
     align-items: center;
@@ -1101,6 +1144,14 @@
      cross's red-ish white: this one adds episodes. */
   .card-forget.torrow-forget.torrow-update:hover:not(:disabled) {
     color: #a5b4fc;
+  }
+
+  /* Lit at rest while an update is waiting — the feed found it without being
+     asked, and a button that looks the same as always would keep that to
+     itself. Five classes, to beat the row-hover rule above. */
+  .card-forget.torrow-forget.torrow-update.found,
+  .torrow:hover .card-forget.torrow-forget.torrow-update.found {
+    color: #818cf8;
   }
 
   /* The torrent playing right now. Clearly below the resting strength above, or

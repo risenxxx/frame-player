@@ -31,6 +31,7 @@ import { t } from './i18n.svelte';
 import { latest } from './latest';
 import { SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, player } from './player.svelte';
 import { magnetFor, parseTorrentUrl, torrentId } from './source';
+import type { Feed, FeedItem, FeedOrigin } from './feed';
 
 export interface TorrentFile {
   index: number;
@@ -308,6 +309,10 @@ class TorrentState {
   /// is being waited for. Read only by the settings row — see `refreshPortStatus`.
   portStatus = $state<PortStatus | null>(null);
   portChecking = $state(false);
+  /// A newer upload found in the feed a torrent came from, by the info hash
+  /// of the torrent it would replace. Session-only: it is a reading of
+  /// somebody else's feed, and a stored one would outlive being true.
+  feedUpdates = $state<Record<string, FeedItem>>({});
 }
 
 export const torrent = new TorrentState();
@@ -481,6 +486,9 @@ export interface RememberedTorrent {
   at: number;
   /// Where this came from, when it came from the catalog. Absent otherwise.
   origin?: CatalogOrigin;
+  /// The RSS feed this was opened from, which is what lets the start screen
+  /// notice a re-upload by itself. Absent for anything else.
+  feed?: FeedOrigin;
   /**
    * Episodes watched to the end, by file name.
    *
@@ -534,6 +542,10 @@ export function rememberTorrent(info: TorrentInfo, magnet: string, origin?: Cata
       // season from the start screen would otherwise erase the one thing that
       // makes it updatable.
       origin: origin ?? store[info.info_hash]?.origin,
+      // Handed over by whoever resolved the feed item, since the magnet that
+      // reaches here says nothing about a feed — and carried forward otherwise,
+      // for the reason `origin` is.
+      feed: takeExpectedFeed(info.info_hash) ?? store[info.info_hash]?.feed,
       // Reopening a torrent must not forget which episodes were finished — this
       // runs on every open, including the one that follows a magnet being
       // pasted again.
@@ -549,6 +561,43 @@ export function rememberTorrent(info: TorrentInfo, magnet: string, origin?: Cata
   } catch {
     // not critical
   }
+}
+
+/// Feed origins waiting for the torrent they describe to be remembered, by
+/// info hash. A side channel rather than a parameter, because the open goes
+/// through `openTorrent` and the update dialog, neither of which should have to
+/// know that a feed exists.
+const expectedFeeds = new Map<string, FeedOrigin>();
+
+export function expectFeed(infoHash: string, feed: FeedOrigin) {
+  expectedFeeds.set(infoHash.toLowerCase(), feed);
+}
+
+function takeExpectedFeed(infoHash: string): FeedOrigin | undefined {
+  const hash = infoHash.toLowerCase();
+  const feed = expectedFeeds.get(hash);
+  expectedFeeds.delete(hash);
+  return feed;
+}
+
+/// Attach a feed to a torrent already remembered — a feed pasted into the
+/// update dialog for a season that arrived by magnet.
+export function setTorrentFeed(infoHash: string, feed: FeedOrigin) {
+  if (!history.prefs.enabled) return;
+  try {
+    const store = readStore();
+    const entry = store[infoHash.toLowerCase()];
+    if (!entry) return;
+    entry.feed = feed;
+    localStorage.setItem(STORE_KEY, JSON.stringify(store));
+  } catch {
+    // not critical
+  }
+}
+
+/// Every remembered torrent — what the start screen's feed check walks.
+export function rememberedTorrents(): RememberedTorrent[] {
+  return Object.values(readStore());
 }
 
 export function rememberedTorrent(infoHash: string): RememberedTorrent | null {
@@ -1044,6 +1093,51 @@ export function findSupersededTorrent(magnet: string): RememberedTorrent | null 
   return null;
 }
 
+// ---- RSS feeds -------------------------------------------------------------
+
+/// Read a feed through Rust — the torrent proxy applies, since a feed URL names
+/// what is being watched as plainly as a magnet. Throws `not_feed` for a page
+/// that is not RSS or Atom.
+export async function readFeed(url: string): Promise<Feed> {
+  return await invoke<Feed>('feed_read', { url, proxy: torrentPrefs.proxy });
+}
+
+/**
+ * Turn a feed item into a magnet the ordinary torrent path can open.
+ *
+ * A `.torrent` URL is preferred even when the item also names a hash: fetching
+ * it puts the metadata in the cache `torrent_add` reads first, so the magnet
+ * built from its hash opens without a DHT lookup — where a bare hash would be
+ * the ninety-second resolve. A magnet the feed supplies is used as it is, with
+ * its trackers; a hash alone is the last resort.
+ */
+export async function resolveFeedItem(
+  item: FeedItem,
+): Promise<{ magnet: string; infoHash: string }> {
+  if (item.torrent_url) {
+    try {
+      const got = await invoke<{ info_hash: string; name: string | null }>('feed_torrent', {
+        url: item.torrent_url,
+        proxy: torrentPrefs.proxy,
+      });
+      return { magnet: magnetFor(got.info_hash, got.name ?? item.title), infoHash: got.info_hash };
+    } catch (e) {
+      // With a hash or a magnet still in hand, a dead download link is not the
+      // end of it — the swarm can supply the metadata.
+      if (!item.magnet && !item.info_hash) throw e;
+      console.warn('[feed] .torrent download failed, falling back:', e);
+    }
+  }
+  // Only a hex magnet is used as it is: a base32 one is the same torrent, but
+  // the update path reads the hash out of the magnet and knows hex alone.
+  const hex = item.magnet && /xt=urn:btih:([0-9a-f]{40})/i.exec(item.magnet)?.[1]?.toLowerCase();
+  if (item.magnet && hex) return { magnet: item.magnet, infoHash: hex };
+  if (item.info_hash) {
+    return { magnet: magnetFor(item.info_hash, item.title), infoHash: item.info_hash };
+  }
+  throw new Error('feed_item_empty');
+}
+
 /**
  * Hand an old torrent's data and history over to the re-upload that replaces it.
  *
@@ -1080,8 +1174,15 @@ export async function updateTorrent(
     console.warn('[torrent] handing the old data over failed:', e),
   );
 
+  // The feed goes with the season: the new torrent is the next upload of the
+  // same release, so its feed is the one to watch. Whoever resolved a feed
+  // item has already said which item that was; otherwise the old record is
+  // the best there is, and its stem is the same anyway.
+  if (old.feed && !expectedFeeds.has(newHash)) expectFeed(newHash, old.feed);
+
   const info = await addTorrent(magnet);
   const moved = migratePositions(old.infoHash, info);
+  delete torrent.feedUpdates[old.infoHash];
   forgetRememberedTorrent(old.infoHash);
   rememberTorrent(info, magnet);
   return { info, matched: moved, added: torrentVideos(info).length - moved };

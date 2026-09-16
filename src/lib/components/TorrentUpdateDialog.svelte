@@ -23,6 +23,10 @@
     /// True when the link box recognized a pasted magnet as this torrent's
     /// successor, rather than the viewer having asked to update it.
     suggested: boolean;
+    /// The feed item a suggestion came from, when a feed found it.
+    feedItem: string | null;
+    /// Not an error: a pasted feed was attached and had nothing newer yet.
+    note: string | null;
     busy: boolean;
     error: string | null;
     value: string;
@@ -35,6 +39,8 @@
   let {
     known,
     suggested,
+    feedItem,
+    note,
     busy,
     error,
     value,
@@ -64,9 +70,11 @@
   onclose={() => (onclose())}
 >
   <div class="setting-hint">
-    {suggested
-      ? t('torrent.update_suggested', { name: known.name ?? displayName(known.magnet) })
-      : t('torrent.update_why')}
+    {feedItem
+      ? t('torrent.update_feed_found', { name: known.name ?? displayName(known.magnet), item: feedItem })
+      : suggested
+        ? t('torrent.update_suggested', { name: known.name ?? displayName(known.magnet) })
+        : t('torrent.update_why')}
   </div>
   <input
     bind:this={inputEl}
@@ -75,7 +83,7 @@
     spellcheck="false"
     autocapitalize="off"
     autocorrect="off"
-    placeholder="magnet:?xt=urn:btih:…"
+    placeholder={t('torrent.update_placeholder')}
     disabled={busy}
     {value}
     oninput={(e) => onValue(e.currentTarget.value)}
@@ -87,6 +95,8 @@
   />
   {#if error}
     <div class="link-error">{error}</div>
+  {:else if note}
+    <div class="setting-hint">{note}</div>
   {:else}
     <div class="setting-hint">{t('torrent.update_keeps')}</div>
   {/if}
@@ -94,7 +104,10 @@
     <!-- The way out for a link that only LOOKS like an update: opening
          it separately has to stay one click away, or a wrong guess by
          `findSupersededTorrent` becomes a wall. -->
-    {#if suggested}
+    <!-- Not offered for a feed's own find: the stem match already ruled out
+         "a different release that looks alike", which is what this button is
+         the way out of. -->
+    {#if suggested && !feedItem}
       <button
         class="btn-outline"
         disabled={busy}
