@@ -1,7 +1,7 @@
 # Vendored librqbit crates
 
-Copies of two crates from crates.io, each carrying changes upstream does not
-have in any release. Wired in via `[patch.crates-io]` in `../Cargo.toml`, so
+Copies of two crates from crates.io, carrying changes upstream does not have in
+any release — three of them, since librqbit carries two. Wired in via `[patch.crates-io]` in `../Cargo.toml`, so
 Cargo uses these directories instead of the registry copies — same versions,
 different source.
 
@@ -62,6 +62,25 @@ crate from the registry again, minus that directory.
 **Drop this the day #633 merges.** It is the largest thing in this repository
 that belongs to somebody else, and a bump of librqbit means re-applying ~1700
 lines rather than reading a diff.
+
+## librqbit 9.0.1 — two accessors on `ManagedTorrentShared`
+
+`src/torrent_state/mod.rs`, four lines: `output_folder()` and
+`allow_overwrite()`, both returning what `options` already holds. Nothing else
+changes, and nothing in the crate calls them.
+
+They exist because `ManagedTorrentShared::options` is `pub(crate)` while
+`StorageFactory` is public, so a storage implemented **outside** librqbit — ours
+is, in `src/torrent_storage.rs` — is handed a `&ManagedTorrentShared` and cannot
+read the one thing every storage needs from it: the folder it is supposed to
+write into. Upstream's own `FilesystemStorageFactory` reads exactly these two
+fields. Guessing the folder instead was the alternative and is the worse one: it
+would make the mapping from a torrent to its directory a second source of truth
+beside librqbit's, which is precisely what `folder_for` exists to avoid.
+
+Unlike the other two entries this is not a fix, so it does not expire: a bump
+means re-adding four lines, and an upstream release that makes `options` public
+(or adds accessors of its own) ends it.
 
 ## librqbit-dht 9.0.1 — tolerate UDP recv errors (Windows)
 

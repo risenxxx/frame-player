@@ -1630,8 +1630,9 @@ dependencies = [
 
 [[package]]
 name = "frameplayer"
-version = "1.8.0"
+version = "1.8.1"
 dependencies = [
+ "anyhow",
  "arboard",
  "block2",
  "bytes",

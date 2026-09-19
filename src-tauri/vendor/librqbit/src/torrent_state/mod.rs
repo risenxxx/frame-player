@@ -201,6 +201,20 @@ impl ManagedTorrentShared {
     pub(crate) fn client_name_and_version(&self) -> &str {
         &self.client_name_and_version
     }
+
+    // [frame-player] `options` is pub(crate), so a `StorageFactory` implemented
+    // outside this crate cannot find the folder it is meant to write into —
+    // which is the one thing every storage needs. Two readers, no new API
+    // surface beyond them. See vendor/README.md.
+    /// Where this torrent's data is written.
+    pub fn output_folder(&self) -> &Path {
+        &self.options.output_folder
+    }
+
+    /// Whether files that already exist may be reused rather than refused.
+    pub fn allow_overwrite(&self) -> bool {
+        self.options.allow_overwrite
+    }
 }
 
 pub struct ManagedTorrent {

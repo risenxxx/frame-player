@@ -18,6 +18,7 @@ mod screenshot;
 mod step_engine;
 mod thumb_service;
 mod torrent;
+mod torrent_storage;
 mod upnp;
 mod window_guard;
 
@@ -905,8 +906,50 @@ fn deliver_deep_links(app: &tauri::AppHandle, args: &[String]) {
     }
 }
 
+/// Raise the open-file limit before anything in this process can spend it.
+///
+/// **launchd hands a GUI application a soft `RLIMIT_NOFILE` of 256**, and this
+/// player is not a program that can live inside it: librqbit holds one open
+/// descriptor per file of every torrent in its session — a Blu-ray release is
+/// 79 of them by itself — beside the peer sockets, mpv's own connections to the
+/// loopback stream server, the webview and Metal's shader caches.
+///
+/// Running out is not the failure it sounds like, and that is the whole reason
+/// this is here. `EMFILE` on a socket is visible and recoverable; what is
+/// neither is what macOS does to the media stack when a subsystem is reached
+/// for the *first* time while the table is full. Measured: a cold
+/// `AudioComponentInstanceNew` answers **-1** (mpv logs it as
+/// `unable to open audio component ([255][255][255][255]/-1)` and falls back to
+/// an `avfoundation` output that never advances its clock), and
+/// `VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC)` answers **0**, which
+/// reaches libavcodec as `kVTCouldNotFindVideoDecoderErr` — "VideoToolbox
+/// decoder for this format not found" — and drops every hwdec rung into
+/// software. **Both verdicts are then cached for the life of the process**:
+/// measured, they still fail after every descriptor has been released, so one
+/// brief moment at the ceiling costs the session its hardware decoding and its
+/// audio clock, and with mpv syncing video to audio the picture simply stops.
+/// On screen that is a player whose pause button toggles while the position
+/// never moves, with nothing anywhere to connect it to a file limit.
+///
+/// librqbit ships the helper for this and its own CLI calls it; embedding the
+/// library means inheriting the obligation. The hard limit under launchd is
+/// unlimited, and the crate knows the stricter ceiling macOS keeps in
+/// `kern.maxfilesperproc`, so this is one call and not a negotiation.
+fn raise_fd_limit() {
+    match librqbit::try_increase_nofile_limit() {
+        Ok(limit) => eprintln!("[startup] open-file limit: {limit}"),
+        // Not fatal: the player still runs, it is the torrent session that will
+        // be living dangerously — so say which of the two this is.
+        Err(e) => eprintln!("[startup] could not raise the open-file limit: {e:#}"),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // First, and before any of it: a descriptor spent before this runs is spent
+    // against 256.
+    raise_fd_limit();
+
     #[cfg(target_os = "macos")]
     point_vulkan_at_bundled_driver();
 

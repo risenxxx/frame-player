@@ -727,6 +727,17 @@ impl TorrentService {
                     proxy_url: (!prefs.proxy.is_empty()).then(|| prefs.proxy.clone()),
                     ..Default::default()
                 }),
+                // **A descriptor per file of every torrent in the session is
+                // what librqbit's own storage costs**, and persistence puts
+                // every torrent ever added into the session — so the bill is
+                // the whole cache directory rather than the film being
+                // watched. It is paid in the one currency this process cannot
+                // overdraw quietly: see `raise_fd_limit` in lib.rs for what
+                // macOS does to a media stack reached for the first time with
+                // a full table. `torrent_storage` opens a file when it is read
+                // and closes it when the budget says so; everything on disk
+                // stays exactly as upstream leaves it.
+                default_storage_factory: Some(crate::torrent_storage::storage_factory()),
                 ..Default::default()
             },
         )

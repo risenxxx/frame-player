@@ -1,6 +1,6 @@
 [package]
 name = "frameplayer"
-version = "1.8.0"
+version = "1.8.1"
 description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
 authors = ["Evgenii Zakharov"]
 edition = "2021"
@@ -54,6 +54,10 @@ encoding_rs = "0.8"
 # most sensitive thing this app will ever hold. Native backends only — the
 # secret-service one would drag in D-Bus for a platform we do not ship.
 keyring = { version = "3", features = ["apple-native", "windows-native"] }
+# Not a new dependency — it is already in the lock under librqbit — but a named
+# one, because `librqbit::storage::TorrentStorage` is written in terms of
+# `anyhow::Result` and torrent_storage.rs implements that trait.
+anyhow = "1"
 
 # Torrent streaming (ROADMAP 21). The stable 8.x line rather than 9.0.0-rc: this
 # ships in an installer, and a pre-release BitTorrent stack is not what a video
@@ -132,6 +136,11 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_Graphics_Gdi",
     "Win32_Foundation",
     "Win32_System_Power",
+    # FSCTL_SET_SPARSE, for the torrent storage: NTFS gives no sparse file
+    # unless somebody asks, and a season that is not sparse occupies all of
+    # itself from the first open (torrent_storage::mark_file_sparse).
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
 ] }
 
 # One librqbit crate, vendored with one fix — see vendor/README.md. Upstream's
