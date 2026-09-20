@@ -81,7 +81,16 @@
 .theme button[aria-pressed="true"] { background: var(--tint); color: var(--fg); }
 .theme svg { width: 14px; height: 14px; }
 
-@media (max-width: 860px) { .nav-links { display: none; } }
+/*
+  The section links go before they break, not once they have.
+
+  `.nav-in` does not wrap, so the header never grew a second row — what happened
+  instead is that each link wrapped its own label: measured, "Open anything" goes
+  to two lines at 1030px and the bar's content stops fitting its 64px. 1100 is the
+  breakpoint rather than 1030 so the links leave while they still look deliberate,
+  and everything they point at is a section the reader scrolls past anyway.
+*/
+@media (max-width: 1100px) { .nav-links { display: none; } }
 @media (max-width: 560px) { .nav-ghost { display: none; } }
 
 /* ── hero ─────────────────────────────────────────────────────────────────── */

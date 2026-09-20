@@ -43,13 +43,25 @@
 .dots { display: flex; gap: 7px; flex: none; }
 .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--dot); }
 
-/* Centred on the window, not on what is left of it: a long file name and a
-   short one have to sit in the same place. */
+/*
+  Centred on the window, not on what is left of it: a long file name and a short
+  one have to sit in the same place.
+
+  Which is why the width has to be capped against the *window* rather than as a
+  share of it. A box centred on 50% spends half its width on each side, so 54%
+  only fits while 27% of the bar clears whatever sits at its end — and the brand
+  at the right is a constant 95px, not a share. Measured, that stops being true
+  at about 1050px, where the mock's column has narrowed but the copy beside it
+  has not: at 1000px the name ran 16px under "Frame Player", at 950px 26px, at
+  901px 33px. The reserve is the brand plus the bar's own padding plus a 12px
+  gap, taken off both sides because the box is centred, and `min()` keeps the
+  old 54% wherever it is the tighter of the two.
+*/
 .win-bar .name {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  max-width: 54%;
+  max-width: min(54%, calc(100% - 242px));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -68,7 +80,10 @@
 .win-bar .wb-brand svg { width: 15px; height: 15px; color: var(--acc); }
 
 @media (max-width: 560px) {
+  /* The brand loses its word and is 15px of mark, so the reserve is the dots'
+     side now — 44px plus the padding and the same 12px gap, both ends. */
   .win-bar .wb-brand span { display: none; }
+  .win-bar .name { max-width: min(54%, calc(100% - 140px)); }
 }
 
 /* ── feature rows ─────────────────────────────────────────────────────────── */
@@ -332,6 +347,28 @@
 
 .sc-cast .player { --m: clamp(0, var(--p, 1) / 0.44, 1); }
 
+/*
+  The same fixed height as the phone gets, for the other range that shrinks it.
+
+  Between 900 and 1200px the section is still two columns, so the mock's column
+  narrows while the copy beside it keeps its share — and a 16:9 window narrowing
+  is a window getting shorter. Measured, the device panel is the part that does
+  not shrink with it: at 1100px its top sits 20px above the picture, at 1000px
+  52px, at 901px 84px, i.e. cut off by the title bar, while everything else in
+  the window still looks correct. Below 900 the section is one column again and
+  the window is tall by itself until the phone rule in narrow.css takes over at
+  670. 384px here is what the window measures at 1200px anyway, so nothing jumps
+  when the breakpoint is crossed.
+*/
+@media (max-width: 1200px) and (min-width: 901px) {
+  .sc-cast .win { height: 384px; display: flex; flex-direction: column; }
+  .sc-cast .win-bar { flex: none; }
+  /* See narrow.css: an auto inline margin on a flex item's cross axis turns
+     stretching off, and this player's picture is absolutely positioned, so its
+     fit-content width is zero. */
+  .sc-cast .player.mini { flex: 1; min-height: 0; aspect-ratio: auto; margin-inline: 0; }
+}
+
 /* ── mock: two machines on one timeline ───────────────────────────────────── */
 
 /*
@@ -368,6 +405,7 @@
   gap: 7px;
   font: 400 11.5px/1 var(--mono);
   color: var(--green);
+  margin-left: 4px;
 }
 
 .room-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }

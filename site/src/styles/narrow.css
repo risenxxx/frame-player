@@ -2,6 +2,39 @@
 
 /* ── narrow windows ───────────────────────────────────────────────────────── */
 
+/*
+  The cast window stops being a shape and becomes a size.
+
+  It is the one mock whose content does not scale with it: the device list is a
+  fixed stack of three rows, so a 16:9 window narrow enough to be 190px tall
+  clipped the very panel the section exists to show. An aspect ratio was the
+  first answer (5/6 below 620px) and it is the wrong kind of answer — it ties
+  the height to the width, so the window kept growing as the column did and at
+  620px it was half the screen. A height does not: 384px is the window, title
+  bar included, from 670px down, and only the picture around the panel gets
+  smaller. The bar keeps its 40px and the player takes the rest, which is what
+  the column layout here is for — the player's own 16:9 would otherwise decide
+  the height all over again.
+*/
+@media (max-width: 670px) {
+  .sc-cast .win { height: 384px; display: flex; flex-direction: column; }
+  .sc-cast .win-bar { flex: none; }
+  /* `margin-inline: auto` is what centres this window on a wide page, and an
+     auto margin on a flex item's cross axis turns stretching off — the player
+     then took its fit-content width, which for a box whose picture is absolutely
+     positioned is zero. */
+  .sc-cast .player.mini { flex: 1; min-height: 0; aspect-ratio: auto; margin-inline: 0; }
+
+  /* 110px, not the 100 the phone uses: the full control row is still on screen
+     down to 620px, so the bar is ~10px taller here and a shared number put the
+     panel flush against the elapsed time. Both ranges clear it by 10px. */
+  .castpop { right: 12px; bottom: 110px; padding: 4px; }
+  .castpop-title { padding: 5px 8px; font-size: 10px; }
+  .castrow { padding: 6px 8px; gap: 6px; }
+  .castrow .cast-name { font-size: 12px; }
+  .castrow .cast-model { font-size: 10.5px; }
+}
+
 @media (max-width: 560px) {
   .cta .btn {
     width: 100%;
@@ -20,6 +53,7 @@
     button and fullscreen — the rest lives behind a menu there too.
   */
   .b.opt { display: none; }
+  .castpop { bottom: 100px; }
   .b { width: 30px; height: 30px; }
   .b svg { width: 18px; height: 18px; }
   .b.play { width: 38px; height: 34px; }
@@ -36,18 +70,6 @@
      was 202px tall and everything in it had to give way at once. */
   .hero .player { aspect-ratio: 3 / 2; }
   .hovertip { --tw: 132px; bottom: 26px; }
-
-  /*
-    A 16:9 window 340px wide is 190px tall and the device list is taller than
-    that. The mock takes the shape it needs instead of clipping the panel it
-    exists to show — a tall window is a real window size for this player.
-  */
-  .sc-cast .player { aspect-ratio: 5 / 6; }
-  .castpop { right: 12px; bottom: 100px; padding: 4px; }
-  .castpop-title { padding: 5px 8px; font-size: 10px; }
-  .castrow { padding: 6px 8px; gap: 6px; }
-  .castrow .cast-name { font-size: 12px; }
-  .castrow .cast-model { font-size: 10.5px; }
 
   /* Two lines rather than three columns fighting for one: the release keeps the
      width it needs and the verdict about it moves underneath. */

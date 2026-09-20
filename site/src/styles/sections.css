@@ -27,6 +27,22 @@
 @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
 
+/*
+  Fifteen cells are five clean rows at three columns and seven and a half at two,
+  so the two-column range ends on a square of bare grid line — the gaps are the
+  background showing through, which makes an empty slot a solid block rather than
+  nothing at all. A sixteenth feature would close it here and leave a row of one
+  hanging at three columns, so what covers the corner is the corner admitting to
+  itself, and only in the range that has one. It is `aria-hidden`: it is a remark
+  about the layout, not another thing the player does.
+*/
+.cell.spare { display: none; }
+
+@media (max-width: 900px) and (min-width: 561px) {
+  .cell.spare { display: grid; align-content: center; }
+  .cell.spare p { margin: 0; color: var(--fg3); }
+}
+
 /* ── final ────────────────────────────────────────────────────────────────── */
 
 /*
