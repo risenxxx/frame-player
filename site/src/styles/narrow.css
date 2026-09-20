@@ -53,6 +53,7 @@
     button and fullscreen — the rest lives behind a menu there too.
   */
   .b.opt { display: none; }
+  .sc-cast .win { height: 334px; }
   .castpop { bottom: 100px; }
   .b { width: 30px; height: 30px; }
   .b svg { width: 18px; height: 18px; }
