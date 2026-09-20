@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "node scripts/images.mjs && astro build",
     "preview": "astro preview",
     "typecheck": "astro check",
     "og": "node tools/og.mjs",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "images": "node scripts/images.mjs"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.5",
@@ -19,6 +20,8 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
     "@types/node": "^22.15.0",
+    "axe-core": "^4.13.0",
+    "sharp": "^0.35.4",
     "typescript": "^5.9.2",
     "wrangler": "^4.33.0"
   }

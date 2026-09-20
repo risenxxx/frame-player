@@ -40,6 +40,14 @@ jobs:
 
       - run: npm ci
 
+      # The derivatives are content-addressed, so a run whose sources have not
+      # changed restores them instead of spending a minute in AVIF.
+      - name: Cache generated images
+        uses: actions/cache@v4
+        with:
+          path: site/public/gen
+          key: site-images-${{ hashFiles('site/assets/img/**', 'site/scripts/images.mjs') }}
+
       - name: Type check
         run: npm run typecheck
 

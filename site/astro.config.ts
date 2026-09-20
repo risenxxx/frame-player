@@ -30,6 +30,14 @@ function headers(): AstroIntegration {
           ...(preview ? ['  X-Robots-Tag: noindex, nofollow'] : []),
           '/_astro/*',
           '  Cache-Control: public, max-age=31536000, immutable',
+          /*
+            Everything under /gen carries a hash of the bytes that made it, so a
+            year is safe: a changed picture is a different name rather than a
+            stale file somebody has to invalidate. /img is what is left of the
+            hand-placed set, which does not.
+          */
+          '/gen/*',
+          '  Cache-Control: public, max-age=31536000, immutable',
           '/img/*',
           '  Cache-Control: public, max-age=604800',
         ]

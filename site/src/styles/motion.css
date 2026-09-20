@@ -2,17 +2,35 @@
 
 /* ── motion ───────────────────────────────────────────────────────────────── */
 
-html.js [data-reveal] { opacity: 0.7; transform: translateY(12px); }
+/*
+  Nothing, not a dimmed copy of itself.
 
-html.js [data-reveal].in {
+  The pre-reveal state used to be `opacity: 0.7`, which looks harmless and is
+  not: an audit reads the page as it loads, so every section below the fold was
+  text at seven tenths of its colour, and seven tenths is exactly what takes
+  `--fg2` on `--bg` from 7.4 to 3.6 — measured, 69 contrast failures in one
+  Lighthouse run, none of which exist once the section is on screen. Raising the
+  floor does not fix it either: at 0.9 there were still ten, because the mock
+  text sits at 4.2–5 to begin with. At zero there is no text being presented,
+  the audit says so too, and a reader sees the same fade arriving from nothing.
+*/
+html.reveal [data-reveal] { opacity: 0; transform: translateY(12px); }
+
+html.reveal [data-reveal].in {
   opacity: 1;
   transform: none;
   transition: opacity 0.7s var(--ease), transform 0.7s var(--ease);
   transition-delay: calc(var(--dl, 0) * 70ms);
 }
 
+/* A reveal that never fires must not swallow the page: printing, saving to PDF
+   and anything else that renders without scrolling gets everything at once. */
+@media print {
+  html.reveal [data-reveal] { opacity: 1; transform: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  html.js [data-reveal] { opacity: 1; transform: none; }
+  html.reveal [data-reveal] { opacity: 1; transform: none; }
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
     animation-delay: 0s !important;

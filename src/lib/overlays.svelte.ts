@@ -20,7 +20,12 @@ import { opening } from './open.svelte';
 import { loadChapters, loadTracks } from './player.svelte';
 import { ensureQueueTitles, loadPlaylist } from './playlist.svelte';
 
-export type OscMenu = 'audio' | 'sub' | 'chapter' | 'queue' | 'cast';
+/// `more` is the overflow panel: the right-hand cluster folded into one
+/// button when the bar is too narrow to carry it (see Controls.svelte). It is
+/// a peer of the others rather than a container for them — picking a row in it
+/// *replaces* it with the panel that row names, which is what keeps the rule
+/// below (at most one OSC menu) true of it as well.
+export type OscMenu = 'audio' | 'sub' | 'chapter' | 'queue' | 'cast' | 'more';
 
 class Overlays {
   /// Which OSC menu is open, one at a time — they all hang off the same bar and
@@ -81,7 +86,9 @@ export function toggleMenu(kind: OscMenu) {
   overlays.menu = overlays.menu === kind ? null : kind;
   if (overlays.menu === 'chapter') void loadChapters();
   else if (overlays.menu === 'queue') void openQueueMenu();
-  else if (overlays.menu && overlays.menu !== 'cast') void loadTracks();
+  // Named rather than "everything else that is not cast": `more` opens no list
+  // of its own, and the exclusion list was already one entry from being wrong.
+  else if (overlays.menu === 'audio' || overlays.menu === 'sub') void loadTracks();
 }
 
 async function openQueueMenu() {

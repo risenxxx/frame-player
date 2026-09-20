@@ -1,0 +1,66 @@
+---
+/*
+  One picture, three formats, the widths its slot actually uses.
+
+  `slot` is the whole of the responsive contract: every frame on this page is one
+  of six shapes, and each `sizes` below was measured in a browser across the
+  page's breakpoints rather than derived from the markup. Passing the string at
+  every call site is how the six quietly become nine that disagree.
+
+  The `<picture>` is `display: contents` (base.css), so the `<img>` stays a
+  direct child of whatever laid it out before — several of these are absolutely
+  positioned or sized at `100%`, and a wrapper in the box tree would break both.
+*/
+import manifest from '../img-manifest.json'
+
+const SIZES = {
+  /* The hero window: 356px on a phone up to its 1120px cap. */
+  hero: '(min-width: 1184px) 1120px, calc(100vw - 2 * clamp(16px, 4vw, 32px))',
+  /* A section mock: half the row while the section is two columns, the whole
+     width once it is one, which happens at 900px. */
+  mock: '(min-width: 1201px) 611px, (min-width: 901px) 50vw, calc(100vw - 2 * clamp(16px, 4vw, 32px))',
+  /* A start-screen card, widest on a phone rather than on a desktop. */
+  card: '(min-width: 901px) 190px, 300px',
+  /* The hover preview above the seekbar, which is one of two fixed sizes. */
+  thumb: '(min-width: 761px) 180px, 120px',
+  /* A screen in the two-machines mock. */
+  rig: '(min-width: 901px) 180px, (min-width: 561px) 460px, 300px',
+  /* A catalogue poster — the one picture whose source is already short of its
+     own 2×, so its ladder tops out at the source width. */
+  poster: '(min-width: 901px) 100px, 200px',
+}
+
+interface Props {
+  name: string
+  alt: string
+  slot: keyof typeof SIZES
+  class?: string
+  loading?: 'lazy' | 'eager'
+  fetchpriority?: 'high' | 'low' | 'auto'
+}
+
+const { name, alt, slot, class: cls, loading = 'lazy', fetchpriority } = Astro.props
+const m = (manifest as Record<string, { w: number; h: number; widths: number[]; formats: Record<string, Record<string, string>> }>)[name]
+if (!m) throw new Error(`Frame: no image called "${name}" — add it to assets/img and rerun scripts/images.mjs`)
+
+const sizes = SIZES[slot]
+const srcset = (format: string) => m.widths.map((w) => `${m.formats[format][w]} ${w}w`).join(', ')
+const fallback = m.formats.jpg[m.widths[m.widths.length - 1]]
+---
+
+<picture>
+  <source type="image/avif" srcset={srcset('avif')} sizes={sizes} />
+  <source type="image/webp" srcset={srcset('webp')} sizes={sizes} />
+  <img
+    src={fallback}
+    srcset={srcset('jpg')}
+    sizes={sizes}
+    alt={alt}
+    class={cls}
+    width={m.w}
+    height={m.h}
+    loading={loading}
+    decoding="async"
+    fetchpriority={fetchpriority}
+  />
+</picture>

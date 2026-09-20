@@ -26,6 +26,15 @@ export function initMotion(): void {
     return
   }
 
+  /*
+    Only now is anything allowed to be hidden. The rule that holds a section at
+    zero opacity keys on this class rather than on `html.js`, so the thing that
+    hides the page and the thing that brings it back are the same statement: a
+    module that fails to load, throws on its first line, or bails out above
+    cannot leave a reader with a blank page it was going to reveal.
+  */
+  document.documentElement.classList.add('reveal')
+
   const running: Scene[] = []
   let frame = 0
 

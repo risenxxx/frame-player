@@ -1,3 +1,7 @@
+---
+import Frame from './Frame.astro'
+---
+
   <section class="feat rev" id="together">
     <div class="wrap feat-in">
       <div class="feat-copy" data-reveal>
@@ -31,9 +35,9 @@
         <div class="rigs live" aria-hidden="true">
           <div class="rig laptop">
             <div class="rig-screen">
-              <img class="scr-frame f1" src="/img/lake-galaxy.jpg" srcset="/img/lake-galaxy.jpg 1x, /img/lake-galaxy@2x.jpg 2x" alt="The Milky Way reflected in a mountain lake" width="560" height="314" decoding="async" loading="lazy">
-              <img class="scr-frame f2" src="/img/lake-tent.jpg" srcset="/img/lake-tent.jpg 1x, /img/lake-tent@2x.jpg 2x" alt="A lit tent on the shore of a lake under the stars" width="560" height="314" decoding="async" loading="lazy">
-              <img class="scr-frame f3" src="/img/lake-trails.jpg" srcset="/img/lake-trails.jpg 1x, /img/lake-trails@2x.jpg 2x" alt="Circular star trails over a lake and bare trees" width="560" height="314" decoding="async" loading="lazy">
+              <Frame name="lake-galaxy" slot="rig" class="scr-frame f1" alt="The Milky Way reflected in a mountain lake" />
+              <Frame name="lake-tent" slot="rig" class="scr-frame f2" alt="A lit tent on the shore of a mountain lake" />
+              <Frame name="lake-trails" slot="rig" class="scr-frame f3" alt="Star trails turning above a mountain lake" />
               <div class="scr-osc">
                 <div class="scr-track"><span class="sfill"></span><i></i></div>
               </div>
@@ -44,9 +48,9 @@
           </div>
           <div class="rig desk">
             <div class="rig-screen">
-              <img class="scr-frame f1" src="/img/lake-galaxy.jpg" srcset="/img/lake-galaxy.jpg 1x, /img/lake-galaxy@2x.jpg 2x" alt="The Milky Way reflected in a mountain lake" width="560" height="314" decoding="async" loading="lazy">
-              <img class="scr-frame f2" src="/img/lake-tent.jpg" srcset="/img/lake-tent.jpg 1x, /img/lake-tent@2x.jpg 2x" alt="A lit tent on the shore of a lake under the stars" width="560" height="314" decoding="async" loading="lazy">
-              <img class="scr-frame f3" src="/img/lake-trails.jpg" srcset="/img/lake-trails.jpg 1x, /img/lake-trails@2x.jpg 2x" alt="Circular star trails over a lake and bare trees" width="560" height="314" decoding="async" loading="lazy">
+              <Frame name="lake-galaxy" slot="rig" class="scr-frame f1" alt="The Milky Way reflected in a mountain lake" />
+              <Frame name="lake-tent" slot="rig" class="scr-frame f2" alt="A lit tent on the shore of a mountain lake" />
+              <Frame name="lake-trails" slot="rig" class="scr-frame f3" alt="Star trails turning above a mountain lake" />
               <div class="scr-osc">
                 <div class="scr-track"><span class="sfill"></span><i></i></div>
               </div>

@@ -1,3 +1,7 @@
+---
+import Frame from './Frame.astro'
+---
+
   <section class="feat rev" id="catalog">
     <div class="wrap feat-in">
       <div class="feat-copy" data-reveal>
@@ -19,10 +23,10 @@
         <div class="win" data-scene data-dur="3000" aria-hidden="true">
           <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">Catalog<span class="sep"></span>Dust Lines (2024)</span><span class="wb-brand"><span>Frame Player</span><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg></span></div>
           <div class="posters">
-            <span class="poster sel" style="--i:0"><img src="/img/poster-dust-lines.jpg" alt="" width="293" height="440" decoding="async" loading="lazy"><span class="pt">Dust Lines</span></span>
-            <span class="poster" style="--i:1"><img src="/img/poster-wet-season.jpg" alt="" width="293" height="440" decoding="async" loading="lazy"><span class="pt">Wet Season</span></span>
-            <span class="poster" style="--i:2"><img src="/img/poster-night-shift.jpg" alt="" width="293" height="440" decoding="async" loading="lazy"><span class="pt">Night Shift</span></span>
-            <span class="poster" style="--i:3"><img src="/img/poster-the-crossing.jpg" alt="" width="293" height="440" decoding="async" loading="lazy"><span class="pt">The Crossing</span></span>
+            <span class="poster sel" style="--i:0"><Frame name="poster-dust-lines" slot="poster" alt="" /><span class="pt">Dust Lines</span></span>
+            <span class="poster" style="--i:1"><Frame name="poster-wet-season" slot="poster" alt="" /><span class="pt">Wet Season</span></span>
+            <span class="poster" style="--i:2"><Frame name="poster-night-shift" slot="poster" alt="" /><span class="pt">Night Shift</span></span>
+            <span class="poster" style="--i:3"><Frame name="poster-the-crossing" slot="poster" alt="" /><span class="pt">The Crossing</span></span>
           </div>
           <div class="rel">
             <div class="rel-row" style="--i:0"><span class="q hdr">2160p HDR</span><span class="nm">WEB-DL<span class="sep"></span>DV/HDR10<span class="sep"></span>E-AC-3 5.1</span><span class="seed">214<svg class="ic stat" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-up"/></svg></span></div>

@@ -1,3 +1,7 @@
+---
+import Frame from './Frame.astro'
+---
+
   <section class="feat" id="subs">
     <div class="wrap feat-in">
       <div class="feat-copy" data-reveal>
@@ -35,7 +39,7 @@
             </div>
           </div>
           <div class="substrip">
-            <img class="scene" src="/img/ridge-hiker.jpg" srcset="/img/ridge-hiker.jpg 1x, /img/ridge-hiker@2x.jpg 2x" alt="A hiker under the Milky Way on a dark ridge" width="560" height="314" decoding="async" loading="lazy">
+            <Frame name="ridge-hiker" slot="mock" class="scene" alt="A hiker under the Milky Way on a dark ridge" />
             <span class="subline">— Everything you can see out there is older than the ground you stand on.</span>
             <span class="sub-osc"><i></i></span>
           </div>

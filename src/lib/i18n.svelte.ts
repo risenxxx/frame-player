@@ -755,6 +755,8 @@ const ru = {
   'osc.subs': 'Субтитры',
   'osc.subs_off': 'Выключены',
   'osc.chapters': 'Главы',
+  /** The overflow panel: the right-hand tools when the bar is too narrow. */
+  'osc.more': 'Ещё',
   'osc.queue': 'Очередь',
   'osc.queue_remove': 'Убрать из очереди',
   'osc.replay': 'Повторить',
@@ -1555,6 +1557,7 @@ const en: Record<MessageKey, string> = {
   'osc.subs': 'Subtitles',
   'osc.subs_off': 'Off',
   'osc.chapters': 'Chapters',
+  'osc.more': 'More',
   'osc.queue': 'Queue',
   'osc.queue_remove': 'Remove from the queue',
   'osc.replay': 'Replay',

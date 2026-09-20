@@ -1,3 +1,7 @@
+---
+import Frame from './Frame.astro'
+---
+
   <section class="feat sc-cast" id="tv">
     <div class="wrap feat-in">
       <div class="feat-copy" data-reveal>
@@ -20,7 +24,7 @@
         <div class="win" data-scene data-dur="3600" aria-hidden="true">
           <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name mono">Orbital.Night.S02E03.2160p.HDR.mkv</span><span class="wb-brand"><span>Frame Player</span><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg></span></div>
           <div class="player mini">
-            <img class="scene" src="/img/comet-sea.jpg" srcset="/img/comet-sea.jpg 1x, /img/comet-sea@2x.jpg 2x" alt="A comet low over a calm sea at night" width="900" height="504" decoding="async" loading="lazy">
+            <Frame name="comet-sea" slot="mock" class="scene" alt="A comet low over a calm sea at night" />
             <div class="castpop">
               <div class="castpop-title">Playing on TV</div>
               <div class="castrow pick">

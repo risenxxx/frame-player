@@ -208,6 +208,14 @@ section[id] { scroll-margin-top: 72px; }
 .brewcopy.done { color: var(--green); }
 
 /*
+  A `<picture>` is a source list, not a box. Several frames here are absolutely
+  positioned or sized at `100%` of what laid them out, and a wrapper in the box
+  tree would resolve both against a shrink-wrapped inline element instead.
+  `display: contents` removes it and leaves the `<img>` where it was.
+*/
+picture { display: contents; }
+
+/*
   Selection is for text a reader might take with them.
 
   Everything the page draws as a *picture of the application* is not that: the
