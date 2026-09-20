@@ -38,7 +38,7 @@ generated for this page and belong to the project. Nothing here needs a credit
 line, and nothing here is share-alike — no frame drags a licence onto the page
 around it.
 
-Nothing in that directory is published. `npm run build` runs
+Nothing in that directory is published. `dev`, `typecheck` and `build` all run
 [`scripts/images.mjs`](scripts/images.mjs) first, which writes AVIF, WebP and
 JPEG at the widths each slot actually asks for into `public/gen`, and a manifest
 that [`Frame.astro`](src/components/Frame.astro) reads at build time. Two

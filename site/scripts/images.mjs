@@ -12,6 +12,11 @@
   which is what keeps an ordinary rebuild from spending a minute on AVIF.
 
   The width ladders are measured rather than generic — see `LADDERS`.
+
+  It runs in front of `dev`, `typecheck` and `build` alike, not only the last of
+  them: the manifest is a TypeScript import, so a checkout that has never built
+  fails `astro check` on a missing module rather than on anything real. The hash
+  cache is what makes running it three times cost nothing.
 */
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
