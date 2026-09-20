@@ -535,7 +535,19 @@ button.primary:hover {
 
 .menu {
   position: absolute;
-  bottom: 100px;
+  /* Anchored to the top of the control bar, not to a measured number. The
+     containing block is `.osc`, which has no top padding, so `100%` lands on
+     the top edge of the seekbar row — i.e. on the top of the elapsed/duration
+     line — and the offset is the gap the panel keeps above it.
+     That gap is the one already between the timestamps and the seekbar:
+     `.seekwrap` sets `margin-top: 6px` and `padding: 6px 0`, so the track
+     starts 12px under the time row and the panel now stops 12px over it.
+     It used to be a flat `bottom: 100px`, which was the height of the bar
+     worked out by hand (12 + 42 + 8 + 16 + 6 + the 12px line) — correct to
+     within 2px, and those 2px were the entire gap: the panel sat on the
+     timestamps. The percentage also follows the bar wherever its height is
+     not that sum, which the mini player is. */
+  bottom: calc(100% + 12px);
   right: 24px;
   min-width: 256px;
   /* The panel sizes itself to its longest row, and without a ceiling that is
@@ -550,8 +562,10 @@ button.primary:hover {
      is what makes the mini player work, where 520px does not exist. */
   max-width: min(520px, calc(100vw - 48px));
   /* 300px was written for a full-sized window; in the mini player the whole
-     player is shorter than that, and the panel would run off the top edge. */
-  max-height: min(300px, calc(100vh - 132px));
+     player is shorter than that, and the panel would run off the top edge.
+     The subtrahend is the bar plus the gap above it (~110px) plus 32px of
+     clearance from the top of the window, so it moves with `bottom`. */
+  max-height: min(300px, calc(100vh - 142px));
   overflow-y: auto;
   /* Same reason as .ctxmenu: sideways is never a direction this scrolls. */
   overflow-x: hidden;

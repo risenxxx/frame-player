@@ -43,7 +43,7 @@
     exists to show — a tall window is a real window size for this player.
   */
   .sc-cast .player { aspect-ratio: 5 / 6; }
-  .castpop { right: 10px; bottom: 104px; padding: 4px; }
+  .castpop { right: 6px; bottom: 116px; padding: 4px; }
   .castpop-title { padding: 5px 8px; font-size: 10px; }
   .castrow { padding: 6px 8px; gap: 6px; }
   .castrow .cast-name { font-size: 12px; }

@@ -46,7 +46,25 @@ section[id] { scroll-margin-top: 72px; }
   gap: 2px 14px;
 }
 
+/*
+  The separator element between facts is dropped, and the dot is drawn on the
+  fact that precedes it instead. A wrapped row can then never begin with a dot
+  — the worst it can do is end a line with one, which reads as "the list goes
+  on" rather than as a bullet nobody asked for.
+*/
 .facts-line > .sep { display: none; }
+
+.facts-line .nb:not(:last-child)::after {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-inline: 9px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+  vertical-align: middle;
+}
 .cta-c + .facts-line, .facts-line.mid { justify-content: center; }
 
 .sep {

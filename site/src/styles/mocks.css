@@ -141,7 +141,7 @@
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  font: 400 12.5px/1 var(--mono);
+  font: 400 12.5px/1.4 var(--mono);
   color: var(--fg);
   max-width: calc(clamp(0, var(--p, 1) / 0.34, 1) * 100%);
 }
@@ -151,7 +151,10 @@
   height: 32px;
   padding: 0 14px;
   border-radius: 8px;
-  background: var(--acc);
+  /* #4f46e5 rather than the hover accent: white on it measures 6.3:1, where the
+     lighter indigo managed 3.0:1. The fill is a mock of a button, but a reader
+     with low vision does not know that. */
+  background: #4f46e5;
   color: #fff;
   font: 500 13px/32px var(--sans);
   opacity: clamp(0, (var(--p, 1) - 0.3) / 0.2, 1);
@@ -217,10 +220,21 @@
 .torfoot .grow { flex: 1; }
 .torfoot svg { width: 14px; height: 14px; color: var(--fg3); }
 
+/*
+  Two boxes, because two things want opposite treatment: the bands are clipped
+  to the rounded bar, and the playhead deliberately sticks out above and below
+  it. One element with `overflow: hidden` cannot do both — it was quietly
+  cutting the marker flush with the bar.
+*/
 .bandbar {
   position: relative;
   height: 6px;
   margin: 0 14px 14px;
+}
+
+.bandbar .bands {
+  position: absolute;
+  inset: 0;
   border-radius: 3px;
   background: var(--track);
   overflow: hidden;
@@ -240,10 +254,15 @@
 
 /* ── mock: the cast popup, drawn as the application draws it ──────────────── */
 
+/*
+  Right edge flush with the control row's, not with an inset of its own — and
+  high enough to clear the elapsed time. Measured in the built page: at 96px the
+  panel overlapped the timestamps by 12px.
+*/
 .castpop {
   position: absolute;
-  right: 24px;
-  bottom: 96px;
+  right: 6px;
+  bottom: 122px;
   width: min(268px, calc(100% - 36px));
   padding: 6px;
   border-radius: 10px;
@@ -365,7 +384,21 @@
   color: var(--fg);
 }
 
-.rigs { margin-top: 26px; display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 26px; overflow-x: clip; }
+/*
+  The base overhangs the lid by 24px on each side — that is what makes it read
+  as a laptop. The row reserves that room, or the clip below takes the left
+  overhang off the first machine and the base looks shifted and square-cornered
+  on one side. The clip stays as the backstop for a phone.
+*/
+.rigs {
+  margin-top: 26px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+  gap: 26px;
+  padding-inline: 26px;
+  overflow-x: clip;
+}
 .rig { display: flex; flex-direction: column; align-items: center; }
 
 .rig-screen {

@@ -45,7 +45,9 @@
 .foot-in { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 28px; }
 .foot .links { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-left: auto; font-size: 13.5px; color: var(--fg2); }
 .foot .links a:hover { color: var(--fg); }
-.foot .facts { width: 100%; font-size: 12.5px; color: var(--fg3); }
+/* Full width is not a line length. Measured at 1400px the credits ran to ~189
+   characters; 74ch keeps it inside what a reader can track. */
+.foot .facts { width: 100%; max-width: 74ch; font-size: 12.5px; color: var(--fg3); }
 .foot-theme { display: none; }
 .foot-theme .theme { margin-left: auto; }
 

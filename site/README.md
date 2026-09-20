@@ -28,16 +28,24 @@ gets its own preview address. It needs the repository secrets
 | `public/img/` | The frames inside the mocks. **Placeholders** — see below |
 | `tools/og.mjs` | Renders the link card with the local browser. Run by hand when the design changes; the result is committed |
 
-## The frames are placeholders
+## The frames
 
-`public/img/*.jpg` are stills taken from third-party demo reels while the design
-was being worked out. They are fine for looking at; they are **not** licensed
-for a public page, and they should be replaced before this site is announced —
-with footage of the project's own, with stock under a licence that allows
-commercial use (Pexels, Mixkit and Coverr all do, without attribution), or with
-frames generated for the purpose.
+`public/img/*.jpg` are the frames inside the mocks. Two are photographs from
+NASA and are public domain; the other seven, and the four `poster-*.jpg`, were
+generated for this page and belong to the project. Nothing here needs a credit
+line, and nothing here is share-alike — no frame drags a licence onto the page
+around it.
 
-Swapping them is one directory and no code: keep the file names, or change them
-in the component that references each one. What the mocks depend on is only
-this — the hover preview and the frame under it are two moments of the *same*
-film, and the start screen shows four different ones.
+Each frame ships twice, as `name.jpg` and `name@2x.jpg`, and the components
+carry `srcset="… 1x, …@2x 2x"`: an ordinary screen fetches what it did before,
+a dense one gets twice the pixels.
+
+Replacing the set is one directory and no code — keep the file names, or change
+them where each component references one. What the mocks depend on is only
+this: the hover preview and the frame under it are two moments of the **same**
+film, the two machines in "watch together" cut between three moments of another
+one, and the start screen shows four **different** films.
+
+[`docs/footage-prompts.md`](docs/footage-prompts.md) is how a new set gets made
+— the prompts, which slot wants what, and the finding about `--sref random`
+that decides whether the frames come back as photographs or as illustrations.

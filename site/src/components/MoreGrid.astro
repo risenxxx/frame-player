@@ -9,9 +9,24 @@
       </div>
       <div class="grid" data-reveal style="--dl:1">
         <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-play"/></svg>
+          <h3>On screen in half a second</h3>
+          <p>Measured on an Apple Silicon Mac, from the click to a window you can use: <b>0.56 s</b>. Nothing is probed, resolved or connected at startup: the torrent session is built the first time a magnet is opened, discovery only runs while the device picker is up, and the one binary that used to be checked at launch is now only looked at.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-conf"/></svg>
+          <h3>Media info that is live, not a snapshot</h3>
+          <p>Codec, resolution, channel layout, the dub's language, the real bitrate, read again every second while the panel is open, because a bitrate is an average of the last few seconds and simply does not exist for the first of them.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pip"/></svg>
+          <h3>The window remembers where it was</h3>
+          <p>Its size and place come back at the next launch, restored before the window is shown rather than after. It can fit itself to the video instead, without ever growing off the edge of the screen.</p>
+        </div>
+        <div class="cell">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"/></svg>
           <h3>The preview is the frame you land on</h3>
-          <p>Not the keyframe before it: the thumbnail sharpens to the exact position once the cursor stops. Seeking is measured too — an exact seek costs 1.9 s on one file and 0.05 s on another, so the player times the first one and decides from that.</p>
+          <p>Not the keyframe before it: the thumbnail sharpens to the exact position once the cursor stops. Seeking is measured too: an exact seek costs 1.9 s on one file and 0.05 s on another, so the player times the first one and decides from that.</p>
         </div>
         <div class="cell">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-skip"/></svg>
@@ -21,7 +36,7 @@
         <div class="cell">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pip"/></svg>
           <h3>A mini player that stays put</h3>
-          <p>Small, always on top, snaps to the corners — and on macOS it floats over other applications' fullscreen spaces, which an ordinary always-on-top window does not.</p>
+          <p>Small, always on top, snaps to the corners, and on macOS it floats over other applications' fullscreen spaces, which an ordinary always-on-top window does not.</p>
         </div>
         <div class="cell">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-keys"/></svg>
@@ -31,7 +46,7 @@
         <div class="cell">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-hdr"/></svg>
           <h3>HDR, Dolby Vision, anything</h3>
-          <p>Decoding is libmpv — the same engine as mpv and IINA — so format coverage, hardware acceleration and tone mapping are not compromises made for a UI.</p>
+          <p>Decoding is libmpv, the same engine as mpv and IINA, so format coverage, hardware acceleration and tone mapping are not compromises made for a UI.</p>
         </div>
         <div class="cell">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-loop"/></svg>
@@ -46,7 +61,7 @@
         <div class="cell">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-frame"/></svg>
           <h3>Export the frame you are on</h3>
-          <p>Saved or copied exactly as the video output decoded it, HDR tone mapping included — not grabbed off a canvas that guessed at the colour.</p>
+          <p>Saved or copied exactly as the video output decoded it, HDR tone mapping included, not grabbed off a canvas that guessed at the colour.</p>
         </div>
         <div class="cell">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-audio"/></svg>

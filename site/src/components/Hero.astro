@@ -32,9 +32,12 @@ const { version, windows, macos } = await release()
     </div>
 
     <div class="wrap shot">
-      <div class="player" role="img" data-scene data-dur="2800" style="--hover:24%"
-           aria-label="Frame Player playing a 4K file from a torrent: a hover preview of a later scene above the seekbar, chapter marks along it, and a skip-intro button over the video">
-        <img class="scene" src="/img/earth-aurora.jpg" alt="Earth at night under the aurora, seen from orbit" width="1120" height="745" decoding="async" fetchpriority="high">
+      <p class="vh">
+        Frame Player playing a 4K file from a torrent: a hover preview of a later scene above the
+        seekbar, chapter marks along it, and a skip-intro button over the video.
+      </p>
+      <div class="player" data-scene data-dur="2800" style="--hover:24%" aria-hidden="true">
+        <img class="scene" src="/img/orion-moon.jpg" srcset="/img/orion-moon.jpg 1x, /img/orion-moon@2x.jpg 2x" alt="A spacecraft in sunlight with the Moon beyond it" width="1120" height="840" decoding="async" fetchpriority="high">
         <span class="p-scrim"></span>
         <span class="p-bar">
           <span class="lights"><i></i><i></i><i></i></span>
@@ -60,7 +63,7 @@ const { version, windows, macos } = await release()
           <div class="times mono"><span>4:12</span><span>56:55</span></div>
           <div class="seekwrap">
             <div class="hovertip">
-              <span class="thumb"><img src="/img/dawn-limb.jpg" alt="The line of dawn on the limb of the Earth" width="560" height="383" decoding="async" fetchpriority="high"></span>
+              <span class="thumb"><img src="/img/earth-aurora.jpg" srcset="/img/earth-aurora.jpg 1x, /img/earth-aurora@2x.jpg 2x" alt="Earth at night under the aurora, seen from orbit" width="560" height="372" decoding="async" fetchpriority="high"></span>
               <span class="tip-time mono">13:39</span>
               <span class="tip-chapter">Chapter 2<span class="sep"></span>The Terminator Line</span>
             </div>
