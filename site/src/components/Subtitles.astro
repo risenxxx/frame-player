@@ -1,0 +1,45 @@
+  <section class="feat" id="subs">
+    <div class="wrap feat-in">
+      <div class="feat-copy" data-reveal>
+        <h2>Subtitles that are already in sync</h2>
+        <p class="lede">
+          Search OpenSubtitles by the file's own hash, which identifies the exact release rather
+          than guessing which rip you have — with a title search as the fallback, and a panel that
+          says which of the two produced the list, because they are not the same kind of answer.
+        </p>
+        <ul class="checks">
+          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><b>A mismatched frame rate is flagged</b> before you download it: a 25 fps subtitle on a 23.976 fps file does not start late, it drifts further out the longer you watch.</span></li>
+          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><b>They lift out of the way of the controls</b> while the bar is up, and the delay you dial in is remembered for that file alone.</span></li>
+          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><b>The dub you chose in episode 1 is found again in episode 2</b> by language, title and codec — never by track number, which moves between releases.</span></li>
+        </ul>
+      </div>
+      <div class="feat-mock" data-reveal style="--dl:1">
+        <div class="win" data-scene data-dur="3000">
+          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">Subtitles</span><span class="wb-brand"><span>Frame Player</span><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg></span></div>
+          <div class="match">
+            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><b>Matched by the file itself</b> — 11 subtitles for this exact release</span>
+          </div>
+          <div class="rows">
+            <div class="row sub step on" style="--i:0">
+              <span class="lang">ru</span><span class="nm">Orbital.Night.S02E03.WEB-DL.2160p</span><span class="meta">4 812 ↓</span>
+            </div>
+            <div class="row sub step" style="--i:1">
+              <span class="lang">en</span><span class="nm">Orbital Night S02E03<span class="sep"></span>SDH</span><span class="meta">1 204 ↓</span>
+            </div>
+            <div class="row sub step" style="--i:2">
+              <span class="lang">en</span><span class="nm">Orbital.Night.S02E03.HDTV</span><span class="meta warn">25 fps ≠ 23.976</span>
+            </div>
+          </div>
+          <div class="substrip">
+            <img class="scene" src="/img/andromeda.jpg" alt="The Andromeda galaxy in the infrared" width="900" height="505" decoding="async" loading="lazy">
+            <span class="subline">— Everything you can see out there is older than the ground you stand on.</span>
+            <span class="sub-osc"><i></i></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>

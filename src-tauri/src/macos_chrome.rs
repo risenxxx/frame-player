@@ -285,9 +285,16 @@ static BUTTONS_VISIBLE: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 /// Hide/show the system window buttons together with the rest of the UI: once
 /// the title bar has faded out on idle, leftover traffic lights look alien.
 /// Called from the `window_buttons` command — main thread only.
-pub fn set_buttons_visible(window: &tauri::WebviewWindow, visible: bool) {
+///
+/// Answers with **whether the pointer is on the traffic lights**, which the
+/// frontend cannot work out for itself: hovering them stops the webview from
+/// receiving mousemove, so its own guess is a latch on the last position the
+/// pointer was seen at and stays raised long after the pointer has gone. That
+/// answer is what decides whether the cursor may be hidden (`cursorEffect` in
+/// chrome.svelte.ts), and it is measured here against the buttons' real frames.
+pub fn set_buttons_visible(window: &tauri::WebviewWindow, visible: bool) -> bool {
     let Some(ns) = ns_window(window) else {
-        return;
+        return false;
     };
     // Recording the intent and acting on it are two different things, and the
     // record comes first — it is what the buttons should look like in a normal
@@ -298,16 +305,21 @@ pub fn set_buttons_visible(window: &tauri::WebviewWindow, visible: bool) {
     // top edge, which appears and goes on the system's terms. Blanking them
     // there on idle emptied a strip the user had deliberately pulled down, and
     // did it while the pointer rested on a control they were about to click.
+    // Read once, before the bail-outs: it is the answer as much as a condition,
+    // and in fullscreen it is still the truth — the buttons are in the strip the
+    // user pulled down, and a pointer resting on them there wants a cursor just
+    // as much.
+    let on_buttons = pointer_over_buttons(&ns);
     if !visible && ns.styleMask().contains(NSWindowStyleMask::FullScreen) {
-        return;
+        return on_buttons;
     }
     // Cursor over the buttons means the user is working with them: the native
     // window-placement popup (on the green one) is showing, or a tooltip is
     // about to. Hiding them now is not allowed — the popup is anchored to the
     // button and follows it into the corner when it disappears. It is also just
     // the expected macOS behavior.
-    if !visible && pointer_over_buttons(&ns) {
-        return;
+    if !visible && on_buttons {
+        return true;
     }
     // `setHidden` asks for a title-bar relayout, which used to be a problem
     // worth working around; now that AppKit owns the buttons' placement, the
@@ -317,6 +329,7 @@ pub fn set_buttons_visible(window: &tauri::WebviewWindow, visible: bool) {
             btn.setHidden(!visible);
         }
     }
+    on_buttons
 }
 
 /// Cursor inside the traffic-light area (with a little slack — the popup on the

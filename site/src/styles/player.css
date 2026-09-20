@@ -1,0 +1,249 @@
+/* The player window, rebuilt in HTML from the application's own measurements. */
+
+/* ── the player window ────────────────────────────────────────────────────── */
+
+.player {
+  position: relative;
+  max-width: 1120px;
+  margin-inline: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #08080a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--sh-win);
+  font-family: var(--sans);
+  color: #e8e8ec;
+  /*
+    Four beats in the order a viewer causes them, each reading one window of
+    --p: the window arrives, the overlay comes up, a cursor crosses the
+    timeline, the preview opens above it. Nothing scrubs — a bar filling by
+    itself under a still frame says the film is playing, and it plainly is not.
+  */
+  --in: clamp(0, var(--p, 1) / 0.26, 1);
+  --ui: clamp(0, (var(--p, 1) - 0.32) / 0.2, 1);
+  --cursor: clamp(0, (var(--p, 1) - 0.56) / 0.16, 1);
+  --tip: clamp(0, (var(--p, 1) - 0.74) / 0.24, 1);
+}
+
+.hero .player {
+  opacity: calc(0.2 + 0.8 * var(--in));
+  transform: translateY(calc((1 - var(--in)) * 26px));
+}
+
+/* The frame is an <img>: it carries its own dimensions, decodes off the main
+   thread and, below the fold, is not fetched until it is needed. */
+.scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.p-scrim {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 76px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), transparent);
+  opacity: var(--ui);
+}
+
+.p-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 48px;
+  opacity: var(--ui);
+  transform: translateY(calc((1 - var(--ui)) * -6px));
+}
+
+.lights { position: absolute; left: 18px; top: 18px; display: flex; gap: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; }
+.lights i:nth-child(1) { background: #ff5f57; }
+.lights i:nth-child(2) { background: #febc2e; }
+.lights i:nth-child(3) { background: #28c840; }
+
+/* Centred on the window and clipped before it reaches either side: the lights
+   own the left, the mark owns the right, and a long release name is ellipsised
+   rather than sliding under them. */
+.p-title {
+  position: absolute;
+  inset: 0;
+  padding: 0 128px 0 76px;
+  line-height: 48px;
+  text-align: center;
+  font-size: 13px;
+  color: #b9b9c3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.p-brand {
+  position: absolute;
+  right: 18px;
+  top: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.p-brand svg { width: 18px; height: 18px; color: #818cf8; }
+
+.torchip {
+  position: absolute;
+  top: 58px;
+  right: 18px;
+  min-width: 178px;
+  padding: 7px 11px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  background: rgba(16, 16, 22, 0.82);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  color: #d6d6de;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  opacity: var(--ui);
+}
+
+.torchip-line { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.torchip-line svg { width: 12px; height: 12px; flex: none; color: #8f8f9c; }
+.torchip-bar { height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+.torchip-bar i { display: block; height: 100%; border-radius: 1px; background: rgba(255, 255, 255, 0.75); width: 46%; }
+
+.skip {
+  position: absolute;
+  right: 16px;
+  bottom: 108px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 21px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(16, 16, 22, 0.82);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  font-size: 14px;
+  font-weight: 500;
+  opacity: var(--ui);
+  transform: translateY(calc((1 - var(--ui)) * 6px));
+}
+
+.skip svg { width: 17px; height: 17px; }
+
+.osc {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 44px 8px 10px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.66) 34%, rgba(0, 0, 0, 0.28) 66%, transparent);
+  opacity: var(--ui);
+  transform: translateY(calc((1 - var(--ui)) * 8px));
+}
+
+.times { display: flex; justify-content: space-between; padding: 0 8px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.seekwrap { position: relative; margin: 6px 8px 0; padding: 6px 0; }
+.seektrack { position: relative; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
+.seektrack .buffered, .seektrack .fill { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }
+.seektrack .buffered { background: rgba(255, 255, 255, 0.3); width: 46%; }
+.seektrack .fill { background: #fff; width: 7.4%; }
+
+.chap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--at);
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: rgba(16, 16, 22, 0.9);
+}
+
+.knob {
+  position: absolute;
+  top: 50%;
+  left: 7.4%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* The tip of the drawn cursor is at (4.2, 1.8) of its 24-unit box, so the
+   offsets put that point on the track rather than the corner of the box. */
+.cursor {
+  position: absolute;
+  top: 50%;
+  left: var(--hover);
+  width: 19px;
+  height: 19px;
+  margin: -1.4px 0 0 -3.3px;
+  opacity: var(--cursor);
+  transform: translate(calc((1 - var(--cursor)) * -4px), calc((1 - var(--cursor)) * 4px));
+}
+
+/*
+  The preview can only ever be to the RIGHT of the elapsed time, as it is in the
+  application: the tip is centred on the cursor and then clamped so its own edge
+  clears the timestamp on one side and the window on the other. Half its width
+  is the term in both bounds, so the thumb's size lives in one variable.
+*/
+.hovertip {
+  position: absolute;
+  --tw: 184px;
+  left: clamp(calc(var(--tw) / 2 + 36px), var(--hover), calc(100% - var(--tw) / 2 - 6px));
+  bottom: 18px;
+  transform: translateX(-50%) translateY(calc((1 - var(--tip)) * 10px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  opacity: var(--tip);
+}
+
+.hovertip .thumb {
+  position: relative;
+  display: block;
+  width: var(--tw);
+  height: calc(var(--tw) / 16 * 9);
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  background-color: #14161c;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.tip-time { font-size: 13px; color: #fff; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+.tip-chapter { margin-top: -4px; font-size: 11px; color: #d6d6de; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+
+.controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 8px; }
+.cluster { display: flex; align-items: center; gap: 6px; }
+.cluster.left { justify-self: start; }
+.cluster.center { justify-self: center; gap: 14px; }
+.cluster.right { justify-self: end; }
+.b { width: 36px; height: 34px; display: grid; place-items: center; }
+.b svg { width: 20px; height: 20px; }
+.b.play { width: 46px; height: 42px; }
+.b.play svg { width: 32px; height: 32px; }
+.b.on { color: #818cf8; }
+.volume { position: relative; width: 90px; height: 4px; margin: 0 6px 0 2px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
+.volume i { position: absolute; inset: 0 auto 0 0; width: 62%; border-radius: 2px; background: #fff; }
+.volume b { position: absolute; left: 62%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #fff; }
+.speed { color: #818cf8; font-size: 12px; font-weight: 600; padding: 0 6px; }
+
+/* A narrow window is a real window size for this player, so the chrome shrinks
+   rather than the whole picture being scaled into a thumbnail. */
+@media (max-width: 760px) {
+  .player { border-radius: 10px; }
+  .torchip, .skip, .cluster.left .volume, .cluster.left .speed { display: none; }
+  .osc { padding: 28px 4px 6px; }
+  .hovertip .thumb { width: 124px; height: 70px; }
+  .p-brand span { display: none; }
+}

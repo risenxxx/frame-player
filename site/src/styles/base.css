@@ -1,0 +1,155 @@
+/* Reset, typography, buttons and the primitives two sections or more share. */
+
+/* ── base ─────────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 400 16px/1.6 var(--sans);
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+}
+
+::selection { background: var(--sel); color: var(--fg); }
+
+h1, h2, h3 { margin: 0; font-weight: 600; text-wrap: balance; }
+p { margin: 0; text-wrap: pretty; }
+ul { margin: 0; padding: 0; list-style: none; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--acc); outline-offset: 3px; border-radius: 8px; }
+section[id] { scroll-margin-top: 72px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+.wrap { max-width: 1200px; margin-inline: auto; padding-inline: var(--gut); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.lede { font-size: 18px; line-height: 1.6; color: var(--fg2); max-width: 34em; }
+.fine { font-size: 13px; color: var(--fg2); }
+.nb { white-space: nowrap; }
+
+/*
+  A row of independent facts. The dots are decoration between them, and a
+  wrapped line puts a dot where a line begins — so the layout does the
+  separating with a gap instead, and the dots only survive where the row is
+  one line. Each fact is `.nb`, so a break can only happen between facts.
+*/
+.facts-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+}
+
+.facts-line > .sep { display: none; }
+.cta-c + .facts-line, .facts-line.mid { justify-content: center; }
+
+.sep {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-inline: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+  opacity: 0.6;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--acc);
+}
+
+.eyebrow::before { content: ""; width: 18px; height: 1px; background: var(--acc-line); }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line2);
+  font-size: 11px;
+  color: var(--fg2);
+  white-space: nowrap;
+}
+
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ── buttons ──────────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 9px;
+  font: 500 15px/1 var(--sans);
+  letter-spacing: -0.01em;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+}
+
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--btn); color: var(--btn-fg); }
+.btn-primary:hover { background: var(--btn-hover); }
+.btn-ghost { background: transparent; color: var(--fg); border-color: var(--line2); }
+.btn-ghost:hover { background: var(--ghost); border-color: var(--line3); }
+.btn-lg { height: 50px; padding: 0 24px; font-size: 16px; border-radius: 10px; }
+.btn-sm { height: 32px; padding: 0 12px; font-size: 13px; }
+.btn svg { width: 17px; height: 17px; flex: none; }
+.btn-lg svg { width: 19px; height: 19px; }
+
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.cta-c { justify-content: center; }
+
+/* The install line is a control, not prose: it is there to be copied, so it
+   carries the one action it has. */
+.brewbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 6px 0 14px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: var(--s1);
+  font: 400 13px/1 var(--mono);
+  color: var(--fg2);
+}
+
+.brewbar b { font-weight: 400; color: var(--fg); }
+
+.brewcopy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--tint);
+  color: var(--fg2);
+  font: 500 12px/1 var(--sans);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.brewcopy:hover { background: var(--line2); color: var(--fg); }
+.brewcopy svg { width: 13px; height: 13px; }
+.brewcopy.done { color: var(--green); }

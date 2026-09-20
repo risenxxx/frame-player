@@ -8,7 +8,7 @@
   /// gesture owns the position those two disagree on purpose.
   import { formatTime } from '$lib/format';
   import { chapterTitle, player, type Chapter } from '$lib/player.svelte';
-  import { onSeekDown, onSeekMove, onSeekUp, seek } from '$lib/seek.svelte';
+  import { onSeekCancel, onSeekDown, onSeekMove, onSeekUp, seek } from '$lib/seek.svelte';
   import { thumbs } from '$lib/thumbs.svelte';
   import { positionBuffered, torrent } from '$lib/torrent.svelte';
 
@@ -47,6 +47,7 @@
     onpointerdown={onSeekDown}
     onpointermove={onSeekMove}
     onpointerup={onSeekUp}
+    onpointercancel={onSeekCancel}
     onmouseleave={() => {
       if (!seek.dragging) seek.hoverTime = null;
     }}

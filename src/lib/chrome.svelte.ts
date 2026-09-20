@@ -43,6 +43,15 @@ const UI_HIDE_MS = 1200;
 // that band constantly, and there it looked as though the cursor simply never
 // hid in windowed mode. Nothing on Windows needs the exception at all — the
 // window buttons there are our own HTML.
+//
+// What is left is still only a *guess*, and a latching one: it is written from
+// the last mousemove, and the pointer stops sending those the moment it crosses
+// onto a button — which is the whole reason the exception exists. So the box is
+// the opening bid and `window_buttons` settles it: the native side measures the
+// pointer against the buttons' real frames and `syncWindowButtons` writes the
+// answer back over this flag. Without that, a pointer that merely passed
+// through the corner on its way out of the window left the arrow on screen for
+// good.
 const TITLEBAR_STRIP = 48;
 const MAC_BUTTONS_WIDTH = 110;
 
@@ -113,8 +122,14 @@ let fsTransitionTimer: ReturnType<typeof setTimeout> | undefined;
 // dimmed by a separate command in step with the title bar's CSS fade (0.25 s)
 // — otherwise they hang around after the rest of the UI is gone. Shown
 // immediately, hidden once the animation is over.
-let winButtonsTimer: ReturnType<typeof setTimeout> | undefined;
 let winButtonsShown = true;
+/// Settles when the last instruction sent to the traffic lights has actually
+/// been carried out on the main thread — which is what the cursor waits for
+/// (see `CURSOR_SETTLE_MS`), so it must always settle, including when the
+/// instruction is superseded before it is sent.
+let winButtonsSettled: Promise<void> = Promise.resolve();
+/// Supersedes a delayed hide that has not been sent yet.
+let winButtonsSeq = 0;
 // The system file dialog: while it is open, the window is dimmed.
 
 // Well inside the CSS fade (0.25 s): the native buttons cannot be faded, they
@@ -146,18 +161,33 @@ export async function withFileDialog<T>(fn: () => Promise<T>): Promise<T> {
 
 export function syncWindowButtons(hidden: boolean, immediate = false) {
   if (!IS_MAC) return;
-  clearTimeout(winButtonsTimer);
-  const apply = (visible: boolean) => {
+  const seq = ++winButtonsSeq;
+  const apply = async (visible: boolean) => {
     if (winButtonsShown === visible) return;
     winButtonsShown = visible;
-    void invoke('window_buttons', { visible }).catch(() => {});
+    // The command answers with the one thing only the native side can know:
+    // whether the pointer is on the traffic lights *now*, measured against
+    // their real frames. `pointerInTitlebar` is a latch on the last mousemove
+    // and cannot answer it — the webview stops receiving them the moment the
+    // pointer crosses onto a button, so the latch is right while it is there
+    // and stale forever after, which is what left the cursor on screen with
+    // the rest of the chrome gone. The reply is therefore the authority, and
+    // correcting the latch from it is the whole point of awaiting the call.
+    const onButtons = await invoke<boolean>('window_buttons', { visible }).catch(() => null);
+    if (typeof onButtons === 'boolean' && onButtons !== chrome.pointerInTitlebar) {
+      chrome.pointerInTitlebar = onButtons;
+    }
   };
   if (!hidden) {
-    apply(true);
+    winButtonsSettled = apply(true);
   } else if (immediate) {
-    apply(false);
+    winButtonsSettled = apply(false);
   } else {
-    winButtonsTimer = setTimeout(() => apply(false), WIN_BUTTONS_HIDE_MS);
+    winButtonsSettled = (async () => {
+      await new Promise<void>((r) => setTimeout(r, WIN_BUTTONS_HIDE_MS));
+      if (seq !== winButtonsSeq) return;
+      await apply(false);
+    })();
   }
 }
 
@@ -172,15 +202,28 @@ export function syncWindowButtons(hidden: boolean, immediate = false) {
 /// `set_buttons_visible` declines to act at all, so there is no relayout to
 /// undo it — but nothing here ever looked at fullscreen.
 ///
-/// The margin covers the 40 ms timer, the command round-trip, the hop to the
-/// main thread and the relayout itself, and still lands well inside the
-/// 0.25 s fade of the bars.
-const CURSOR_HIDE_MS = 200;
+/// This used to be one flat 200 ms covering the 40 ms button timer, the command
+/// round-trip, the hop to the main thread and the relayout — four unbounded
+/// costs behind one guessed number, and a machine busy decoding is exactly
+/// where it runs out: the arrow then stays until the pointer is moved, which is
+/// how the bug was reported. So the wait is *causal* now — `winButtonsSettled`
+/// resolves only once the main thread has run `set_buttons_visible` — and this
+/// constant covers the one thing left afterwards, AppKit resetting the cursor
+/// rectangles in its own layout pass.
+const CURSOR_SETTLE_MS = 120;
+/// …and a ceiling on the causal wait. The reply comes back over IPC and through
+/// the main thread's event loop, and a cursor that never hides again because
+/// one of those was lost would be a worse failure than the race this replaced.
+const CURSOR_WAIT_CEILING_MS = 600;
 let cursorTimer: ReturnType<typeof setTimeout> | undefined;
+/// Only the newest attempt may hide the cursor (latest.ts's rule, hand-written
+/// here because the wait is a promise the effect did not create).
+let cursorRun = 0;
 
 function cursorEffect() {
   $effect(() => {
     clearTimeout(cursorTimer);
+    const run = ++cursorRun;
     if (!chrome.idle || chrome.pointerInTitlebar) {
       // Showing it again is never delayed: that half is a response to the
       // pointer moving, and any lag there is felt immediately.
@@ -192,7 +235,22 @@ function cursorEffect() {
       chrome.cursorHidden = true;
       return;
     }
-    cursorTimer = setTimeout(() => (chrome.cursorHidden = true), CURSOR_HIDE_MS);
+    // `winButtonsSettled` is read a microtask late, not here: the effect that
+    // writes it runs in this same flush, and which of the two was created
+    // first is not something the cursor should depend on.
+    void Promise.resolve()
+      .then(() =>
+        Promise.race([
+          winButtonsSettled,
+          new Promise<void>((r) => setTimeout(r, CURSOR_WAIT_CEILING_MS)),
+        ]),
+      )
+      .then(() => {
+        if (run !== cursorRun) return;
+        cursorTimer = setTimeout(() => {
+          if (run === cursorRun) chrome.cursorHidden = true;
+        }, CURSOR_SETTLE_MS);
+      });
   });
 }
 
@@ -335,21 +393,35 @@ export async function exitFullscreen() {
 /// optimistic rather than read from timePos (which mpv only updates a frame
 /// or two after the seek), otherwise the popup lags one step behind.
 
-// Title bar height, and the width of the macOS traffic lights within it.
-//
-// The cursor is kept visible over that corner and nowhere else. Hovering the
-// system window buttons stops the webview from receiving mousemove — the
-// cursor "sticks" there, idle sets in on the timer, and hiding it would be
-// wrong, because the user is working with the native popup on the green
-// button and we cannot see that they are.
-//
-// It used to be the whole 48px band across the full width, on both platforms,
-// which is far more than the reason justifies: in a window the pointer lands
-// in that band constantly (after dragging the window, after using the
-// buttons), and there it looked as though the cursor simply never hid in
-// windowed mode. Nothing on Windows needs the exception at all — the window
-// buttons there are our own HTML, so they report mousemove like everything
-// else, and once the bar has faded they are not even hit-testable.
+/// The surfaces the pointer may rest on without the chrome fading out from
+/// under it, and the flag each one raises.
+///
+/// Every one of them sets its flag on `mouseenter` and clears it on
+/// `mouseleave`, which is edge-triggered state: a single lost `mouseleave`
+/// pins the chrome on screen **permanently**, because nothing else ever writes
+/// the flag back. And they do get lost — the pointer crossing onto the macOS
+/// traffic lights or out through the title bar, a native window drag taking
+/// the mouse away mid-hover, the window changing space or application while a
+/// control is hovered, an element leaving the DOM under the pointer (the room
+/// chip is behind `{#if wire.on}`). The reported symptom is the interface
+/// hanging there with the pointer nowhere near it, and the workaround people
+/// find by themselves is telling: hover the bar and leave it again, which is
+/// nothing but delivering the `mouseleave` by hand.
+///
+/// So the flags are reconciled against the mouse position on every move — the
+/// one signal that is never stale. One `closest` for all three, since they do
+/// not nest: the chip and the OSC are siblings of the bar, not children.
+const HOVER_SURFACES = '.osc, .topbar, .roomchip';
+
+function reconcileHover(e: MouseEvent) {
+  const el = e.target instanceof Element ? e.target.closest(HOVER_SURFACES) : null;
+  const osc = el?.classList.contains('osc') ?? false;
+  const bar = el?.classList.contains('topbar') ?? false;
+  const chip = el?.classList.contains('roomchip') ?? false;
+  if (osc !== chrome.oscHover) chrome.oscHover = osc;
+  if (bar !== chrome.barHover) chrome.barHover = bar;
+  if (chip !== chrome.chipHover) chrome.chipHover = chip;
+}
 
 export function pokeUi(e?: MouseEvent) {
   if (e) {
@@ -358,10 +430,41 @@ export function pokeUi(e?: MouseEvent) {
     const inTop =
       IS_MAC && e.clientY <= TITLEBAR_STRIP && e.clientX <= MAC_BUTTONS_WIDTH;
     if (inTop !== chrome.pointerInTitlebar) chrome.pointerInTitlebar = inTop;
+    reconcileHover(e);
   }
   chrome.uiVisible = true;
   clearTimeout(hideTimer);
   hideTimer = setTimeout(() => (chrome.uiVisible = false), UI_HIDE_MS);
+}
+
+/**
+ * Coming back to the window counts as a poke.
+ *
+ * Switching spaces or activating the window makes AppKit rebuild what it draws
+ * — and, as with the traffic-light relayout above, that puts the arrow back
+ * without sending a single mousemove, so `cursor: none` is dropped and nothing
+ * re-applies it: the cursor sits over the video until the pointer is moved.
+ * Raising the chrome here restarts the idle cycle from the top, and the class
+ * goes back on as a style change, which is a thing WebKit *does* answer with a
+ * cursor update while the pointer stands still (it is how the cursor comes to
+ * be hidden at all).
+ *
+ * The visible cost is the bars appearing for `UI_HIDE_MS` when you switch to
+ * the player, which is the same thing that happens when you touch the mouse.
+ */
+function wakeEffect() {
+  $effect(() => {
+    const wake = () => {
+      if (document.visibilityState === 'hidden') return;
+      pokeUi();
+    };
+    window.addEventListener('focus', wake);
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      window.removeEventListener('focus', wake);
+      document.removeEventListener('visibilitychange', wake);
+    };
+  });
 }
 
 // ---- Custom title bar (window without system decorations) ----
@@ -425,7 +528,7 @@ function barSideEffect() {
 }
 
 /**
- * Start the shell's three standing effects. **Must be called from a component's
+ * Start the shell's four standing effects. **Must be called from a component's
  * initialization.**
  *
  * A bare `$effect` at the top level of a `.svelte.ts` throws `effect_orphan`
@@ -440,5 +543,6 @@ function barSideEffect() {
 export function initChrome() {
   cursorEffect();
   windowButtonsEffect();
+  wakeEffect();
   barSideEffect();
 }

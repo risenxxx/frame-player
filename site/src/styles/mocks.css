@@ -1,0 +1,638 @@
+/* Every feature mock: the window chrome they share and each surface in turn. */
+
+/* ── shared window chrome for the feature mocks ───────────────────────────── */
+
+.win {
+  position: relative;
+  background: var(--win);
+  border: 1px solid var(--line2);
+  border-radius: 13px;
+  overflow: hidden;
+  box-shadow: var(--sh-win);
+}
+
+.win::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--hl), transparent);
+  z-index: 3;
+}
+
+/*
+  The same title bar in every mock, and the same one the hero window carries:
+  the lights, what is playing, and the player's own name and mark on the right.
+  Each mock is a window of one application, so it can only have one chrome.
+*/
+.win-bar {
+  position: relative;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  background: var(--s0);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--fg2);
+}
+
+.dots { display: flex; gap: 7px; flex: none; }
+.dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--dot); }
+
+/* Centred on the window, not on what is left of it: a long file name and a
+   short one have to sit in the same place. */
+.win-bar .name {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 54%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.win-bar .wb-brand {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--fg2);
+}
+
+.win-bar .wb-brand svg { width: 15px; height: 15px; color: var(--acc); }
+
+@media (max-width: 560px) {
+  .win-bar .wb-brand span { display: none; }
+}
+
+/* ── feature rows ─────────────────────────────────────────────────────────── */
+
+.feat { padding-block: 104px; }
+
+.feat-in {
+  display: grid;
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+  gap: 64px;
+  align-items: center;
+}
+
+.feat.rev .feat-mock { order: -1; }
+
+/* Without this a mock wider than its column widens the column instead, and the
+   copy beside it goes off the screen with it. */
+.feat-in > * { min-width: 0; }
+.feat h2 { font-size: clamp(28px, 3vw, 40px); line-height: 1.1; letter-spacing: -0.03em; }
+.feat .lede { margin-top: 16px; font-size: 17px; }
+
+.checks { margin-top: 26px; display: flex; flex-direction: column; gap: 12px; }
+
+.checks li {
+  display: grid;
+  grid-template-columns: 17px 1fr;
+  gap: 11px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--fg2);
+}
+
+.checks svg { width: 17px; height: 17px; margin-top: 3px; color: var(--acc); }
+.checks b { color: var(--fg); font-weight: 500; }
+
+@media (max-width: 900px) {
+  .feat { padding-block: 76px; }
+  .feat-in { grid-template-columns: 1fr; gap: 36px; }
+  .feat.rev .feat-mock { order: 0; }
+}
+
+.player.mini { max-width: none; border-radius: 0; border: 0; box-shadow: none; }
+.player.mini .osc { padding: 40px 6px 8px; }
+
+/* ── mock: open anything ──────────────────────────────────────────────────── */
+
+.opener { padding: 18px; display: grid; gap: 14px; }
+.opener > * { min-width: 0; }
+.opener-h { font-size: 13px; color: var(--fg2); }
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 6px 0 13px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: var(--s2);
+  box-shadow: 0 0 0 calc(var(--p, 1) * 3px) var(--acc-soft);
+  transition: none;
+}
+
+.field svg { width: 15px; height: 15px; color: var(--fg3); flex: none; }
+
+/* The address arrives as if pasted: the box reveals it rather than the letters
+   being animated one by one, which at this size reads as a glitch. */
+.field .typed {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font: 400 12.5px/1 var(--mono);
+  color: var(--fg);
+  max-width: calc(clamp(0, var(--p, 1) / 0.34, 1) * 100%);
+}
+
+.field .go {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: var(--acc);
+  color: #fff;
+  font: 500 13px/32px var(--sans);
+  opacity: clamp(0, (var(--p, 1) - 0.3) / 0.2, 1);
+}
+
+.kinds { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--s0);
+  font: 400 11.5px/1 var(--mono);
+  color: var(--fg2);
+  opacity: clamp(0, (var(--p, 1) - 0.34 - var(--i) * 0.045) / 0.25, 1);
+}
+
+.kind.hot { border-color: var(--acc-line); color: var(--acc); background: var(--acc-soft); }
+
+/* ── mock: rows shared by the torrent, subtitle and device lists ──────────── */
+
+.rows { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+
+.row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  color: var(--fg2);
+}
+
+.row .ico { width: 15px; height: 15px; color: var(--fg3); }
+.row .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta { font: 400 11.5px/1 var(--mono); color: var(--fg3); }
+.row .meta.warn { color: var(--amber); }
+.row.on { background: var(--acc-soft); color: var(--fg); box-shadow: inset 0 0 0 1px var(--acc-line); }
+.row.on .ico { color: var(--acc); }
+.row.done .nm { color: var(--fg3); }
+.row.sub { grid-template-columns: auto minmax(0, 1fr) auto; }
+.row.step { opacity: clamp(0, (var(--p, 1) - 0.5 - var(--i) * 0.08) / 0.3, 1); }
+.lang { font: 500 11px/1 var(--mono); padding: 4px 6px; border-radius: 5px; background: var(--tint); color: var(--fg2); }
+
+.torfoot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--s0);
+  font-size: 12px;
+  color: var(--fg2);
+}
+
+.torfoot .rate { font-family: var(--mono); color: var(--fg); }
+.torfoot .grow { flex: 1; }
+.torfoot svg { width: 14px; height: 14px; color: var(--fg3); }
+
+.bandbar {
+  position: relative;
+  height: 6px;
+  margin: 0 14px 14px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.bandbar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--at);
+  width: calc(var(--w) * var(--p, 1));
+  background: var(--fg3);
+  border-radius: 3px;
+}
+
+.bandbar .play { position: absolute; top: -3px; bottom: -3px; left: 12%; width: 2px; background: var(--acc); border-radius: 1px; }
+
+/* ── mock: the cast popup, drawn as the application draws it ──────────────── */
+
+.castpop {
+  position: absolute;
+  right: 24px;
+  bottom: 96px;
+  width: min(268px, calc(100% - 36px));
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(16, 16, 22, 0.96);
+  /*
+    No backdrop-filter. An element that blurs what is behind it AND animates its
+    own opacity is promoted to its own layer, and the backdrop snapshot is taken
+    again as the opacity changes — which shows as the frame flashing through the
+    panel for one frame. At 0.96 the blur was buying nothing anyway.
+  */
+  box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.75);
+  opacity: var(--pop);
+  transform: translateY(calc((1 - var(--pop)) * 8px));
+}
+
+.castpop-title { padding: 6px 10px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9a9aa5; }
+
+.castrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+}
+
+.castrow.pick { background: rgba(255, 255, 255, calc(0.09 * var(--pick))); }
+.castrow .txt { min-width: 0; flex: 1; }
+.castrow .cast-name { display: block; font-size: 13px; color: #d6d6de; }
+.castrow .cast-model { display: block; font-size: 11px; color: rgba(232, 232, 236, 0.45); }
+.castrow.pick .cast-model { color: rgba(129, 140, 248, calc(0.2 + 0.75 * var(--pick))); }
+.castrow svg { width: 15px; height: 15px; color: rgba(232, 232, 236, 0.4); flex: none; }
+.castrow .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(232, 232, 236, 0.25); border-top-color: rgba(232, 232, 236, 0.7); }
+/* Same rule as the loop above: a spinner nobody is looking at is a spinner
+   nobody has to paint. */
+.in .castrow .spin { animation: rot 0.8s linear infinite; }
+
+@keyframes rot { to { transform: rotate(360deg); } }
+
+/* The pointer walks to the cast button and the button lights under it — the
+   two halves of "this is where that panel comes from". */
+.sc-cast .player { --ui: 1; --pop: clamp(0, (var(--p, 1) - 0.46) / 0.2, 1); --pick: clamp(0, (var(--p, 1) - 0.72) / 0.2, 1); }
+.sc-cast .b.cast { color: rgba(232, 232, 236, calc(0.9 - 0.9 * var(--pop))); }
+.sc-cast .b.cast::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, calc(0.1 * var(--pop)));
+}
+.sc-cast .b { position: relative; }
+.sc-cast .b.cast .lit { position: absolute; inset: 0; display: grid; place-items: center; color: #818cf8; opacity: var(--pop); }
+
+.walk {
+  position: absolute;
+  width: 19px;
+  height: 19px;
+  left: calc(-150px * (1 - var(--m)) + 14.7px * var(--m));
+  top: calc(-96px * (1 - var(--m)) + 15.6px * var(--m));
+  opacity: clamp(0, var(--p, 1) / 0.12, 1);
+  z-index: 6;
+}
+
+.sc-cast .player { --m: clamp(0, var(--p, 1) / 0.44, 1); }
+
+/* ── mock: two machines on one timeline ───────────────────────────────────── */
+
+/*
+  Not a window: two machines are two machines, and wrapping them in one title
+  bar said they were one screenshot. The room's own panel sits above them, the
+  way the dialog sits above the video in the application.
+*/
+.room-panel {
+  padding: 14px 16px;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: var(--s1);
+  box-shadow: var(--sh-pop);
+}
+
+.room-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 12px; }
+
+.roomcode {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 12px;
+  border: 1px dashed var(--line2);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--fg2);
+}
+
+.roomcode b { font: 500 14px/1 var(--mono); letter-spacing: 0.14em; color: var(--fg); }
+
+.room-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: 400 11.5px/1 var(--mono);
+  color: var(--green);
+}
+
+.room-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+
+.room-members { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.member { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg2); }
+.member b { color: var(--fg); font-weight: 500; }
+
+.av {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--tint);
+  color: var(--fg);
+}
+
+.rigs { margin-top: 26px; display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 26px; overflow-x: clip; }
+.rig { display: flex; flex-direction: column; align-items: center; }
+
+.rig-screen {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #08080a;
+}
+
+/* The laptop's lid is thicker along the bottom edge and its base is a wedge;
+   the desktop is an even bezel on a neck. Two silhouettes, no images. */
+.rig.laptop .rig-screen { border: 6px solid #26272e; border-bottom-width: 11px; }
+.rig.laptop .rig-base { width: 122%; height: 9px; border-radius: 0 0 9px 9px; background: linear-gradient(#2c2d35, #15161b); }
+.rig.desk .rig-screen { border: 8px solid #26272e; }
+.rig.desk .rig-neck { width: 34px; height: 20px; background: #23242b; }
+.rig.desk .rig-foot { width: 92px; height: 7px; border-radius: 4px; background: linear-gradient(#2c2d35, #15161b); }
+
+.rig-label { margin-top: 12px; font-size: 12px; color: var(--fg3); }
+.rig-label b { color: var(--fg2); font-weight: 500; }
+
+.scr-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+.scr-frame.f1 { opacity: 1; }
+.scr-osc { position: absolute; inset: auto 0 0; padding: 24px 10px 9px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.85)); }
+.scr-track { position: relative; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
+.scr-track .sfill { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: #fff; }
+.scr-track i { position: absolute; top: -3px; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: #fff; }
+.scr-time { position: absolute; right: 10px; bottom: 24px; font: 400 10.5px/1 var(--mono); color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); }
+.scr-time span { position: absolute; right: 0; bottom: 0; opacity: 0; white-space: nowrap; }
+.scr-time .t1 { opacity: 1; }
+
+/*
+  One 2.4-second loop, three positions, shared by both machines: the playhead
+  moves, the frame under it changes in the same step, and the readout follows.
+  Both screens read the same keyframes, so they cannot drift apart on the page
+  any more than the room can. steps(1, end) is what makes each change a cut
+  rather than a slide — a seek is not a transition.
+*/
+@keyframes sk-pos { 0% { left: 18%; } 33.33% { left: 57%; } 66.66% { left: 79%; } 100% { left: 18%; } }
+@keyframes sk-w { 0% { width: 18%; } 33.33% { width: 57%; } 66.66% { width: 79%; } 100% { width: 18%; } }
+@keyframes sk-1 { 0% { opacity: 1; } 33.33% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes sk-2 { 0% { opacity: 0; } 33.33% { opacity: 1; } 66.66% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes sk-3 { 0% { opacity: 0; } 66.66% { opacity: 1; } 99.9% { opacity: 0; } 100% { opacity: 0; } }
+@keyframes sk-pulse { 0% { opacity: 1; } 45%, 100% { opacity: 0; } }
+
+/*
+  The loop runs only while the section has been reached. `.in` is set by the
+  same observer that reveals the block, so a reader who never scrolls this far
+  — or who has scrolled past — pays nothing for six animations that would
+  otherwise run for the life of the page.
+
+  `left` and `width` are layout properties, which would matter if they changed
+  every frame; with `steps(1, end)` each one changes three times in 4.2s, on a
+  subtree the size of a postage stamp.
+*/
+.in .rigs.live .scr-track i { animation: sk-pos 4.2s steps(1, end) infinite; }
+.in .rigs.live .scr-track .sfill { animation: sk-w 4.2s steps(1, end) infinite; }
+.in .rigs.live .scr-frame.f1, .in .rigs.live .scr-time .t1 { animation: sk-1 4.2s steps(1, end) infinite; }
+.in .rigs.live .scr-frame.f2, .in .rigs.live .scr-time .t2 { animation: sk-2 4.2s steps(1, end) infinite; }
+.in .rigs.live .scr-frame.f3, .in .rigs.live .scr-time .t3 { animation: sk-3 4.2s steps(1, end) infinite; }
+.in .room-panel .sync-pulse { animation: sk-pulse 1.4s ease-out infinite; }
+
+.sync-pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--acc-line);
+  background: var(--acc-soft);
+  font: 500 11px/1.6 var(--mono);
+  color: var(--acc);
+}
+
+@media (max-width: 560px) {
+  .rigs { grid-template-columns: 1fr; gap: 28px; }
+}
+
+/* ── mock: subtitles ──────────────────────────────────────────────────────── */
+
+.match {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  background: var(--s0);
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--fg2);
+}
+
+.match svg { width: 15px; height: 15px; color: var(--green); }
+.match b { color: var(--fg); font-weight: 500; }
+
+.substrip {
+  position: relative;
+  aspect-ratio: 21 / 9;
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+  background: #08080a;
+}
+
+.sub-osc { position: absolute; inset: auto 0 0; height: 54px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.85)); }
+.sub-osc i { position: absolute; left: 14px; right: 14px; bottom: 15px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
+.sub-osc i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 38%; border-radius: 2px; background: #fff; }
+.sub-osc i::before { content: ""; position: absolute; left: 38%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #fff; }
+
+/* Where mpv puts the line, lifted by the height of the control bar — which is
+   what the player does the moment the chrome comes up. */
+.subline {
+  position: absolute;
+  left: 50%;
+  bottom: calc(18px + var(--p, 1) * 34px);
+  transform: translateX(-50%);
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9);
+  max-width: calc(100% - 28px);
+  text-align: center;
+  text-wrap: balance;
+  line-height: 1.35;
+}
+
+/* ── mock: catalog ────────────────────────────────────────────────────────── */
+
+.posters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 14px; }
+
+.poster {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background-color: var(--s2);
+  opacity: clamp(0, (var(--p, 1) - var(--i) * 0.08) / 0.3, 1);
+}
+
+.poster.sel { box-shadow: 0 0 0 2px var(--acc); border-color: transparent; }
+.poster .pt {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 18px 8px 7px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  font-size: 10.5px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rel { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 10px; }
+
+.rel-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--fg2);
+  transform: translateY(calc((1 - clamp(0, (var(--p, 1) - 0.4) / 0.4, 1)) * 8px));
+  opacity: clamp(0, (var(--p, 1) - 0.4 - var(--i) * 0.06) / 0.3, 1);
+}
+
+.rel-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q { font: 500 10.5px/1 var(--mono); padding: 4px 6px; border-radius: 5px; border: 1px solid var(--line2); color: var(--fg2); }
+.q.hdr { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
+.seed { font: 400 11.5px/1 var(--mono); color: var(--green); }
+
+/* ── mock: the start screen ───────────────────────────────────────────────── */
+
+.startscr { padding: 30px 24px 24px; background: var(--s0); text-align: center; }
+.st-title { font-size: 26px; font-weight: 600; letter-spacing: 0.06em; }
+.st-hint { margin-top: 6px; font-size: 12.5px; color: var(--fg3); }
+.st-actions { margin-top: 18px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+
+/*
+  The catalog button wears a gradient hairline and no fill — the application's
+  one exception to "indigo means selected", and the reason it works is that a
+  ring is a different token from a fill.
+*/
+.btn-catalog {
+  background: linear-gradient(var(--s0), var(--s0)) padding-box, linear-gradient(90deg, #818cf8, #6366f1 55%, #a855f7) border-box;
+  border: 1px solid transparent;
+  color: var(--fg);
+}
+
+.st-sec { margin-top: 26px; display: flex; align-items: baseline; gap: 10px; font-size: 12px; color: var(--fg3); text-align: left; }
+.st-sec::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+.rail { margin-top: 12px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; text-align: left; }
+
+.card {
+  opacity: clamp(0, (var(--p, 1) - var(--i) * 0.1) / 0.35, 1);
+  transform: translateY(calc((1 - clamp(0, (var(--p, 1) - var(--i) * 0.1) / 0.35, 1)) * 10px));
+}
+
+.card-poster {
+  display: block;
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #14161c;
+}
+
+/* One rule for every frame that sits inside a box rather than being it. */
+.thumb img,
+.card-poster img,
+.poster img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.card.now .card-poster { outline: 2px solid var(--acc); outline-offset: 1px; }
+.card-progress { position: absolute; left: 0; bottom: 0; height: 3px; background: #6366f1; width: calc(var(--v) * var(--p, 1)); }
+/* The application's own 12.5/11.5 pair, through tokens rather than its literals:
+   this panel sits on --s0, which flips with the page. */
+.card-name { display: block; margin-top: 6px; font-size: 12.5px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-left { display: block; font-size: 11.5px; color: var(--fg3); }
+
+.torrow {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--s2);
+  text-align: left;
+  opacity: clamp(0, (var(--p, 1) - 0.45) / 0.35, 1);
+}
+
+.torrow .glyph { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--tint); color: var(--fg2); }
+.torrow .glyph svg { width: 17px; height: 17px; }
+.torrow .t1 { display: block; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.torrow > span { min-width: 0; }
+.torrow .t2 {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) { .rail { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/*
+  Without JavaScript nothing ever gets `.in`, and the page is served at its
+  finished state — including these, which are the only thing on it that moves
+  by itself.
+*/
+html:not(.js) .rigs.live .scr-track i { animation: sk-pos 4.2s steps(1, end) infinite; }
+html:not(.js) .rigs.live .scr-track .sfill { animation: sk-w 4.2s steps(1, end) infinite; }
+html:not(.js) .rigs.live .scr-frame.f1, html:not(.js) .rigs.live .scr-time .t1 { animation: sk-1 4.2s steps(1, end) infinite; }
+html:not(.js) .rigs.live .scr-frame.f2, html:not(.js) .rigs.live .scr-time .t2 { animation: sk-2 4.2s steps(1, end) infinite; }
+html:not(.js) .rigs.live .scr-frame.f3, html:not(.js) .rigs.live .scr-time .t3 { animation: sk-3 4.2s steps(1, end) infinite; }
+html:not(.js) .room-panel .sync-pulse { animation: sk-pulse 1.4s ease-out infinite; }

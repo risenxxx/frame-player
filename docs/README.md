@@ -4,11 +4,12 @@ Why Frame Player is built the way it is: the constraints that shaped it, the
 measurements behind the decisions, and the dead ends that are not worth walking
 into twice.
 
-These documents answer **why**. [`CLAUDE.md`](../CLAUDE.md) in the repository
-root answers **what is true of the code right now** — it is the rule book, and
-where the two disagree, it wins. A finding earns a line there when breaking it
-would break the player; it stays here when its value is saving the next
-investigation.
+These documents answer **why**. The rule book answers **what is true of the code
+right now**, and where the two disagree, it wins: [`CLAUDE.md`](../CLAUDE.md) in
+the repository root is its index — one line per rule — and
+[`rules/`](rules/README.md) beside this file holds the chapters those lines link
+to. A finding earns a line there when breaking it would break the player; it
+stays here when its value is saving the next investigation.
 
 | Document | What it covers |
 |---|---|
@@ -18,6 +19,7 @@ investigation.
 | [torrents.md](torrents.md) | Streaming from a swarm: piece priority driven by playback, what a partially downloaded file can and cannot be used for, and casting one to a TV. |
 | [watch-together.md](watch-together.md) | Two or more players holding one timeline: why the wire carries state rather than actions, why drift is corrected with speed rather than a seek, and what a room may know about what you are watching. |
 | [distribution.md](distribution.md) | Shipping: code signing, Gatekeeper, SmartScreen, updates, and what a store listing would cost. |
+| [rules/](rules/README.md) | The rule book itself: fifteen chapters covering playback, thumbnails, tracks, torrents, casting, watching together, the catalog, sources and privacy, the window, the UI, CSS, the frontend's structure, and shipping. |
 | [ROADMAP.md](ROADMAP.md) | What shipped, what is planned, and what is only being considered. |
 
 ## Conventions

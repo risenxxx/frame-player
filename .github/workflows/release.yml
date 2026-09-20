@@ -397,6 +397,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # The last step asks the site workflow to run, which is an Actions write.
+      actions: write
 
     steps:
       # This job used to consist of downloaded artifacts and nothing else, which
@@ -590,3 +592,16 @@ jobs:
           git commit -m "frame-player $version"
           git push
           echo "Bumped the Homebrew cask to $version." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The landing page's download buttons are resolved from `latest.json` at
+      # build time, and old versions are pruned from the bucket above — so the
+      # page has to be rebuilt once this version is the current one, or its
+      # buttons point at files that have just been deleted. Last, deliberately:
+      # a failure here is a stale page, not a failed release.
+      - name: Refresh the landing page
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run site.yml --repo "$GITHUB_REPOSITORY" --ref "${GITHUB_REF_NAME:-main}"
+          echo "Asked the site workflow to rebuild for $version." | tee -a "$GITHUB_STEP_SUMMARY"

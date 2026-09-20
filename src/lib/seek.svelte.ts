@@ -328,6 +328,32 @@ export function onSeekUp(e: PointerEvent) {
   if (seek.wrapEl && !seek.wrapEl.matches(':hover')) seek.hoverTime = null;
 }
 
+/**
+ * The drag ended without a release.
+ *
+ * `pointercancel` is the one way out of a drag that leaves no `pointerup`
+ * behind, and everything the gesture holds is latched on its way in: the
+ * player is paused for the duration (`dragResume`), and `seek.dragging` both
+ * owns the knob and pins the chrome on screen — `chrome.idle` cannot become
+ * true while it is set. Losing that edge is therefore not a missed seek but a
+ * player stuck paused under an interface that never fades, with nothing left
+ * to correct either.
+ *
+ * Unlike a release this issues no seek: a cancelled gesture never said where
+ * it wanted to land, and the previews have already put playback somewhere
+ * reasonable.
+ */
+export function onSeekCancel() {
+  if (!seek.dragging) return;
+  seek.dragging = false;
+  clearTimeout(dragSettleTimer);
+  if (dragResume) {
+    dragResume = false;
+    void setProperty('pause', false);
+  }
+  if (seek.wrapEl && !seek.wrapEl.matches(':hover')) seek.hoverTime = null;
+}
+
 export function onSeekHover(e: MouseEvent) {
   if (player.duration <= 0) return;
   const wrap = e.currentTarget as HTMLElement;

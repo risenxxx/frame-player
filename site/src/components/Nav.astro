@@ -1,0 +1,35 @@
+<!-- The marker the header watches: "the page has left the top" is an observer
+     answering, not a scroll handler running beside a backdrop-filter. -->
+<div class="nav-top" aria-hidden="true" data-nav-top></div>
+<header class="nav" data-nav>
+  <div class="wrap nav-in">
+    <a class="brand" href="#top" aria-label="Frame Player, to the top">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>Frame Player
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#open">Open anything</a>
+      <a href="#torrents">Torrents</a>
+      <a href="#tv">Television</a>
+      <a href="#together">Together</a>
+      <a href="#everything">Everything else</a>
+    </nav>
+    <div class="nav-r">
+      <fieldset class="theme" data-theme-switch>
+        <legend class="vh">Theme</legend>
+        <button type="button" data-theme-set="system" aria-pressed="true" title="Match the system">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-monitor"/></svg><span class="vh">System</span>
+        </button>
+        <button type="button" data-theme-set="light" aria-pressed="false" title="Light">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sun"/></svg><span class="vh">Light</span>
+        </button>
+        <button type="button" data-theme-set="dark" aria-pressed="false" title="Dark">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-moon"/></svg><span class="vh">Dark</span>
+        </button>
+      </fieldset>
+      <a class="btn btn-ghost btn-sm nav-ghost" href="https://github.com/risenxxx/frame-player">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-github"/></svg>GitHub
+      </a>
+      <a class="btn btn-primary btn-sm" href="#download">Download</a>
+    </div>
+  </div>
+</header>

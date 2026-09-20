@@ -1,0 +1,34 @@
+---
+import { release } from '../release.ts'
+
+const { version, windows, macos } = await release()
+---
+
+  <section class="final">
+    <div class="hero-light" aria-hidden="true" style="top:auto;bottom:-620px"></div>
+    <div class="wrap" style="position:relative">
+      <h2 data-reveal><span>Open something.</span><span>It will remember where you stopped.</span></h2>
+      <div class="cta cta-c" data-reveal style="--dl:1">
+        <a class="btn btn-primary btn-lg" href={windows}>
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-windows"/></svg>
+          Download for Windows
+        </a>
+        <a class="btn btn-ghost btn-lg" href={macos}>
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-apple"/></svg>
+          Download for macOS
+        </a>
+      </div>
+      <div data-reveal style="--dl:2">
+        <span class="brewbar">
+          <span><span style="color:var(--fg3)">$</span> <b>brew install --cask frame-player</b></span>
+          <button type="button" class="brewcopy" data-copy="brew install --cask frame-player">
+            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-copy"/></svg>
+            <span class="lbl">Copy</span><span class="vh">the install command</span>
+          </button>
+        </span>
+        <p class="fine facts-line mid">
+          <span class="nb">Version {version}</span><span class="sep"></span><span class="nb">macOS builds are notarised</span><span class="sep"></span><span class="nb">Windows builds are unsigned and stop once at SmartScreen</span>
+        </p>
+      </div>
+    </div>
+  </section>

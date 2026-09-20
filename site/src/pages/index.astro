@@ -1,0 +1,44 @@
+---
+import Page from '../layouts/Page.astro'
+import Icons from '../components/Icons.astro'
+import Nav from '../components/Nav.astro'
+import Hero from '../components/Hero.astro'
+import OpenAnything from '../components/OpenAnything.astro'
+import Torrents from '../components/Torrents.astro'
+import Television from '../components/Television.astro'
+import Together from '../components/Together.astro'
+import Subtitles from '../components/Subtitles.astro'
+import Catalog from '../components/Catalog.astro'
+import StartScreen from '../components/StartScreen.astro'
+import MoreGrid from '../components/MoreGrid.astro'
+import FinalCta from '../components/FinalCta.astro'
+import Footer from '../components/Footer.astro'
+---
+
+<Page>
+  <Icons />
+  <Nav />
+  <main id="top">
+    <Hero />
+    <OpenAnything />
+    <Torrents />
+    <Television />
+    <Together />
+    <Subtitles />
+    <Catalog />
+    <StartScreen />
+    <MoreGrid />
+    <FinalCta />
+  </main>
+  <Footer />
+
+  <script>
+    import { initTheme } from '../scripts/theme.ts'
+    import { initMotion } from '../scripts/motion.ts'
+    import { initNav } from '../scripts/nav.ts'
+
+    initTheme()
+    initNav()
+    initMotion()
+  </script>
+</Page>

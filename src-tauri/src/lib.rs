@@ -803,16 +803,40 @@ fn sync_drag_resize_borders(window: &tauri::Window) {
 /// Show/hide the system window buttons (macOS), so the traffic lights fade out
 /// together with the rest of the UI when idle. A no-op elsewhere: on other
 /// platforms the frontend draws the window buttons itself.
+///
+/// Answers `true` if the pointer is on the traffic lights. Two things ride on
+/// the reply, and neither can be had from a call that only queues work:
+/// hiding the buttons asks AppKit for a title-bar relayout, which resets the
+/// window's cursor rectangles and undoes the frontend's `cursor: none` — so the
+/// frontend must know when that relayout has *happened* rather than guess at a
+/// margin — and the pointer's position against the buttons' real frames is the
+/// one thing that says whether the cursor may be hidden at all (see
+/// `set_buttons_visible`). Hence the channel: `run_on_main_thread` returns as
+/// soon as the closure is queued.
 #[tauri::command]
 #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-fn window_buttons(window: tauri::WebviewWindow, visible: bool) {
+async fn window_buttons(window: tauri::WebviewWindow, visible: bool) -> bool {
     #[cfg(target_os = "macos")]
     {
         // AppKit is main-thread only, and commands arrive on a worker.
+        let (tx, mut rx) = tauri::async_runtime::channel::<bool>(1);
         let win = window.clone();
-        let _ = window.run_on_main_thread(move || {
-            macos_chrome::set_buttons_visible(&win, visible);
-        });
+        if window
+            .run_on_main_thread(move || {
+                let on_buttons = macos_chrome::set_buttons_visible(&win, visible);
+                // Capacity 1 and a fresh channel: this cannot block the main
+                // thread, and a receiver already gone is not an error here.
+                let _ = tx.try_send(on_buttons);
+            })
+            .is_err()
+        {
+            return false;
+        }
+        rx.recv().await.unwrap_or(false)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
     }
 }
 

@@ -1,0 +1,135 @@
+/*
+  Design tokens. Dark is the bare :root — a player sells itself in a dark
+  window — and the light set is repeated twice because CSS cannot join a media
+  query to an attribute selector.
+*/
+
+/*
+  Frame Player — landing.
+
+  Token system, window chrome and the theme switch follow the tuned site; the
+  hero's player window comes from risen.dev. The accent is the application's own
+  indigo (#6366f1 fills, #818cf8 hover), so the page and the product agree about
+  what "selected" looks like.
+
+  Dark is the bare :root — a player sells itself in a dark window. The light set
+  is repeated twice because CSS cannot join a media query to an attribute
+  selector.
+
+  Every frame shown in a mock is a token (--img-a … --img-i), never an <img> in
+  the markup: swapping the demo footage for another set is one block at the top
+  of this file.
+*/
+
+:root {
+  --bg: #08090c;
+  --s0: #0b0d11;
+  --s1: #0f1116;
+  --s2: #14171d;
+  --win: #0f1116;
+  --line: rgba(255, 255, 255, 0.08);
+  --line2: rgba(255, 255, 255, 0.14);
+  --line3: rgba(255, 255, 255, 0.24);
+  --fg: #f2f4f8;
+  --fg2: #a1a7b3;
+  --fg3: #7c828e;
+  --acc: #818cf8;
+  --acc-soft: rgba(129, 140, 248, 0.12);
+  --acc-line: rgba(129, 140, 248, 0.42);
+  --green: #4ade9b;
+  --amber: #f5b94a;
+  --btn: #f2f4f8;
+  --btn-fg: #0a0b0f;
+  --btn-hover: #ffffff;
+  --ghost: rgba(255, 255, 255, 0.04);
+  --nav: rgba(8, 9, 12, 0.8);
+  --glow: rgba(99, 102, 241, 0.18);
+  --glow2: rgba(99, 102, 241, 0.05);
+  --hl: rgba(255, 255, 255, 0.3);
+  --tint: rgba(255, 255, 255, 0.07);
+  --dot: rgba(255, 255, 255, 0.11);
+  --track: rgba(255, 255, 255, 0.1);
+  --thumb: #2a2f3a;
+  --sel: rgba(129, 140, 248, 0.32);
+  --sh-win: 0 1px 2px rgba(0, 0, 0, 0.5), 0 32px 80px -24px rgba(0, 0, 0, 0.8);
+  --sh-pop: 0 18px 50px -12px rgba(0, 0, 0, 0.7);
+  --sans: "Onest", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --gut: clamp(16px, 4vw, 32px);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #ffffff;
+    --s0: #f6f7f9;
+    --s1: #f6f7f9;
+    --s2: #ffffff;
+    --win: #ffffff;
+    --line: rgba(9, 9, 11, 0.08);
+    --line2: rgba(9, 9, 11, 0.14);
+    --line3: rgba(9, 9, 11, 0.28);
+    --fg: #09090b;
+    --fg2: #52525b;
+    --fg3: #6b6b74;
+    --acc: #4f46e5;
+    --acc-soft: rgba(79, 70, 229, 0.08);
+    --acc-line: rgba(79, 70, 229, 0.36);
+    --green: #047857;
+    --amber: #a14b08;
+    --btn: #09090b;
+    --btn-fg: #ffffff;
+    --btn-hover: #27272a;
+    --ghost: rgba(9, 9, 11, 0.04);
+    --nav: rgba(255, 255, 255, 0.85);
+    --glow: rgba(79, 70, 229, 0.12);
+    --glow2: rgba(79, 70, 229, 0.03);
+    --hl: transparent;
+    --tint: rgba(9, 9, 11, 0.06);
+    --dot: rgba(9, 9, 11, 0.13);
+    --track: rgba(9, 9, 11, 0.1);
+    --thumb: #d4d4d8;
+    --sel: rgba(79, 70, 229, 0.18);
+    --sh-win: 0 1px 2px rgba(9, 9, 11, 0.06), 0 4px 10px -4px rgba(9, 9, 11, 0.08), 0 36px 72px -28px rgba(9, 9, 11, 0.28);
+    --sh-pop: 0 14px 36px -12px rgba(9, 9, 11, 0.3);
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --s0: #f6f7f9;
+  --s1: #f6f7f9;
+  --s2: #ffffff;
+  --win: #ffffff;
+  --line: rgba(9, 9, 11, 0.08);
+  --line2: rgba(9, 9, 11, 0.14);
+  --line3: rgba(9, 9, 11, 0.28);
+  --fg: #09090b;
+  --fg2: #52525b;
+  --fg3: #6b6b74;
+  --acc: #4f46e5;
+  --acc-soft: rgba(79, 70, 229, 0.08);
+  --acc-line: rgba(79, 70, 229, 0.36);
+  --green: #047857;
+  --amber: #a14b08;
+  --btn: #09090b;
+  --btn-fg: #ffffff;
+  --btn-hover: #27272a;
+  --ghost: rgba(9, 9, 11, 0.04);
+  --nav: rgba(255, 255, 255, 0.85);
+  --glow: rgba(79, 70, 229, 0.12);
+  --glow2: rgba(79, 70, 229, 0.03);
+  --hl: transparent;
+  --tint: rgba(9, 9, 11, 0.06);
+  --dot: rgba(9, 9, 11, 0.13);
+  --track: rgba(9, 9, 11, 0.1);
+  --thumb: #d4d4d8;
+  --sel: rgba(79, 70, 229, 0.18);
+  --sh-win: 0 1px 2px rgba(9, 9, 11, 0.06), 0 4px 10px -4px rgba(9, 9, 11, 0.08), 0 36px 72px -28px rgba(9, 9, 11, 0.28);
+  --sh-pop: 0 14px 36px -12px rgba(9, 9, 11, 0.3);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] { color-scheme: dark; }

@@ -1,0 +1,73 @@
+  <section class="more" id="everything">
+    <div class="wrap">
+      <div class="sec-h" data-reveal>
+        <h2>The parts you only notice when they are missing</h2>
+        <p class="lede">
+          Most of what follows exists somewhere else. What is unusual is how much of it is
+          <i>correct</i> in the cases where other players are merely plausible.
+        </p>
+      </div>
+      <div class="grid" data-reveal style="--dl:1">
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"/></svg>
+          <h3>The preview is the frame you land on</h3>
+          <p>Not the keyframe before it: the thumbnail sharpens to the exact position once the cursor stops. Seeking is measured too — an exact seek costs 1.9 s on one file and 0.05 s on another, so the player times the first one and decides from that.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-skip"/></svg>
+          <h3>Skip intro that knows what an intro is</h3>
+          <p>Matched on the whole chapter title rather than a substring, so "Ending the war for good" never turns into the closing credits.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pip"/></svg>
+          <h3>A mini player that stays put</h3>
+          <p>Small, always on top, snaps to the corners — and on macOS it floats over other applications' fullscreen spaces, which an ordinary always-on-top window does not.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-keys"/></svg>
+          <h3>36 actions, all rebindable</h3>
+          <p>Bindings are physical keys, so they work in any layout. <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> where you expect them, and the editor refuses the chords the system would swallow.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-hdr"/></svg>
+          <h3>HDR, Dolby Vision, anything</h3>
+          <p>Decoding is libmpv — the same engine as mpv and IINA — so format coverage, hardware acceleration and tone mapping are not compromises made for a UI.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-loop"/></svg>
+          <h3>A–B loops and frame steps</h3>
+          <p>Mark two points and the segment repeats; a five-second jump inside it stays inside it. Step a frame at a time in either direction.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-zoom"/></svg>
+          <h3>Zoom and pan, atomically</h3>
+          <p>Both properties land in the same frame through a handler on mpv's own thread, instead of the picture jumping between two redraws.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-frame"/></svg>
+          <h3>Export the frame you are on</h3>
+          <p>Saved or copied exactly as the video output decoded it, HDR tone mapping included — not grabbed off a canvas that guessed at the colour.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-audio"/></svg>
+          <h3>Audio that behaves</h3>
+          <p>Pick the output device, level the volume on a film that whispers and then shouts, and dial a delay that is remembered for that file.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-queue"/></svg>
+          <h3>The folder is the queue</h3>
+          <p>An end screen offers the next episode with a countdown you can cancel, and repeat covers one file, the queue, or nothing.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-shield"/></svg>
+          <h3>Folders that leave no trace</h3>
+          <p>Mark a folder private and nothing about what is in it is written down: no position, no poster, no file name to a television or a room. Adding one erases what was already recorded.</p>
+        </div>
+        <div class="cell">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-conf"/></svg>
+          <h3>Your own mpv.conf still wins</h3>
+          <p>The settings dialog edits the lines it owns and leaves everything else in place, so an option you set by hand survives the next launch.</p>
+        </div>
+      </div>
+    </div>
+  </section>

@@ -1,0 +1,98 @@
+/* Phone widths. Loaded after everything it overrides. */
+
+/* ── narrow windows ───────────────────────────────────────────────────────── */
+
+@media (max-width: 560px) {
+  .cta .btn {
+    width: 100%;
+    height: auto;
+    min-height: 50px;
+    padding-block: 11px;
+    white-space: normal;
+    line-height: 1.3;
+  }
+}
+
+@media (max-width: 620px) {
+  /*
+    The control row is the first thing that stops fitting. What survives is what
+    the application itself keeps in the mini player: the transport, the cast
+    button and fullscreen — the rest lives behind a menu there too.
+  */
+  .b.opt { display: none; }
+  .b { width: 30px; height: 30px; }
+  .b svg { width: 18px; height: 18px; }
+  .b.play { width: 38px; height: 34px; }
+  .b.play svg { width: 26px; height: 26px; }
+  .cluster.center { gap: 8px; }
+  .times { font-size: 11px; padding: 0 6px; }
+  .p-title { padding: 0 50px 0 78px; font-size: 11.5px; }
+  .p-brand { right: 12px; }
+
+  /* The preview is a picture; its caption lands on the timestamps at this size,
+     and the frame itself has to clear the top of a 190px-tall window. */
+  .tip-chapter, .tip-time { display: none; }
+  /* Taller window, a bigger preview and more air under it: at 16:9 the frame
+     was 202px tall and everything in it had to give way at once. */
+  .hero .player { aspect-ratio: 3 / 2; }
+  .hovertip { --tw: 132px; bottom: 26px; }
+
+  /*
+    A 16:9 window 340px wide is 190px tall and the device list is taller than
+    that. The mock takes the shape it needs instead of clipping the panel it
+    exists to show — a tall window is a real window size for this player.
+  */
+  .sc-cast .player { aspect-ratio: 5 / 6; }
+  .castpop { right: 10px; bottom: 104px; padding: 4px; }
+  .castpop-title { padding: 5px 8px; font-size: 10px; }
+  .castrow { padding: 6px 8px; gap: 6px; }
+  .castrow .cast-name { font-size: 12px; }
+  .castrow .cast-model { font-size: 10.5px; }
+
+  /* Two lines rather than three columns fighting for one: the release keeps the
+     width it needs and the verdict about it moves underneath. */
+  .row.sub { grid-template-columns: auto minmax(0, 1fr); height: auto; padding: 7px 10px; row-gap: 1px; }
+  .row.sub .meta { grid-column: 2; justify-self: start; }
+  .substrip { aspect-ratio: 3 / 2; }
+  .subline { font-size: 12px; }
+  .match { align-items: flex-start; }
+  .match svg { margin-top: 2px; }
+
+  /* The room's three readouts stack rather than compress into each other. */
+  .room-top { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .room-members { gap: 6px 14px; }
+  .roomcode { padding: 4px 10px; }
+  .roomcode b { font-size: 13px; }
+
+  /* A fact wider than the screen has to break somewhere. The row already
+     separates with a gap rather than a dot here, so breaking inside one costs
+     nothing and stops the line running off both edges. */
+  .nb { white-space: normal; }
+
+  .nav .theme { display: none; }
+  .foot-theme { display: block; }
+
+  .brewcopy .lbl { display: none; }
+  .brewcopy { padding: 0 8px; }
+  .brewbar { font-size: 12px; padding-left: 10px; }
+
+  .rig.laptop .rig-base { width: 108%; }
+  .startscr { padding: 22px 14px 18px; }
+  .st-title { font-size: 21px; }
+  .rail { gap: 10px; }
+  .torrow { gap: 10px; padding: 10px; }
+}
+
+@media (max-width: 430px) {
+  /* Nobody installs a desktop player from a phone, and the line wraps in two
+     before it earns its place. */
+  .brewbar { display: none; }
+  .win-bar { padding: 0 10px; }
+  .win-bar .name { max-width: 44%; font-size: 11px; }
+  .win-bar .wb-brand { font-size: 11px; }
+  .posters { gap: 6px; padding: 10px; }
+  .poster .pt { font-size: 9.5px; padding: 14px 5px 5px; }
+  .rel-row { font-size: 11.5px; gap: 8px; padding: 0 6px; }
+  .opener { padding: 14px; gap: 12px; }
+  .field { height: 40px; }
+}

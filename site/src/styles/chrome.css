@@ -1,0 +1,139 @@
+/* The header and the opening screen. */
+
+/* ── nav ──────────────────────────────────────────────────────────────────── */
+
+/* Eight pixels of document, watched by an observer instead of the scroll event. */
+.nav-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 8px;
+  pointer-events: none;
+}
+
+.nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 50;
+  padding-top: env(safe-area-inset-top, 0px);
+  border-bottom: 1px solid transparent;
+  transition: background-color 0.3s, border-color 0.3s;
+}
+
+.nav.scrolled {
+  background: var(--nav);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-bottom-color: var(--line);
+}
+
+.nav-in { height: 64px; display: flex; align-items: center; gap: 28px; }
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+
+.brand svg { width: 20px; height: 20px; color: var(--acc); }
+.brand { white-space: nowrap; }
+.nav-links { display: flex; gap: 2px; }
+
+.nav-links a {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--fg2);
+  transition: color 0.15s;
+}
+
+.nav-links a:hover { color: var(--fg); }
+.nav-r { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+.theme {
+  min-inline-size: 0;
+  margin: 0;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.theme button {
+  width: 28px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--fg3);
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.theme button:hover { color: var(--fg); }
+.theme button[aria-pressed="true"] { background: var(--tint); color: var(--fg); }
+.theme svg { width: 14px; height: 14px; }
+
+@media (max-width: 860px) { .nav-links { display: none; } }
+@media (max-width: 560px) { .nav-ghost { display: none; } }
+
+/* ── hero ─────────────────────────────────────────────────────────────────── */
+
+.hero { position: relative; padding-top: 148px; overflow-x: clip; }
+
+.hero-light {
+  position: absolute;
+  left: 50%;
+  top: -340px;
+  width: min(1500px, 160vw);
+  height: 1000px;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, var(--glow), var(--glow2) 50%, transparent);
+  pointer-events: none;
+}
+
+.hero-copy { position: relative; text-align: center; }
+
+.hero h1 {
+  font-size: clamp(40px, 5.4vw, 74px);
+  line-height: 1.02;
+  letter-spacing: -0.038em;
+}
+
+.hero h1 span { display: block; }
+.hero .lede { margin: 26px auto 0; }
+.hero .cta { margin-top: 38px; }
+.hero .fine { margin-top: 18px; }
+
+@keyframes rise {
+  from { opacity: 0.55; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.enter { animation: rise 0.9s var(--ease) both; animation-delay: calc(var(--dl, 0) * 90ms); }
+
+.shot { position: relative; margin-top: 64px; }
+
+/*
+  A short fade under the window and nothing over it: the controls are the most
+  worked-on part of the picture, and the first version put a 200px wash across
+  them. It starts below the window's own shadow and only closes the gap to the
+  page.
+*/
+.shot::after {
+  content: "";
+  position: absolute;
+  left: -120px;
+  right: -120px;
+  bottom: -70px;
+  height: 90px;
+  background: linear-gradient(transparent, var(--bg) 78%);
+  pointer-events: none;
+}

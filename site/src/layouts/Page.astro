@@ -1,0 +1,107 @@
+---
+import onestLatin from '@fontsource-variable/onest/files/onest-latin-wght-normal.woff2?url'
+import { release } from '../release.ts'
+import '@fontsource-variable/onest'
+import '@fontsource-variable/jetbrains-mono'
+import '../styles/tokens.css'
+import '../styles/base.css'
+import '../styles/chrome.css'
+import '../styles/player.css'
+import '../styles/mocks.css'
+import '../styles/sections.css'
+import '../styles/narrow.css'
+import '../styles/motion.css'
+
+interface Props {
+  title?: string
+  description?: string
+}
+
+const {
+  title = 'Frame Player — a video player for Windows and macOS',
+  description =
+    'Free, open-source video player on mpv for Windows and macOS: watch a torrent as it downloads, ' +
+    'cast to the TV untouched, resume anything.',
+} = Astro.props
+
+const canonical = new URL(Astro.url.pathname, Astro.site)
+const ogImage = new URL('/og.png', Astro.site)
+const repo = 'https://github.com/risenxxx/frame-player'
+const { version, windows } = await release()
+
+/*
+  One structured record for the one thing this page is about. `SoftwareApplication`
+  is what a search engine reads to show a price, a platform and a rating slot; the
+  offer is free rather than absent, which is a different claim.
+*/
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Frame Player',
+  applicationCategory: 'MultimediaApplication',
+  operatingSystem: 'Windows 10, Windows 11, macOS',
+  softwareVersion: version,
+  url: canonical.href,
+  downloadUrl: windows,
+  license: 'https://www.gnu.org/licenses/gpl-3.0.html',
+  isAccessibleForFree: true,
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  image: ogImage.href,
+  description,
+}
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Frame Player" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content="en" />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Frame Player playing a file from a torrent, with a hover preview above the seekbar"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#08090C" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preload" href={onestLatin} as="font" type="font/woff2" crossorigin />
+
+    {/*
+      The only script in the head, and it runs before the first paint: it marks
+      the document as scripted (without JS every scene stays at its finished
+      state) and applies an explicitly chosen theme, or the page flashes the
+      system one while the module that owns the switch is still loading.
+    */}
+    <script is:inline>
+      document.documentElement.classList.add('js')
+      try {
+        const theme = localStorage.getItem('fp-theme')
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme
+      } catch {}
+    </script>
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>
