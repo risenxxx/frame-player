@@ -76,7 +76,7 @@
      width it needs and the verdict about it moves underneath. */
   .row.sub { grid-template-columns: auto minmax(0, 1fr); height: auto; padding: 7px 10px; row-gap: 1px; }
   .row.sub .meta { grid-column: 2; justify-self: start; }
-  .substrip { aspect-ratio: 3 / 2; }
+  .substrip { aspect-ratio: 21 / 9; }
   .subline { font-size: 12px; }
   .match { align-items: flex-start; }
   .match svg { margin-top: 2px; }
