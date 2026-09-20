@@ -43,7 +43,13 @@ section[id] { scroll-margin-top: 72px; }
 .facts-line {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 14px;
+  /*
+    No column gap: the dot is drawn inside the fact that precedes it and carries
+    9px of margin on each side, so a gap on top of that put 9px before the dot
+    and 23px after it — a separator visibly nearer the fact on its left than the
+    one on its right. The dot's own margins are the whole of the spacing.
+  */
+  gap: 2px 0;
 }
 
 /*
@@ -66,6 +72,35 @@ section[id] { scroll-margin-top: 72px; }
   vertical-align: middle;
 }
 .cta-c + .facts-line, .facts-line.mid { justify-content: center; }
+
+/*
+  Below the width where any of these lines wraps, the facts stack instead.
+
+  A wrapped row leaves a dot hanging at the end of the line above it, and there
+  is no CSS that removes it: the separator belongs to a fact, not to the space
+  between two of them, and which fact ends a line is a fact of layout that no
+  selector can reach. The trick that does work — drawing the dot in the gap and
+  clipping whatever falls outside the container — needs the lines flush to one
+  edge, and these are centred under a centred block of copy.
+
+  So the wrap is taken away rather than patched. The breakpoint is measured
+  against the three lines on the page, not guessed: the download facts under the
+  final call to action wrap first, at 700px, the hero's at 480 and the footer's
+  at 360. 760 is the first round number above all of them, and stacking is what
+  this would be at 360 anyway.
+*/
+@media (max-width: 760px) {
+  .facts-line {
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .facts-line:not(.mid) { align-items: flex-start; }
+
+  /* Nothing to separate once each fact has a line of its own. */
+  .facts-line .nb:not(:last-child)::after { display: none; }
+}
 
 .sep {
   display: inline-block;
@@ -171,3 +206,25 @@ section[id] { scroll-margin-top: 72px; }
 .brewcopy:hover { background: var(--line2); color: var(--fg); }
 .brewcopy svg { width: 13px; height: 13px; }
 .brewcopy.done { color: var(--green); }
+
+/*
+  Selection is for text a reader might take with them.
+
+  Everything the page draws as a *picture of the application* is not that: the
+  hero window and the section mocks are interfaces rebuilt in HTML, and dragging
+  across one painted the window blue and turned a screenshot into a document.
+  The chrome goes with them — navigation, buttons, badges, the theme switch —
+  since those are things to press rather than to read.
+
+  What stays selectable is deliberate: every heading, every paragraph, the facts
+  lines, and the Homebrew command, which has a copy button beside it precisely
+  because people want those characters.
+*/
+:where(.shot, .feat-mock, nav, button, .btn, .tag, legend) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* A button drawn inside a mock is a <span>: hovering it must not promise a
+   press that is not there. */
+:where(span.btn) { pointer-events: none; }

@@ -43,7 +43,7 @@
     exists to show — a tall window is a real window size for this player.
   */
   .sc-cast .player { aspect-ratio: 5 / 6; }
-  .castpop { right: 6px; bottom: 110px; padding: 4px; }
+  .castpop { right: 12px; bottom: 100px; padding: 4px; }
   .castpop-title { padding: 5px 8px; font-size: 10px; }
   .castrow { padding: 6px 8px; gap: 6px; }
   .castrow .cast-name { font-size: 12px; }
@@ -71,6 +71,20 @@
 
   .nav .theme { display: none; }
   .foot-theme { display: block; }
+
+  /*
+    The footer centres as a whole. On a wide screen it is a rail — brand on the
+    left, links pushed to the right by an auto margin, facts on a line of their
+    own underneath — and that shape needs two edges to hang from. At this width
+    there is one column, so every part is centred on it and the auto margins
+    that made the rail are taken off; otherwise the links sat hard right against
+    a centred brand, which reads as a row that failed to wrap rather than as a
+    deliberate one.
+  */
+  .foot-in { justify-content: center; text-align: center; }
+  .foot .links { margin-left: 0; justify-content: center; }
+  .foot-theme .theme { margin-left: 0; }
+  .foot .facts { align-items: center; }
 
   .brewcopy .lbl { display: none; }
   .brewcopy { padding: 0 8px; }

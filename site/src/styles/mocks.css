@@ -255,15 +255,18 @@
 /* ── mock: the cast popup, drawn as the application draws it ──────────────── */
 
 /*
-  Right edge flush with the control row's, not with an inset of its own, and
-  sitting the same distance above the elapsed time as the seekbar sits below it:
-  12px, which is the 6px margin plus the 6px padding the seek row carries.
-  Measured in the built page — at 96px the panel overlapped the timestamps.
+  Placed by eye against the built page rather than derived from the control
+  row's own insets. Both arithmetic versions of this — flush with the controls
+  at 6px, then the seek row's 12px of clearance above the elapsed time — landed
+  a panel that read as off-centre next to the bar it belongs to, because what
+  the eye lines it up against is the window's rounded corner and the block of
+  the timestamp, not the edge of a transparent flex row. 14/112 is where it
+  sits square; the narrow override keeps its own pair for the same reason.
 */
 .castpop {
   position: absolute;
-  right: 6px;
-  bottom: 120px;
+  right: 14px;
+  bottom: 112px;
   width: min(268px, calc(100% - 36px));
   padding: 6px;
   border-radius: 10px;

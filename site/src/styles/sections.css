@@ -47,7 +47,19 @@
 .foot .links a:hover { color: var(--fg); }
 /* Full width is not a line length. Measured at 1400px the credits ran to ~189
    characters; 74ch keeps it inside what a reader can track. */
-.foot .facts { width: 100%; max-width: 74ch; font-size: 12.5px; color: var(--fg3); }
+/*
+  A line of its own, and getting there took two goes.
+
+  `width: 100%` only looked like it broke the line: a flex item still shrinks,
+  so the moment the list was cut to two the facts rode up next to the links and
+  read as three more of them. `flex-basis: 100%` is the mechanism — except that
+  a `max-width` beside it is applied *before* the line is broken, so the clamped
+  74ch still fitted on the first row and nothing changed. The cap is gone: the
+  two facts are 583px of text, i.e. inside the reading width it was enforcing,
+  and if this list ever grows again the cap belongs on a wrapper rather than on
+  the item whose basis decides the row.
+*/
+.foot .facts { flex: 0 0 100%; font-size: 12.5px; color: var(--fg3); }
 .foot-theme { display: none; }
 .foot-theme .theme { margin-left: auto; }
 
