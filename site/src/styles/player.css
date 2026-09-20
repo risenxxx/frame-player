@@ -15,20 +15,38 @@
   font-family: var(--sans);
   color: #e8e8ec;
   /*
-    Four beats in the order a viewer causes them, each reading one window of
-    --p: the window arrives, the overlay comes up, a cursor crosses the
-    timeline, the preview opens above it. Nothing scrubs — a bar filling by
-    itself under a still frame says the film is playing, and it plainly is not.
+    Three beats in the order a viewer causes them, each reading one window of
+    --p: the overlay comes up, a cursor crosses the timeline, the preview opens
+    above it. The window's own arrival is not one of them — see `.hero .player`
+    below. Nothing scrubs — a bar filling by itself under a still frame says
+    the film is playing, and it plainly is not.
   */
-  --in: clamp(0, var(--p, 1) / 0.26, 1);
-  --ui: clamp(0, (var(--p, 1) - 0.32) / 0.2, 1);
-  --cursor: clamp(0, (var(--p, 1) - 0.56) / 0.16, 1);
-  --tip: clamp(0, (var(--p, 1) - 0.74) / 0.24, 1);
+  --ui: clamp(0, var(--p, 1) / 0.24, 1);
+  --cursor: clamp(0, (var(--p, 1) - 0.3) / 0.2, 1);
+  --tip: clamp(0, (var(--p, 1) - 0.54) / 0.3, 1);
 }
 
-.hero .player {
-  opacity: calc(0.2 + 0.8 * var(--in));
-  transform: translateY(calc((1 - var(--in)) * 26px));
+/*
+  The hero window arrives on load; only the interface on it waits for a scroll.
+
+  Everything else on this page plays when it is scrolled to, which is right for
+  a section further down and wrong for the one thing a reader looks at before
+  deciding whether to read anything at all. Parked at the start of its own
+  scene the window sat translated and at a fifth of its opacity for as long as
+  nobody scrolled — and not scrolling is exactly what a reader does while they
+  work out what the page is about. So the arrival is a plain CSS animation on
+  the same stagger as the copy above it (`rise`, 90 ms a step, four steps), and
+  the bars, the cursor and the preview stay on `--p`, where they read as the
+  product answering a hand rather than as a window assembling itself.
+*/
+/* The start is written only in the keyframes: `both` fills it backwards through
+   the delay, and an engine that ignored the animation would show the window
+   arrived rather than leave it parked at a fifth of its opacity for ever. */
+.hero .player { animation: shotin 1s var(--ease) 0.36s both; }
+
+@keyframes shotin {
+  from { opacity: 0.2; transform: translateY(26px); }
+  to { opacity: 1; transform: none; }
 }
 
 /* The frame is an <img>: it carries its own dimensions, decodes off the main
@@ -232,7 +250,6 @@
 .b svg { width: 20px; height: 20px; }
 .b.play { width: 46px; height: 42px; }
 .b.play svg { width: 32px; height: 32px; }
-.b.on { color: #818cf8; }
 .volume { position: relative; width: 90px; height: 4px; margin: 0 6px 0 2px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
 .volume i { position: absolute; inset: 0 auto 0 0; width: 62%; border-radius: 2px; background: #fff; }
 .volume b { position: absolute; left: 62%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #fff; }

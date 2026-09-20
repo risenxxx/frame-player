@@ -255,14 +255,15 @@
 /* ── mock: the cast popup, drawn as the application draws it ──────────────── */
 
 /*
-  Right edge flush with the control row's, not with an inset of its own — and
-  high enough to clear the elapsed time. Measured in the built page: at 96px the
-  panel overlapped the timestamps by 12px.
+  Right edge flush with the control row's, not with an inset of its own, and
+  sitting the same distance above the elapsed time as the seekbar sits below it:
+  12px, which is the 6px margin plus the 6px padding the seek row carries.
+  Measured in the built page — at 96px the panel overlapped the timestamps.
 */
 .castpop {
   position: absolute;
   right: 6px;
-  bottom: 122px;
+  bottom: 120px;
   width: min(268px, calc(100% - 36px));
   padding: 6px;
   border-radius: 10px;
@@ -572,9 +573,23 @@
 .q.hdr { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
 .seed { font: 400 11.5px/1 var(--mono); color: var(--green); }
 
+/* Matched to the cap height of the figures next to it, and given a heavier
+   stroke than `.ic`: at 12px the shared 1.7 would land under a pixel. */
+.stat {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.6;
+  margin-left: 5px;
+  vertical-align: -0.16em;
+}
+
 /* ── mock: the start screen ───────────────────────────────────────────────── */
 
 .startscr { padding: 30px 24px 24px; background: var(--s0); text-align: center; }
+/* Weight and tracking are the application's own (`.panel h1`: 600, 0.06em);
+   only the size is scaled to the mock. The name is written the way the player
+   writes it — the all-caps version here was mine, and it read as a different
+   typeface. */
 .st-title { font-size: 26px; font-weight: 600; letter-spacing: 0.06em; }
 .st-hint { margin-top: 6px; font-size: 12.5px; color: var(--fg3); }
 .st-actions { margin-top: 18px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
