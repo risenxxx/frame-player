@@ -29,6 +29,7 @@ gets its own preview address. It needs the repository secrets
 | `public/gen/` | What the build makes from them: three formats, a handful of widths, hashed names. Generated, ignored by git |
 | `scripts/images.mjs` | The generator, and the width ladders it uses |
 | `tools/og.mjs` | Renders the link card with the local browser. Run by hand when the design changes; the result is committed |
+| `tools/audit.mjs` | `npm run audit` — axe-core against a running `npm run preview`, in both themes, in a real browser. The file says which two ways a headless check of this page lies |
 
 ## The frames
 
