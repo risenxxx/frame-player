@@ -123,7 +123,6 @@ function queueRowShift(index: number): number {
       <button
         class="menu-item chapter-item"
         class:sel={entry.index === player.playlistPos}
-        data-tip={entry.title}
         onpointerdown={(e) => onQueueDown(e, entry.index)}
         onpointermove={onQueueMove}
         onpointerup={(e) => void onQueueUp(e)}
@@ -140,7 +139,6 @@ function queueRowShift(index: number): number {
       </button>
       <button
         class="queue-remove"
-        data-tip={t('osc.queue_remove')}
         aria-label={t('osc.queue_remove')}
         onclick={() => onRemove(entry.index)}
       >

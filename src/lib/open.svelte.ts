@@ -49,7 +49,7 @@ import {
   ytdlp,
 } from './player.svelte';
 import { queueTorrent } from './playlist.svelte';
-import { isMagnet, isTorrentLink, magnetFor, parseTorrentUrl } from './source';
+import { isMagnet, isTorrentLink, magnetFor, parseTorrentUrl, torrentId } from './source';
 import {
   findFeedUpdate,
   isFeedLink,
@@ -770,15 +770,43 @@ export async function openRecent(item: RecentItem) {
     await loadFiles([item.path]);
     return;
   }
+  await openTorrentById(item.id);
+}
+
+/// Re-derive a torrent episode from its id and play it with its season queued.
+/// False when there is nothing to open — the magnet was never recorded or the
+/// swarm is gone — and the viewer has already been told so.
+async function openTorrentById(id: string): Promise<boolean> {
   opening.busy = true;
-  const resolved = await resolveTorrentFile(item.id);
+  const resolved = await resolveTorrentFile(id);
   if (!resolved) {
     opening.busy = false;
     showOsd(t('start.torrent_lost'));
-    return;
+    return false;
   }
   await loadFiles([resolved.url]);
   await queueTorrent(torrentVideos(resolved.info), resolved.url);
+  return true;
+}
+
+/**
+ * Reopen what was playing before an update restart.
+ *
+ * The snapshot keeps a path, and for a torrent that path is a loopback URL
+ * whose port died with the old process — the session is lazy, so after the
+ * restart nothing listens there at all. Handed to mpv as it was, it sat on
+ * "opening the link" until the connection failed, the start screen came back,
+ * and the stream-failed dialog landed on top of it; the same episode opened
+ * fine from the history a moment later, because that path re-resolves. This is
+ * that path. False when nothing could be opened.
+ */
+export async function openResumeSnapshot(path: string): Promise<boolean> {
+  const ref = parseTorrentUrl(path);
+  if (!ref) {
+    await loadFiles([path]);
+    return true;
+  }
+  return openTorrentById(torrentId(ref.infoHash, ref.index));
 }
 
 // ---- The torrent list on the start screen ---------------------------------

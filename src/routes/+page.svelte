@@ -102,6 +102,7 @@
     openLinkDialog,
     openRecent,
     openRememberedTorrent,
+    openResumeSnapshot,
     openTorrent,
     openUpdateDialog,
     checkFeedUpdate,
@@ -530,13 +531,21 @@
       showEmpty = false;
       // The OSC is on screen from here on, so prime it before mpv even starts.
       if (initial.length) primeResumeKnob(initial[0]);
-      // safety net: the file may be gone or fail to open — bring the picker back
-      setTimeout(() => {
-        if (player.filename === null) {
-          showEmpty = true;
-          void loadRecent();
+      // safety net: the file may be gone or fail to open — bring the picker back.
+      // Not while something is still being opened: a torrent restored after an
+      // update has to start its session and re-add itself first, which routinely
+      // takes longer than this, and the picker flashed in front of a video that
+      // was on its way. Re-checked instead, until the attempt settles.
+      const safetyNet = () => {
+        if (player.filename !== null) return;
+        if (opening.busy) {
+          setTimeout(safetyNet, 1000);
+          return;
         }
-      }, 5000);
+        showEmpty = true;
+        void loadRecent();
+      };
+      setTimeout(safetyNet, 5000);
     }
 
     // Geometry strictly before show(): restoring an already visible window
@@ -842,7 +851,12 @@
       try {
         const r = JSON.parse(resumeRaw) as { path: string; pos: number; paused: boolean };
         setPendingResume(r.pos, r.paused);
-        void loadFile(r.path);
+        void openResumeSnapshot(r.path).then((opened) => {
+          if (!opened) {
+            showEmpty = true;
+            void loadRecent();
+          }
+        });
       } catch {
         // corrupt entry — ignore
       }
@@ -1069,10 +1083,6 @@
   $effect(() => {
     if (invite.code) overlays.room = true;
   });
-
-  async function loadFile(path: string) {
-    await loadFiles([path]);
-  }
 
   /// Save the current geometry. Called debounced from resize/move: writing to
   /// localStorage for every pixel of a drag is pointless.
