@@ -19,6 +19,7 @@ import { chrome, exitFullscreen } from './chrome.svelte';
 import { opening } from './open.svelte';
 import { loadChapters, loadTracks } from './player.svelte';
 import { ensureQueueTitles, loadPlaylist } from './playlist.svelte';
+import { answerVpnAsk, net } from './torrent.svelte';
 
 /// `more` is the overflow panel: the right-hand cluster folded into one
 /// button when the bar is too narrow to carry it (see Controls.svelte). It is
@@ -59,7 +60,12 @@ class Overlays {
 
   /// Something is over the video, so the chrome must not fade out from under it.
   any = $derived(
-    this.menu !== null || this.settings || this.licenses || this.room || catalog.open,
+    this.menu !== null ||
+      this.settings ||
+      this.licenses ||
+      this.room ||
+      catalog.open ||
+      net.ask !== null,
   );
 }
 
@@ -75,7 +81,7 @@ export function initOverlays() {
   $effect(() => {
     chrome.overlayOpen = overlays.any;
     chrome.sheetOpen =
-      overlays.settings || overlays.licenses || overlays.room || catalog.open;
+      overlays.settings || overlays.licenses || overlays.room || catalog.open || net.ask !== null;
   });
 }
 
@@ -121,6 +127,13 @@ export function toggleInfo(hasFile: boolean) {
  * anything else.
  */
 export function closeTopmost() {
+  // The VPN question is modal over whatever raised it — an open waits on it —
+  // so it is the innermost thing there is. Escape is "through the VPN, this
+  // time": the torrent still opens, only the route was being asked about.
+  if (net.ask) {
+    void answerVpnAsk('vpn', false);
+    return;
+  }
   if (opening.linkOpen) {
     opening.linkOpen = false;
     return;

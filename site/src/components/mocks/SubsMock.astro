@@ -1,5 +1,6 @@
 ---
 import Frame from '../Frame.astro'
+import TitleBar from './TitleBar.astro'
 ---
 
 <!-- The player with the subtitle search open over the film, as the
@@ -7,6 +8,7 @@ import Frame from '../Frame.astro'
      match is downloaded, the dialog closes and the line is on screen. -->
 <div class="player subs" data-scene data-dur="2800" data-ease="linear" aria-hidden="true">
   <Frame name="ridge-hiker" slot="mock" class="scene" alt="A hiker under the Milky Way on a dark ridge" />
+  <TitleBar over>Orbital.Night.S02E03.WEB-DL.2160p.mkv</TitleBar>
   <span class="sub-osc"><i></i></span>
   <span class="subline">— Everything you can see out there is older than the ground you stand on.</span>
   <span class="subs-dim"></span>

@@ -1,11 +1,11 @@
 # Vendored librqbit crates
 
-Copies of two crates from crates.io, carrying changes upstream does not have in
-any release — three of them, since librqbit carries two. Wired in via `[patch.crates-io]` in `../Cargo.toml`, so
+Copies of three crates from crates.io, carrying changes upstream does not have in
+any release — four of them, since librqbit carries three. Wired in via `[patch.crates-io]` in `../Cargo.toml`, so
 Cargo uses these directories instead of the registry copies — same versions,
 different source.
 
-Both are **Apache-2.0** (`../../licenses/spdx/Apache-2.0.txt`), which is
+All three are **Apache-2.0** (`../../licenses/spdx/Apache-2.0.txt`), which is
 one-way compatible with this application's GPL-3.0-or-later. Their files are
 **modified**, as §4(b) requires to be said out loud; every change is marked with
 a comment explaining itself, and `diff` against the same version on crates.io
@@ -97,6 +97,46 @@ continues, and only bails after 100 *consecutive* errors (a socket that is
 genuinely dead). This mirrors what librqbit's own UDP tracker client already
 does with recv errors. **Still unfixed in 9.0.1** — read rather than assumed:
 the line is `socket.recv_from(&mut buf).await.map_err(Error::Recv)?`.
+
+## librqbit-dualstack-sockets 0.7.0 — bind to an interface on Windows
+
+`src/bind_device.rs`, plus a `windows-sys` dependency for Windows only. Every
+socket librqbit opens — peer TCP and uTP, the DHT, the UDP trackers, LSD, the
+UPnP forwarder — is created here, and `BindDevice` is what scopes one to a
+network interface. Upstream implements it on macOS (`IP_BOUND_IF`) and Linux
+(`SO_BINDTODEVICE`) and answers `BindDeviceNotSupported` on Windows, both when
+the device is named and when a socket is bound — which made the player's "past
+the VPN" route setting (`../src/net_route.rs`) a macOS-only feature.
+
+The patch fills in the two Windows functions:
+
+- **`new_from_name`** takes the adapter *alias* ("Wi-Fi", "Ethernet 2" —
+  `GetAdaptersAddresses`' `FriendlyName`) and resolves it through
+  `ConvertInterfaceAliasToLuid` → `ConvertInterfaceLuidToIndex`. Windows has no
+  `if_nametoindex` for the names people see.
+- **`bind_sref`** sets `IP_UNICAST_IF` / `IPV6_UNICAST_IF`, which restrict the
+  route lookup to that interface — so a VPN's default route, which lives on its
+  own adapter, is never considered. The IPv4 value is the index in **network**
+  byte order and the IPv6 one in host order; that asymmetry is documented, and
+  is the classic way to get this silently wrong. A dual-stack socket carries
+  IPv4 as well and takes `IPPROTO_IP` options for that half, so a v6 socket gets
+  both (the v4 one best effort).
+
+And one addition used by the vendored `librqbit`: **`BindDevice::ipv4_addr()`**.
+reqwest's `interface()` is Unix-only, so on Windows the session's HTTP tracker
+client binds the interface's address instead (`session.rs`, marked), and the
+strong host model sends a packet from an address only through the interface
+that owns it.
+
+Checked by `cargo check --target x86_64-pc-windows-msvc` from a Mac; **not yet
+measured on a Windows machine with a VPN up**, which is the check that matters
+— `FP_TEST_MAGNET=1 FP_TEST_ROUTE=direct cargo test --lib sintel_smoke` there,
+with a full-tunnel VPN on, and the same with `FP_TEST_ROUTE=<the VPN adapter>`
+as the control. On macOS, where the mechanism is upstream's, that pair streamed
+at ~4 MB/s and got nothing respectively.
+
+Unlike the MSE patch this is small and self-contained; it ends the day upstream
+implements Windows, which is worth checking on every bump.
 
 ## What used to be here, and why it is not
 

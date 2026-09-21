@@ -1,4 +1,5 @@
 ---
+import TitleBar from './mocks/TitleBar.astro'
 import Frame from './Frame.astro'
 ---
 
@@ -21,7 +22,7 @@ import Frame from './Frame.astro'
       </div>
       <div class="feat-mock" data-reveal style="--dl:1">
         <div class="win" data-scene data-dur="3000" aria-hidden="true">
-          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">Catalog<span class="sep"></span>Dust Lines (2024)</span><span class="wb-brand"><span>Frame Player</span><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg></span></div>
+          <TitleBar>Catalog<span class="sep"></span>Dust Lines (2024)</TitleBar>
           <div class="posters">
             <span class="poster sel" style="--i:0"><Frame name="poster-dust-lines" slot="poster" alt="" /><span class="pt">Dust Lines</span></span>
             <span class="poster" style="--i:1"><Frame name="poster-wet-season" slot="poster" alt="" /><span class="pt">Wet Season</span></span>

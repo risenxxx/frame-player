@@ -1,6 +1,6 @@
 [package]
 name = "frameplayer"
-version = "1.12.0"
+version = "1.13.0"
 description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
 authors = ["Evgenii Zakharov"]
 edition = "2021"
@@ -123,6 +123,9 @@ objc2-app-kit = { version = "0.3.2", features = [
 ] }
 block2 = "0.6"
 objc2-foundation = "0.3.2"
+# net_route: the interface names people see ("Wi-Fi") and which interface has a
+# router, from SystemConfiguration. Already in the tree via the keychain crates.
+core-foundation = "0.10"
 # QoS of the thumbnail storyboard's background thread (thumb_service::background_qos).
 libc = "0.2"
 
@@ -141,17 +144,19 @@ windows-sys = { version = "0.61.2", features = [
     # itself from the first open (torrent_storage::mark_file_sparse).
     "Win32_System_IO",
     "Win32_System_Ioctl",
+    # net_route: the adapter list (GetAdaptersAddresses) — type, gateway and
+    # metric, which is what tells a way out from a VPN adapter.
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
 ] }
 
-# One librqbit crate, vendored with one fix — see vendor/README.md. Upstream's
-# DHT dies permanently on the first UDP recv error, and Windows produces those
-# routinely (ICMP "port unreachable" from a dead node surfaces as
-# WSAECONNRESET on recv_from), which leaves the player with no peer source at
-# all there. Still true as of 9.0.1, and the reason this list is not empty: the
-# three tracker-comms fixes that used to be here (the announce URL's own query,
-# the missing User-Agent, `complete`/`incomplete` being required) are all in
-# 9.x, so that crate went back to the registry with the bump.
+# librqbit crates vendored with changes upstream has in no release — see
+# vendor/README.md for each one. The DHT survives Windows' routine UDP recv
+# errors, librqbit carries MSE and two accessors, and dualstack-sockets can bind
+# a socket to an interface on Windows (the "past the VPN" route setting).
 [patch.crates-io]
 librqbit = { path = "vendor/librqbit" }
 librqbit-dht = { path = "vendor/librqbit-dht" }
+librqbit-dualstack-sockets = { path = "vendor/librqbit-dualstack-sockets" }
 

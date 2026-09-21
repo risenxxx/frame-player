@@ -76,6 +76,7 @@ import {
   setEncryption,
   setPortForward,
   setProxy,
+  setRoute,
   setSeeding,
   torrent,
   torrentFailureText,
@@ -88,6 +89,7 @@ import {
   withDeadline,
   type CatalogOrigin,
   type Encryption,
+  type Route,
   type RememberedTorrent,
   type TorrentFile,
   type TorrentInfo,
@@ -705,6 +707,24 @@ export async function applyProxy(url: string) {
   }
 }
 
+
+/**
+ * Choose which interface the swarm traffic leaves by.
+ *
+ * The fifth preference baked into the session, on the proxy's terms: a real
+ * change costs what was streaming, and saying so beats a setting that appears
+ * to apply and takes effect at the next magnet. The one direction where that is
+ * not a formality is back *into* the VPN — pieces still arriving past it after
+ * the viewer chose otherwise would be a lie about the thing a VPN is on for.
+ */
+export async function applyRoute(route: Route) {
+  const stopped = await setRoute(route);
+  if (stopped) {
+    torrent.info = null;
+    torrent.status = null;
+    showOsd(t('torrent.route_restarted'));
+  }
+}
 
 export async function clearTorrentCache() {
   // Reported rather than swallowed, like the two per-row deletions: this walks

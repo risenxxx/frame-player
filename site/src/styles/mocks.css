@@ -23,9 +23,28 @@
 }
 
 /*
+  Each mock is a window of one application, and the player draws its windows
+  in its own typeface — the same reasoning as `.player` in player.css, which
+  covers the two mocks that are a picture rather than a panel.
+*/
+.win {
+  font-family: "Rubik", var(--sans);
+  -webkit-font-smoothing: auto;
+}
+
+.win .mono { font-family: inherit; font-variant-numeric: tabular-nums; }
+/* The start screen borrows the page's buttons for their shape; the lettering
+   is the window's. */
+.win .btn { font-family: inherit; letter-spacing: normal; }
+
+/*
   The same title bar in every mock, and the same one the hero window carries:
   the lights, what is playing, and the player's own name and mark on the right.
-  Each mock is a window of one application, so it can only have one chrome.
+  Each mock is a window of one application, so it can only have one chrome —
+  and the player's has no band of its own and no rule under it. The bar is the
+  top of the window, drawn on whatever the window shows, which is why it has no
+  background here and why the panels under it take the window's colour rather
+  than one of their own.
 */
 .win-bar {
   position: relative;
@@ -34,14 +53,40 @@
   align-items: center;
   gap: 10px;
   padding: 0 14px;
-  background: var(--s0);
-  border-bottom: 1px solid var(--line);
   font-size: 12px;
   color: var(--fg2);
 }
 
+/* Over the picture, as the player draws it: laid on the video under the
+   application's scrim, in its light text and shadow, whatever the theme.
+   `isolation` rather than a z-index, so the scrim can sit behind the text
+   without the bar climbing over what comes after it — a dialog's backdrop
+   dims the title bar in the player, and has to here. */
+.win-bar.over {
+  position: absolute;
+  inset: 0 0 auto;
+  isolation: isolate;
+  color: #e8e8ec;
+  text-shadow: var(--ui-shadow);
+}
+
+.win-bar.over::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 64px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), transparent);
+  z-index: -1;
+}
+
+.win-bar.over .wb-brand { color: #e8e8ec; }
+.win-bar.over .wb-brand svg { color: #818cf8; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55)); }
+
 .dots { display: flex; gap: 7px; flex: none; }
-.dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--dot); }
+.dots i { width: 10px; height: 10px; border-radius: 50%; }
+.dots i:nth-child(1) { background: #ff5f57; }
+.dots i:nth-child(2) { background: #febc2e; }
+.dots i:nth-child(3) { background: #28c840; }
 
 /*
   Centred on the window, not on what is left of it: a long file name and a short
@@ -126,6 +171,16 @@
 }
 
 .player.mini { max-width: none; border-radius: 0; border: 0; box-shadow: none; }
+
+/*
+  The cast window keeps the height it had when its title bar was a band above
+  the picture: 16:9 plus 40px, which at the column's full 611px is 384px. The
+  bar now lies over the video, as it does in the player, and a plain 16:9 took
+  those 40px out of the window — the device panel is fixed-size and anchored to
+  the control bar, so its top went up under the title instead. The picture is
+  `cover`, so the slightly squarer window only crops it.
+*/
+.sc-cast .player.mini { aspect-ratio: 611 / 384; }
 .player.mini .osc { padding: 40px 6px 8px; }
 
 /* ── mock: open anything ──────────────────────────────────────────────────── */
@@ -156,7 +211,8 @@
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  font: 400 12.5px/1.4 var(--mono);
+  font-size: 12.5px;
+  line-height: 1.4;
   color: var(--fg);
   max-width: calc(clamp(0, var(--p, 1) / 0.34, 1) * 100%);
 }
@@ -171,7 +227,9 @@
      with low vision does not know that. */
   background: #4f46e5;
   color: #fff;
-  font: 500 13px/32px var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 32px;
   opacity: clamp(0, (var(--p, 1) - 0.3) / 0.2, 1);
 }
 
@@ -186,7 +244,8 @@
   border-radius: 7px;
   border: 1px solid var(--line);
   background: var(--s0);
-  font: 400 11.5px/1 var(--mono);
+  font-size: 11.5px;
+  line-height: 1;
   color: var(--fg2);
   opacity: clamp(0, (var(--p, 1) - 0.34 - var(--i) * 0.045) / 0.25, 1);
 }
@@ -211,7 +270,7 @@
 
 .row .ico { width: 15px; height: 15px; color: var(--fg3); }
 .row .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row .meta { font: 400 11.5px/1 var(--mono); color: var(--fg3); }
+.row .meta { font-size: 11.5px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--fg3); }
 .row .meta.warn { color: var(--amber); }
 .row.on { background: var(--acc-soft); color: var(--fg); box-shadow: inset 0 0 0 1px var(--acc-line); }
 .row.on .ico { color: var(--acc); }
@@ -229,7 +288,7 @@
   color: var(--fg2);
 }
 
-.torfoot .rate { font-family: var(--mono); color: var(--fg); }
+.torfoot .rate { font-variant-numeric: tabular-nums; color: var(--fg); }
 .torfoot .grow { flex: 1; }
 .torfoot svg { width: 14px; height: 14px; color: var(--fg3); }
 
@@ -411,7 +470,6 @@
 */
 @media (max-width: 1200px) and (min-width: 901px) {
   .sc-cast .win { height: 384px; display: flex; flex-direction: column; }
-  .sc-cast .win-bar { flex: none; }
   /* See narrow.css: an auto inline margin on a flex item's cross axis turns
      stretching off, and this player's picture is absolutely positioned, so its
      fit-content width is zero. */
@@ -745,9 +803,9 @@
 }
 
 .rel-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.q { font: 500 10.5px/1 var(--mono); padding: 4px 6px; border-radius: 5px; border: 1px solid var(--line2); color: var(--fg2); }
+.q { font-size: 10.5px; font-weight: 500; line-height: 1; padding: 4px 6px; border-radius: 5px; border: 1px solid var(--line2); color: var(--fg2); }
 .q.hdr { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft); }
-.seed { font: 400 11.5px/1 var(--mono); color: var(--green); }
+.seed { font-size: 11.5px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--green); }
 
 /* Matched to the cap height of the figures next to it, and given a heavier
    stroke than `.ic`: at 12px the shared 1.7 would land under a pixel. */
@@ -761,12 +819,12 @@
 
 /* ── mock: the start screen ───────────────────────────────────────────────── */
 
-.startscr { padding: 30px 24px 24px; background: var(--s0); text-align: center; }
-/* Weight and tracking are the application's own (`.panel h1`: 600, 0.06em);
-   only the size is scaled to the mock. The name is written the way the player
-   writes it — the all-caps version here was mine, and it read as a different
-   typeface. */
-.st-title { font-size: 26px; font-weight: 600; letter-spacing: 0.06em; }
+/* No surface of its own: the start screen is the window, title bar included. */
+.startscr { padding: 14px 24px 24px; text-align: center; }
+/* The weight is the application's own (`.panel h1`: 600); only the size is
+   scaled to the mock. The name is written the way the player writes it — the
+   all-caps version here was mine, and it read as a different typeface. */
+.st-title { font-size: 26px; font-weight: 600; }
 .st-hint { margin-top: 6px; font-size: 12.5px; color: var(--fg3); }
 .st-actions { margin-top: 18px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 
@@ -776,7 +834,7 @@
   ring is a different token from a fill.
 */
 .btn-catalog {
-  background: linear-gradient(var(--s0), var(--s0)) padding-box, linear-gradient(90deg, #818cf8, #6366f1 55%, #a855f7) border-box;
+  background: linear-gradient(var(--win), var(--win)) padding-box, linear-gradient(90deg, #818cf8, #6366f1 55%, #a855f7) border-box;
   border: 1px solid transparent;
   color: var(--fg);
 }
@@ -815,7 +873,7 @@
 .card.now .card-poster { outline: 2px solid var(--acc); outline-offset: 1px; }
 .card-progress { position: absolute; left: 0; bottom: 0; height: 3px; background: #6366f1; width: calc(var(--v) * var(--p, 1)); }
 /* The application's own 12.5/11.5 pair, through tokens rather than its literals:
-   this panel sits on --s0, which flips with the page. */
+   this panel sits on --win, which flips with the page. */
 .card-name { display: block; margin-top: 6px; font-size: 12.5px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-left { display: block; font-size: 11.5px; color: var(--fg3); }
 

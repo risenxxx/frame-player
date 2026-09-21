@@ -728,6 +728,16 @@ impl Session {
                     if let Some(bd) = opts.bind_device_name.as_ref() {
                         b = b.interface(bd);
                     }
+                    // Frame Player: reqwest's `interface()` does not exist on
+                    // Windows, which left the HTTP announces on the system
+                    // route while every other socket was scoped. Binding the
+                    // interface's address does the same job there (strong host
+                    // model) — see `BindDevice::ipv4_addr` in the vendored
+                    // librqbit-dualstack-sockets.
+                    #[cfg(windows)]
+                    if let Some(ip) = bind_device.as_ref().and_then(|bd| bd.ipv4_addr()) {
+                        b = b.local_address(std::net::IpAddr::V4(ip));
+                    }
                     b
                 };
 

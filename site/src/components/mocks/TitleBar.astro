@@ -1,0 +1,24 @@
+---
+/*
+  The title bar every mock window carries, drawn the way the player draws it:
+  not a band of its own with a rule under it, but the top of the window — the
+  lights, what is playing, and the player's name and mark, straight on whatever
+  the window is showing. The hero draws the same thing at full size (`.p-bar`).
+
+  `over` is for a window whose picture runs up under the bar, as it does in the
+  player: the bar is laid over the video with the application's scrim behind
+  it, rather than pushing the video down. With no title (the start screen, where
+  the player has nothing to name) the middle is simply empty.
+*/
+interface Props {
+  over?: boolean
+}
+
+const { over = false } = Astro.props
+---
+
+<div class:list={['win-bar', { over }]}>
+  <span class="dots"><i></i><i></i><i></i></span>
+  {Astro.slots.has('default') && <span class="name"><slot /></span>}
+  <span class="wb-brand"><span>Frame Player</span><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg></span>
+</div>

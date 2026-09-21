@@ -236,6 +236,34 @@ const ru = {
     'Соединения с пирами и HTTP-анонсы пойдут через этот адрес — способ увести торрент-трафик с обычного маршрута, если на нём его режут. Мимо прокси остаются DHT и UDP-трекеры, а сам протокол не шифруется: блокировку по содержимому, а не по адресу, это не обходит.',
   'torrent.proxy_bad': 'Нужен адрес вида socks5://хост:порт',
   'torrent.proxy_restarted': 'Прокси применён, торрент закрыт',
+  'torrent.route': 'Маршрут торрентов',
+  'torrent.route_hint':
+    'Через какое подключение идёт трафик раздач. «Авто» — как решит система, то есть через VPN, если он включён. «В обход VPN» — через обычное подключение компьютера (Wi-Fi или кабель), даже при включённом VPN; остальной трафик остаётся в VPN.',
+  'torrent.route_via_vpn': 'Сейчас трафик идёт через VPN — {name}',
+  'torrent.route_via_direct': 'Сейчас трафик идёт напрямую — {name}',
+  'torrent.route_auto': 'Авто — как решит система',
+  'torrent.route_direct': 'В обход VPN',
+  'torrent.route_direct_now': 'В обход VPN — сейчас это {name}',
+  'torrent.route_vpn_tag': 'VPN',
+  'torrent.route_missing_row': '{name} — не подключён',
+  'torrent.route_this_run': 'Выбрано в вопросе про VPN — до перезапуска плеера',
+  'torrent.route_exposed':
+    'В обход VPN участники раздачи видят ваш настоящий IP-адрес. Если в VPN включена блокировка трафика вне туннеля (kill switch), торренты качаться не будут.',
+  'torrent.route_restarted': 'Маршрут изменён, торрент закрыт',
+  'torrent.route_no_direct':
+    'Не найдено подключение в обход VPN — выберите интерфейс в настройках торрентов',
+  'torrent.route_missing':
+    'Подключение «{name}» сейчас недоступно — выберите другое в настройках торрентов',
+  'torrent.vpn_ask_title': 'Торрент пойдёт через VPN',
+  'torrent.vpn_ask_body':
+    'Сейчас трафик компьютера идёт через {via}. Многие VPN запрещают или замедляют торренты. Раздачу можно качать напрямую через {direct}, а всё остальное оставить в VPN.',
+  'torrent.vpn_ask_exposed': 'Напрямую участники раздачи увидят ваш настоящий IP-адрес.',
+  'torrent.vpn_ask_remember': 'Запомнить выбор',
+  'torrent.vpn_ask_keep': 'Через VPN',
+  'torrent.vpn_ask_bypass': 'В обход VPN',
+  'torrent.vpn_ask_setting': 'Спрашивать про VPN',
+  'torrent.vpn_ask_setting_hint':
+    'Если трафик идёт через VPN, при первом торренте за запуск предложить качать в обход него.',
   'torrent.enc': 'Шифрование соединений',
   'torrent.enc_hint':
     'Обычное рукопожатие BitTorrent открытое, и оборвать его умеет любой фильтр по протоколу — именно так это выглядит у части провайдеров. С шифрованием (MSE) первыми на провод уходят ключи, а не имя протокола. «Как получится» откатывается на открытое соединение с теми, кто не умеет иначе, и хуже точно не делает. Не прячет, с кем идёт обмен, и не покрывает DHT и трекеры.',
@@ -1078,6 +1106,34 @@ const en: Record<MessageKey, string> = {
     'Peer connections and HTTP announces go through this address — a way to take torrent traffic off the ordinary route when something on it blocks them. The DHT and UDP trackers stay outside the proxy, and the protocol itself is not encrypted, so this gets around blocking by destination and not by content.',
   'torrent.proxy_bad': 'Needs an address like socks5://host:port',
   'torrent.proxy_restarted': 'Proxy applied, the torrent was closed',
+  'torrent.route': 'Torrent route',
+  'torrent.route_hint':
+    'Which connection the swarm traffic uses. Auto leaves it to the system, which means through the VPN when one is on. Bypass VPN uses the computer\'s own connection (Wi-Fi or cable) even while the VPN is on; everything else stays in the VPN.',
+  'torrent.route_via_vpn': 'Traffic currently goes through a VPN — {name}',
+  'torrent.route_via_direct': 'Traffic currently goes out directly — {name}',
+  'torrent.route_auto': 'Auto — the system decides',
+  'torrent.route_direct': 'Bypass VPN',
+  'torrent.route_direct_now': 'Bypass VPN — currently {name}',
+  'torrent.route_vpn_tag': 'VPN',
+  'torrent.route_missing_row': '{name} — not connected',
+  'torrent.route_this_run': 'Chosen in the VPN question — until the player restarts',
+  'torrent.route_exposed':
+    'Outside the VPN, peers in the swarm see your real IP address. If the VPN blocks traffic outside the tunnel (a kill switch), torrents will not download.',
+  'torrent.route_restarted': 'Route changed, the torrent was closed',
+  'torrent.route_no_direct':
+    'No connection outside the VPN was found — pick an interface in the torrent settings',
+  'torrent.route_missing':
+    'The connection “{name}” is not available right now — pick another in the torrent settings',
+  'torrent.vpn_ask_title': 'This torrent will go through a VPN',
+  'torrent.vpn_ask_body':
+    'This computer\'s traffic currently goes through {via}. Many VPNs forbid or throttle torrents. The torrent can download directly over {direct}, with everything else staying in the VPN.',
+  'torrent.vpn_ask_exposed': 'Directly, peers in the swarm will see your real IP address.',
+  'torrent.vpn_ask_remember': 'Remember my choice',
+  'torrent.vpn_ask_keep': 'Through the VPN',
+  'torrent.vpn_ask_bypass': 'Bypass VPN',
+  'torrent.vpn_ask_setting': 'Ask about the VPN',
+  'torrent.vpn_ask_setting_hint':
+    'When traffic goes through a VPN, offer to bypass it at the first torrent of each run.',
   'torrent.enc': 'Connection encryption',
   'torrent.enc_hint':
     'An ordinary BitTorrent handshake is in the clear, and anything filtering on the protocol can cut it — which is what some ISPs measurably do. With encryption (MSE) the first bytes on the wire are a key exchange rather than the name of the protocol. "When possible" falls back to a plain connection with peers that cannot do it, so it is never worse. It does not hide who is being talked to, and it does not cover the DHT or the trackers.',

@@ -1630,12 +1630,13 @@ dependencies = [
 
 [[package]]
 name = "frameplayer"
-version = "1.12.0"
+version = "1.13.0"
 dependencies = [
  "anyhow",
  "arboard",
  "block2",
  "bytes",
+ "core-foundation 0.10.1",
  "encoding_rs",
  "ffmpeg-the-third",
  "futures-util",
@@ -3022,8 +3023,6 @@ dependencies = [
 [[package]]
 name = "librqbit-dualstack-sockets"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7189f1ff66ca75055137a38b062ba7df9691d071b7172e5090997c62eb4b4de"
 dependencies = [
  "axum",
  "backon",
@@ -3034,6 +3033,7 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tracing",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

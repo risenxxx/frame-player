@@ -13,6 +13,7 @@ mod catalog;
 mod dlna;
 mod feed;
 mod lan_sweep;
+mod net_route;
 mod opensubtitles;
 mod power;
 mod screenshot;
@@ -1062,6 +1063,8 @@ pub fn run() {
             torrent::torrent_set_port_forward,
             torrent::torrent_set_proxy,
             torrent::torrent_set_encryption,
+            torrent::torrent_set_route,
+            net_route::net_interfaces,
             torrent::torrent_port_status,
             torrent::torrent_prefetch,
             torrent::torrent_local_path,

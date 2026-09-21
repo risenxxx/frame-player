@@ -51,10 +51,15 @@
   import { applyNormalize, player, readList } from '$lib/player.svelte';
   import { playlist, setPlaylistPref } from '$lib/playlist.svelte';
   import {
+    net,
+    refreshNet,
     refreshPortStatus,
+    sameRoute,
+    setVpnAsk,
     torrent,
     torrentPrefs,
     type Encryption,
+    type Route,
   } from '$lib/torrent.svelte';
   import { pickTorrentDir, resetTorrentDir } from '$lib/open.svelte';
   import { proxyLooksValid } from '$lib/source';
@@ -83,6 +88,7 @@
     onTogglePortForward: () => void;
     onSetProxy: (url: string) => void;
     onSetEncryption: (mode: Encryption) => void;
+    onSetRoute: (route: Route) => void;
     onClearTorrentCache: () => void;
     /// Raises the third-party notices, which are a layer above this sheet. A
     /// callback rather than reaching for `overlays`: no component in this
@@ -96,6 +102,7 @@
     onTogglePortForward,
     onSetProxy,
     onSetEncryption,
+    onSetRoute,
     onClearTorrentCache,
     onLicenses,
   }: Props =
@@ -782,6 +789,7 @@
     if (settingsTab === 'torrents') {
       void refreshPortStatus();
       void readTorrentDir();
+      void refreshNet();
     }
   });
 
@@ -801,6 +809,45 @@
     torrentDir = answer[0];
     torrentDirDefault = answer[1];
   }
+
+  /// What the session is built with: a one-run answer to the VPN question
+  /// wins over the setting, and the list has to show what is really in use.
+  const routeNow = $derived<Route>(net.runRoute ?? torrentPrefs.route);
+
+  /// A named interface that is not there right now — unplugged, a VPN that is
+  /// off. Still listed, still selected: silently dropping it would change a
+  /// choice about where traffic goes behind the viewer's back, and a torrent
+  /// refused with "that interface is not connected" is the honest outcome.
+  const missingIface = $derived.by(() => {
+    const r = routeNow;
+    if (r.kind !== 'iface' || !net.view) return null;
+    return net.view.interfaces.some((i) => i.name === r.name) ? null : r.name;
+  });
+
+  /// Past the VPN: the swarm sees this machine's own address. A named tunnel
+  /// is not that, and neither is an interface that is not there to use.
+  const exposed = $derived.by(() => {
+    const r = routeNow;
+    if (r.kind === 'direct') return true;
+    if (r.kind !== 'iface') return false;
+    const iface = net.view?.interfaces.find((i) => i.name === r.name);
+    return !!iface && !iface.vpn;
+  });
+
+  function ifaceLabel(name: string | null): string {
+    if (!name) return '';
+    return net.view?.interfaces.find((i) => i.name === name)?.label ?? name;
+  }
+
+  /// Where the system would send the swarm right now, read off the system
+  /// rather than guessed from names — see `net_route::default_route_iface`.
+  const routeLine = $derived.by(() => {
+    const v = net.view;
+    if (!v?.via) return null;
+    return v.via_vpn
+      ? t('torrent.route_via_vpn', { name: ifaceLabel(v.via) })
+      : t('torrent.route_via_direct', { name: ifaceLabel(v.via) });
+  });
 
   /// The sentence under the switch. `null` while it is off — a row that is off
   /// has nothing to report, and a line saying so would be noise on the setting
@@ -1120,8 +1167,89 @@
       </div>
     </div>
 
-    <!-- **The one control here that decides where the traffic goes**, which is
-         why it is a field and not a switch: the address is somebody's own — a
+    <!-- **Which way out the swarm takes**, and a list rather than a switch
+         because "past the VPN" is not always one interface: it is the one the
+         machine would use with no tunnel *now*, and somebody with Wi-Fi and a
+         cable may want the other. Auto is first and the default — the system's
+         own choice, which is what every release before this one did.
+
+         The line above the list says where the traffic goes right now, as the
+         system answers it; the red line below says what leaving the VPN costs,
+         and is shown only while it is being paid. -->
+    <div class="setting">
+      <div class="setting-label">{t('torrent.route')}</div>
+      <div class="setting-hint">{t('torrent.route_hint')}</div>
+      {#if routeLine}
+        <div class="setting-hint">{routeLine}</div>
+      {/if}
+      <div class="segmented vertical">
+        <button
+          class="segopt"
+          class:sel={routeNow.kind === 'auto'}
+          onclick={() => onSetRoute({ kind: 'auto' })}
+        >
+          {t('torrent.route_auto')}
+        </button>
+        <button
+          class="segopt"
+          class:sel={routeNow.kind === 'direct'}
+          disabled={!!net.view && !net.view.direct && routeNow.kind !== 'direct'}
+          onclick={() => onSetRoute({ kind: 'direct' })}
+        >
+          {net.view?.direct
+            ? t('torrent.route_direct_now', { name: ifaceLabel(net.view.direct) })
+            : t('torrent.route_direct')}
+        </button>
+        {#each net.view?.interfaces ?? [] as iface (iface.name)}
+          {@const route = { kind: 'iface', name: iface.name } as const}
+          <button
+            class="segopt"
+            class:sel={sameRoute(routeNow, route)}
+            onclick={() => onSetRoute(route)}
+          >
+            {iface.label}{iface.label !== iface.name ? ` (${iface.name})` : ''}{iface.addr
+              ? ` · ${iface.addr}`
+              : ''}{iface.vpn ? ` · ${t('torrent.route_vpn_tag')}` : ''}
+          </button>
+        {/each}
+        {#if missingIface}
+          <button class="segopt sel" disabled>
+            {t('torrent.route_missing_row', { name: missingIface })}
+          </button>
+        {/if}
+      </div>
+      {#if net.runRoute}
+        <div class="setting-hint">{t('torrent.route_this_run')}</div>
+      {/if}
+      {#if exposed}
+        <div class="link-error">{t('torrent.route_exposed')}</div>
+      {/if}
+    </div>
+
+    <!-- The question asked at the first torrent of a run when the system route
+         is a tunnel. A switch here because "remember" in that dialog is the
+         only other way to turn it off, and there has to be a way back. -->
+    <div class="setting">
+      <div class="row-toggle">
+        <div class="row-text">
+          <div class="setting-label">{t('torrent.vpn_ask_setting')}</div>
+          <div class="setting-hint">{t('torrent.vpn_ask_setting_hint')}</div>
+        </div>
+        <button
+          class="switch"
+          class:on={torrentPrefs.vpnAsk}
+          role="switch"
+          aria-checked={torrentPrefs.vpnAsk}
+          aria-label={t('torrent.vpn_ask_setting')}
+          onclick={() => setVpnAsk(!torrentPrefs.vpnAsk)}
+        >
+          <span class="switch-knob"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- **The other control that decides where the traffic goes**, and a
+         field rather than a list because the address is somebody's own — a
          VPN provider's SOCKS5 endpoint, a VPS — and there is nothing sensible
          to guess on their behalf. Written on `change` like the relay and the
          indexer above, and for the same reason: a half-typed host is a host,

@@ -1,11 +1,12 @@
 ---
 import Frame from '../Frame.astro'
+import TitleBar from './TitleBar.astro'
 ---
 
 <div class="win" data-scene data-dur="2200" data-ease="linear" aria-hidden="true">
-  <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name mono">Orbital.Night.S02E03.2160p.HDR.mkv</span><span class="wb-brand"><span>Frame Player</span><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg></span></div>
   <div class="player mini">
     <Frame name="comet-sea" slot="mock" class="scene" alt="A comet low over a calm sea at night" />
+    <TitleBar over>Orbital.Night.S02E03.2160p.HDR.mkv</TitleBar>
     <div class="castpop">
       <div class="castpop-title">Playing on TV</div>
       <div class="castrow pick">

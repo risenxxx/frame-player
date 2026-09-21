@@ -279,6 +279,12 @@ struct Inner {
     /// actually running, which is the only thing that can be trusted to answer
     /// "are we uploading right now".
     prefs: SessionPrefs,
+    /// The interface the live session is bound to — what `prefs.route`
+    /// resolved to when it was built. Kept beside the preference because the
+    /// same preference can mean a different interface later ("past the VPN" is
+    /// the Wi-Fi today and the Ethernet tomorrow), and a session left bound to
+    /// one that went away sends nothing at all.
+    device: Option<String>,
 }
 
 /// The preferences that are baked into a session when it is built.
@@ -308,6 +314,18 @@ pub struct SessionPrefs {
     /// uses here — so those keep going out the ordinary way. That is the half
     /// the settings hint has to say out loud rather than leave to be discovered.
     pub proxy: String,
+    /// Which interface the swarm traffic leaves by — the system route (the
+    /// default, and through the VPN when one is up), the way out *without* the
+    /// VPN, or one named interface. See `net_route`.
+    ///
+    /// **Everything librqbit opens is scoped by it** — peer TCP and uTP, the
+    /// DHT, the UDP and HTTP trackers, local discovery, the UPnP forwarder — and
+    /// so is `announce_peers`, the one tracker request of our own. What is not:
+    /// the loopback server mpv reads from, casting, the catalog, the feeds.
+    /// And the one thing to say wherever it is offered: past the VPN the swarm
+    /// sees this machine's own address.
+    #[serde(default)]
+    pub route: crate::net_route::Route,
 }
 
 /// Whether to obfuscate the peer stream (MSE/PE), in this player's own words.
@@ -594,6 +612,14 @@ impl TorrentService {
         // library. It also means changing the root never moves the session.
         let dir = dirs.state.clone();
         let port = self.ensure_server().await?;
+        // Resolved on every call, not only when the preference changes: the
+        // interface "past the VPN" names is whichever one is the way out right
+        // now, and a session still bound to yesterday's is a session that
+        // cannot send. It is a handful of syscalls.
+        let route = prefs.route.clone();
+        let device = tauri::async_runtime::spawn_blocking(move || crate::net_route::resolve(&route))
+            .await
+            .map_err(|e| e.to_string())??;
         {
             let inner = self.inner.lock().await;
             // Only reuse a session that matches the current preferences. Every
@@ -602,7 +628,7 @@ impl TorrentService {
             // cannot grow one, and one built without a proxy cannot start using
             // it — see `SessionPrefs` and `set_seeding`.
             if let Some(session) = inner.session.clone() {
-                if inner.prefs == *prefs {
+                if inner.prefs == *prefs && inner.device == device {
                     return Ok((session, port));
                 }
             }
@@ -738,6 +764,9 @@ impl TorrentService {
                 // and closes it when the budget says so; everything on disk
                 // stays exactly as upstream leaves it.
                 default_storage_factory: Some(crate::torrent_storage::storage_factory()),
+                // `None` is the system route. A name scopes every socket the
+                // session opens to that interface — see `SessionPrefs::route`.
+                bind_device_name: device.clone(),
                 ..Default::default()
             },
         )
@@ -754,6 +783,7 @@ impl TorrentService {
         let mut inner = self.inner.lock().await;
         inner.session = Some(session.clone());
         inner.prefs = prefs.clone();
+        inner.device = device;
         Ok((session, port))
     }
 
@@ -838,6 +868,15 @@ impl TorrentService {
     /// everybody — see `Encryption`.
     pub async fn set_encryption(&self, mode: Encryption) -> bool {
         self.rebuild_if(|inner| inner.prefs.encryption != mode).await
+    }
+
+    /// Apply the route preference, on the same terms as the four above: the
+    /// interface is bound when the session is built. Leaving the VPN has the
+    /// urgency the proxy has in reverse — a setting reading "through the VPN"
+    /// while pieces still arrive past it would be a lie about the one thing
+    /// somebody turned a VPN on for.
+    pub async fn set_route(&self, route: crate::net_route::Route) -> bool {
+        self.rebuild_if(|inner| inner.prefs.route != route).await
     }
 
     /// Tear the session down when a preference baked into it has changed.
@@ -938,7 +977,10 @@ impl TorrentService {
                 // See `announce_peers`: a torrent added paused announces
                 // `port=0`, which trackers answer with almost nothing, so the
                 // peers for the metadata fetch are asked for directly.
-                seed = Some(announce_peers(&source, hash, port, &prefs.proxy).await);
+                let device = self.inner.lock().await.device.clone();
+                seed = Some(
+                    announce_peers(&source, hash, port, &prefs.proxy, device.as_deref()).await,
+                );
                 let probe = AddTorrentOptions {
                     list_only: true,
                     initial_peers: seed.clone(),
@@ -1904,6 +1946,7 @@ async fn announce_peers(
     info_hash: &str,
     port: u16,
     proxy: &str,
+    device: Option<&str>,
 ) -> Vec<SocketAddr> {
     let (Some(hash), Ok(parsed)) = (hex_bytes(info_hash), librqbit::Magnet::parse(magnet)) else {
         return Vec::new();
@@ -1928,6 +1971,12 @@ async fn announce_peers(
     // there to close. An address that will not parse is left off rather than
     // reported: the session refuses to start on the same value and says so,
     // and a second, worse message about it helps nobody.
+    //
+    // **And out of the same interface as the session**, for the same reason: a
+    // route setting of "past the VPN" that the one hand-made announce ignored
+    // would put that announce through the tunnel the viewer just left — or,
+    // the other way round, this machine's own address in front of a tracker
+    // while the session stays inside it.
     let mut builder = reqwest::Client::builder();
     if let Some(p) = (!proxy.is_empty())
         .then(|| reqwest::Proxy::all(proxy).ok())
@@ -1935,6 +1984,7 @@ async fn announce_peers(
     {
         builder = builder.proxy(p);
     }
+    let builder = crate::net_route::scope_client(builder, device);
     let client = builder.build().unwrap_or_else(|_| reqwest::Client::new());
     let asked = urls.len();
     let results = futures_util::future::join_all(
@@ -2648,6 +2698,15 @@ pub async fn torrent_set_encryption(
     Ok(service.set_encryption(mode).await)
 }
 
+/// Returns true if a running session had to be torn down — see `set_route`.
+#[tauri::command]
+pub async fn torrent_set_route(
+    service: tauri::State<'_, Arc<TorrentService>>,
+    route: crate::net_route::Route,
+) -> Result<bool, String> {
+    Ok(service.set_route(route).await)
+}
+
 /// What the router says about the BitTorrent port.
 ///
 /// Asked rather than assumed: librqbit's forwarder is fire-and-forget, so
@@ -2970,6 +3029,14 @@ mod tests {
                     "only" => Encryption::Only,
                     "off" => Encryption::Off,
                     _ => Encryption::On,
+                },
+                // `FP_TEST_ROUTE=direct` (or an interface name) is how the
+                // bypass is checked against a real swarm with a VPN up: bytes
+                // arriving means they arrived past the tunnel.
+                route: match std::env::var("FP_TEST_ROUTE").unwrap_or_default().as_str() {
+                    "" => crate::net_route::Route::Auto,
+                    "direct" => crate::net_route::Route::Direct,
+                    name => crate::net_route::Route::Iface { name: name.into() },
                 },
                 ..Default::default()
             };

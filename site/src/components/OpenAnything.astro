@@ -1,3 +1,7 @@
+---
+import TitleBar from './mocks/TitleBar.astro'
+---
+
   <section class="feat" id="open">
     <div class="wrap feat-in">
       <div class="feat-copy" data-reveal>
@@ -17,7 +21,7 @@
       </div>
       <div class="feat-mock" data-reveal style="--dl:1">
         <div class="win" data-scene data-dur="3400" aria-hidden="true">
-          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">Open a link</span><span class="wb-brand"><span>Frame Player</span><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg></span></div>
+          <TitleBar>Open a link</TitleBar>
           <div class="opener">
             <p class="opener-h">Paste a link, a magnet or a feed</p>
             <div class="field">

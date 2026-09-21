@@ -41,6 +41,7 @@
   import TorrentPickDialog from '$lib/components/TorrentPickDialog.svelte';
   import FeedPickDialog from '$lib/components/FeedPickDialog.svelte';
   import TorrentUpdateDialog from '$lib/components/TorrentUpdateDialog.svelte';
+  import VpnRouteDialog from '$lib/components/VpnRouteDialog.svelte';
   import { blockContextMenu, inTextField } from '$lib/dom';
   import {
     initSync,
@@ -91,6 +92,7 @@
     abandonOpening,
     applyEncryption,
     applyProxy,
+    applyRoute,
     cancelLoadFailure,
     clearTorrentCache,
     deleteTorrent,
@@ -233,6 +235,8 @@
     watchedFiles,
     trackTorrentPlayback,
     loadTorrentPrefs,
+    answerVpnAsk,
+    net,
   } from '$lib/torrent.svelte';
   import { copyScreenshot, saveScreenshot } from '$lib/screenshot';
   import {
@@ -1496,8 +1500,20 @@
       onTogglePortForward={() => void togglePortForward()}
       onSetProxy={(url) => void applyProxy(url)}
       onSetEncryption={(mode) => void applyEncryption(mode)}
+      onSetRoute={(route) => void applyRoute(route)}
       onClearTorrentCache={() => void clearTorrentCache()}
       onLicenses={() => (overlays.licenses = true)}
+    />
+  {/if}
+
+  <!-- The one dialog an open *waits on*: `addTorrent` holds the resolve until
+       it is answered, so it sits above everything, including the link box
+       that may have raised it. -->
+  {#if net.ask}
+    <VpnRouteDialog
+      via={net.ask.via}
+      direct={net.ask.direct}
+      onAnswer={(choice, remember) => void answerVpnAsk(choice, remember)}
     />
   {/if}
 
