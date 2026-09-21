@@ -17,7 +17,7 @@
     toggleMute,
     togglePause,
   } from '$lib/playback.svelte';
-  import type { OscMenu } from '$lib/overlays.svelte';
+  import { overlays, type OscMenu } from '$lib/overlays.svelte';
   import { LOOP_LABEL, isNetworkSource, player } from '$lib/player.svelte';
   import { playlist } from '$lib/playlist.svelte';
   import { parseTorrentUrl } from '$lib/source';
@@ -121,6 +121,13 @@
   $effect(() => {
     if (!collapsed && openMenu === 'more') onToggleMenu('more');
   });
+
+  // The panels opened from that button need to know they were: it is what puts
+  // a "back" row at the top of them, and what takes it away again the moment
+  // the window is wide enough for the buttons themselves.
+  $effect(() => {
+    overlays.folded = collapsed;
+  });
 </script>
 
 <div class="controls" class:mini bind:this={rowEl}>
@@ -195,15 +202,18 @@
       class:active={openMenu !== null}
       onclick={() => onToggleMenu('more')}
     >
-      <!-- Three dots on the 1.2-unit grid the queue and chapter glyphs share
-           (r 1.8 at 4.8 / 12 / 19.2), so it reads as one of them rather than
-           as a control from somewhere else. A gear was the other candidate and
-           is wrong here: the settings sheet is a different thing entirely and
-           already owns that glyph. -->
+      <!-- A gear rather than the three dots this started as. The dots are the
+           truthful signifier for "what did not fit", but nobody reads a control
+           bar that way: what people expect behind a gear in a player is exactly
+           what is behind this one — repeat, tracks, subtitles, where it is
+           playing. The panel is named for that rather than for the overflow it
+           technically is, so the icon and its heading agree.
+           The one gear already in the player means something else (`.tv-gear`,
+           the per-device profile in the cast panel) and is drawn as sliders, so
+           the two do not collide. This is Material's own settings glyph, which
+           fills ~19 of the 24-unit box — the size its neighbours are drawn to. -->
       <svg viewBox="0 0 24 24" fill="currentColor">
-        <circle cx="4.8" cy="12" r="1.8" />
-        <circle cx="12" cy="12" r="1.8" />
-        <circle cx="19.2" cy="12" r="1.8" />
+        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
       </svg>
     </button>
     {#if openMenu === 'more'}

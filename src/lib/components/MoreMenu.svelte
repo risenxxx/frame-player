@@ -57,7 +57,7 @@
 {/snippet}
 
 <div class="menu moremenu">
-  <div class="menu-title">{t('osc.more')}</div>
+  <div class="menu-title">{t('osc.more_title')}</div>
   <!-- The one row that acts in place, exactly as its button does: the label is
        the current mode, so the row answers "what is the repeat set to" as well
        as changing it, and the panel stays up to show the new answer. -->

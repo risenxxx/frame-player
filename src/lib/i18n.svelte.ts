@@ -755,8 +755,12 @@ const ru = {
   'osc.subs': 'Субтитры',
   'osc.subs_off': 'Выключены',
   'osc.chapters': 'Главы',
-  /** The overflow panel: the right-hand tools when the bar is too narrow. */
-  'osc.more': 'Ещё',
+  /** The panel behind the gear: the right-hand tools when the bar is too narrow
+      to carry them. Two keys because they sit in different places — one is a
+      tooltip, which may say the whole thing, and the other is the panel's own
+      heading, which is uppercase and would set the panel's width if it did. */
+  'osc.more': 'Параметры воспроизведения',
+  'osc.more_title': 'Воспроизведение',
   'osc.queue': 'Очередь',
   'osc.queue_remove': 'Убрать из очереди',
   'osc.replay': 'Повторить',
@@ -1557,7 +1561,8 @@ const en: Record<MessageKey, string> = {
   'osc.subs': 'Subtitles',
   'osc.subs_off': 'Off',
   'osc.chapters': 'Chapters',
-  'osc.more': 'More',
+  'osc.more': 'Playback options',
+  'osc.more_title': 'Playback',
   'osc.queue': 'Queue',
   'osc.queue_remove': 'Remove from the queue',
   'osc.replay': 'Replay',

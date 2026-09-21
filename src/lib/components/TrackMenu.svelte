@@ -6,6 +6,7 @@
   import { playback } from '$lib/playback.svelte';
   import { delayIsZero, formatDelay, player, type Track } from '$lib/player.svelte';
   import { openSubsDialog, removeSubtitle } from '$lib/subs.svelte';
+  import MenuBack from './MenuBack.svelte';
 
   /// One press of the stepper. Matches mpv's own default sub-delay granularity.
   const DELAY_STEP = 0.1;
@@ -30,6 +31,7 @@
 </script>
 
 <div class="menu scrollable">
+  <MenuBack />
   <div class="menu-title">{t(kind === 'audio' ? 'osc.audio' : 'osc.subs')}</div>
   <!-- Over DLNA the file went across with all its tracks and the choice
        belongs to the television — its renderer declares no action for

@@ -12,6 +12,7 @@
   import { openEntry } from '$lib/playback.svelte';
   import { player } from '$lib/player.svelte';
   import { loadPlaylist, playlist } from '$lib/playlist.svelte';
+  import MenuBack from './MenuBack.svelte';
 
   interface Props {
     close: () => void;
@@ -107,6 +108,7 @@ function queueRowShift(index: number): number {
 </script>
 
 <div class="menu chapters queue scrollable" bind:this={el}>
+  <MenuBack />
   <div class="menu-title">{t('osc.queue')}</div>
   {#each playlist.entries as entry (entry.index)}
     <!-- A row and its remove button, not a button inside a button: nested

@@ -22,6 +22,7 @@
   } from '$lib/cast.svelte';
   import { t } from '$lib/i18n.svelte';
   import { IS_MAC } from '$lib/platform';
+  import MenuBack from './MenuBack.svelte';
 
   interface Props {
     close: () => void;
@@ -55,6 +56,7 @@
 </script>
 
 <div class="menu castmenu scrollable">
+  <MenuBack />
   <div class="menu-title">{t('cast.title')}</div>
   {#if cast.active}
     <div class="cast-current">

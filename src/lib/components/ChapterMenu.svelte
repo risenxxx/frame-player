@@ -6,6 +6,7 @@
   import { t } from '$lib/i18n.svelte';
   import { jumpToChapter, playback } from '$lib/playback.svelte';
   import { chapterTitle, player } from '$lib/player.svelte';
+  import MenuBack from './MenuBack.svelte';
 
   interface Props {
     close: () => void;
@@ -27,6 +28,7 @@
 </script>
 
 <div class="menu chapters scrollable" bind:this={el}>
+  <MenuBack />
   <div class="menu-title">{t('osc.chapters')}</div>
   {#each player.chapters as chapter (chapter.index)}
     <button

@@ -44,6 +44,13 @@ class Overlays {
   /// *above* the sheet rather than a replacement for it — Escape has to give the
   /// settings back rather than close everything.
   licenses = $state(false);
+  /// The control bar is folded into its overflow button, so whichever OSC menu
+  /// is open was opened from a row in `more` and has somewhere to go back to.
+  /// Written by `Controls`, which is the only thing that measures the bar; read
+  /// by `MenuBack`. It belongs here for the same reason the rest of this module
+  /// does — it is a fact about the ORDER of the surfaces, not about what any of
+  /// them is for.
+  folded = $state(false);
 
   /// The two track menus share their whole body (list + delay stepper), which
   /// the chapter menu does not — and every call in there takes 'audio' | 'sub',
