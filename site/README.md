@@ -55,7 +55,7 @@ What a page can put in its text, from `src/components/prose/`:
 | `<Note>` | An aside with an accent rule |
 | `<PieceMap>` | The torrent piece diagram |
 
-Markdown tables are wrapped so they scroll sideways on a phone. Anything wider
+Markdown tables get readable column widths and scroll sideways when that is wider than the column, with a fade on the side that has more and a thin bar under it (`scripts/pan.ts`, the same arrangement as the architecture figure on risen.dev). Anything wider
 than the 720px text column takes `wide`, up to 1040px. After adding a page, run
 `npm run og` for its link card (`public/og/<id>.png`; without one the page uses
 the site's), and `npm run audit` against it with `AUDIT_URL`.

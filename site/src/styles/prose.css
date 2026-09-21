@@ -122,11 +122,42 @@
 /* ── tables ───────────────────────────────────────────────────────────────── */
 
 /*
-  A comparison is read across a row, so rows get the rules and columns get air.
-  The table scrolls sideways inside its own box on a phone rather than
-  squeezing four products into 358px.
+  A comparison is read across a row, so rows get the rules and columns get air
+  — enough of it to read a cell as a phrase rather than a column of single
+  words. Four products at that width are wider than the text column, so the
+  table scrolls sideways in its own box: `Table.astro` wraps it, and pan.ts
+  keeps a fade on the side that still has table under it, a thin bar for where
+  the view is, and a drag for a mouse.
 */
-.table-wrap { overflow-x: auto; }
+.tscroll { position: relative; }
+.tscroll-view { position: relative; }
+.table-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
+
+/* One bar under the table, never two: the browser's own until the script has
+   measured, the page's thin one after. */
+.tscroll.measured .table-wrap { scrollbar-width: none; }
+.tscroll.measured .table-wrap::-webkit-scrollbar { display: none; }
+.tscroll.pannable .table-wrap { cursor: grab; }
+.tscroll.dragging .table-wrap { cursor: grabbing; user-select: none; }
+
+.tscroll .edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 56px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.24s ease;
+}
+
+.tscroll .edge-left { left: 0; background: linear-gradient(to left, transparent, var(--bg)); }
+.tscroll .edge-right { right: 0; background: linear-gradient(to right, transparent, var(--bg)); }
+.tscroll.pannable:not(.at-start) .edge-left { opacity: 1; }
+.tscroll.pannable:not(.at-end) .edge-right { opacity: 1; }
+
+.tscroll .track { display: none; position: relative; height: 3px; margin-top: 12px; border-radius: 999px; background: var(--track); }
+.tscroll.pannable .track { display: block; }
+.tscroll .thumb { position: absolute; top: 0; bottom: 0; left: var(--x, 0%); width: var(--w, 100%); border-radius: inherit; background: var(--line3); }
 
 .prose table {
   width: 100%;
@@ -135,11 +166,11 @@
   line-height: 1.5;
 }
 
-.prose th, .prose td { padding: 11px 14px 11px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.prose th, .prose td { padding: 11px 18px 11px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
 .prose th:last-child, .prose td:last-child { padding-right: 0; }
 .prose thead th { font-size: 12.5px; font-weight: 500; letter-spacing: 0.02em; color: var(--fg3); border-bottom-color: var(--line2); white-space: nowrap; }
-.prose tbody th, .prose tbody td:first-child { color: var(--fg); font-weight: 500; }
-.prose td { min-width: 7em; }
+.prose tbody th, .prose tbody td:first-child { color: var(--fg); font-weight: 500; min-width: 8.5em; }
+.prose td { min-width: 13em; }
 
 /* ── figures ──────────────────────────────────────────────────────────────── */
 

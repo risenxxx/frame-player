@@ -1,6 +1,19 @@
 ---
-/* Every Markdown table in a guide, in a box that scrolls sideways on a phone
-   rather than squeezing its columns into the width of the screen. */
+/*
+  Every Markdown table in a guide. A comparison gets columns wide enough to
+  read rather than squeezed into the text column, so it may be wider than the
+  column — then it scrolls sideways inside its own box, and scripts/pan.ts adds
+  the fades, the bar and the drag that say so.
+*/
 ---
 
-<div class="table-wrap"><table><slot /></table></div>
+<div class="tscroll" data-pan-frame>
+  <div class="tscroll-view">
+    <div class="table-wrap" data-pan>
+      <table><slot /></table>
+    </div>
+    <span class="edge edge-left" aria-hidden="true"></span>
+    <span class="edge edge-right" aria-hidden="true"></span>
+  </div>
+  <div class="track" aria-hidden="true"><span class="thumb" data-pan-bar></span></div>
+</div>

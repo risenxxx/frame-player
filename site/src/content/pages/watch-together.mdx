@@ -28,7 +28,7 @@ import Mock from '../../components/prose/Mock.astro'
 import Note from '../../components/prose/Note.astro'
 
 Sharing a screen sends everybody a re-encoded copy of one person's picture, at
-whatever quality the call allows. Frame Player does something else: every player
+whatever quality the call allows. [Frame Player](/) does something else: every player
 in the room plays the film itself, and what the room shares is the timeline — where
 playback is, whether it is paused, how fast it runs and which file is on. Each
 screen shows the film at the quality of its own copy, and the room keeps every
@@ -72,10 +72,13 @@ another.
 
 How easy joining is depends on where the film comes from.
 
-- **A torrent is the best case.** The room shares the torrent's identity, every
-  player fetches the same file from the same swarm, and a guest who joins in the
-  middle of a season is watching within moments. Moving to the next episode moves
-  everybody, with nothing to paste.
+- **A torrent is the best case.** The room shares the torrent's identity, and
+  every guest's player connects to it by itself — nobody pastes a magnet — and
+  fetches the file from the same swarm. It does not have to finish first: a room
+  can watch a torrent that is still downloading, each person at the full quality
+  of the release, with every player fetching the part the room is about to watch.
+  A guest who joins in the middle of a season is watching within moments, and
+  moving to the next episode moves everybody.
 - **A link** works when each person's player can open it; pages that need yt-dlp
   are resolved on each machine separately.
 - **A file on your disk cannot be sent.** Each person opens their own copy. The
@@ -110,12 +113,13 @@ room for more than 45 seconds.
 
 ## Compared with the usual ways
 
-| Compared | Frame Player | Syncplay | Teleparty | Screen sharing |
+| Compared | [Frame Player](/) | Syncplay | Teleparty | Screen sharing |
 |---|---|---|---|---|
 | What you can watch | Your own files, links and torrents | Your own files | Films on Netflix, Disney+ and other services | Anything on one screen |
 | Each person needs | Frame Player and a way to play the film | Syncplay, a supported player and their own copy | A browser extension and their own subscription | The call app |
 | Picture | Each person's own copy, full quality | Each person's own copy | The service's stream | A re-encoded stream of one screen |
-| A torrent | Everyone joins the same swarm by themselves | Each person gets the file first | — | — |
+| A torrent | Everyone is connected to it automatically — nobody pastes a magnet | Each person finds and downloads it | — | Only the sharer needs it |
+| Still downloading | Watch together while it downloads, each at full quality | Each person downloads it first | — | The sharer's screen, re-encoded |
 
 [Syncplay](https://syncplay.pl) deserves a word: it has done this for mpv, VLC,
 MPC-HC and IINA for years and it is very good at it. The difference is that Frame
