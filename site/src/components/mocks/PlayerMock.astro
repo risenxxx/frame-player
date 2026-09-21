@@ -34,10 +34,12 @@ const torrent = kind === 'hero' || kind === 'torrent'
 const hover = kind === 'hero' || kind === 'preview'
 
 /* Where the playhead is, how much is buffered and where the cursor rests, as
-   shares of the track — each agreeing with the times printed above it. */
+   shares of the track — each agreeing with the times printed above it. `--disk`
+   is the readout's bar, how much of the file is on disk, which has to be the sum
+   of what the track shades. */
 const TRACK = {
   hero: '--pos:7.4%;--buf:46%;--hover:24%',
-  torrent: '--pos:0.2%;--buf:9%',
+  torrent: '--pos:0.2%;--buf:7.5%;--disk:11.5%',
   preview: '--pos:29.4%;--buf:100%;--hover:52%',
   audio: '--pos:59.6%;--buf:100%',
 }
@@ -122,6 +124,18 @@ const TRACK = {
       )}
       <div class="seektrack">
         <span class="buffered"></span>
+        {kind === 'torrent' && (
+          <>
+            {/* What a torrent a few seconds in actually has on disk, as the
+                application draws `torrent.buffered`: the stretch ahead of the
+                playhead, a few pieces the swarm handed over out of order, and
+                the file's last pieces — mpv reads a Matroska file's index from
+                its end before it plays a frame. */}
+            <span class="buffered" style="left:13.5%;width:1.4%"></span>
+            <span class="buffered" style="left:22%;width:0.8%"></span>
+            <span class="buffered" style="left:98.2%;width:1.8%"></span>
+          </>
+        )}
         <span class="fill"></span>
         {kind !== 'torrent' && (
           <>
