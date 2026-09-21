@@ -78,7 +78,17 @@
 }
 
 .theme button:hover { color: var(--fg); }
-.theme button[aria-pressed="true"] { background: var(--tint); color: var(--fg); }
+
+/*
+  The pressed look follows `data-theme` on the root, not `aria-pressed`. The
+  head script sets the former before the first paint; the latter ships as
+  "system" in the markup and is corrected only by theme.ts, a deferred module —
+  so drawing from it showed "system" selected for a moment, then slid to the
+  stored choice. `aria-pressed` is still kept in step for assistive tech.
+*/
+:root:not([data-theme]) .theme [data-theme-set="system"],
+:root[data-theme="light"] .theme [data-theme-set="light"],
+:root[data-theme="dark"] .theme [data-theme-set="dark"] { background: var(--tint); color: var(--fg); }
 .theme svg { width: 14px; height: 14px; }
 
 /*
