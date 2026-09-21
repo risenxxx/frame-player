@@ -13,10 +13,16 @@
 
   The width ladders follow how large each picture is drawn — see `RUNGS`.
 
-  It runs in front of `dev`, `typecheck` and `build` alike, not only the last of
-  them: the manifest is a TypeScript import, so a checkout that has never built
-  fails `astro check` on a missing module rather than on anything real. The hash
-  cache is what makes running it three times cost nothing.
+  The derivatives and the manifest are committed. A clean run is a lot of AVIF
+  at the effort below — the Site workflow's ten-minute job never got through one
+  on a CI runner — so pictures are encoded once, on the machine where they
+  changed, and never in CI.
+  `npm run images` (and `dev`, which runs it first) encodes whatever is missing
+  and prunes what is no longer named. `--check` is what `typecheck` and `build`
+  run instead: it encodes nothing and writes nothing, and fails if a file is
+  missing, a stale one is still there, or the manifest is not the one this
+  script would write — a changed picture or ladder that was not regenerated and
+  committed.
 */
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
@@ -195,14 +201,16 @@ const ENC = {
 const ENC_VERSION = 2
 
 const kb = (n) => (n / 1000).toFixed(1)
+const CHECK = process.argv.includes('--check')
 
 async function main() {
-  await mkdir(OUT, { recursive: true })
+  if (!CHECK) await mkdir(OUT, { recursive: true })
   const files = (await readdir(SRC)).filter((f) => f.endsWith('.jpg')).sort()
   const { used, SIZES } = await usage()
   const manifest = {}
   const table = []
   let made = 0
+  const missing = []
 
   for (const file of files) {
     const name = file.replace(/\.jpg$/, '')
@@ -211,6 +219,7 @@ async function main() {
     const widths = ladderFor(name, meta.width, used[name], SIZES)
     const entry = { w: meta.width, h: meta.height, widths, formats: { avif: {}, webp: {}, jpg: {} } }
     const avifStart = AVIF_START[name] ?? AVIF.quality
+    const madeBefore = made
 
     for (const w of widths) {
       const size = {}
@@ -220,6 +229,10 @@ async function main() {
         const out = `${name}-${w}.${key}.${format}`
         const path = join(OUT, out)
         entry.formats[format][w] = `/gen/${out}`
+        if (!existsSync(path) && CHECK) {
+          missing.push(out)
+          continue
+        }
         if (!existsSync(path)) {
           if (format === 'avif') {
             let q = avifStart
@@ -242,17 +255,41 @@ async function main() {
         }
         size[format] = (await stat(path)).size
       }
+      if (Object.keys(size).length < 3) continue
       /* A cached file was checked when it was made, but a hand-edited setting
          could still leave one behind that was not. */
       if (size.avif >= size.webp) throw new Error(`${name}-${w}: AVIF ${kb(size.avif)} KB is not smaller than WebP ${kb(size.webp)} KB`)
       table.push([name, w, size.avif, size.webp, size.jpg])
     }
     manifest[name] = entry
+    /* A clean run takes a while; a line per picture says it is moving. */
+    if (made > madeBefore) console.log(`images: ${name} (${widths.join(', ')})`)
   }
 
   /* Anything in public/gen the manifest no longer names is a width or a setting
      that has gone — left there, it would still be deployed. */
   const keep = new Set(Object.values(manifest).flatMap((e) => Object.values(e.formats).flatMap((f) => Object.values(f).map((u) => u.slice(5)))))
+  const json = `${JSON.stringify(manifest, null, 2)}\n`
+
+  if (CHECK) {
+    const stale = existsSync(OUT) ? (await readdir(OUT)).filter((f) => !keep.has(f)) : []
+    const current = existsSync(MANIFEST) ? await readFile(MANIFEST, 'utf8') : ''
+    const problems = [
+      ...missing.map((f) => `missing  public/gen/${f}`),
+      ...stale.map((f) => `stale    public/gen/${f}`),
+      ...(current === json ? [] : ['src/img-manifest.json is not the one these sources produce']),
+    ]
+    if (problems.length) {
+      /* A changed setting renames every file; the first few say enough. */
+      console.error(problems.slice(0, 12).join('\n'))
+      if (problems.length > 12) console.error(`…and ${problems.length - 12} more`)
+      console.error('\nimages: out of date — run `npm run images` and commit public/gen and src/img-manifest.json')
+      process.exit(1)
+    }
+    console.log(`images: ${files.length} sources, ${keep.size} files, up to date`)
+    return
+  }
+
   let pruned = 0
   for (const f of await readdir(OUT)) {
     if (!keep.has(f)) {
@@ -261,7 +298,7 @@ async function main() {
     }
   }
 
-  await writeFile(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`)
+  await writeFile(MANIFEST, json)
   const pad = (v, n) => String(v).padStart(n)
   console.log(`${'image'.padEnd(20)}${pad('width', 6)}${pad('avif', 9)}${pad('webp', 9)}${pad('jpg', 9)}   (KB)`)
   for (const [name, w, a, wb, j] of table) console.log(`${name.padEnd(20)}${pad(w, 6)}${pad(kb(a), 9)}${pad(kb(wb), 9)}${pad(kb(j), 9)}`)

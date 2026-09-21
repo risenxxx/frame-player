@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/images.mjs && astro dev",
-    "build": "node scripts/images.mjs && astro build",
+    "build": "node scripts/images.mjs --check && astro build",
     "preview": "astro preview",
-    "typecheck": "node scripts/images.mjs && astro check",
+    "typecheck": "node scripts/images.mjs --check && astro check",
     "og": "node tools/og.mjs",
     "deploy": "npm run build && wrangler deploy",
     "images": "node scripts/images.mjs",

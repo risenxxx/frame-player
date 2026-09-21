@@ -74,7 +74,7 @@ Addresses have no trailing slash and no extension: the build writes
 | `src/components/` | One file per section; `mocks/` holds the four interface mocks the sections and the guides share, `prose/` what a guide can use in its text. Each mock is the application's own surface rebuilt in HTML — the control row, the cast panel and the start screen carry the measurements and the glyphs from `src/lib/components/` rather than a screenshot |
 | `src/scripts/` | `theme.ts` (system/light/dark, two switches, one state), `nav.ts` (the header's backdrop, driven by an observer on a 1 px marker rather than a scroll handler), `motion.ts` (`--p` from 0 to 1 per scene, once, when the section is properly in view) |
 | `assets/img/` | One source per frame, committed and **never published**. **Placeholders** — see below |
-| `public/gen/` | What the build makes from them: three formats, a handful of widths, hashed names. Generated, ignored by git |
+| `public/gen/` | What `npm run images` makes from them: three formats, a handful of widths, hashed names. Generated locally and **committed** — CI never encodes |
 | `scripts/images.mjs` | The generator, and the width ladders it uses |
 | `tools/og.mjs` | Renders the link card, and one per guide page from its frontmatter, with the local browser. Run by hand when the design changes or a page is added; the result is committed |
 | `tools/import-shot.mjs` | Turns a window capture into a screenshot source for a guide |
@@ -88,9 +88,9 @@ generated for this page and belong to the project. Nothing here needs a credit
 line, and nothing here is share-alike — no frame drags a licence onto the page
 around it.
 
-Nothing in that directory is published. `dev`, `typecheck` and `build` all run
-[`scripts/images.mjs`](scripts/images.mjs) first, which writes AVIF, WebP and
-JPEG into `public/gen`, and a manifest that
+Nothing in that directory is published. [`scripts/images.mjs`](scripts/images.mjs)
+(`npm run images`, and in front of `dev`) writes AVIF, WebP and JPEG into
+`public/gen`, and a manifest that
 [`Frame.astro`](src/components/Frame.astro) reads at build time. The widths come
 from the page itself: the script finds every `<Frame>` and `<Shot>` that uses a
 picture, reads the `sizes` of its slot, and tops the ladder at twice the widest
@@ -102,6 +102,14 @@ produced them, so `/gen/*` is served with a year's cache and a changed picture
 is a different file rather than a stale one; and the hash is also the cache, so
 a rebuild re-encodes only what changed. Measured on the whole page at 1440px:
 **56 KB** of AVIF against 406 KB of JPEG before.
+
+Both the files and the manifest are **committed**, because a clean encode is
+minutes of AVIF and the Site workflow gives up at ten. So a changed picture, a
+new `<Frame>` or a changed slot means `npm run images` and a commit of
+`public/gen` and `src/img-manifest.json` with it. `typecheck` and `build` run
+the script with `--check`, which encodes nothing and fails — locally and in CI —
+if a file is missing, a stale one is left, or the manifest is not the one the
+sources produce.
 
 `Frame` takes a `slot` rather than a `sizes` string — the six slots and the
 measurements behind them are in that file. A new picture is a file in

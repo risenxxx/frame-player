@@ -1,0 +1,494 @@
+{
+  "comet-sea": {
+    "w": 1800,
+    "h": 1009,
+    "widths": [
+      400,
+      620,
+      840,
+      1240,
+      1680
+    ],
+    "formats": {
+      "avif": {
+        "400": "/gen/comet-sea-400.abca0b09.avif",
+        "620": "/gen/comet-sea-620.19f693c2.avif",
+        "840": "/gen/comet-sea-840.8f806f60.avif",
+        "1240": "/gen/comet-sea-1240.d503107c.avif",
+        "1680": "/gen/comet-sea-1680.8ff5fc39.avif"
+      },
+      "webp": {
+        "400": "/gen/comet-sea-400.d8fdd356.webp",
+        "620": "/gen/comet-sea-620.d843a513.webp",
+        "840": "/gen/comet-sea-840.81da46fc.webp",
+        "1240": "/gen/comet-sea-1240.80fb886a.webp",
+        "1680": "/gen/comet-sea-1680.5c700d4a.webp"
+      },
+      "jpg": {
+        "400": "/gen/comet-sea-400.08e1e51e.jpg",
+        "620": "/gen/comet-sea-620.c89a79fd.jpg",
+        "840": "/gen/comet-sea-840.81c47a5d.jpg",
+        "1240": "/gen/comet-sea-1240.fd0f986a.jpg",
+        "1680": "/gen/comet-sea-1680.d896a077.jpg"
+      }
+    }
+  },
+  "earth-aurora": {
+    "w": 1120,
+    "h": 745,
+    "widths": [
+      240,
+      360,
+      600,
+      900
+    ],
+    "formats": {
+      "avif": {
+        "240": "/gen/earth-aurora-240.158e94fc.avif",
+        "360": "/gen/earth-aurora-360.6f0ed4a2.avif",
+        "600": "/gen/earth-aurora-600.8d91ff24.avif",
+        "900": "/gen/earth-aurora-900.479eae65.avif"
+      },
+      "webp": {
+        "240": "/gen/earth-aurora-240.ef1e188f.webp",
+        "360": "/gen/earth-aurora-360.6bffec50.webp",
+        "600": "/gen/earth-aurora-600.e8c052ab.webp",
+        "900": "/gen/earth-aurora-900.aa071e4b.webp"
+      },
+      "jpg": {
+        "240": "/gen/earth-aurora-240.9b410aef.jpg",
+        "360": "/gen/earth-aurora-360.c93d310c.jpg",
+        "600": "/gen/earth-aurora-600.44252b11.jpg",
+        "900": "/gen/earth-aurora-900.aaf32800.jpg"
+      }
+    }
+  },
+  "highway-trails": {
+    "w": 1120,
+    "h": 627,
+    "widths": [
+      200,
+      320,
+      400,
+      600,
+      900
+    ],
+    "formats": {
+      "avif": {
+        "200": "/gen/highway-trails-200.3f167163.avif",
+        "320": "/gen/highway-trails-320.62441e0b.avif",
+        "400": "/gen/highway-trails-400.7e12d07c.avif",
+        "600": "/gen/highway-trails-600.cfeaefe7.avif",
+        "900": "/gen/highway-trails-900.d0711bb8.avif"
+      },
+      "webp": {
+        "200": "/gen/highway-trails-200.5288c07b.webp",
+        "320": "/gen/highway-trails-320.a8b4d8c9.webp",
+        "400": "/gen/highway-trails-400.89e0d640.webp",
+        "600": "/gen/highway-trails-600.9dee23bc.webp",
+        "900": "/gen/highway-trails-900.23380405.webp"
+      },
+      "jpg": {
+        "200": "/gen/highway-trails-200.a81bc7b8.jpg",
+        "320": "/gen/highway-trails-320.7e57d530.jpg",
+        "400": "/gen/highway-trails-400.c5a1d656.jpg",
+        "600": "/gen/highway-trails-600.c963293b.jpg",
+        "900": "/gen/highway-trails-900.aa131d82.jpg"
+      }
+    }
+  },
+  "lake-galaxy": {
+    "w": 1120,
+    "h": 627,
+    "widths": [
+      200,
+      360,
+      460,
+      600,
+      920
+    ],
+    "formats": {
+      "avif": {
+        "200": "/gen/lake-galaxy-200.84c210b2.avif",
+        "360": "/gen/lake-galaxy-360.dc5bae55.avif",
+        "460": "/gen/lake-galaxy-460.aa625697.avif",
+        "600": "/gen/lake-galaxy-600.6490427d.avif",
+        "920": "/gen/lake-galaxy-920.95589491.avif"
+      },
+      "webp": {
+        "200": "/gen/lake-galaxy-200.c4400dd0.webp",
+        "360": "/gen/lake-galaxy-360.6dd074d3.webp",
+        "460": "/gen/lake-galaxy-460.a4e6ec1a.webp",
+        "600": "/gen/lake-galaxy-600.cde43ad8.webp",
+        "920": "/gen/lake-galaxy-920.346e9cb7.webp"
+      },
+      "jpg": {
+        "200": "/gen/lake-galaxy-200.08caec2b.jpg",
+        "360": "/gen/lake-galaxy-360.4787532e.jpg",
+        "460": "/gen/lake-galaxy-460.e94e3cbd.jpg",
+        "600": "/gen/lake-galaxy-600.c3eedf11.jpg",
+        "920": "/gen/lake-galaxy-920.99326861.jpg"
+      }
+    }
+  },
+  "lake-tent": {
+    "w": 1120,
+    "h": 627,
+    "widths": [
+      200,
+      360,
+      460,
+      600,
+      920
+    ],
+    "formats": {
+      "avif": {
+        "200": "/gen/lake-tent-200.f465eed2.avif",
+        "360": "/gen/lake-tent-360.5b4946ea.avif",
+        "460": "/gen/lake-tent-460.3ed5fdff.avif",
+        "600": "/gen/lake-tent-600.7dada30c.avif",
+        "920": "/gen/lake-tent-920.e9cc3eff.avif"
+      },
+      "webp": {
+        "200": "/gen/lake-tent-200.7a73096c.webp",
+        "360": "/gen/lake-tent-360.841c12b7.webp",
+        "460": "/gen/lake-tent-460.e99bf651.webp",
+        "600": "/gen/lake-tent-600.e7096d36.webp",
+        "920": "/gen/lake-tent-920.7211812f.webp"
+      },
+      "jpg": {
+        "200": "/gen/lake-tent-200.fa8dbdb8.jpg",
+        "360": "/gen/lake-tent-360.d6308362.jpg",
+        "460": "/gen/lake-tent-460.b6e512a5.jpg",
+        "600": "/gen/lake-tent-600.7ded1761.jpg",
+        "920": "/gen/lake-tent-920.bc28e79b.jpg"
+      }
+    }
+  },
+  "lake-trails": {
+    "w": 1120,
+    "h": 627,
+    "widths": [
+      200,
+      360,
+      460,
+      600,
+      920
+    ],
+    "formats": {
+      "avif": {
+        "200": "/gen/lake-trails-200.2dec6e05.avif",
+        "360": "/gen/lake-trails-360.5484e673.avif",
+        "460": "/gen/lake-trails-460.2aabdd4c.avif",
+        "600": "/gen/lake-trails-600.261021d0.avif",
+        "920": "/gen/lake-trails-920.cf075a47.avif"
+      },
+      "webp": {
+        "200": "/gen/lake-trails-200.270b0f2d.webp",
+        "360": "/gen/lake-trails-360.fe875770.webp",
+        "460": "/gen/lake-trails-460.3e7f0c2c.webp",
+        "600": "/gen/lake-trails-600.173b94ec.webp",
+        "920": "/gen/lake-trails-920.f8dc29bb.webp"
+      },
+      "jpg": {
+        "200": "/gen/lake-trails-200.4e2c8b06.jpg",
+        "360": "/gen/lake-trails-360.ac028ad1.jpg",
+        "460": "/gen/lake-trails-460.e84577f6.jpg",
+        "600": "/gen/lake-trails-600.c8af2178.jpg",
+        "920": "/gen/lake-trails-920.b44935b2.jpg"
+      }
+    }
+  },
+  "moon-eclipse": {
+    "w": 1120,
+    "h": 627,
+    "widths": [
+      320,
+      400,
+      600,
+      900
+    ],
+    "formats": {
+      "avif": {
+        "320": "/gen/moon-eclipse-320.5f66ca06.avif",
+        "400": "/gen/moon-eclipse-400.aeaa5851.avif",
+        "600": "/gen/moon-eclipse-600.7edc13f0.avif",
+        "900": "/gen/moon-eclipse-900.237a5431.avif"
+      },
+      "webp": {
+        "320": "/gen/moon-eclipse-320.7fb95b27.webp",
+        "400": "/gen/moon-eclipse-400.af555a18.webp",
+        "600": "/gen/moon-eclipse-600.8bdfab07.webp",
+        "900": "/gen/moon-eclipse-900.7c9d4ac6.webp"
+      },
+      "jpg": {
+        "320": "/gen/moon-eclipse-320.f054fb05.jpg",
+        "400": "/gen/moon-eclipse-400.cf46ae74.jpg",
+        "600": "/gen/moon-eclipse-600.1e31cef3.jpg",
+        "900": "/gen/moon-eclipse-900.144e9e23.jpg"
+      }
+    }
+  },
+  "orion-moon": {
+    "w": 1920,
+    "h": 1440,
+    "widths": [
+      400,
+      700,
+      1120,
+      1320,
+      1600,
+      1920
+    ],
+    "formats": {
+      "avif": {
+        "400": "/gen/orion-moon-400.d67a402f.avif",
+        "700": "/gen/orion-moon-700.303655af.avif",
+        "1120": "/gen/orion-moon-1120.57f66a13.avif",
+        "1320": "/gen/orion-moon-1320.1203aee0.avif",
+        "1600": "/gen/orion-moon-1600.6b1e233a.avif",
+        "1920": "/gen/orion-moon-1920.383f8fbb.avif"
+      },
+      "webp": {
+        "400": "/gen/orion-moon-400.b4e493e7.webp",
+        "700": "/gen/orion-moon-700.ebd593dc.webp",
+        "1120": "/gen/orion-moon-1120.773d1ee9.webp",
+        "1320": "/gen/orion-moon-1320.a409634d.webp",
+        "1600": "/gen/orion-moon-1600.f0357ef8.webp",
+        "1920": "/gen/orion-moon-1920.92ac257b.webp"
+      },
+      "jpg": {
+        "400": "/gen/orion-moon-400.4df307ed.jpg",
+        "700": "/gen/orion-moon-700.d4d7c0cd.jpg",
+        "1120": "/gen/orion-moon-1120.2a7c2032.jpg",
+        "1320": "/gen/orion-moon-1320.99ef8b9f.jpg",
+        "1600": "/gen/orion-moon-1600.4674727a.jpg",
+        "1920": "/gen/orion-moon-1920.562008a2.jpg"
+      }
+    }
+  },
+  "poster-dust-lines": {
+    "w": 293,
+    "h": 440,
+    "widths": [
+      120,
+      200,
+      293
+    ],
+    "formats": {
+      "avif": {
+        "120": "/gen/poster-dust-lines-120.a8a9eec8.avif",
+        "200": "/gen/poster-dust-lines-200.d57599c9.avif",
+        "293": "/gen/poster-dust-lines-293.6200ab98.avif"
+      },
+      "webp": {
+        "120": "/gen/poster-dust-lines-120.79bd9d3d.webp",
+        "200": "/gen/poster-dust-lines-200.0c1c6ce5.webp",
+        "293": "/gen/poster-dust-lines-293.c49c39b6.webp"
+      },
+      "jpg": {
+        "120": "/gen/poster-dust-lines-120.be114126.jpg",
+        "200": "/gen/poster-dust-lines-200.d49ef328.jpg",
+        "293": "/gen/poster-dust-lines-293.b9dce73b.jpg"
+      }
+    }
+  },
+  "poster-night-shift": {
+    "w": 293,
+    "h": 440,
+    "widths": [
+      120,
+      200,
+      293
+    ],
+    "formats": {
+      "avif": {
+        "120": "/gen/poster-night-shift-120.9436e5d7.avif",
+        "200": "/gen/poster-night-shift-200.13aa48b5.avif",
+        "293": "/gen/poster-night-shift-293.aa45e786.avif"
+      },
+      "webp": {
+        "120": "/gen/poster-night-shift-120.c7922901.webp",
+        "200": "/gen/poster-night-shift-200.232d3577.webp",
+        "293": "/gen/poster-night-shift-293.c8779add.webp"
+      },
+      "jpg": {
+        "120": "/gen/poster-night-shift-120.5f652a63.jpg",
+        "200": "/gen/poster-night-shift-200.c68ecd9d.jpg",
+        "293": "/gen/poster-night-shift-293.a2996cdd.jpg"
+      }
+    }
+  },
+  "poster-the-crossing": {
+    "w": 293,
+    "h": 440,
+    "widths": [
+      120,
+      200,
+      293
+    ],
+    "formats": {
+      "avif": {
+        "120": "/gen/poster-the-crossing-120.0dad20ab.avif",
+        "200": "/gen/poster-the-crossing-200.e1e5c6df.avif",
+        "293": "/gen/poster-the-crossing-293.4499a5f2.avif"
+      },
+      "webp": {
+        "120": "/gen/poster-the-crossing-120.8b4e974e.webp",
+        "200": "/gen/poster-the-crossing-200.8e73a9bc.webp",
+        "293": "/gen/poster-the-crossing-293.68ec71f5.webp"
+      },
+      "jpg": {
+        "120": "/gen/poster-the-crossing-120.c419efc9.jpg",
+        "200": "/gen/poster-the-crossing-200.055017f2.jpg",
+        "293": "/gen/poster-the-crossing-293.ad067cd9.jpg"
+      }
+    }
+  },
+  "poster-wet-season": {
+    "w": 293,
+    "h": 440,
+    "widths": [
+      120,
+      200,
+      293
+    ],
+    "formats": {
+      "avif": {
+        "120": "/gen/poster-wet-season-120.4d4704fc.avif",
+        "200": "/gen/poster-wet-season-200.b2efa48d.avif",
+        "293": "/gen/poster-wet-season-293.4e2f3958.avif"
+      },
+      "webp": {
+        "120": "/gen/poster-wet-season-120.056eba20.webp",
+        "200": "/gen/poster-wet-season-200.f757ff91.webp",
+        "293": "/gen/poster-wet-season-293.237f1641.webp"
+      },
+      "jpg": {
+        "120": "/gen/poster-wet-season-120.4d16953b.jpg",
+        "200": "/gen/poster-wet-season-200.d309073c.jpg",
+        "293": "/gen/poster-wet-season-293.b6cfc1dc.jpg"
+      }
+    }
+  },
+  "ridge-hiker": {
+    "w": 1120,
+    "h": 627,
+    "widths": [
+      400,
+      620,
+      840,
+      1120
+    ],
+    "formats": {
+      "avif": {
+        "400": "/gen/ridge-hiker-400.0b83a104.avif",
+        "620": "/gen/ridge-hiker-620.739f8742.avif",
+        "840": "/gen/ridge-hiker-840.7016e735.avif",
+        "1120": "/gen/ridge-hiker-1120.3509900f.avif"
+      },
+      "webp": {
+        "400": "/gen/ridge-hiker-400.4a8c36bc.webp",
+        "620": "/gen/ridge-hiker-620.0fb9f186.webp",
+        "840": "/gen/ridge-hiker-840.333fdcf5.webp",
+        "1120": "/gen/ridge-hiker-1120.0e50cc66.webp"
+      },
+      "jpg": {
+        "400": "/gen/ridge-hiker-400.7f72b6e2.jpg",
+        "620": "/gen/ridge-hiker-620.f96f34bd.jpg",
+        "840": "/gen/ridge-hiker-840.3aeb2cc2.jpg",
+        "1120": "/gen/ridge-hiker-1120.497a19d0.jpg"
+      }
+    }
+  },
+  "shot-audio": {
+    "w": 1846,
+    "h": 1036,
+    "widths": [
+      480,
+      720,
+      1080,
+      1440
+    ],
+    "formats": {
+      "avif": {
+        "480": "/gen/shot-audio-480.1bef1977.avif",
+        "720": "/gen/shot-audio-720.378659c4.avif",
+        "1080": "/gen/shot-audio-1080.e6c60896.avif",
+        "1440": "/gen/shot-audio-1440.8baea39c.avif"
+      },
+      "webp": {
+        "480": "/gen/shot-audio-480.1a72eac2.webp",
+        "720": "/gen/shot-audio-720.56c74916.webp",
+        "1080": "/gen/shot-audio-1080.c009e46e.webp",
+        "1440": "/gen/shot-audio-1440.fe30a867.webp"
+      },
+      "jpg": {
+        "480": "/gen/shot-audio-480.25642ad6.jpg",
+        "720": "/gen/shot-audio-720.53ca93a2.jpg",
+        "1080": "/gen/shot-audio-1080.0b31d37f.jpg",
+        "1440": "/gen/shot-audio-1440.f60e02bf.jpg"
+      }
+    }
+  },
+  "shot-preview": {
+    "w": 1846,
+    "h": 1036,
+    "widths": [
+      480,
+      720,
+      1080,
+      1846
+    ],
+    "formats": {
+      "avif": {
+        "480": "/gen/shot-preview-480.3729d7cf.avif",
+        "720": "/gen/shot-preview-720.e8320f61.avif",
+        "1080": "/gen/shot-preview-1080.06cb2c0c.avif",
+        "1846": "/gen/shot-preview-1846.588d77dc.avif"
+      },
+      "webp": {
+        "480": "/gen/shot-preview-480.c130d0f3.webp",
+        "720": "/gen/shot-preview-720.f3025327.webp",
+        "1080": "/gen/shot-preview-1080.6f2a0e08.webp",
+        "1846": "/gen/shot-preview-1846.ad8a38b7.webp"
+      },
+      "jpg": {
+        "480": "/gen/shot-preview-480.4bf8fe55.jpg",
+        "720": "/gen/shot-preview-720.9d8782d2.jpg",
+        "1080": "/gen/shot-preview-1080.15aeb5a0.jpg",
+        "1846": "/gen/shot-preview-1846.29f744a4.jpg"
+      }
+    }
+  },
+  "shot-torrent": {
+    "w": 1846,
+    "h": 1036,
+    "widths": [
+      480,
+      720,
+      1080,
+      1846
+    ],
+    "formats": {
+      "avif": {
+        "480": "/gen/shot-torrent-480.fe554752.avif",
+        "720": "/gen/shot-torrent-720.a1840bac.avif",
+        "1080": "/gen/shot-torrent-1080.b4eb6d25.avif",
+        "1846": "/gen/shot-torrent-1846.a7edcb2c.avif"
+      },
+      "webp": {
+        "480": "/gen/shot-torrent-480.7c5369c6.webp",
+        "720": "/gen/shot-torrent-720.36c7b855.webp",
+        "1080": "/gen/shot-torrent-1080.62829aa8.webp",
+        "1846": "/gen/shot-torrent-1846.951cee18.webp"
+      },
+      "jpg": {
+        "480": "/gen/shot-torrent-480.ef345810.jpg",
+        "720": "/gen/shot-torrent-720.fdeae714.jpg",
+        "1080": "/gen/shot-torrent-1080.a0cf8f2b.jpg",
+        "1846": "/gen/shot-torrent-1846.8d6a6929.jpg"
+      }
+    }
+  }
+}

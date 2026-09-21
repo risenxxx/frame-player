@@ -2,5 +2,3 @@ node_modules/
 dist/
 .astro/
 .wrangler/
-public/gen/
-src/img-manifest.json
