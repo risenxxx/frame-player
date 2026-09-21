@@ -1,5 +1,5 @@
 ---
-import Frame from './Frame.astro'
+import CastMock from './mocks/CastMock.astro'
 ---
 
   <section class="feat sc-cast" id="tv">
@@ -19,75 +19,10 @@ import Frame from './Frame.astro'
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
             <span><b>While it plays, the window is a remote.</b> Keys, chapters and the queue act on the set; disconnecting hands playback back at the position it had.</span></li>
         </ul>
+        <a class="more-link" href="/cast-to-tv">Casting, in detail</a>
       </div>
       <div class="feat-mock" data-reveal style="--dl:1">
-        <div class="win" data-scene data-dur="2200" data-ease="linear" aria-hidden="true">
-          <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name mono">Orbital.Night.S02E03.2160p.HDR.mkv</span><span class="wb-brand"><span>Frame Player</span><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg></span></div>
-          <div class="player mini">
-            <Frame name="comet-sea" slot="mock" class="scene" alt="A comet low over a calm sea at night" />
-            <div class="castpop">
-              <div class="castpop-title">Playing on TV</div>
-              <div class="castrow pick">
-                <span class="txt">
-                  <span class="cast-name">Living room</span>
-                  <span class="cast-model">Plays as it is</span>
-                </span>
-                <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-conf"/></svg>
-              </div>
-              <div class="castrow">
-                <span class="txt">
-                  <span class="cast-name">Kitchen</span>
-                  <span class="cast-model">Prepared before it starts</span>
-                </span>
-                <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-conf"/></svg>
-              </div>
-              <div class="castrow">
-                <span class="txt">
-                  <span class="cast-name">Bedroom</span>
-                  <span class="cast-model">Checking how this device can be reached…</span>
-                </span>
-                <span class="spin"></span>
-              </div>
-            </div>
-            <div class="osc">
-              <div class="times mono"><span>28:04</span><span>52:19</span></div>
-              <div class="seekwrap">
-                <div class="seektrack">
-                  <span class="buffered" style="width:100%;background:rgba(255,255,255,.18)"></span>
-                  <span class="fill" style="width:53%"></span>
-                  <span class="knob" style="left:53%"></span>
-                </div>
-              </div>
-              <div class="controls">
-                <div class="cluster left">
-                  <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-volume"/></svg></span>
-                  <span class="volume"><i></i><b></b></span>
-                </div>
-                <div class="cluster center">
-                  <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-prev"/></svg></span>
-                  <span class="b play"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-pause"/></svg></span>
-                  <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-next"/></svg></span>
-                </div>
-                <div class="cluster right">
-                  <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-audio"/></svg></span>
-                  <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-subs"/></svg></span>
-                  <span class="b cast">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-cast"/></svg>
-                    <span class="lit"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-cast"/></svg></span>
-                    <span class="walk">
-                      <svg class="walk-arrow" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cursor"/></svg>
-                      <svg class="walk-hand" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-hand"/></svg>
-                    </span>
-                    <!-- The pointer is a child of the button it is pointing at, so
-                         "on the icon" is arithmetic rather than a tuned offset:
-                         `.walk` is the hotspot itself, see mocks.css. -->
-                          </span>
-                  <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-full"/></svg></span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <CastMock />
       </div>
     </div>
   </section>

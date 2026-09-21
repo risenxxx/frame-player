@@ -1,13 +1,13 @@
 /*
-  Renders the link card and the touch icon with the browser that is already on
-  this machine, and writes both into `public/`. They are committed, so this runs
+  Renders the link card, one card per guide page, and the touch icon with the
+  browser that is already on this machine, and writes them into `public/`. They are committed, so this runs
   by hand when the design changes — never in CI, where there is no browser and
   no reason to re-render a file that did not change.
 
   Usage: npm run og
 */
 import { execFile } from 'node:child_process'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -85,4 +85,28 @@ const shot = async (html, out, size) => {
 }
 
 await shot(card, new URL('../public/og.png', import.meta.url).pathname, '1200,630')
+
+/*
+  A guide's card is the same card with the page's own kicker and headline, so a
+  link to /cast-to-tv says what is behind it rather than repeating the home
+  page. Read straight out of the frontmatter; only two plain fields are needed,
+  and a YAML parser is not worth a dependency for them. `public/og/<id>.png`
+  is what Article.astro looks for, with `/` in the id turned into `-`.
+*/
+const escape = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+const field = (text, name) => text.match(new RegExp(`^${name}: (.+)$`, 'm'))?.[1].trim()
+const pagesDir = new URL('../src/content/pages/', import.meta.url).pathname
+const ogDir = new URL('../public/og/', import.meta.url).pathname
+await mkdir(ogDir, { recursive: true })
+for (const file of await readdir(pagesDir, { recursive: true })) {
+  if (!file.endsWith('.mdx')) continue
+  const text = await readFile(join(pagesDir, file), 'utf8')
+  const heading = field(text, 'heading')
+  const eyebrow = field(text, 'eyebrow')
+  if (!heading || !eyebrow) throw new Error(`${file}: no heading or eyebrow in the frontmatter`)
+  const page = card
+    .replace(/<h1>[\s\S]*?<\/h1>/, `<p class="kicker">${escape(eyebrow)}</p><h1>${escape(heading)}</h1>`)
+    .replace('</style>', '.kicker { position: relative; margin: 44px 0 0; font-size: 20px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: #818cf8; } .kicker + h1 { margin-top: 14px; }</style>')
+  await shot(page, join(ogDir, `${file.replace(/\.mdx$/, '').replaceAll('/', '-')}.png`), '1200,630')
+}
 await shot(icon, new URL('../public/apple-touch-icon.png', import.meta.url).pathname, '180,180')

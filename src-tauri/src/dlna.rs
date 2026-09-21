@@ -76,11 +76,15 @@ pub struct Renderer {
 ///
 /// Replies are ordinary unicast datagrams back to the sending socket (unlike
 /// mDNS, where answers are multicast too), so each interface collects its own.
-async fn ssdp_search(timeout: Duration) -> Vec<String> {
+///
+/// A unicast sweep runs beside it — `hints` and every LAN host asked directly
+/// (see [`crate::lan_sweep`]) — for the router that drops multicast between the
+/// machine's segment and the television's.
+async fn ssdp_search(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<String> {
+    let unicast = tauri::async_runtime::spawn(ssdp_sweep(timeout, hints.to_vec()));
     let sockets = ssdp_sockets();
     if sockets.is_empty() {
         eprintln!("[dlna] no usable network interface for SSDP");
-        return Vec::new();
     }
     if crate::cast::cast_debug() {
         let names: Vec<String> = sockets.iter().map(|(ip, _)| ip.to_string()).collect();
@@ -130,6 +134,7 @@ async fn ssdp_search(timeout: Duration) -> Vec<String> {
     }
 
     let mut locations: Vec<String> = Vec::new();
+    tasks.push(unicast);
     for task in tasks {
         for loc in task.await.unwrap_or_default() {
             if !locations.contains(&loc) {
@@ -138,6 +143,45 @@ async fn ssdp_search(timeout: Duration) -> Vec<String> {
         }
     }
     locations
+}
+
+/// Unicast `M-SEARCH` to every sweep target. UPnP 1.1 has a device answer a
+/// search addressed to it exactly as it answers the multicast one; a 1.0
+/// device may stay silent, which costs nothing but its absence here.
+async fn ssdp_sweep(timeout: Duration, hints: Vec<std::net::Ipv4Addr>) -> Vec<String> {
+    let Some(sock) = crate::lan_sweep::socket().await else {
+        return Vec::new();
+    };
+    let targets = crate::lan_sweep::sweep_targets(&hints);
+    crate::lan_sweep::send_all(&sock, &targets, 1900, |host| {
+        format!(
+            "M-SEARCH * HTTP/1.1\r\nHOST: {host}:1900\r\nMAN: \"ssdp:discover\"\r\nST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n"
+        )
+        .into_bytes()
+    })
+    .await;
+    let mut found: Vec<String> = Vec::new();
+    let mut buf = vec![0u8; 8192];
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if left.is_zero() {
+            break;
+        }
+        let Ok(Ok((n, from))) = tokio::time::timeout(left, sock.recv_from(&mut buf)).await else {
+            break;
+        };
+        let text = String::from_utf8_lossy(&buf[..n]);
+        if let Some(loc) = header(&text, "location") {
+            if !found.contains(&loc) {
+                if crate::cast::cast_debug() {
+                    eprintln!("[dlna] unicast {from} -> {loc}");
+                }
+                found.push(loc);
+            }
+        }
+    }
+    found
 }
 
 /// One bound socket per usable IPv4 interface: loopback and link-local (APIPA,
@@ -584,7 +628,7 @@ fn didl(url: &str, mime: &str, title: &str, size: u64, duration: Option<f64>) ->
 /// Print what the network has. Called at startup only under `FP_DLNA_PROBE=1`.
 pub async fn probe() {
     eprintln!("[dlna] searching for UPnP devices…");
-    let locations = ssdp_search(Duration::from_secs(6)).await;
+    let locations = ssdp_search(Duration::from_secs(6), &[]).await;
     if locations.is_empty() {
         eprintln!("[dlna] nothing answered M-SEARCH — no UPnP devices, or multicast is being dropped");
         return;
@@ -1158,10 +1202,10 @@ async fn seek_to(
 
 /// Collect renderers once. Devices that cannot be pushed to are dropped here
 /// rather than shown and refused later.
-async fn collect_renderers(timeout: Duration) -> Vec<DlnaDeviceInfo> {
+async fn collect_renderers(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<DlnaDeviceInfo> {
     let client = http();
     let mut out = Vec::new();
-    for location in ssdp_search(timeout).await {
+    for location in ssdp_search(timeout, hints).await {
         let Some(r) = describe(client, &location).await else {
             continue;
         };
@@ -1176,8 +1220,13 @@ async fn collect_renderers(timeout: Duration) -> Vec<DlnaDeviceInfo> {
             None => Vec::new(),
         };
         let ip = host_of(&location);
+        let id = if r.udn.is_empty() { location.clone() } else { r.udn.clone() };
+        // The multicast and the unicast search can both hear one renderer.
+        if out.iter().any(|d: &DlnaDeviceInfo| d.id == id) {
+            continue;
+        }
         out.push(DlnaDeviceInfo {
-            id: if r.udn.is_empty() { location.clone() } else { r.udn.clone() },
+            id,
             name: r.friendly_name,
             model: r.model,
             ip,
@@ -1190,18 +1239,22 @@ async fn collect_renderers(timeout: Duration) -> Vec<DlnaDeviceInfo> {
 }
 
 #[tauri::command]
-pub fn dlna_discover_start(service: tauri::State<'_, Arc<DlnaService>>) -> Result<(), String> {
+pub fn dlna_discover_start(
+    service: tauri::State<'_, Arc<DlnaService>>,
+    hints: Option<Vec<String>>,
+) -> Result<(), String> {
     let mut inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
     if inner.discovery.is_some() {
         return Ok(());
     }
+    let hints = crate::lan_sweep::parse_hints(&hints.unwrap_or_default());
     let list: Arc<Mutex<Vec<DlnaDeviceInfo>>> = Arc::new(Mutex::new(Vec::new()));
     let sink = list.clone();
     // Re-searched rather than searched once: SSDP replies are UDP and a device
     // that missed the first M-SEARCH would otherwise never appear.
     let task = tauri::async_runtime::spawn(async move {
         loop {
-            let found = collect_renderers(Duration::from_secs(3)).await;
+            let found = collect_renderers(Duration::from_secs(3), &hints).await;
             if !found.is_empty() {
                 *sink.lock().unwrap_or_else(|p| p.into_inner()) = found;
             }
@@ -1805,7 +1858,7 @@ pub async fn selftest(app: &tauri::AppHandle, target: Option<String>, path: Stri
 
     let service = app.state::<Arc<DlnaService>>();
     let cast_service = app.state::<Arc<crate::cast::CastService>>();
-    if let Err(e) = dlna_discover_start(service.clone()) {
+    if let Err(e) = dlna_discover_start(service.clone(), None) {
         eprintln!("[dlna] discovery failed: {e}");
         return;
     }

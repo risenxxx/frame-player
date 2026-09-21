@@ -1,0 +1,133 @@
+---
+title: Subtitles drifting out of sync the longer you watch? Here is why — Frame Player
+description: Subtitles that start in time and slowly fall further out are not a delay problem. They were made for a copy at 25 fps and you are watching one at 23.976. How to tell, how far it drifts, and how to fix it in any player.
+heading: Why subtitles drift further out of sync the longer you watch
+lede: If the subtitles start in time and then slowly run ahead or fall behind, shifting them will not help — they were made for a copy of the film that plays at a different speed. Here is how to tell which problem you have, and how to fix each one.
+eyebrow: Guide
+short: Subtitles out of sync
+updated: 2026-09-21
+order: 50
+related:
+  - compare/iina
+  - torrent-streaming
+faq:
+  - q: Why are the subtitles right at the start and wrong later on?
+    a: Because they were timed on a copy of the film that runs at a different speed. The most common case is a subtitle made for a 25 fps release played over a 23.976 fps one. The two start together and pull apart by about four per cent of the running time, which is two and a half minutes by the end of an hour.
+  - q: Will the subtitle delay setting fix it?
+    a: Only if the gap is the same all the way through. A delay moves every line by the same amount, so against drift it just moves the point where the subtitles are right from the start of the film to somewhere in the middle.
+  - q: What does 23.976 mean?
+    a: Film is shot at 24 frames per second. Video made for North American television runs it at 24000/1001, about 23.976, and most releases today keep that rate. European PAL television ran films at 25, four per cent fast, and subtitles made for those releases carry that speed with them.
+  - q: The subtitles are late at the start and early at the end. What now?
+    a: That is drift and a delay at once. Fix the speed first — by getting subtitles for your release, or by converting the frame rate — and only then shift what is left with the delay.
+---
+
+import Mock from '../../../components/prose/Mock.astro'
+import Note from '../../../components/prose/Note.astro'
+
+There are two ways for subtitles to be out of sync, and they need opposite fixes.
+One is a constant gap: every line is half a second late, from the first scene to
+the last. The other grows: the first lines are fine, by the middle of the film
+they are several seconds out, and by the end they are describing a different
+scene. The first is a delay. The second is a difference in speed, and it is by
+far the more common complaint about downloaded subtitles.
+
+## Delay or drift: which one you have
+
+Note how far out the subtitles are near the start, then skip ahead half an hour
+and look again.
+
+- **The gap is the same both times.** That is a delay. The subtitle delay setting
+  in any player fixes it: set it once and the whole film is right.
+- **The gap is bigger the second time.** That is drift. A delay setting cannot fix
+  it, because it moves every line by the same amount while the error keeps
+  growing.
+
+## Where drift comes from
+
+Films are shot at 24 frames per second. Two versions of that rate are in
+circulation, and a third number shows up because of old European television:
+
+- **23.976** (24000/1001) is how video made for North American television runs a
+  film, and it is what most releases use today.
+- **25** is what PAL television in Europe used. A film was simply played four per
+  cent faster, so a two-hour film ran about five minutes shorter.
+- **24** exactly is what cinemas use. Most Blu-ray films are 23.976 all the same.
+
+A subtitle file is a list of times. Time it against a 25 fps copy and play it over
+a 23.976 fps one, and every line after the first arrives a little early — four per
+cent of the way into the film early.
+
+| Into the film | 25 fps subtitles over a 23.976 fps video |
+|---|---|
+| 1 minute | 2.5 seconds early |
+| 10 minutes | 25 seconds early |
+| 30 minutes | 1 minute 14 seconds early |
+| 60 minutes | 2 minutes 27 seconds early |
+| 90 minutes | 3 minutes 41 seconds early |
+
+Subtitles timed on a 23.976 fps copy and played over a 25 fps one go the other
+way, later and later, by the same amounts. And between 23.976 and 24 the
+difference is a tenth of a per cent: about three and a half seconds by the end of an hour, small enough to go
+unnoticed until the final scene.
+
+<Note>
+  **A few subtitle formats count frames rather than time.** MicroDVD `.sub` files
+  say "from frame 1204 to frame 1260", so they come out right or wrong depending on
+  which frame rate the player assumes. Played at the wrong one they drift exactly
+  like the table above.
+</Note>
+
+## How to fix drift
+
+### The best fix: subtitles made for your copy
+
+A subtitle that was timed against the same release as your video needs no fixing
+at all. OpenSubtitles can find those by the file itself rather than by its name: it
+computes a fingerprint from the file's size and the first and last 64 KB of it, and
+returns the subtitles people uploaded for exactly that file. When there is no
+match, look for a release name that matches yours and the same frame rate — most
+subtitle sites list it next to each file.
+
+### Convert the frame rate of the file
+
+When there is no better subtitle, stretch the one you have. It is a one-time edit
+that fixes the file for good:
+
+- **Subtitle Edit** (Windows, free): *Synchronization › Change frame rate*, from 25
+  to 23.976 — or the other way round if the subtitles fall behind. Its *Point sync*
+  does the same from two lines you match by hand, which also fixes a delay at the
+  same time.
+
+### Or stretch it while you watch
+
+- **mpv** can stretch subtitle times on the fly with `--sub-speed`. For 25 fps
+  subtitles over a 23.976 fps video that is `--sub-speed=25/23.976`.
+- **VLC** has a subtitle speed setting under *Tools › Track Synchronization*.
+
+These last only for the session (or for every file, if you put them in a
+configuration file), which is why converting the file is usually the better fix.
+
+## How Frame Player helps
+
+<Mock kind="subs">
+  The subtitle search in Frame Player: the first result was found by the file
+  itself and fits as it is; the second was made for 25 fps and is flagged before
+  you download it.
+</Mock>
+
+- **It searches by the file first.** The subtitle panel asks OpenSubtitles for
+  subtitles made for your exact copy, and says whether a result came from that
+  match or from a search by title — because a title match may be a different
+  release, and the timing is then worth checking.
+- **A different frame rate is flagged before you download.** When a result was
+  made for a frame rate other than your video's, the panel marks it, so the one
+  that is going to drift is not the one you pick.
+- **The delay you set is kept for that file**, and only that file, so a constant
+  gap stays fixed the next time you open it and does not leak into the next
+  episode.
+- **Subtitles inside a torrent are attached by themselves**, matched to the
+  episode you are playing.
+
+Frame Player has no speed control for subtitles yet. When the only file available
+was made for a different frame rate, converting it in Subtitle Edit is the fix
+that lasts.

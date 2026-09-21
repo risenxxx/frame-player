@@ -306,7 +306,18 @@ pub struct CastDeviceInfo {
 struct Discovery {
     daemon: mdns_sd::ServiceDaemon,
     devices: Arc<Mutex<HashMap<String, CastDeviceInfo>>>,
+    /// Devices that answered a unicast query (see [`crate::lan_sweep`]), with
+    /// when they last did — the ones multicast never delivered. Kept apart from
+    /// `devices` because nothing announces their departure: they age out.
+    swept: Arc<Mutex<HashMap<String, (CastDeviceInfo, Instant)>>>,
+    sweep: tauri::async_runtime::JoinHandle<()>,
 }
+
+/// How long a sweep waits between rounds, and how long a device that stopped
+/// answering stays listed — two missed rounds, so one lost probe does not
+/// blink the row.
+const SWEEP_EVERY: Duration = Duration::from_secs(12);
+const SWEEP_FORGET: Duration = Duration::from_secs(30);
 
 const CAST_SERVICE: &str = "_googlecast._tcp.local.";
 
@@ -314,7 +325,12 @@ impl Discovery {
     /// Browse-only: we query for `_googlecast._tcp` and never advertise a
     /// service of our own, so nothing about the app or its files is announced
     /// to the network.
-    fn start() -> Result<Discovery, String> {
+    ///
+    /// Alongside the browse, a unicast sweep asks `hints` (addresses a device
+    /// was seen at before) and every host of the LAN subnets directly — the
+    /// case it exists for is a router that drops multicast between a wired or
+    /// 5 GHz machine and a 2.4 GHz television.
+    fn start(hints: Vec<Ipv4Addr>) -> Result<Discovery, String> {
         let daemon = mdns_sd::ServiceDaemon::new().map_err(|e| format!("mdns: {e}"))?;
         let receiver = daemon.browse(CAST_SERVICE).map_err(|e| format!("mdns: {e}"))?;
         let devices: Arc<Mutex<HashMap<String, CastDeviceInfo>>> = Arc::default();
@@ -376,13 +392,133 @@ impl Discovery {
                 }
             }
         });
-        Ok(Discovery { daemon, devices })
+        let swept: Arc<Mutex<HashMap<String, (CastDeviceInfo, Instant)>>> = Arc::default();
+        let sweep = tauri::async_runtime::spawn(sweep_loop(hints, swept.clone()));
+        Ok(Discovery { daemon, devices, swept, sweep })
     }
 
     fn stop(self) {
+        self.sweep.abort();
         let _ = self.daemon.stop_browse(CAST_SERVICE);
         let _ = self.daemon.shutdown();
     }
+
+    /// Both halves as one list. A device multicast found wins over its swept
+    /// twin (same id or same address): the browse also hears it leave.
+    fn list(&self) -> Vec<CastDeviceInfo> {
+        let mut list: Vec<CastDeviceInfo> = {
+            let map = self.devices.lock().unwrap_or_else(|p| p.into_inner());
+            map.values().cloned().collect()
+        };
+        let swept = self.swept.lock().unwrap_or_else(|p| p.into_inner());
+        for (device, _) in swept.values() {
+            if !list.iter().any(|d| d.id.eq_ignore_ascii_case(&device.id) || d.ip == device.ip) {
+                list.push(device.clone());
+            }
+        }
+        list.sort_by(|a, b| a.name.cmp(&b.name));
+        list
+    }
+}
+
+/// The unicast half of discovery: every sweep target asked directly, repeated
+/// while the picker is open. See [`crate::lan_sweep`] for why this is not an
+/// mDNS query aimed at each host — that was measured and Cast does not answer.
+async fn sweep_loop(
+    hints: Vec<Ipv4Addr>,
+    sink: Arc<Mutex<HashMap<String, (CastDeviceInfo, Instant)>>>,
+) {
+    loop {
+        let targets = crate::lan_sweep::sweep_targets(&hints);
+        if cast_debug() {
+            eprintln!("[cast] unicast sweep of {} addresses", targets.len());
+        }
+        let found: Vec<CastDeviceInfo> = futures_util::stream::iter(targets)
+            .map(probe_cast)
+            .buffer_unordered(SWEEP_PARALLEL)
+            .filter_map(|d| async move { d })
+            .collect()
+            .await;
+        {
+            let mut map = sink.lock().unwrap_or_else(|p| p.into_inner());
+            for device in found {
+                if cast_debug() && !map.contains_key(&device.id) {
+                    eprintln!("[cast] unicast: {} at {}", device.name, device.ip);
+                }
+                map.insert(device.id.clone(), (device, Instant::now()));
+            }
+            map.retain(|_, (_, seen)| seen.elapsed() < SWEEP_FORGET);
+        }
+        tokio::time::sleep(SWEEP_EVERY).await;
+    }
+}
+
+/// How many addresses are in flight at once. Most of a sweep is addresses with
+/// nobody behind them, each waiting out `SWEEP_CONNECT`, so a round costs about
+/// `targets / SWEEP_PARALLEL` of those — measured on a /24, 253 addresses took
+/// 18 s at 48 in flight and 6 s at 128. Remembered addresses go first, so a known device is found in
+/// the first wave whatever this is.
+const SWEEP_PARALLEL: usize = 128;
+/// Generous for a LAN on purpose: a device on Wi-Fi power save was measured
+/// missing a 1.5 s connect on the first try and answering the next one.
+const SWEEP_CONNECT: Duration = Duration::from_secs(3);
+
+/// Is there a Cast receiver at `ip`, and what is it called?
+///
+/// `:8009` answering is the cheap filter; the name comes from
+/// `:8008/setup/eureka_info` — measured answering on a Cast soundbar that
+/// ignores unicast mDNS, and the receiver's own setup endpoint rather than
+/// anything a third party serves. A device that keeps 8008 closed (newer
+/// firmware may) is still admitted if 8009 completes a TLS handshake, which is
+/// what tells a receiver from, say, a Tomcat AJP port; it is listed under its
+/// address, the one name it is known by.
+async fn probe_cast(ip: Ipv4Addr) -> Option<CastDeviceInfo> {
+    let addr = IpAddr::V4(ip);
+    tokio::time::timeout(SWEEP_CONNECT, TcpStream::connect((addr, 8009)))
+        .await
+        .ok()?
+        .ok()?;
+    let info = crate::dlna::http()
+        .get(format!("http://{ip}:8008/setup/eureka_info?params=name,ssdp_udn"))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .ok()
+        .and_then(|r| r.status().is_success().then_some(r));
+    let info = match info {
+        Some(r) => r.json::<Value>().await.ok(),
+        None => None,
+    };
+    let (name, udn) = eureka_identity(info.as_ref());
+    let name = match name {
+        Some(name) => name,
+        None => {
+            tls_connect(addr, 8009).await.ok()?;
+            ip.to_string()
+        }
+    };
+    Some(CastDeviceInfo {
+        // Not the mDNS fullname — that embeds the model, which nothing here
+        // reports — so a profile saved under one is found by name+model.
+        id: udn.map(|u| format!("unicast:{u}")).unwrap_or_else(|| format!("unicast:{ip}")),
+        name,
+        model: String::new(),
+        ip: ip.to_string(),
+        port: 8009,
+    })
+}
+
+/// The name and the UDN out of an `eureka_info` answer; empty strings count as
+/// absent. Pure, so the shape is pinned by a test.
+fn eureka_identity(info: Option<&Value>) -> (Option<String>, Option<String>) {
+    let field = |key: &str| {
+        info.and_then(|v| v.get(key))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    (field("name"), field("ssdp_udn"))
 }
 
 // ---- The LAN file server ---------------------------------------------------
@@ -1371,10 +1507,14 @@ async fn run_session(
 // ---- Commands --------------------------------------------------------------
 
 #[tauri::command]
-pub fn cast_discover_start(service: tauri::State<'_, Arc<CastService>>) -> Result<(), String> {
+pub fn cast_discover_start(
+    service: tauri::State<'_, Arc<CastService>>,
+    hints: Option<Vec<String>>,
+) -> Result<(), String> {
     let mut inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
     if inner.discovery.is_none() {
-        inner.discovery = Some(Discovery::start()?);
+        let hints = crate::lan_sweep::parse_hints(&hints.unwrap_or_default());
+        inner.discovery = Some(Discovery::start(hints)?);
     }
     Ok(())
 }
@@ -1393,13 +1533,7 @@ pub fn cast_discover_stop(service: tauri::State<'_, Arc<CastService>>) {
 #[tauri::command]
 pub fn cast_devices(service: tauri::State<'_, Arc<CastService>>) -> Vec<CastDeviceInfo> {
     let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(discovery) = &inner.discovery else {
-        return Vec::new();
-    };
-    let map = discovery.devices.lock().unwrap_or_else(|p| p.into_inner());
-    let mut list: Vec<CastDeviceInfo> = map.values().cloned().collect();
-    list.sort_by(|a, b| a.name.cmp(&b.name));
-    list
+    inner.discovery.as_ref().map(Discovery::list).unwrap_or_default()
 }
 
 #[tauri::command]
@@ -2494,6 +2628,55 @@ pub fn cast_forget_prepared(app: tauri::AppHandle, path: String) -> Result<(), S
 
 #[cfg(test)]
 mod tests {
+    /// `FP_TEST_CAST_IP=<address> cargo test --lib cast::tests::unicast_probe_smoke -- --nocapture`
+    /// — the unicast half of discovery against one real device, no multicast
+    /// involved; `FP_TEST_CAST_IP=sweep` runs one whole round over the LAN
+    /// instead and reports what it found and how long it took. Off without the
+    /// variable: it needs a device on the network.
+    #[test]
+    fn unicast_probe_smoke() {
+        use futures_util::StreamExt as _;
+        let Ok(target) = std::env::var("FP_TEST_CAST_IP") else { return };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        if target == "sweep" {
+            let targets = crate::lan_sweep::sweep_targets(&[]);
+            let started = std::time::Instant::now();
+            let n = targets.len();
+            let found: Vec<super::CastDeviceInfo> = rt.block_on(
+                futures_util::stream::iter(targets)
+                    .map(super::probe_cast)
+                    .buffer_unordered(super::SWEEP_PARALLEL)
+                    .filter_map(|d| async move { d })
+                    .collect(),
+            );
+            println!("{n} addresses in {:?}", started.elapsed());
+            for d in &found {
+                println!("{} at {}", d.name, d.ip);
+            }
+            assert!(!found.is_empty(), "nothing answered the sweep");
+            return;
+        }
+        let ip: std::net::Ipv4Addr = target.parse().expect("an IPv4 address or `sweep`");
+        let device = rt.block_on(super::probe_cast(ip)).expect("a Cast receiver at that address");
+        println!("{} ({}) at {}:{}", device.name, device.id, device.ip, device.port);
+    }
+
+    #[test]
+    fn eureka_names_the_device_and_blank_is_absent() {
+        use super::eureka_identity;
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"name":"Living Room","ssdp_udn":"00000000-1111-2222-3333-444444444444","ip_address":"x"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            eureka_identity(Some(&v)),
+            (Some("Living Room".into()), Some("00000000-1111-2222-3333-444444444444".into()))
+        );
+        let blank: serde_json::Value = serde_json::from_str(r#"{"name":"  "}"#).unwrap();
+        assert_eq!(eureka_identity(Some(&blank)), (None, None));
+        assert_eq!(eureka_identity(None), (None, None));
+    }
+
     use super::*;
 
     #[test]
@@ -2557,7 +2740,7 @@ mod tests {
             println!("[cast] targeting {ip}:8009 directly");
             (ip, 8009)
         } else {
-            let discovery = Discovery::start().expect("mdns starts");
+            let discovery = Discovery::start(Vec::new()).expect("mdns starts");
             tokio::time::sleep(Duration::from_secs(5)).await;
             let devices: Vec<CastDeviceInfo> = {
                 let map = discovery.devices.lock().unwrap();

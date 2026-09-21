@@ -1,0 +1,133 @@
+---
+title: Cast video from your Mac or PC to the TV — Chromecast and DLNA — Frame Player
+description: Send a video file from your computer to a Chromecast, a Google TV or a DLNA smart TV without re-encoding it. Frame Player plays 4K HEVC HDR MKV files on the set as they are.
+heading: Send a video to the TV, without re-encoding it
+lede: Frame Player hands your television the file itself and lets the set's own player decode it — at its own quality, with its own HDR. The window you were watching in becomes the remote.
+eyebrow: Casting
+short: Cast to the TV
+updated: 2026-09-21
+order: 20
+related:
+  - torrent-streaming
+  - watch-together
+  - compare/iina
+faq:
+  - q: Do I need a Chromecast?
+    a: No. Many smart TVs can play a file sent to them over DLNA without anything plugged in, and Frame Player lists them next to Chromecasts, Google TVs and sets with Chromecast built in. A television that speaks both appears once.
+  - q: Is the video re-encoded or mirrored?
+    a: Neither. The television fetches the file from your computer and decodes it itself. When a Chromecast cannot take the container, the file is repacked into one it can take with the video copied bit for bit, which takes seconds. The picture is never re-encoded.
+  - q: Does my computer have to stay on?
+    a: Yes. The television reads the file from your computer over the local network as it plays, the same way it would read it from a network drive.
+  - q: My TV does not show up. What should I check?
+    a: That the computer and the TV are on the same network, and — on macOS 15 and later — that Frame Player is allowed under System Settings › Privacy & Security › Local Network. On Windows, allow the player through the firewall on private networks when it asks. A VPN that sends all traffic through a tunnel can hide the local network too.
+  - q: Can I send subtitles to the TV?
+    a: Over DLNA the whole file goes across, so the television's own subtitle menu can pick any track that is inside it. Frame Player does not yet send a separate subtitle file to a Chromecast; that is planned.
+---
+
+import Mock from '../../components/prose/Mock.astro'
+import Note from '../../components/prose/Note.astro'
+
+Most ways of putting a computer's video on a television either mirror the screen,
+re-encoding every frame on the way, or convert the whole file first and make you
+wait for it. Frame Player does neither. It serves the file over your local network
+and tells the television where to find it, and the television plays it with the
+same decoder it uses for everything else.
+
+## How to cast
+
+1. Open the video in Frame Player as usual.
+2. Press the cast button in the control bar. The panel lists the televisions it
+   finds on your network, one row per set.
+3. Each row says what will happen to *this* file on *that* device before you pick
+   it: **Plays as it is**, **Prepared before it starts**, or why it cannot play.
+4. Pick a row. The film continues on the television from where you were.
+
+<Mock kind="cast">
+  The cast panel. Each television says what will happen to this particular file
+  on it, and the pointer is on the button that opens it.
+</Mock>
+
+While it plays, the player window is a remote control. The keys, the seekbar,
+chapters and the queue act on the television, and disconnecting hands playback
+back to the window at the position the set had reached.
+
+## Google Cast and DLNA
+
+Frame Player reaches a television in one of two ways, and they do not play the
+same things.
+
+| Compared | Google Cast | DLNA |
+|---|---|---|
+| Reaches | Chromecast, Google TV, sets with Chromecast built in | Many smart TVs and media players |
+| Who decodes | The Cast receiver app on the device | The television's own player |
+| What plays as it is | MP4 and WebM with codecs the device supports | Whatever the television itself plays — often MKV included |
+| When it cannot | The file is repacked first, video copied | Falls back to Google Cast when the set has both |
+
+**DLNA is the one that asks the least.** A DLNA renderer is the television's own
+media player, so a release the set already plays goes over untouched. Measured on
+a 4K LG set: a 6.3 GB HEVC Main 10 HDR10 MKV with E-AC-3 5.1 sound, with no
+preparation of any kind, seeking included.
+
+**Google Cast is narrower.** The receiver plays a shorter list of containers than
+the same television can: MKV is not on
+[Google's list of supported media](https://developers.google.com/cast/docs/media)
+at all. So Frame Player works down a short ladder for each file:
+
+1. **Play it as it is** when the container and the codecs are ones the device takes.
+   Nothing is prepared and nothing is written to disk.
+2. **Repack it** into MP4 when only the container is the problem. The video is
+   copied, never re-encoded; the sound is copied when the device takes it and
+   converted when it does not. A film is ready in about ten seconds, or about half
+   a minute when the sound needs converting, and a repacked copy is kept so casting
+   it again is instant.
+3. **Say no, and say why**, when the video itself is something the device cannot
+   decode. There is no step that re-encodes a picture: on a 4K film it would be
+   slower than watching it.
+
+When a set speaks both, Frame Player uses DLNA if the television lists the file's
+container as something it plays, and Google Cast otherwise. If a DLNA start fails
+anyway, it falls back to Google Cast by itself. The choice can also be pinned per
+television under the gear on its row.
+
+## Casting a torrent
+
+A [torrent that is still downloading](/torrent-streaming) can go to the television
+too. When the file can play on the set as it is, the television is fed from the
+same stream as the player, with the pieces it is about to show fetched first. When
+the file has to be prepared first, the row says it needs the whole file, because a
+file cannot be repacked before it exists.
+
+## What leaves your computer
+
+Casting sends a file across your network, so it is built to send that file and
+nothing else.
+
+- **Nothing runs until you open the panel.** The search for televisions runs only
+  while the cast panel is open, and the file server starts when you pick a device
+  and stops when you disconnect.
+- **The server answers for one file, behind a random address.** It never lists a
+  folder, and the address stops working when the session ends.
+- **Private folders stay private.** A file in a folder you marked private is sent
+  without its name: neither the network nor the television's screen shows it.
+
+## When the television does not appear
+
+<Note>
+  **On macOS 15 and later**, apps need permission to see the local network. The
+  first time you open the cast panel, macOS asks; if the answer was no, turn Frame
+  Player on under System Settings › Privacy & Security › Local Network.
+</Note>
+
+- **Same network.** The computer and the television have to be on the same local
+  network. A computer on a VPN that routes everything through a tunnel may not see
+  the network it is sitting on.
+- **The firewall.** On Windows, allow Frame Player on private networks when the
+  firewall asks. If the television is found but never starts playing, that is the
+  classic sign of a firewall between them, and the player says so.
+- **Different Wi-Fi bands.** Some routers do not pass device discovery between the
+  2.4 GHz and 5 GHz networks, or between cable and Wi-Fi, even when everything else
+  works. Frame Player also asks the devices on your network directly rather than
+  relying on discovery alone, which is meant to get around exactly that.
+- **The check.** The gear on a device's row can run a check — whether the set is
+  reachable, what it says it can play, whether it allows seeking — with a copy
+  button for the result, so a problem can be reported with the details in it.

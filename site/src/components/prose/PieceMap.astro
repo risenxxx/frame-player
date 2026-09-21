@@ -1,0 +1,112 @@
+---
+/*
+  What a streamed torrent looks like from the inside: one row of pieces, the
+  playhead, and which of them the client wants first. Drawn in HTML against the
+  page's tokens so it follows the theme; the states are a fixed picture, not a
+  simulation — its job is to make "reading drives downloading" visible.
+*/
+const N = 48
+const PLAYHEAD = 14
+const state = (i: number): 'have' | 'next' | 'soon' | 'jump' | 'none' => {
+  if (i < PLAYHEAD + 3) return 'have'
+  if (i < PLAYHEAD + 6) return 'next'
+  if (i < PLAYHEAD + 11) return 'soon'
+  if (i >= 34 && i < 38) return 'jump'
+  return 'none'
+}
+---
+
+<figure class="fig pm-fig">
+  <div
+    class="pm"
+    role="img"
+    aria-label="A row of 48 pieces. Everything before the playhead and a little after it is on disk; the next pieces are being fetched first, the ones after them are queued, a short run further on is on disk from an earlier jump, and the rest has not been asked for."
+  >
+    <div class="pm-row" style={`--n:${N}`}>
+      {Array.from({ length: N }, (_, i) => <span class:list={['pm-c', state(i)]} style={`--d:${Math.max(0, i - PLAYHEAD - 3)}`}></span>)}
+      <span class="pm-head" style={`--at:${(PLAYHEAD / N) * 100}%`}><span>playhead</span></span>
+    </div>
+    <ul class="pm-key" aria-hidden="true">
+      <li><i class="have"></i>on disk</li>
+      <li><i class="next"></i>fetched first</li>
+      <li><i class="soon"></i>queued behind them</li>
+      <li><i class="jump"></i>on disk from an earlier jump</li>
+      <li><i class="none"></i>not asked for</li>
+    </ul>
+  </div>
+  <figcaption><slot /></figcaption>
+</figure>
+
+<style>
+  .pm {
+    padding: 34px 22px 20px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--s1);
+  }
+
+  .pm-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+    gap: 3px;
+  }
+
+  .pm-c { height: 26px; border-radius: 3px; background: var(--track); }
+  .pm-c.have, .pm-key .have { background: var(--fg3); }
+  .pm-c.jump, .pm-key .jump { background: var(--fg3); opacity: 0.7; }
+  .pm-c.next, .pm-key .next { background: var(--acc); }
+  .pm-c.soon, .pm-key .soon { background: var(--acc-soft); box-shadow: inset 0 0 0 1px var(--acc-line); }
+  .pm-key .none { background: var(--track); }
+
+  /* The pieces being fetched pulse in order, so the eye reads a direction. */
+  .pm-c.next { animation: pm-fetch 1.6s var(--ease) infinite; animation-delay: calc(var(--d) * 0.12s); }
+
+  @keyframes pm-fetch {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+
+  .pm-head {
+    position: absolute;
+    top: -8px;
+    bottom: -8px;
+    left: var(--at);
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 1px;
+    background: var(--fg);
+  }
+
+  .pm-head span {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    font: 500 11px/1 var(--mono);
+    color: var(--fg);
+    white-space: nowrap;
+  }
+
+  /* `.pm` in front of each: the text column's own list rules are `.prose ul`
+     and `.prose li + li`, and a scoped selector adds no weight to beat them. */
+  .pm .pm-key {
+    margin-top: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+    color: var(--fg2);
+  }
+
+  .pm .pm-key li { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+  .pm-key i { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+
+  @media (max-width: 560px) {
+    .pm { padding: 30px 12px 16px; }
+    .pm-row { gap: 1.5px; }
+    .pm-c { height: 20px; border-radius: 2px; }
+  }
+</style>

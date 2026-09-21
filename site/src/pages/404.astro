@@ -1,0 +1,239 @@
+---
+/*
+  The page for an address that is not here, drawn as the player would draw it:
+  the address is the file it was asked to open, the picture is the test card a
+  set shows when nothing arrives, and the playhead has run off the end — 4:04
+  of 4:04. The skip button is the one control in any mock on this site that is
+  real, because on this page skipping is exactly what the reader wants to do.
+
+  Served for every missing path (`not_found_handling: "404-page"` in
+  wrangler.jsonc), so it carries no canonical address and asks not to be kept.
+*/
+import Page from '../layouts/Page.astro'
+import Icons from '../components/Icons.astro'
+import Nav from '../components/Nav.astro'
+import Footer from '../components/Footer.astro'
+---
+
+<Page
+  title="Not found — Frame Player"
+  description="There is nothing at this address. Head back to the start, or download Frame Player."
+  noindex
+>
+  <Icons />
+  <Nav download="/#download" />
+  <main id="top">
+    <section class="hero nf">
+      <div class="hero-light" aria-hidden="true"></div>
+      <div class="wrap hero-copy">
+        <p class="eyebrow enter">404</p>
+        <h1 class="enter" style="--dl:1">
+          <span>Seeked past the end.</span>
+        </h1>
+        <p class="lede enter" style="--dl:2">
+          There is no frame at this address. The link may be old, mistyped, or pointing at
+          something that has since moved.
+        </p>
+        <div class="cta cta-c enter" style="--dl:3">
+          <a class="btn btn-primary btn-lg" href="/">Back to the start</a>
+          <a class="btn btn-ghost btn-lg" href="/#download">Download Frame Player</a>
+        </div>
+      </div>
+
+      <div class="wrap shot">
+        <div class="player nf-player">
+          <!-- The test card. Seven bars at 75%, the castellations under them and
+               the PLUGE row, as a set draws it when there is no signal. -->
+          <div class="bars" aria-hidden="true">
+            <span class="bars-main"></span>
+            <span class="bars-mid"></span>
+            <span class="bars-low"></span>
+            <span class="noise"></span>
+          </div>
+          <span class="p-scrim" aria-hidden="true"></span>
+          <span class="p-bar" aria-hidden="true">
+            <span class="lights"><i></i><i></i><i></i></span>
+            <span class="p-title" data-path>not-found.mkv</span>
+            <span class="p-brand"><span>Frame Player</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>
+            </span>
+          </span>
+
+          <div class="nf-osd" aria-hidden="true">
+            <span class="nf-osd-label">Nothing to play</span>
+            <span class="nf-osd-sub" data-osd>Failed to open this address</span>
+          </div>
+
+          <span class="subline nf-sub" aria-hidden="true">— Are you sure this is the right address?</span>
+
+          <a class="skip nf-skip" href="/">Skip to the start
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-skip"/></svg>
+          </a>
+
+          <div class="osc" aria-hidden="true">
+            <div class="times mono"><span>4:04</span><span>4:04</span></div>
+            <div class="seekwrap">
+              <div class="seektrack">
+                <span class="fill" style="width:100%"></span>
+                <span class="chap" style="--at:22%"></span>
+                <span class="chap" style="--at:51%"></span>
+                <span class="chap" style="--at:78%"></span>
+                <span class="knob" style="left:100%"></span>
+              </div>
+            </div>
+            <div class="controls">
+              <div class="cluster left">
+                <span class="b"><svg viewBox="0 0 24 24"><use href="#p-volume"/></svg></span>
+                <span class="volume"><i></i><b></b></span>
+              </div>
+              <div class="cluster center">
+                <span class="b"><svg viewBox="0 0 24 24"><use href="#p-prev"/></svg></span>
+                <span class="b play"><svg viewBox="0 0 24 24"><use href="#p-play"/></svg></span>
+                <span class="b nf-dim"><svg viewBox="0 0 24 24"><use href="#p-next"/></svg></span>
+              </div>
+              <div class="cluster right">
+                <span class="b opt"><svg viewBox="0 0 24 24"><use href="#p-loop"/></svg></span>
+                <span class="b opt"><svg viewBox="0 0 24 24"><use href="#p-subs"/></svg></span>
+                <span class="b opt"><svg viewBox="0 0 24 24"><use href="#p-cast"/></svg></span>
+                <span class="b"><svg viewBox="0 0 24 24"><use href="#p-full"/></svg></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <Footer />
+
+  <script>
+    import { initTheme } from '../scripts/theme.ts'
+    import { initNav } from '../scripts/nav.ts'
+
+    initTheme()
+    initNav()
+
+    /*
+      The address the reader asked for is the file the player failed to open.
+      Written as text, never as markup, and clipped by the title bar's own
+      ellipsis however long it is. The home page's own path never reaches here.
+    */
+    const path = decodeURIComponent(location.pathname).replace(/^\/+/, '')
+    if (path) {
+      for (const el of document.querySelectorAll<HTMLElement>('[data-path]')) el.textContent = path
+      const osd = document.querySelector<HTMLElement>('[data-osd]')
+      if (osd) osd.textContent = `Failed to open /${path}`
+    }
+  </script>
+</Page>
+
+<style>
+  /* The hero's own rhythm, a little tighter: there is one thing to say. */
+  .nf { padding-bottom: 96px; }
+  .nf .eyebrow { justify-content: center; margin-bottom: 20px; }
+  .nf .eyebrow::after { content: ""; width: 18px; height: 1px; background: var(--acc-line); }
+
+  /*
+    SMPTE-style bars, drawn rather than shipped: seven 75% bars, the reversed
+    castellations under them, and the bottom row with its -I, white, +Q and the
+    near-black PLUGE steps. Hard stops, so every edge is a pixel edge.
+  */
+  .bars { position: absolute; inset: 0; background: #101010; }
+  /* At full strength the card is the brightest thing on a dark page by far and
+     pulls the eye off the headline; this keeps it a test card, a notch down. */
+  .bars-main, .bars-mid, .bars-low { filter: brightness(0.84) saturate(0.92); }
+  .bars > span { position: absolute; left: 0; right: 0; }
+  .bars-main {
+    top: 0;
+    height: 67%;
+    background: linear-gradient(90deg,
+      #bfbfbf 0 14.2857%, #bfbf00 0 28.5714%, #00bfbf 0 42.8571%, #00bf00 0 57.1429%,
+      #bf00bf 0 71.4286%, #bf0000 0 85.7143%, #0000bf 0);
+  }
+  .bars-mid {
+    top: 67%;
+    height: 8%;
+    background: linear-gradient(90deg,
+      #0000bf 0 14.2857%, #131313 0 28.5714%, #bf00bf 0 42.8571%, #131313 0 57.1429%,
+      #00bfbf 0 71.4286%, #131313 0 85.7143%, #bfbfbf 0);
+  }
+  .bars-low {
+    top: 75%;
+    bottom: 0;
+    background: linear-gradient(90deg,
+      #00214c 0 17.86%, #ffffff 0 35.71%, #32006a 0 53.57%, #131313 0 71.43%,
+      #090909 0 76.19%, #131313 0 80.95%, #1d1d1d 0 85.71%, #131313 0);
+  }
+
+  /*
+    The static on top of it, faint: one tile of turbulence moved in steps, so it
+    flickers like a dead input rather than drifting like fog. Reduced motion
+    stops it through the global rule in motion.css.
+  */
+  .noise {
+    inset: -40px;
+    opacity: 0.16;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.4 -0.2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    animation: static 0.5s steps(4) infinite;
+  }
+
+  @keyframes static {
+    0% { transform: translate(0, 0); }
+    25% { transform: translate(-17px, 11px); }
+    50% { transform: translate(9px, -23px); }
+    75% { transform: translate(-29px, -7px); }
+    100% { transform: translate(0, 0); }
+  }
+
+  /* The application's OSD: top left under the title bar, the same surface as
+     its menus (Osd.svelte). */
+  .nf-osd {
+    position: absolute;
+    top: 60px;
+    left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 202px;
+    max-width: calc(100% - 36px);
+    padding: 12px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    background: rgba(16, 16, 22, 0.96);
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    line-height: 1.3;
+  }
+  .nf-osd-label { font-size: 15px; font-weight: 500; color: #f2f2f5; }
+  .nf-osd-sub {
+    font-size: 12.5px;
+    color: #9a9aa5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Lifted clear of the control bar, where the player puts a line while the
+     bar is up. */
+  .nf-sub { bottom: 150px; font-size: 18px; }
+
+  /* A real link in the place of the application's skip button. */
+  .nf-skip { color: inherit; transition: background-color 0.15s, border-color 0.15s; }
+  .nf-skip:hover { background: rgba(28, 28, 38, 0.92); border-color: rgba(255, 255, 255, 0.3); }
+  .nf-skip:focus-visible { outline-offset: 3px; border-radius: 999px; }
+
+  /* There is no next file after the end of nothing. */
+  .nf-dim { opacity: 0.35; }
+
+  @media (max-width: 760px) {
+    /* player.css hides the skip button at this width; here it is the point. */
+    .nf-skip { display: flex; bottom: 96px; right: 10px; padding: 9px 14px; font-size: 13px; }
+    .nf-sub { display: none; }
+    .nf-osd { top: 44px; left: 10px; min-width: 0; padding: 8px 12px; }
+    .nf-osd-label { font-size: 13px; }
+    .nf-osd-sub { font-size: 11px; }
+  }
+
+  @media (max-width: 430px) {
+    .nf-osd { display: none; }
+  }
+</style>

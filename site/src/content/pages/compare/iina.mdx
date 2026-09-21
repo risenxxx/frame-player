@@ -1,0 +1,128 @@
+---
+title: IINA for Windows? An mpv-based player for Windows and Mac — Frame Player
+description: IINA is macOS only. Frame Player is built on the same engine, libmpv, and runs on Windows and macOS — with seekbar previews, subtitle search, torrent streaming, casting and watch-together. How the two compare, honestly.
+heading: Looking for IINA on Windows?
+lede: IINA runs only on the Mac, and there is no Windows version. Frame Player is built on the same engine, libmpv, and runs on both — so the format support, the hardware decoding and the HDR are mpv's on either system. Here is how the two, and the other mpv front ends, compare.
+eyebrow: Comparison
+short: IINA for Windows
+updated: 2026-09-21
+order: 40
+related:
+  - torrent-streaming
+  - cast-to-tv
+  - watch-together
+faq:
+  - q: Is there an official IINA for Windows?
+    a: No. IINA describes itself as a player for modern macOS and is written in Swift against Apple's frameworks; there is no Windows build. The players below are the closest thing on Windows, and all of them are built on mpv.
+  - q: Does Frame Player use the same engine as IINA?
+    a: Yes. Both are built on libmpv, the library form of mpv. Formats, hardware decoding, HDR tone mapping and the picture quality come from mpv in both, so a file that plays in one plays in the other.
+  - q: Can I bring my mpv.conf?
+    a: Yes. Frame Player keeps an mpv.conf of its own — Settings has a button that shows it — and the options in it, written as name=value, are applied at start. The settings dialog only ever edits the lines it owns, so your own options survive. Keyboard shortcuts are the player's own and are set in its shortcut editor rather than in input.conf.
+  - q: Does Frame Player run on Intel Macs?
+    a: Not at the moment — the macOS build is for Apple Silicon. On an Intel Mac, IINA is the one to use.
+  - q: Is Frame Player free?
+    a: Yes, and open source under the GPL-3.0, like IINA. There is no account, no subscription and no telemetry.
+---
+
+import Shot from '../../../components/prose/Shot.astro'
+import Note from '../../../components/prose/Note.astro'
+
+IINA is the player a lot of Mac users recommend without thinking twice: a native,
+good-looking front end on top of mpv, which is about as good a video engine as
+exists. The question people then ask is what to use on Windows, where there is no
+IINA. Frame Player was built to be an answer to that — on the same engine, with
+the same attention to how a player feels to use — and it runs on the Mac as well,
+so one player can follow you between the two.
+
+<Shot name="preview" alt="Frame Player showing a seekbar preview of a later chapter, Camp at the Shore, above the timeline" wide>
+  Hovering the seekbar shows the frame you would land on, and the chapter it
+  belongs to.
+</Shot>
+
+## At a glance
+
+| Compared | Frame Player | IINA | mpv.net | mpv |
+|---|---|---|---|---|
+| Runs on | Windows 10 and 11, macOS on Apple Silicon | macOS, Intel and Apple Silicon | Windows | Windows, macOS, Linux |
+| Engine | libmpv | libmpv | libmpv | mpv |
+| Seekbar previews | Built in | Built in | With the thumbfast script | With a script such as thumbfast |
+| Subtitle search | Built in, OpenSubtitles, matched to the exact release | OpenSubtitles plugin, included | — | Through scripts |
+| Your mpv options | Its own mpv.conf, name=value lines | "Use config directory" in the advanced settings | Its own mpv.conf | mpv.conf |
+| Cast to a TV | Chromecast and DLNA | Not built in | Not built in | — |
+| Torrents | Built in, watch while downloading | Not built in | Not built in | — |
+| Watch together | Built in | Through Syncplay | Through Syncplay | Through Syncplay |
+| Licence | GPL-3.0 | GPL-3.0 | GPL-2.0 | GPL-2.0 or later |
+
+<p class="table-note">Checked against IINA 1.4.4, mpv.net 7.1.2 and mpv 0.41 in September 2026.</p>
+
+## What is the same
+
+**The picture.** Every player in that table hands decoding to mpv, so what a file
+looks like — HDR and Dolby Vision tone mapping, hardware decoding, scaling — is
+mpv's work in all of them. If IINA plays a file well, Frame Player plays it the
+same way, on Windows too.
+
+**Your mpv options.** Frame Player keeps an mpv.conf of its own and applies the
+options in it at start — written as `name=value`, the way most mpv.conf files
+already are. The settings dialog only ever changes the lines it owns,
+so an option you wrote by hand is still there after the next launch.
+
+## Where Frame Player goes further
+
+**Previews that show the frame you land on.** The seekbar thumbnail sharpens to the
+exact position once the cursor stops, instead of showing the keyframe before it,
+and it shows the chapter as well.
+
+**Subtitles matched to your release.** Searching by the file's own fingerprint
+finds subtitles made for exactly that copy, and a subtitle made for a different
+frame rate is flagged before you download it — that is the one that
+[drifts further out of sync](/guides/subtitles-out-of-sync) the longer you watch.
+
+**Skip intro.** When a file's chapters name an opening, a recap or the credits, a
+skip button appears over the picture. It matches the whole chapter title, so a
+chapter called "Ending the war" is never mistaken for the end credits.
+
+**Torrents, casting and watching together, built in.** A magnet link plays while
+it downloads ([how](/torrent-streaming)), a film goes to a Chromecast or a DLNA
+television without being re-encoded ([how](/cast-to-tv)), and a six-character
+code keeps friends in other places on the same frame ([how](/watch-together)).
+IINA and mpv.net can reach some of this through plugins, scripts or Syncplay; in
+Frame Player it is part of the player.
+
+<Shot name="audio" alt="The audio track menu in Frame Player listing an English stereo track, an English 5.1 track and a Russian dub, with a delay control underneath">
+  The audio menu. The track you choose is remembered by its language and title,
+  so the dub you picked in episode one is found again in episode two even when
+  its track number is different.
+</Shot>
+
+## Where IINA is the better choice
+
+<Note>
+  **On an Intel Mac**, use IINA: Frame Player's macOS build is for Apple Silicon.
+</Note>
+
+- **It is a native Mac application**, written against Apple's own frameworks, and
+  it shows. Frame Player's interface is web technology on top of mpv; it is fast
+  and careful, but it is not AppKit.
+- **Plugins.** IINA has a JavaScript plugin system, and the online-media and
+  subtitle features ship as plugins you can update or replace. Frame Player has
+  no plugin system.
+- **Picture-in-Picture and music mode.** IINA uses the system's own
+  Picture-in-Picture and has a mode for audio files. Frame Player has a mini
+  player that stays on top — on macOS even over other apps in full screen — but
+  not the system feature.
+- **Years of use.** IINA has been around since 2017 and has the long tail of
+  fixes that comes with that.
+
+## And mpv.net, or mpv itself
+
+On Windows, **mpv.net** is the other well-known mpv front end, and it stays close
+to mpv's own way of working: keyboard first, configured through mpv.conf,
+extended with mpv scripts. If that is how you like to use mpv, it is an excellent
+choice. **mpv itself** is the engine all of these are built on, with a minimal
+interface of its own and everything else done through scripts.
+
+Frame Player takes the other road: the features most people end up adding with
+scripts — previews, subtitle search, skipping intros, remembering tracks — are in
+the player, with a settings sheet instead of a config file, while your mpv.conf
+still applies underneath.

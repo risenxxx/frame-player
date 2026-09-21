@@ -1,0 +1,141 @@
+---
+/*
+  A guide, a comparison or a feature page: one entry of the `pages` collection.
+
+  The shape is the same for all of them — breadcrumbs, the headline and its
+  lede, the text, the questions, what to read next and the download block — so
+  a page is its words and nothing else. The download block is the landing
+  page's own closing section, under `#download`, which is where the header's
+  Download button points on every page that has one.
+*/
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { getCollection, type CollectionEntry } from 'astro:content'
+import Page from './Page.astro'
+import Icons from '../components/Icons.astro'
+import Nav from '../components/Nav.astro'
+import Footer from '../components/Footer.astro'
+import FinalCta from '../components/FinalCta.astro'
+
+interface Props {
+  entry: CollectionEntry<'pages'>
+}
+
+const { entry } = Astro.props
+const d = entry.data
+const url = new URL(`/${entry.id}`, Astro.site).href
+const home = new URL('/', Astro.site).href
+
+const all = await getCollection('pages')
+/* What kind of page a card leads to, from the folder it lives in: the eyebrow
+   would only repeat the card's own title for a feature page. */
+const kind = (id: string) => (id.startsWith('compare/') ? 'Comparison' : id.startsWith('guides/') ? 'Guide' : 'Feature')
+const related = d.related.flatMap((id) => {
+  const found = all.find((e) => e.id === id)
+  if (!found) throw new Error(`${entry.id}: "related" names ${id}, which is not a page`)
+  return [found]
+})
+
+/*
+  The link card, if `npm run og` has drawn one for this page; the site's own
+  otherwise. Resolved against the working directory for the reason release.ts
+  gives: this module runs from inside the build output.
+*/
+const card = `/og/${entry.id.replaceAll('/', '-')}.png`
+const image = existsSync(resolve(process.cwd(), 'public', card.slice(1))) ? card : '/og.png'
+
+const updated = d.updated.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+
+const schema: Record<string, unknown>[] = [
+  {
+    '@type': 'Article',
+    headline: d.heading,
+    description: d.description,
+    dateModified: d.updated.toISOString(),
+    mainEntityOfPage: url,
+    image: new URL(image, Astro.site).href,
+    author: { '@type': 'Organization', name: 'Frame Player', url: home },
+    about: { '@type': 'SoftwareApplication', name: 'Frame Player' },
+  },
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Frame Player', item: home },
+      { '@type': 'ListItem', position: 2, name: d.short, item: url },
+    ],
+  },
+]
+
+if (d.faq.length > 0) {
+  schema.push({
+    '@type': 'FAQPage',
+    mainEntity: d.faq.map(({ q, a }) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+  })
+}
+---
+
+<Page title={d.title} description={d.description} ogType="article" image={image} imageAlt={d.heading} schema={schema}>
+  <Icons />
+  <Nav />
+  <main id="top">
+    <article>
+      <header class="art-head">
+        <div class="hero-light" aria-hidden="true"></div>
+        <div class="wrap art-head-in">
+          <nav class="crumbs" aria-label="Breadcrumb">
+            <a href="/">Frame Player</a><span class="slash" aria-hidden="true">/</span><span aria-current="page">{d.short}</span>
+          </nav>
+          <h1>{d.heading}</h1>
+          <p class="lede">{d.lede}</p>
+          <p class="fine art-meta">Updated <time datetime={d.updated.toISOString().slice(0, 10)}>{updated}</time></p>
+        </div>
+      </header>
+
+      <div class="prose">
+        <slot />
+
+        {d.faq.length > 0 && (
+          <section class="faq" aria-labelledby="questions">
+            <h2 id="questions">Questions</h2>
+            {d.faq.map(({ q, a }) => (
+              <div class="faq-item">
+                <h3>{q}</h3>
+                <p>{a}</p>
+              </div>
+            ))}
+          </section>
+        )}
+      </div>
+    </article>
+
+    {related.length > 0 && (
+      <aside class="wrap readnext" aria-labelledby="read-next">
+        <h2 id="read-next">Read next</h2>
+        <div class="rn-grid">
+          {related.map((r) => (
+            <a class="rn-card" href={`/${r.id}`}>
+              <span class="rn-k">{kind(r.id)}</span>
+              <span class="rn-t">{r.data.short}</span>
+              <span class="rn-d">{r.data.description}</span>
+            </a>
+          ))}
+        </div>
+      </aside>
+    )}
+
+    <div id="download">
+      <FinalCta />
+    </div>
+  </main>
+  <Footer />
+
+  <script>
+    import { initTheme } from '../scripts/theme.ts'
+    import { initMotion } from '../scripts/motion.ts'
+    import { initNav } from '../scripts/nav.ts'
+
+    initTheme()
+    initNav()
+    initMotion()
+  </script>
+</Page>

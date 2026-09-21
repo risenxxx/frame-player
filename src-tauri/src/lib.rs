@@ -12,6 +12,7 @@ mod color;
 mod catalog;
 mod dlna;
 mod feed;
+mod lan_sweep;
 mod opensubtitles;
 mod power;
 mod screenshot;

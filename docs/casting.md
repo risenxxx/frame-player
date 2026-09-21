@@ -243,6 +243,8 @@ treated as one:
   receivers probe by it) and the load carries no title, so neither the wire nor
   the television's screen names it.
 - Discovery is browse-only. The player never advertises a service of its own.
+  The unicast sweep (below) is browse-only too: nothing is announced, and
+  what it connects to it only asks for a name.
 - Nothing opens at startup: discovery runs while the picker is open, the server
   binds when a device is picked, and both stop on disconnect.
 
@@ -275,6 +277,53 @@ without Local Network permission has its multicast silently dropped, and the
 system's own resolver is exempt. A command-line probe will report an empty
 network whatever is on it, so anything discovery-shaped has to be measured from
 inside the application.
+
+**Multicast may not cross the router, and unicast usually does.** The case this
+is for: a machine on a cable or on 5 GHz, a television on 2.4 GHz, one subnet,
+and the picker empty. It is a precaution, not a measured fix — the one report
+that prompted it turned out to be a television on another network entirely,
+and the multicast search found it once both were on the same one; no router
+that drops multicast between bands has been tested against yet. Plenty of routers and mesh systems do not carry group
+traffic between those segments — IGMP snooping, multicast turned into unicast
+on one band, a backhaul that forwards only what it has seen joined — while
+routing ordinary datagrams between them as usual. Everything after discovery
+is unicast (the CASTV2 connection, the SOAP calls, the television fetching from
+our server), so only being *found* fails.
+
+So each address is also asked directly, for as long as the picker is open
+(`lan_sweep.rs` for the address list, the protocol halves in cast.rs and
+dlna.rs):
+
+- **Cast: `:8009` accepts a connection, then `GET :8008/setup/eureka_info`**
+  for the name (`name`, `ssdp_udn`). A device whose 8008 is closed is still
+  admitted if 8009 completes a TLS handshake, and is listed under its address.
+- **DLNA: unicast `M-SEARCH`** to `host:1900` (UPnP 1.1). A 1.0 renderer may
+  ignore it; that one is simply not found this way.
+
+The obvious Cast route was measured first and is dead: an mDNS PTR query
+aimed at the device's own address (RFC 6762 §5.5 says a responder *should*
+answer one). A Cast soundbar that answered ping and served `eureka_info` stayed
+silent to it from an ephemeral port, from 5353, with and without the QU bit,
+while the router on the same network answered the identical packet — so it is
+the Cast responder listening on the group only, not the probe.
+
+Which hosts: the addresses a television was seen at before (the frontend keeps
+the last eight in `frameplayer.tv-hosts`), then every host of each private LAN
+subnet — whole up to a /22, only the /24 around our own address beyond that,
+because a /16 is a scan rather than a question. Tunnels and virtual switches are
+skipped by interface name (a VPN's address is private too; a VM bridge holds no
+television). A round is bounded by how many dead addresses wait out the 3 s
+connect at once: measured on a /24, 18 s at 48 in flight, 6 s at 128. The 3 s is
+itself measured — a soundbar on Wi-Fi power save missed a 1.5 s connect once and
+answered every one after. Remembered addresses go first, so a known device is
+found in the first wave. Repeated every twelve seconds; a swept device that
+stops answering leaves after thirty, because nothing announces its departure.
+When multicast finds the same device too (same id or same address), the
+multicast entry wins.
+
+What it cannot fix: a network that refuses unicast between clients as well —
+guest networks, AP/client isolation, a VLAN behind a firewall. There the
+television could not fetch the file from us even if we found it.
 
 ## Deliberately not done
 

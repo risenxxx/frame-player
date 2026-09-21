@@ -1,17 +1,38 @@
+---
+/*
+  The header links to sections of the home page. Written as bare fragments they
+  only worked there: on any other page `#torrents` pointed into a document that
+  has no such section. `/#torrents` works from everywhere, and on the home page
+  itself it is still a same-document jump, not a reload. The brand goes back to
+  the top of the page it is on only when that page is the home page.
+
+  `download` is where the Download button points: every page that carries its
+  own download block (`#download`) keeps the reader where they are, and one that
+  does not, the 404, sends them to the home page's.
+*/
+interface Props {
+  download?: string
+}
+
+const { download = '#download' } = Astro.props
+const home = Astro.url.pathname === '/'
+const base = home ? '' : '/'
+---
+
 <!-- The marker the header watches: "the page has left the top" is an observer
      answering, not a scroll handler running beside a backdrop-filter. -->
 <div class="nav-top" aria-hidden="true" data-nav-top></div>
 <header class="nav" data-nav>
   <div class="wrap nav-in">
-    <a class="brand" href="#top" aria-label="Frame Player, to the top">
+    <a class="brand" href={home ? '#top' : '/'} aria-label={home ? 'Frame Player, to the top' : 'Frame Player, home'}>
       <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>Frame Player
     </a>
     <nav class="nav-links" aria-label="Sections">
-      <a href="#open">Open anything</a>
-      <a href="#torrents">Torrents</a>
-      <a href="#tv">Television</a>
-      <a href="#together">Together</a>
-      <a href="#everything">Everything else</a>
+      <a href={`${base}#open`}>Open anything</a>
+      <a href={`${base}#torrents`}>Torrents</a>
+      <a href={`${base}#tv`}>Television</a>
+      <a href={`${base}#together`}>Together</a>
+      <a href={`${base}#everything`}>Everything else</a>
     </nav>
     <div class="nav-r">
       <fieldset class="theme" data-theme-switch>
@@ -29,7 +50,7 @@
       <a class="btn btn-ghost btn-sm nav-ghost" href="https://github.com/risenxxx/frame-player">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-github"/></svg>GitHub
       </a>
-      <a class="btn btn-primary btn-sm" href="#download">Download</a>
+      <a class="btn btn-primary btn-sm" href={download}>Download</a>
     </div>
   </div>
 </header>

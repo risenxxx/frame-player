@@ -1,0 +1,28 @@
+---
+/*
+  One of the landing page's interface mocks, placed in a guide. They are the
+  same components the home page draws, so a guide and the page it came from can
+  never show two versions of the same panel. The cast mock reads its timing
+  from `.sc-cast`, which on the home page is its section.
+*/
+import TorrentMock from '../mocks/TorrentMock.astro'
+import CastMock from '../mocks/CastMock.astro'
+import RoomMock from '../mocks/RoomMock.astro'
+import SubsMock from '../mocks/SubsMock.astro'
+
+interface Props {
+  kind: 'torrent' | 'cast' | 'room' | 'subs'
+}
+
+const { kind } = Astro.props
+---
+
+<figure class:list={['fig', 'fig-mock', { 'sc-cast': kind === 'cast' }]}>
+  <div class="feat-mock">
+    {kind === 'torrent' && <TorrentMock />}
+    {kind === 'cast' && <CastMock />}
+    {kind === 'room' && <RoomMock />}
+    {kind === 'subs' && <SubsMock />}
+  </div>
+  {Astro.slots.has('default') && <figcaption><slot /></figcaption>}
+</figure>

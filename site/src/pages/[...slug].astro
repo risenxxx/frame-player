@@ -1,0 +1,22 @@
+---
+/*
+  Every page of the `pages` collection, at the address its file names:
+  `src/content/pages/compare/iina.mdx` is `/compare/iina`. The home page, the
+  404 and the sitemap are files of their own and win over this route.
+*/
+import { getCollection, render } from 'astro:content'
+import Article from '../layouts/Article.astro'
+import Table from '../components/prose/Table.astro'
+
+export async function getStaticPaths() {
+  const pages = await getCollection('pages')
+  return pages.map((entry) => ({ params: { slug: entry.id }, props: { entry } }))
+}
+
+const { entry } = Astro.props
+const { Content } = await render(entry)
+---
+
+<Article entry={entry}>
+  <Content components={{ table: Table }} />
+</Article>

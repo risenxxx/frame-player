@@ -42,7 +42,9 @@ const MANIFEST = join(root, 'src/img-manifest.json')
   - the hero's hover preview is 120 or 180 and nothing else;
   - the two machines on one timeline run 136 → 451;
   - a catalogue poster runs 77 → 192 against a 293px source, which is the one
-    picture already short of its own 2× and the reason nothing is upscaled here.
+    picture already short of its own 2× and the reason nothing is upscaled here;
+  - a window screenshot on a guide page (`shot-*`, from tools/import-shot.mjs)
+    runs 358 → 720 in the text column and up to 1040 when a figure is wide.
 
   Each ladder covers 1× and 2× of its range and is capped at the source width.
 */
@@ -57,6 +59,7 @@ const LADDERS = {
   'highway-trails': [200, 320, 400, 600],
   'moon-eclipse': [200, 320, 400, 600],
   poster: [120, 200, 293],
+  shot: [480, 720, 1080, 1440, 2080],
 }
 
 /* Quality per format, chosen so the three are visually the same picture: AVIF
@@ -67,7 +70,7 @@ const ENC = {
   jpg: (p) => p.jpeg({ quality: 80, mozjpeg: true }),
 }
 
-const ladderFor = (name) => LADDERS[name] ?? LADDERS[name.startsWith('poster-') ? 'poster' : name]
+const ladderFor = (name) => LADDERS[name] ?? LADDERS[name.replace(/-.*$/, '')]
 
 async function main() {
   await mkdir(OUT, { recursive: true })

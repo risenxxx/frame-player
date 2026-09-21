@@ -1,6 +1,17 @@
+---
+import { getCollection } from 'astro:content'
+
+/* The same rule as the header: `#top` only exists on the page it belongs to. */
+const home = Astro.url.pathname === '/'
+
+/* Every guide, on every page: the footer is the one list a crawler and a
+   reader both reach from anywhere. */
+const guides = (await getCollection('pages')).sort((a, b) => a.data.order - b.data.order)
+---
+
 <footer class="foot">
   <div class="wrap foot-in">
-    <a class="brand" href="#top"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>Frame Player</a>
+    <a class="brand" href={home ? '#top' : '/'}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>Frame Player</a>
     <div class="foot-theme">
       <fieldset class="theme" data-theme-switch>
         <legend class="vh">Theme</legend>
@@ -21,6 +32,11 @@
       <a href="https://github.com/risenxxx/frame-player/tree/main/docs">Documentation</a>
       <a href="https://github.com/risenxxx/frame-player/blob/main/LICENSE">Licence</a>
     </nav>
+    {guides.length > 0 && (
+      <nav class="guides" aria-label="Guides">
+        {guides.map((g) => <a href={`/${g.id}`}>{g.data.short}</a>)}
+      </nav>
+    )}
     <p class="facts facts-line">
       <span class="nb">GPL-3.0-or-later</span><span class="sep"></span><span class="nb">built on libmpv, FFmpeg and librqbit</span>
     </p>

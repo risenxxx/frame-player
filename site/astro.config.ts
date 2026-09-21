@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import type { AstroIntegration } from 'astro'
 import { defineConfig } from 'astro/config'
+import mdx from '@astrojs/mdx'
 import { DOWNLOAD_PATHS, release } from './src/release'
 
 /*
@@ -77,12 +78,19 @@ function downloads(): AstroIntegration {
 export default defineConfig({
   output: 'static',
   site: site.origin,
-  integrations: [headers(), downloads()],
+  /*
+    One address per page, without a trailing slash: `/torrent-streaming`, never
+    also `/torrent-streaming/`. Built as `torrent-streaming.html`, which Workers
+    static assets serve at the bare path and redirect the slashed one to — so
+    the canonical link, the sitemap and what the server answers all agree.
+  */
+  trailingSlash: 'never',
+  integrations: [mdx(), headers(), downloads()],
   /*
     The stylesheet is one page's worth and compresses to a few kilobytes; a
     separate request for it only delays the first paint.
   */
-  build: { inlineStylesheets: 'always' },
+  build: { inlineStylesheets: 'always', format: 'file' },
   /*
     Scoped styles through :where() add no specificity, so a component overrides
     a shared primitive by source order rather than by an attribute selector

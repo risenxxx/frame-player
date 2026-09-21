@@ -9,12 +9,22 @@ import '../styles/chrome.css'
 import '../styles/player.css'
 import '../styles/mocks.css'
 import '../styles/sections.css'
+import '../styles/prose.css'
 import '../styles/narrow.css'
 import '../styles/motion.css'
 
 interface Props {
   title?: string
   description?: string
+  /** `article` for a guide or a comparison, `website` for the home page. */
+  ogType?: 'website' | 'article'
+  /** The link card, as a path under `public/`, and what is written on it. */
+  image?: string
+  imageAlt?: string
+  /** Structured data this page adds to the application's own record. */
+  schema?: Record<string, unknown>[]
+  /** The 404: no canonical address, and nothing for a search engine to keep. */
+  noindex?: boolean
 }
 
 const {
@@ -22,32 +32,46 @@ const {
   description =
     'Free, open-source video player on mpv for Windows and macOS: watch a torrent as it downloads, ' +
     'cast to the TV untouched, resume anything.',
+  ogType = 'website',
+  image = '/og.png',
+  imageAlt = 'Frame Player: files, links, magnets. One player that gets them right.',
+  schema = [],
+  noindex = false,
 } = Astro.props
 
-const canonical = new URL(Astro.url.pathname, Astro.site)
-const ogImage = new URL('/og.png', Astro.site)
+/*
+  With `build.format: 'file'` a page is rendered as `torrent-streaming.html`,
+  and `Astro.url` says so; the address it is served at has no extension.
+*/
+const canonical = new URL(Astro.url.pathname.replace(/\.html$/, ''), Astro.site)
+const ogImage = new URL(image, Astro.site)
 const { version, windows } = await downloads()
 
 /*
-  One structured record for the one thing this page is about. `SoftwareApplication`
+  One structured record for the one thing every page is about. `SoftwareApplication`
   is what a search engine reads to show a price, a platform and a rating slot; the
-  offer is free rather than absent, which is a different claim.
+  offer is free rather than absent, which is a different claim. Its `url` is the
+  home page wherever it is printed: a guide is about the player, it is not the
+  player. A page with more to say — an article, its breadcrumbs — adds records
+  beside this one rather than replacing it.
 */
-const jsonLd = {
-  '@context': 'https://schema.org',
+const app = {
   '@type': 'SoftwareApplication',
   name: 'Frame Player',
   applicationCategory: 'MultimediaApplication',
   operatingSystem: 'Windows 10, Windows 11, macOS',
   softwareVersion: version,
-  url: canonical.href,
+  url: new URL('/', Astro.site).href,
   downloadUrl: new URL(windows, Astro.site).href,
   license: 'https://www.gnu.org/licenses/gpl-3.0.html',
   isAccessibleForFree: true,
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-  image: ogImage.href,
-  description,
+  image: new URL('/og.png', Astro.site).href,
+  description:
+    'Free, open-source video player on mpv for Windows and macOS: watch a torrent as it downloads, ' +
+    'cast to the TV untouched, resume anything.',
 }
+const jsonLd = { '@context': 'https://schema.org', '@graph': [app, ...schema] }
 ---
 
 <!doctype html>
@@ -57,9 +81,9 @@ const jsonLd = {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <link rel="canonical" href={canonical} />
+    {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
 
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content={ogType} />
     <meta property="og:site_name" content="Frame Player" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
@@ -69,10 +93,7 @@ const jsonLd = {
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta
-      property="og:image:alt"
-      content="Frame Player playing a file from a torrent, with a hover preview above the seekbar"
-    />
+    <meta property="og:image:alt" content={imageAlt} />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />

@@ -1,0 +1,133 @@
+---
+title: Watch a video together, in sync — each from your own copy — Frame Player
+description: Watch a film or a series with somebody in another place, perfectly in sync. Frame Player shares the timeline, never the video, so everyone plays their own copy at full quality. Free and open source.
+heading: Watch together, in sync, each from your own copy
+lede: A six-character code puts two or more players on the same position, the same pauses and the same episode. Only the timeline travels between you — the film plays on each screen from that person's own file, link or torrent, at full quality.
+eyebrow: Watch together
+short: Watch together
+updated: 2026-09-21
+order: 30
+related:
+  - torrent-streaming
+  - cast-to-tv
+  - compare/iina
+faq:
+  - q: Does everyone need their own copy of the video?
+    a: Everyone needs to be able to play it, and how depends on what it is. For a torrent or a link the player opens it for each person by itself. A file on somebody's disk cannot be sent, so each person opens their own copy and the player says whether it is the same release, a different rip of the same film, or a different file.
+  - q: Does the video go through your server?
+    a: No, and it never will — that is the design, not a limit. The room server passes the timeline between players (position, pause, speed, which episode) and nothing else. Each player gets the film from its own disk, website or torrent.
+  - q: What does the room server know?
+    a: The room code, the names people chose to show, the timeline, and what the room is watching — a torrent's identifier, a link, or a fingerprint of a local file. A file in a folder you marked private is shared as "hidden", and the room still syncs. Nothing is written to disk, and a room is forgotten five minutes after the last person leaves.
+  - q: What if somebody's connection is slow?
+    a: The room waits. When one person is still buffering, everybody pauses at the same point and playback resumes by itself once they are ready. A player that stops responding altogether is not allowed to hold the room for more than 45 seconds.
+  - q: Can I run my own room server?
+    a: Yes. It is a small open-source program with no database, in the same repository as the player, and its address is a field in Settings › General.
+---
+
+import Mock from '../../components/prose/Mock.astro'
+import Note from '../../components/prose/Note.astro'
+
+Sharing a screen sends everybody a re-encoded copy of one person's picture, at
+whatever quality the call allows. Frame Player does something else: every player
+in the room plays the film itself, and what the room shares is the timeline — where
+playback is, whether it is paused, how fast it runs and which file is on. Each
+screen shows the film at the quality of its own copy, and the room keeps every
+one of them on the same frame.
+
+## Starting a room
+
+1. Open **Watch together…** in the player's menu and choose **Create a room**.
+2. Send the code to whoever is joining, or copy the link. The link opens a page
+   with a button that starts Frame Player straight into the room, and tells
+   anybody who does not have it yet where to get it.
+3. They enter the code in the same window, or click the link. For a torrent or a
+   link their player opens what you are watching by itself; for a file on your
+   disk they open their own copy. Either way they land on the same frame.
+
+<Mock kind="room">
+  Two machines on one timeline: a seek on either lands both on the same frame.
+</Mock>
+
+From then on a pause, a seek, a change of speed or a jump to the next episode on
+any machine happens on all of them. The host can make the room follow only them
+with **Only the host controls playback**.
+
+## What is shared, and what stays yours
+
+Position, pause, speed and the file that is playing are the room's. Your volume,
+your window and the look of your subtitles stay yours. Two things sit in between,
+and the host decides them for the room:
+
+- **The audio track is shared by default.** A room is watching one film, and hearing
+  a different soundtrack from the person next to you is a strange way to do it.
+- **Subtitles are not shared by default.** One person needs them and another does
+  not; sharing the choice would mean switching them off for somebody who cannot
+  follow the film without them.
+
+Tracks travel as a description — language, title, codec — rather than as a track
+number, because the Russian dub that is track 2 in one copy is often track 3 in
+another.
+
+## What each person needs
+
+How easy joining is depends on where the film comes from.
+
+- **A torrent is the best case.** The room shares the torrent's identity, every
+  player fetches the same file from the same swarm, and a guest who joins in the
+  middle of a season is watching within moments. Moving to the next episode moves
+  everybody, with nothing to paste.
+- **A link** works when each person's player can open it; pages that need yt-dlp
+  are resolved on each machine separately.
+- **A file on your disk cannot be sent.** Each person opens their own copy. The
+  player compares a fingerprint of the file and its length and says which of three
+  things it is: **the same release**, **a different rip** of the same film (right
+  length, different file — close, but a few frames can differ), or **a different
+  file**. None of them is refused; a guest watching a different cut on purpose is
+  told, not stopped.
+
+## How it stays in sync
+
+Keeping two players together is mostly about not making things worse.
+
+**Small differences are corrected with speed, not with a jump.** Jumping to fix a
+third of a second means decoding from the previous keyframe, which can stall a
+4K file for two seconds and leave it further out than it started. Playing at 103 %
+for ten seconds fixes the same difference with nothing to see or hear, since mpv
+keeps the pitch where it was. Only a difference of more than two seconds is fixed
+with a seek.
+
+**The room waits for whoever is buffering.** Everybody pauses at the same point
+and playback resumes by itself once they are ready. A pause somebody asked for is
+never lifted this way, and a player that has gone quiet is not allowed to hold the
+room for more than 45 seconds.
+
+<Note>
+  **What the room cannot fix is your speakers.** Bluetooth headphones add a fifth
+  of a second or so of their own on one side of the room, and nothing a player
+  sends over the network can see it. If one person hears the film late, that is
+  usually why.
+</Note>
+
+## Compared with the usual ways
+
+| Compared | Frame Player | Syncplay | Teleparty | Screen sharing |
+|---|---|---|---|---|
+| What you can watch | Your own files, links and torrents | Your own files | Films on Netflix, Disney+ and other services | Anything on one screen |
+| Each person needs | Frame Player and a way to play the film | Syncplay, a supported player and their own copy | A browser extension and their own subscription | The call app |
+| Picture | Each person's own copy, full quality | Each person's own copy | The service's stream | A re-encoded stream of one screen |
+| A torrent | Everyone joins the same swarm by themselves | Each person gets the file first | — | — |
+
+[Syncplay](https://syncplay.pl) deserves a word: it has done this for mpv, VLC,
+MPC-HC and IINA for years and it is very good at it. The difference is that Frame
+Player has it built in, and that for a torrent or a link it opens the film for each
+guest instead of expecting everyone to have it already.
+
+## What the room server keeps
+
+The room server exists to pass a timeline between players. It knows the room
+code, the names people chose to show, and what the room is watching; a file from
+a folder you marked private is shared as "hidden", so the timeline syncs and its
+name never leaves your computer. There are no accounts and no chat, nothing is
+written to disk, and a room is forgotten five minutes after the last person
+leaves. The server is open source, and if you would rather run your own, its
+address is a setting.

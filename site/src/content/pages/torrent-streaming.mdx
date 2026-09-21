@@ -1,0 +1,162 @@
+---
+title: Watch a torrent while it downloads — Frame Player
+description: Paste a magnet link and start watching in seconds. Frame Player streams torrents by fetching the part of the file you are about to watch first. Free and open source, for Windows and macOS.
+heading: Watch a torrent while it is still downloading
+lede: Paste a magnet link, pick the episode, press play. The player fetches the part of the file you are about to see before anything else, so a film starts in seconds instead of after the whole thing has arrived.
+eyebrow: Torrent streaming
+short: Torrent streaming
+updated: 2026-09-21
+order: 10
+related:
+  - cast-to-tv
+  - watch-together
+  - guides/subtitles-out-of-sync
+faq:
+  - q: Do I have to wait for the whole file to download?
+    a: No. Playback starts as soon as the beginning of the file has arrived, and the pieces just ahead of the playhead are always fetched first. On a healthy swarm that is a few seconds; a weak one with few seeders takes longer, and the player shows the rate and the peer count so you can tell which it is.
+  - q: Does Frame Player upload (seed) while I watch?
+    a: Not unless you turn it on. Uploading is off by default — the player downloads, never serves pieces to other peers and never tells them what it has. It does not make you invisible, though, because finding peers still means announcing yourself to trackers and the DHT. The switch is in Settings, under Torrents.
+  - q: Where are the downloaded files, and how do I remove them?
+    a: In the player's own cache folder unless you choose another one in Settings › Torrents. Every torrent you opened is listed on the start screen with the size it takes on disk, and removing it there deletes its data. "Clear torrent cache" in the settings removes everything the player downloaded at once.
+  - q: The player says "No peers". What can I do?
+    a: If peers are being found but none will connect, something between you and the swarm is blocking BitTorrent — usually a VPN that forbids it or a provider that filters it. Settings › Torrents has connection encryption, which gets past filters that look at what the traffic is, and a SOCKS5 proxy, which gets past blocking by destination. If nobody answers at all, the torrent may simply have no seeders left.
+  - q: Is streaming a torrent legal?
+    a: Streaming a torrent is downloading it, so the same rules apply as to any other download — whether a particular one is legal depends on what it is and where you are. Plenty of video is published as torrents on purpose, from public-domain archives to Creative Commons films such as Blender's Sintel and Tears of Steel.
+---
+
+import Shot from '../../components/prose/Shot.astro'
+import Mock from '../../components/prose/Mock.astro'
+import PieceMap from '../../components/prose/PieceMap.astro'
+import Note from '../../components/prose/Note.astro'
+
+An ordinary torrent client downloads a file in whatever order its peers happen to
+send it, which is the right order for finishing a download and the wrong one for
+watching it: the first minute of the film can be the last thing to arrive.
+Frame Player turns that around. It asks for the pieces in the order you are going
+to watch them, and it plays them as they land.
+
+## Opening a torrent
+
+1. On the start screen choose **Open a link** and paste a magnet link. A link to a
+   `.torrent` file works too, and so does a release's RSS feed. A `.torrent` file
+   you already have can be dropped onto the window or opened with **Open file**.
+2. For a magnet the player first has to learn the list of files from other peers.
+   That usually takes seconds and can take up to a minute and a half for a rare
+   one; a torrent it has opened before is remembered and opens at once.
+3. Pick what to watch. Every other video in the torrent goes into the queue, but
+   only the file that is playing is downloaded.
+4. Playback starts as soon as enough of the beginning has arrived.
+
+<Shot name="torrent" alt="Frame Player playing Tears of Steel from a torrent, with a readout of the download rate and peer count in the top right corner" wide>
+  A torrent playing while it downloads. The readout in the corner is the download
+  rate, the number of peers and how much of this file is already on disk.
+  Film: Tears of Steel, (CC) Blender Foundation, <a href="https://mango.blender.org">mango.blender.org</a>
+</Shot>
+
+## What happens underneath
+
+The player runs a small web server on your own machine, visible to nothing but
+the player itself, and hands the video engine an address on it. mpv reads that
+address the way it reads any online video, by asking for a range of bytes at a
+time. Each of those requests tells the torrent client where you are in the film,
+and the client fetches the pieces just ahead of that point before anything else.
+
+Nothing is fetched speculatively. A torrent that holds a whole season does not
+start downloading the season: opening episode three downloads episode three.
+
+<PieceMap>
+  The pieces around the playhead are asked for first, in order. Everything else
+  waits until something reads it.
+</PieceMap>
+
+**Jumping ahead works, and the seekbar tells you what it will cost.** The parts of
+the file that have already arrived are shaded on the seekbar, so a jump into a
+shaded stretch plays at once and a jump past it waits for the swarm. On a healthy
+torrent that wait is about a second; on one with two tired seeders it can be much
+longer, and the readout says whether the problem is that there are no peers or
+that the ones there are slow, because those are different problems.
+
+**The previews still work.** Hovering the seekbar shows a thumbnail of any stretch
+that has already downloaded. Once the whole file is on disk it gets the same full
+storyboard as a local file.
+
+## A season is a queue
+
+<Mock kind="torrent">
+  The torrent list: watched episodes are marked, the one in progress says how much
+  is left, and the bar underneath shows which parts of it are on disk.
+</Mock>
+
+Open one episode and the rest of the torrent becomes the queue, in natural order
+(`E2` before `E10`). When the episode you are watching has finished downloading,
+the next one starts in the background, one ahead and no further. That is enough
+for a season to play without stopping between episodes, and not so much that the
+player turns into a download manager filling your disk with things you may never
+watch.
+
+The start screen keeps one row per torrent. Clicking it continues the episode you
+were on rather than asking again, and it still works after a restart: positions,
+chosen tracks and subtitles are remembered by the torrent's identity, not by the
+address it was played from that day.
+
+## Subtitles inside the release
+
+Releases often carry their own subtitle files — Sintel's torrent has ten of them.
+The player finds the ones that belong to the episode you are playing and adds
+them to the subtitle menu by themselves, so there is no need to search for what
+you already downloaded. When a release has none, the built-in
+[subtitle search](/guides/subtitles-out-of-sync) works on a torrent the same way
+it does on a file.
+
+## Uploading is off unless you turn it on
+
+In several countries, Germany among them, the legal exposure from uploading is far
+worse than from downloading, and a player should not opt anybody into it quietly.
+So Frame Player does not upload by default: it never serves a piece to another
+peer, and it never tells other peers which pieces it has.
+
+<Note>
+  **Not uploading is not the same as being invisible.** To find peers the player
+  has to announce itself to the torrent's trackers and to the DHT, so anybody
+  watching the swarm can still see that you joined it.
+</Note>
+
+If you would rather give back, **Upload while watching** in Settings › Torrents
+turns it on, and turning it off again stops it immediately rather than at the end
+of the film.
+
+## When a torrent will not start
+
+The player says which of these it is, in words, on the loading screen.
+
+- **"Finding the torrent…"** The list of files is still being fetched from other
+  peers. Give it up to a minute and a half.
+- **"Nobody answered."** Nobody seeding this torrent could be found. It may have no
+  seeders left.
+- **"Connecting to the swarm…"** or **"No peers"** after a while: peers exist, but
+  no connection to them gets through. That is what a VPN that forbids BitTorrent
+  or a provider that filters it looks like. **Connection encryption** in
+  Settings › Torrents gets past filters that recognise the protocol, and a
+  **SOCKS5 proxy** gets past blocking by destination.
+- **Few peers on a big torrent.** Most peers sit behind a router and can only
+  connect to you, not the other way round. **Accept incoming connections** asks
+  your router to open a port (it needs UPnP enabled on the router), and the
+  settings say whether the router actually did.
+
+## When a season gains an episode
+
+A torrent cannot grow. When an uploader adds the next episode they publish a new
+torrent with a new magnet link, and an ordinary client would download the whole
+season again from scratch. Frame Player can replace a torrent with its re-upload
+instead: the episodes you already have are kept and checked, your place in each
+is carried over, and only the new episode is downloaded. If the torrent came from
+a release's RSS feed, the start screen notices the re-upload by itself and offers
+the update.
+
+## On the television, and with friends
+
+A torrent that is still downloading can be [sent to the TV](/cast-to-tv), fed
+from the same stream that feeds the player. And in
+[a watch-together room](/watch-together) a torrent is the easiest thing to share:
+everybody fetches the same file from the same swarm, and nobody has to paste
+anything to follow you to the next episode.

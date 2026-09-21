@@ -1,5 +1,5 @@
 ---
-import Frame from './Frame.astro'
+import SubsMock from './mocks/SubsMock.astro'
 ---
 
   <section class="feat" id="subs">
@@ -19,38 +19,10 @@ import Frame from './Frame.astro'
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
             <span><b>The dub you chose in episode 1 is found again in episode 2</b> by language, title and codec, never by track number, which moves between releases.</span></li>
         </ul>
+        <a class="more-link" href="/guides/subtitles-out-of-sync">Why subtitles drift out of sync</a>
       </div>
       <div class="feat-mock" data-reveal style="--dl:1">
-        <!-- The player with the subtitle search open over the film, as the
-             application draws it (SubsDialog): the dialog opens, the exact
-             match is downloaded, the dialog closes and the line is on screen. -->
-        <div class="player subs" data-scene data-dur="2800" data-ease="linear" aria-hidden="true">
-          <Frame name="ridge-hiker" slot="mock" class="scene" alt="A hiker under the Milky Way on a dark ridge" />
-          <span class="sub-osc"><i></i></span>
-          <span class="subline">— Everything you can see out there is older than the ground you stand on.</span>
-          <span class="subs-dim"></span>
-          <div class="subs-dlg">
-            <div class="subs-title">Find subtitles</div>
-            <div class="subs-q"><span class="subs-inp">Orbital Night S02E03</span><span class="subs-go">Search</span></div>
-            <div class="subs-hint">Matched by the file itself — same release, the timing fits as is.</div>
-            <div class="subs-list">
-              <div class="subs-row first" style="--i:0">
-                <div class="subs-main">
-                  <div class="subs-nm">Orbital.Night.S02E03.WEB-DL.2160p</div>
-                  <div class="subs-meta"><b>RU</b><span>23.976 fps</span><span class="subs-dl">4 812 downloads</span><span class="subs-badge">exact match</span></div>
-                </div>
-                <span class="subs-get">Download</span>
-              </div>
-              <div class="subs-row" style="--i:1">
-                <div class="subs-main">
-                  <div class="subs-nm">Orbital.Night.S02E03.HDTV</div>
-                  <div class="subs-meta"><b>EN</b><span class="warn">25 fps</span><span class="subs-dl">388 downloads</span></div>
-                </div>
-                <span class="subs-get">Download</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <SubsMock />
       </div>
     </div>
   </section>

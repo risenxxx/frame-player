@@ -1,9 +1,10 @@
 # The landing page
 
-One static page, built with Astro and served by Cloudflare Workers static
-assets. No framework runtime, no external scripts: the whole page is 92 KB of
-HTML with the stylesheet inlined — 24.6 KB over the wire — plus 2.3 KB of
-JavaScript for the theme switch, the header and the scene animations.
+The landing page and the guides behind it, built with Astro and served by
+Cloudflare Workers static assets. No framework runtime, no external scripts: the
+home page is 92 KB of HTML with the stylesheet inlined — 24.6 KB over the wire —
+plus 2.3 KB of JavaScript for the theme switch, the header and the scene
+animations.
 
 ```bash
 npm install
@@ -30,17 +31,53 @@ at the next release. `astro.config.ts` writes them into `_redirects` from the
 same `release()` the buttons use, and the release workflow rebuilds the site,
 which is what moves them on.
 
+## Guide pages
+
+Everything beyond the home page — a page per feature, the comparisons, the
+guides — is one MDX file in `src/content/pages/`, and the file's place there is
+its address: `compare/iina.mdx` is `/compare/iina`. They are reference pages, not
+posts: `updated` is the day a page was last checked against the player, and it
+is what the sitemap reports.
+
+A new page is the file and nothing else. The frontmatter is checked by
+`src/content.config.ts` (title, description, heading, lede, eyebrow, the short
+name used in links, `related`, `faq`); `[...slug].astro` renders it in
+`layouts/Article.astro`, which adds the breadcrumbs, the questions, "Read next",
+the download block and the structured data; the footer and the sitemap list it
+by themselves. A `related` entry that names no page fails the build.
+
+What a page can put in its text, from `src/components/prose/`:
+
+| Component | What it is |
+|---|---|
+| `<Shot name alt wide?>` | A window screenshot. `node tools/import-shot.mjs <capture.png> <name>` turns a CleanShot capture with a transparent margin into `assets/img/shot-<name>.jpg`, cropped to the window with its corners filled; the figure draws the radius and the shadow |
+| `<Mock kind>` | One of the home page's own mocks — `torrent`, `cast`, `room`, `subs` — from `src/components/mocks/`, the same components the sections use |
+| `<Note>` | An aside with an accent rule |
+| `<PieceMap>` | The torrent piece diagram |
+
+Markdown tables are wrapped so they scroll sideways on a phone. Anything wider
+than the 720px text column takes `wide`, up to 1040px. After adding a page, run
+`npm run og` for its link card (`public/og/<id>.png`; without one the page uses
+the site's), and `npm run audit` against it with `AUDIT_URL`.
+
+Addresses have no trailing slash and no extension: the build writes
+`torrent-streaming.html` (`build.format: 'file'`), Workers serve it at
+`/torrent-streaming`, and the canonical link says the same.
+
 ## How it is put together
 
 | Path | What is there |
 |---|---|
-| `src/styles/` | The stylesheet, split by subject and imported in cascade order by the layout: tokens → base → chrome → player → mocks → sections → narrow → motion. Order is load-bearing; `narrow.css` overrides what comes before it |
-| `src/components/` | One file per section. Each mock is the application's own surface rebuilt in HTML — the control row, the cast panel and the start screen carry the measurements and the glyphs from `src/lib/components/` rather than a screenshot |
+| `src/styles/` | The stylesheet, split by subject and imported in cascade order by the layout: tokens → base → chrome → player → mocks → sections → prose → narrow → motion. Order is load-bearing; `narrow.css` overrides what comes before it |
+| `src/content/pages/` | The guide pages, one MDX file each — see above |
+| `src/pages/404.astro` | Every missing address: the path the reader asked for, drawn as a file the player failed to open, over a test card. `noindex`, no canonical |
+| `src/components/` | One file per section; `mocks/` holds the four interface mocks the sections and the guides share, `prose/` what a guide can use in its text. Each mock is the application's own surface rebuilt in HTML — the control row, the cast panel and the start screen carry the measurements and the glyphs from `src/lib/components/` rather than a screenshot |
 | `src/scripts/` | `theme.ts` (system/light/dark, two switches, one state), `nav.ts` (the header's backdrop, driven by an observer on a 1 px marker rather than a scroll handler), `motion.ts` (`--p` from 0 to 1 per scene, once, when the section is properly in view) |
 | `assets/img/` | One source per frame, committed and **never published**. **Placeholders** — see below |
 | `public/gen/` | What the build makes from them: three formats, a handful of widths, hashed names. Generated, ignored by git |
 | `scripts/images.mjs` | The generator, and the width ladders it uses |
-| `tools/og.mjs` | Renders the link card with the local browser. Run by hand when the design changes; the result is committed |
+| `tools/og.mjs` | Renders the link card, and one per guide page from its frontmatter, with the local browser. Run by hand when the design changes or a page is added; the result is committed |
+| `tools/import-shot.mjs` | Turns a window capture into a screenshot source for a guide |
 | `tools/audit.mjs` | `npm run audit` — axe-core against a running `npm run preview`, in both themes, in a real browser. The file says which two ways a headless check of this page lies |
 
 ## The frames

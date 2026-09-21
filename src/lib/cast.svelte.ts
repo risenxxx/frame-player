@@ -512,11 +512,14 @@ export function startCastDiscovery() {
   cast.discovering = true;
   emptyPolls = 0;
   cast.rebuilds = 0;
-  void invoke('cast_discover_start').catch((e) => {
+  const hints = loadHosts();
+  void invoke('cast_discover_start', { hints }).catch((e) => {
     console.warn('cast_discover_start failed:', e);
     cast.discovering = false;
   });
-  void invoke('dlna_discover_start').catch((e) => console.warn('dlna_discover_start failed:', e));
+  void invoke('dlna_discover_start', { hints }).catch((e) =>
+    console.warn('dlna_discover_start failed:', e),
+  );
   cast.dlnaSweeping = true;
   // Cleared by the first sweep that finds anything, or by this deadline — a
   // spinner that never stops is worse than one that gives up.
@@ -529,6 +532,7 @@ export function startCastDiscovery() {
     ]);
     cast.devices = castList;
     cast.dlnaDevices = dlnaList;
+    rememberHosts([...castList.map((d) => d.ip), ...dlnaList.map((d) => d.ip)]);
     if (dlnaList.length > 0) cast.dlnaSweeping = false;
     if (castList.length || dlnaList.length) {
       emptyPolls = 0;
@@ -553,15 +557,54 @@ async function rebuildDiscovery() {
     invoke('cast_discover_stop').catch(() => {}),
     invoke('dlna_discover_stop').catch(() => {}),
   ]);
+  const hints = loadHosts();
   await Promise.all([
-    invoke('cast_discover_start').catch(() => {}),
-    invoke('dlna_discover_start').catch(() => {}),
+    invoke('cast_discover_start', { hints }).catch(() => {}),
+    invoke('dlna_discover_start', { hints }).catch(() => {}),
   ]);
   cast.dlnaSweeping = true;
   setTimeout(() => (cast.dlnaSweeping = false), DLNA_SWEEP_MS);
 }
 
 let emptyPolls = 0;
+
+/**
+ * Addresses a television answered at, newest first — asked directly before
+ * the rest of the network on the next search.
+ *
+ * Discovery is multicast, and plenty of routers drop multicast between a wired
+ * or 5 GHz machine and a 2.4 GHz television while routing everything else
+ * between them, so Rust also sweeps the LAN with unicast queries (lan_sweep.rs).
+ * The sweep covers the subnet by itself; what these add is the television that
+ * lives somewhere a sweep does not reach — a subnet too wide to sweep whole, or
+ * another band the router puts on a subnet of its own — once it has been seen
+ * even a single time. An address, not an identity: a DHCP lease moves, and a
+ * stale one costs one unanswered datagram.
+ */
+const HOSTS_KEY = 'frameplayer.tv-hosts';
+const HOSTS_LIMIT = 8;
+
+function loadHosts(): string[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(HOSTS_KEY) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((h): h is string => typeof h === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberHosts(seen: string[]) {
+  if (seen.length === 0) return;
+  const known = loadHosts();
+  const next = [...new Set([...seen, ...known])].slice(0, HOSTS_LIMIT);
+  // The poll runs every 800 ms; only a change is worth a write.
+  if (next.join() === known.join()) return;
+  try {
+    localStorage.setItem(HOSTS_KEY, JSON.stringify(next));
+  } catch {
+    // A full or blocked storage costs only the shortcut.
+  }
+}
 
 function devicetimerRunning(): boolean {
   return deviceTimer !== null;
