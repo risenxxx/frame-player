@@ -18,6 +18,18 @@ every push to `main` that touches `site/` builds and deploys, a pull request
 gets its own preview address. It needs the repository secrets
 `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
+## Download links that outlive a release
+
+`/download/windows` and `/download/macos` (`/download/mac` too) redirect (302) to the
+current installer. They are what goes into catalog listings, articles and
+anything else that is not rebuilt with the site — and what the page's own
+buttons link to, so a link copied off them lasts too (except under
+`npm run dev`, which does not serve `_redirects`). The files carry the version in
+their names and old versions are pruned from the bucket, so a direct link dies
+at the next release. `astro.config.ts` writes them into `_redirects` from the
+same `release()` the buttons use, and the release workflow rebuilds the site,
+which is what moves them on.
+
 ## How it is put together
 
 | Path | What is there |

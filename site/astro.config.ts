@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import type { AstroIntegration } from 'astro'
 import { defineConfig } from 'astro/config'
+import { DOWNLOAD_PATHS, release } from './src/release'
 
 /*
   One page, static output, no framework runtime. `SITE_ORIGIN` lets a preview
@@ -47,10 +48,36 @@ function headers(): AstroIntegration {
   }
 }
 
+/**
+ * Addresses that stay put across releases, for everywhere a link outlives a
+ * build: a catalog listing, an article, a forum post. The files themselves
+ * carry the version in their names and old versions are pruned from the
+ * bucket, so a direct link dies with the next release. These redirect to
+ * whatever `release()` resolved — the same targets as the buttons, fallback
+ * to the GitHub release page included — and the release workflow rebuilds the
+ * site, which is what moves them on.
+ */
+function downloads(): AstroIntegration {
+  return {
+    name: 'site-downloads',
+    hooks: {
+      'astro:build:done': async ({ dir }) => {
+        const { windows, macos } = await release()
+        const lines = [
+          `${DOWNLOAD_PATHS.windows} ${windows} 302`,
+          `${DOWNLOAD_PATHS.macos} ${macos} 302`,
+          `/download/mac ${macos} 302`,
+        ]
+        await writeFile(new URL('_redirects', dir), `${lines.join('\n')}\n`)
+      },
+    },
+  }
+}
+
 export default defineConfig({
   output: 'static',
   site: site.origin,
-  integrations: [headers()],
+  integrations: [headers(), downloads()],
   /*
     The stylesheet is one page's worth and compresses to a few kilobytes; a
     separate request for it only delays the first paint.

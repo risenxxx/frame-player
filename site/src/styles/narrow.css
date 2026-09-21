@@ -36,6 +36,11 @@
 }
 
 @media (max-width: 560px) {
+  /* Nobody installs a desktop player from a phone. The line goes where the
+     download buttons stack — the same breakpoint, since that is the width
+     where the block has already turned into a column of full-width rows and a
+     third, narrower one under them reads as leftover rather than as an option. */
+  .brewbar { display: none; }
   .cta .btn {
     width: 100%;
     height: auto;
@@ -119,9 +124,6 @@
 }
 
 @media (max-width: 430px) {
-  /* Nobody installs a desktop player from a phone, and the line wraps in two
-     before it earns its place. */
-  .brewbar { display: none; }
   .win-bar { padding: 0 10px; }
   .win-bar .name { max-width: 44%; font-size: 11px; }
   .win-bar .wb-brand { font-size: 11px; }

@@ -49,6 +49,23 @@ async function versionFromRepo(): Promise<string> {
   return version
 }
 
+/**
+ * The addresses that stay put across releases. `astro.config.ts` writes them
+ * into `_redirects`, pointing at whatever `release()` resolved.
+ */
+export const DOWNLOAD_PATHS = { windows: '/download/windows', macos: '/download/macos' } as const
+
+/**
+ * What the buttons link to: the stable addresses rather than the files, so a
+ * link somebody copies off the page still works after the next release.
+ * `astro dev` does not serve `_redirects`, so there the buttons keep the
+ * resolved targets instead of pointing at a 404.
+ */
+export async function downloads(): Promise<Release> {
+  const resolved = await release()
+  return import.meta.env.DEV ? resolved : { ...resolved, ...DOWNLOAD_PATHS }
+}
+
 export async function release(): Promise<Release> {
   const origin = process.env.UPDATES_ORIGIN?.replace(/\/+$/, '')
   const fallback = async (): Promise<Release> => ({

@@ -1,6 +1,6 @@
 ---
 import onestLatin from '@fontsource-variable/onest/files/onest-latin-wght-normal.woff2?url'
-import { release } from '../release.ts'
+import { downloads } from '../release.ts'
 import '@fontsource-variable/onest'
 import '@fontsource-variable/jetbrains-mono'
 import '../styles/tokens.css'
@@ -26,7 +26,7 @@ const {
 
 const canonical = new URL(Astro.url.pathname, Astro.site)
 const ogImage = new URL('/og.png', Astro.site)
-const { version, windows } = await release()
+const { version, windows } = await downloads()
 
 /*
   One structured record for the one thing this page is about. `SoftwareApplication`
@@ -41,7 +41,7 @@ const jsonLd = {
   operatingSystem: 'Windows 10, Windows 11, macOS',
   softwareVersion: version,
   url: canonical.href,
-  downloadUrl: windows,
+  downloadUrl: new URL(windows, Astro.site).href,
   license: 'https://www.gnu.org/licenses/gpl-3.0.html',
   isAccessibleForFree: true,
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
