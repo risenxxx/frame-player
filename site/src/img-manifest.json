@@ -11,11 +11,11 @@
     ],
     "formats": {
       "avif": {
-        "400": "/gen/comet-sea-400.abca0b09.avif",
-        "620": "/gen/comet-sea-620.19f693c2.avif",
-        "840": "/gen/comet-sea-840.8f806f60.avif",
-        "1240": "/gen/comet-sea-1240.d503107c.avif",
-        "1680": "/gen/comet-sea-1680.8ff5fc39.avif"
+        "400": "/gen/comet-sea-400.ddb9feeb.avif",
+        "620": "/gen/comet-sea-620.94ba9d29.avif",
+        "840": "/gen/comet-sea-840.720f8d9d.avif",
+        "1240": "/gen/comet-sea-1240.ca0f1c71.avif",
+        "1680": "/gen/comet-sea-1680.10b49526.avif"
       },
       "webp": {
         "400": "/gen/comet-sea-400.d8fdd356.webp",
@@ -44,10 +44,10 @@
     ],
     "formats": {
       "avif": {
-        "240": "/gen/earth-aurora-240.158e94fc.avif",
-        "360": "/gen/earth-aurora-360.6f0ed4a2.avif",
-        "600": "/gen/earth-aurora-600.8d91ff24.avif",
-        "900": "/gen/earth-aurora-900.479eae65.avif"
+        "240": "/gen/earth-aurora-240.ba72795c.avif",
+        "360": "/gen/earth-aurora-360.ff6a9c45.avif",
+        "600": "/gen/earth-aurora-600.5559fe22.avif",
+        "900": "/gen/earth-aurora-900.f4017171.avif"
       },
       "webp": {
         "240": "/gen/earth-aurora-240.ef1e188f.webp",
@@ -71,29 +71,33 @@
       320,
       400,
       600,
-      900
+      900,
+      1120
     ],
     "formats": {
       "avif": {
-        "200": "/gen/highway-trails-200.3f167163.avif",
-        "320": "/gen/highway-trails-320.62441e0b.avif",
-        "400": "/gen/highway-trails-400.7e12d07c.avif",
-        "600": "/gen/highway-trails-600.cfeaefe7.avif",
-        "900": "/gen/highway-trails-900.d0711bb8.avif"
+        "200": "/gen/highway-trails-200.e63910ea.avif",
+        "320": "/gen/highway-trails-320.76c5afe7.avif",
+        "400": "/gen/highway-trails-400.3726cdfa.avif",
+        "600": "/gen/highway-trails-600.fb960498.avif",
+        "900": "/gen/highway-trails-900.5206f7c4.avif",
+        "1120": "/gen/highway-trails-1120.59eddc39.avif"
       },
       "webp": {
         "200": "/gen/highway-trails-200.5288c07b.webp",
         "320": "/gen/highway-trails-320.a8b4d8c9.webp",
         "400": "/gen/highway-trails-400.89e0d640.webp",
         "600": "/gen/highway-trails-600.9dee23bc.webp",
-        "900": "/gen/highway-trails-900.23380405.webp"
+        "900": "/gen/highway-trails-900.23380405.webp",
+        "1120": "/gen/highway-trails-1120.04a74ff0.webp"
       },
       "jpg": {
         "200": "/gen/highway-trails-200.a81bc7b8.jpg",
         "320": "/gen/highway-trails-320.7e57d530.jpg",
         "400": "/gen/highway-trails-400.c5a1d656.jpg",
         "600": "/gen/highway-trails-600.c963293b.jpg",
-        "900": "/gen/highway-trails-900.aa131d82.jpg"
+        "900": "/gen/highway-trails-900.aa131d82.jpg",
+        "1120": "/gen/highway-trails-1120.a35f873e.jpg"
       }
     }
   },
@@ -105,29 +109,33 @@
       360,
       460,
       600,
-      920
+      920,
+      1120
     ],
     "formats": {
       "avif": {
-        "200": "/gen/lake-galaxy-200.84c210b2.avif",
-        "360": "/gen/lake-galaxy-360.dc5bae55.avif",
-        "460": "/gen/lake-galaxy-460.aa625697.avif",
-        "600": "/gen/lake-galaxy-600.6490427d.avif",
-        "920": "/gen/lake-galaxy-920.95589491.avif"
+        "200": "/gen/lake-galaxy-200.53d4569d.avif",
+        "360": "/gen/lake-galaxy-360.d3151842.avif",
+        "460": "/gen/lake-galaxy-460.5cb6104a.avif",
+        "600": "/gen/lake-galaxy-600.6b33985e.avif",
+        "920": "/gen/lake-galaxy-920.a80ab132.avif",
+        "1120": "/gen/lake-galaxy-1120.23132ce6.avif"
       },
       "webp": {
         "200": "/gen/lake-galaxy-200.c4400dd0.webp",
         "360": "/gen/lake-galaxy-360.6dd074d3.webp",
         "460": "/gen/lake-galaxy-460.a4e6ec1a.webp",
         "600": "/gen/lake-galaxy-600.cde43ad8.webp",
-        "920": "/gen/lake-galaxy-920.346e9cb7.webp"
+        "920": "/gen/lake-galaxy-920.346e9cb7.webp",
+        "1120": "/gen/lake-galaxy-1120.979e9ab4.webp"
       },
       "jpg": {
         "200": "/gen/lake-galaxy-200.08caec2b.jpg",
         "360": "/gen/lake-galaxy-360.4787532e.jpg",
         "460": "/gen/lake-galaxy-460.e94e3cbd.jpg",
         "600": "/gen/lake-galaxy-600.c3eedf11.jpg",
-        "920": "/gen/lake-galaxy-920.99326861.jpg"
+        "920": "/gen/lake-galaxy-920.99326861.jpg",
+        "1120": "/gen/lake-galaxy-1120.d0119a3d.jpg"
       }
     }
   },
@@ -143,11 +151,11 @@
     ],
     "formats": {
       "avif": {
-        "200": "/gen/lake-tent-200.f465eed2.avif",
-        "360": "/gen/lake-tent-360.5b4946ea.avif",
-        "460": "/gen/lake-tent-460.3ed5fdff.avif",
-        "600": "/gen/lake-tent-600.7dada30c.avif",
-        "920": "/gen/lake-tent-920.e9cc3eff.avif"
+        "200": "/gen/lake-tent-200.a79e38fe.avif",
+        "360": "/gen/lake-tent-360.4ba456fb.avif",
+        "460": "/gen/lake-tent-460.0c2af0a7.avif",
+        "600": "/gen/lake-tent-600.3065cdde.avif",
+        "920": "/gen/lake-tent-920.490b2bb2.avif"
       },
       "webp": {
         "200": "/gen/lake-tent-200.7a73096c.webp",
@@ -173,29 +181,33 @@
       360,
       460,
       600,
-      920
+      920,
+      1120
     ],
     "formats": {
       "avif": {
-        "200": "/gen/lake-trails-200.2dec6e05.avif",
-        "360": "/gen/lake-trails-360.5484e673.avif",
-        "460": "/gen/lake-trails-460.2aabdd4c.avif",
-        "600": "/gen/lake-trails-600.261021d0.avif",
-        "920": "/gen/lake-trails-920.cf075a47.avif"
+        "200": "/gen/lake-trails-200.185f81d5.avif",
+        "360": "/gen/lake-trails-360.3bdbb474.avif",
+        "460": "/gen/lake-trails-460.c0fb7b15.avif",
+        "600": "/gen/lake-trails-600.b7263867.avif",
+        "920": "/gen/lake-trails-920.59309d5d.avif",
+        "1120": "/gen/lake-trails-1120.2f9b8f9a.avif"
       },
       "webp": {
         "200": "/gen/lake-trails-200.270b0f2d.webp",
         "360": "/gen/lake-trails-360.fe875770.webp",
         "460": "/gen/lake-trails-460.3e7f0c2c.webp",
         "600": "/gen/lake-trails-600.173b94ec.webp",
-        "920": "/gen/lake-trails-920.f8dc29bb.webp"
+        "920": "/gen/lake-trails-920.f8dc29bb.webp",
+        "1120": "/gen/lake-trails-1120.8c5da60b.webp"
       },
       "jpg": {
         "200": "/gen/lake-trails-200.4e2c8b06.jpg",
         "360": "/gen/lake-trails-360.ac028ad1.jpg",
         "460": "/gen/lake-trails-460.e84577f6.jpg",
         "600": "/gen/lake-trails-600.c8af2178.jpg",
-        "920": "/gen/lake-trails-920.b44935b2.jpg"
+        "920": "/gen/lake-trails-920.b44935b2.jpg",
+        "1120": "/gen/lake-trails-1120.c2ec3bfe.jpg"
       }
     }
   },
@@ -210,10 +222,10 @@
     ],
     "formats": {
       "avif": {
-        "320": "/gen/moon-eclipse-320.5f66ca06.avif",
-        "400": "/gen/moon-eclipse-400.aeaa5851.avif",
-        "600": "/gen/moon-eclipse-600.7edc13f0.avif",
-        "900": "/gen/moon-eclipse-900.237a5431.avif"
+        "320": "/gen/moon-eclipse-320.143b24d6.avif",
+        "400": "/gen/moon-eclipse-400.8f5d5971.avif",
+        "600": "/gen/moon-eclipse-600.7dacda55.avif",
+        "900": "/gen/moon-eclipse-900.d0cd8e8b.avif"
       },
       "webp": {
         "320": "/gen/moon-eclipse-320.7fb95b27.webp",
@@ -242,12 +254,12 @@
     ],
     "formats": {
       "avif": {
-        "400": "/gen/orion-moon-400.d67a402f.avif",
-        "700": "/gen/orion-moon-700.303655af.avif",
-        "1120": "/gen/orion-moon-1120.57f66a13.avif",
-        "1320": "/gen/orion-moon-1320.1203aee0.avif",
-        "1600": "/gen/orion-moon-1600.6b1e233a.avif",
-        "1920": "/gen/orion-moon-1920.383f8fbb.avif"
+        "400": "/gen/orion-moon-400.24be133c.avif",
+        "700": "/gen/orion-moon-700.712810ff.avif",
+        "1120": "/gen/orion-moon-1120.930996ed.avif",
+        "1320": "/gen/orion-moon-1320.750b9751.avif",
+        "1600": "/gen/orion-moon-1600.c9c5a3fa.avif",
+        "1920": "/gen/orion-moon-1920.d50c175b.avif"
       },
       "webp": {
         "400": "/gen/orion-moon-400.b4e493e7.webp",
@@ -277,9 +289,9 @@
     ],
     "formats": {
       "avif": {
-        "120": "/gen/poster-dust-lines-120.a8a9eec8.avif",
-        "200": "/gen/poster-dust-lines-200.d57599c9.avif",
-        "293": "/gen/poster-dust-lines-293.6200ab98.avif"
+        "120": "/gen/poster-dust-lines-120.ea6e1389.avif",
+        "200": "/gen/poster-dust-lines-200.4dd4962c.avif",
+        "293": "/gen/poster-dust-lines-293.b1afe9d3.avif"
       },
       "webp": {
         "120": "/gen/poster-dust-lines-120.79bd9d3d.webp",
@@ -303,9 +315,9 @@
     ],
     "formats": {
       "avif": {
-        "120": "/gen/poster-night-shift-120.9436e5d7.avif",
-        "200": "/gen/poster-night-shift-200.13aa48b5.avif",
-        "293": "/gen/poster-night-shift-293.aa45e786.avif"
+        "120": "/gen/poster-night-shift-120.5254c2c8.avif",
+        "200": "/gen/poster-night-shift-200.2606f741.avif",
+        "293": "/gen/poster-night-shift-293.a310db19.avif"
       },
       "webp": {
         "120": "/gen/poster-night-shift-120.c7922901.webp",
@@ -329,9 +341,9 @@
     ],
     "formats": {
       "avif": {
-        "120": "/gen/poster-the-crossing-120.0dad20ab.avif",
-        "200": "/gen/poster-the-crossing-200.e1e5c6df.avif",
-        "293": "/gen/poster-the-crossing-293.4499a5f2.avif"
+        "120": "/gen/poster-the-crossing-120.ca66b926.avif",
+        "200": "/gen/poster-the-crossing-200.9d8a7e0a.avif",
+        "293": "/gen/poster-the-crossing-293.b431780e.avif"
       },
       "webp": {
         "120": "/gen/poster-the-crossing-120.8b4e974e.webp",
@@ -355,9 +367,9 @@
     ],
     "formats": {
       "avif": {
-        "120": "/gen/poster-wet-season-120.4d4704fc.avif",
-        "200": "/gen/poster-wet-season-200.b2efa48d.avif",
-        "293": "/gen/poster-wet-season-293.4e2f3958.avif"
+        "120": "/gen/poster-wet-season-120.7fea0c7f.avif",
+        "200": "/gen/poster-wet-season-200.80e20b4f.avif",
+        "293": "/gen/poster-wet-season-293.7c7cee70.avif"
       },
       "webp": {
         "120": "/gen/poster-wet-season-120.056eba20.webp",
@@ -382,10 +394,10 @@
     ],
     "formats": {
       "avif": {
-        "400": "/gen/ridge-hiker-400.0b83a104.avif",
-        "620": "/gen/ridge-hiker-620.739f8742.avif",
-        "840": "/gen/ridge-hiker-840.7016e735.avif",
-        "1120": "/gen/ridge-hiker-1120.3509900f.avif"
+        "400": "/gen/ridge-hiker-400.a18eb57a.avif",
+        "620": "/gen/ridge-hiker-620.60f10abf.avif",
+        "840": "/gen/ridge-hiker-840.0f680abd.avif",
+        "1120": "/gen/ridge-hiker-1120.e35f42c5.avif"
       },
       "webp": {
         "400": "/gen/ridge-hiker-400.4a8c36bc.webp",
@@ -398,96 +410,6 @@
         "620": "/gen/ridge-hiker-620.f96f34bd.jpg",
         "840": "/gen/ridge-hiker-840.3aeb2cc2.jpg",
         "1120": "/gen/ridge-hiker-1120.497a19d0.jpg"
-      }
-    }
-  },
-  "shot-audio": {
-    "w": 1846,
-    "h": 1036,
-    "widths": [
-      480,
-      720,
-      1080,
-      1440
-    ],
-    "formats": {
-      "avif": {
-        "480": "/gen/shot-audio-480.1bef1977.avif",
-        "720": "/gen/shot-audio-720.378659c4.avif",
-        "1080": "/gen/shot-audio-1080.e6c60896.avif",
-        "1440": "/gen/shot-audio-1440.8baea39c.avif"
-      },
-      "webp": {
-        "480": "/gen/shot-audio-480.1a72eac2.webp",
-        "720": "/gen/shot-audio-720.56c74916.webp",
-        "1080": "/gen/shot-audio-1080.c009e46e.webp",
-        "1440": "/gen/shot-audio-1440.fe30a867.webp"
-      },
-      "jpg": {
-        "480": "/gen/shot-audio-480.25642ad6.jpg",
-        "720": "/gen/shot-audio-720.53ca93a2.jpg",
-        "1080": "/gen/shot-audio-1080.0b31d37f.jpg",
-        "1440": "/gen/shot-audio-1440.f60e02bf.jpg"
-      }
-    }
-  },
-  "shot-preview": {
-    "w": 1846,
-    "h": 1036,
-    "widths": [
-      480,
-      720,
-      1080,
-      1846
-    ],
-    "formats": {
-      "avif": {
-        "480": "/gen/shot-preview-480.3729d7cf.avif",
-        "720": "/gen/shot-preview-720.e8320f61.avif",
-        "1080": "/gen/shot-preview-1080.06cb2c0c.avif",
-        "1846": "/gen/shot-preview-1846.588d77dc.avif"
-      },
-      "webp": {
-        "480": "/gen/shot-preview-480.c130d0f3.webp",
-        "720": "/gen/shot-preview-720.f3025327.webp",
-        "1080": "/gen/shot-preview-1080.6f2a0e08.webp",
-        "1846": "/gen/shot-preview-1846.ad8a38b7.webp"
-      },
-      "jpg": {
-        "480": "/gen/shot-preview-480.4bf8fe55.jpg",
-        "720": "/gen/shot-preview-720.9d8782d2.jpg",
-        "1080": "/gen/shot-preview-1080.15aeb5a0.jpg",
-        "1846": "/gen/shot-preview-1846.29f744a4.jpg"
-      }
-    }
-  },
-  "shot-torrent": {
-    "w": 1846,
-    "h": 1036,
-    "widths": [
-      480,
-      720,
-      1080,
-      1846
-    ],
-    "formats": {
-      "avif": {
-        "480": "/gen/shot-torrent-480.fe554752.avif",
-        "720": "/gen/shot-torrent-720.a1840bac.avif",
-        "1080": "/gen/shot-torrent-1080.b4eb6d25.avif",
-        "1846": "/gen/shot-torrent-1846.a7edcb2c.avif"
-      },
-      "webp": {
-        "480": "/gen/shot-torrent-480.7c5369c6.webp",
-        "720": "/gen/shot-torrent-720.36c7b855.webp",
-        "1080": "/gen/shot-torrent-1080.62829aa8.webp",
-        "1846": "/gen/shot-torrent-1846.951cee18.webp"
-      },
-      "jpg": {
-        "480": "/gen/shot-torrent-480.ef345810.jpg",
-        "720": "/gen/shot-torrent-720.fdeae714.jpg",
-        "1080": "/gen/shot-torrent-1080.a0cf8f2b.jpg",
-        "1846": "/gen/shot-torrent-1846.8d6a6929.jpg"
       }
     }
   }

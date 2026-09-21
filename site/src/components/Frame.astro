@@ -3,7 +3,7 @@
   One picture, three formats, the widths its slot actually uses.
 
   `slot` is the whole of the responsive contract: every frame on this page is one
-  of eight shapes, and each `sizes` below was measured in a browser across the
+  of seven shapes, and each `sizes` below was measured in a browser across the
   page's breakpoints rather than derived from the markup. Passing the string at
   every call site is how the six quietly become nine that disagree.
 
@@ -28,10 +28,9 @@ const SIZES = {
   /* A catalogue poster — the one picture whose source is already short of its
      own 2×, so its ladder tops out at the source width. */
   poster: '(min-width: 901px) 100px, 200px',
-  /* A screenshot in a guide's text column, and one allowed out of it. The
-     column is 720px and a wide figure 1040px, both inside the page gutter. */
-  text: '(min-width: 784px) 720px, calc(100vw - 2 * clamp(16px, 4vw, 32px))',
-  wide: '(min-width: 1104px) 1040px, calc(100vw - 2 * clamp(16px, 4vw, 32px))',
+  /* The player window in a guide: a mock there is capped at 640px
+     (`.fig-mock`), inside the page gutter below that. */
+  guide: '(min-width: 704px) 640px, calc(100vw - 2 * clamp(16px, 4vw, 32px))',
 }
 
 interface Props {

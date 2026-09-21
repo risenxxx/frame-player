@@ -192,27 +192,6 @@
 
 .prose .table-note { margin-top: 12px; font-size: 13.5px; color: var(--fg3); }
 
-/* A wide figure's caption still reads at the text's width, not the picture's. */
-.fig.wide figcaption { max-width: var(--measure); margin-inline: auto; }
-
-/*
-  A screenshot is a window, cropped to its opaque pixels by tools/import-shot.mjs
-  with its corners filled. The radius is the window's own, 78px of a 1846×1036
-  capture, written as a share of each side so it scales with the picture and
-  covers exactly those filled corners at any width.
-*/
-.shot-img {
-  display: block;
-  position: relative;
-  aspect-ratio: 1846 / 1036;
-  border-radius: 4.2254% / 7.529%;
-  overflow: hidden;
-  background: #08080a;
-  box-shadow: var(--sh-win);
-}
-
-.shot-img img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-
 /* A mock from the landing page, in the width it was drawn for. */
 .fig-mock .feat-mock { max-width: 640px; margin-inline: auto; }
 

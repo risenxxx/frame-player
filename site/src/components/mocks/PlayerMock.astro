@@ -1,0 +1,162 @@
+---
+/*
+  The player window with a film playing, rebuilt from the application's own
+  measurements — the hero draws it, and so does every guide that needs to show
+  the player itself, so the two can never disagree about what it looks like.
+
+  `kind` picks what is on the picture, and each kind names its frames in a
+  literal `<Frame name slot>`: scripts/images.mjs finds what a picture is used
+  for by reading those tags, so a name or a slot passed in as a variable would
+  be invisible to it.
+
+    hero     everything at once: the torrent readout, the skip button and a
+             hover preview with its chapter
+    torrent  a torrent playing while it downloads, readout in the corner
+    preview  the hover preview above the seekbar, and the chapter it is in
+    audio    the audio track menu open over the control bar
+*/
+import Frame from '../Frame.astro'
+
+interface Props {
+  kind: 'hero' | 'torrent' | 'preview' | 'audio'
+}
+
+const { kind } = Astro.props
+
+const TITLE = {
+  hero: 'Orbital.Night.S02E04.2160p.HDR.DV.mkv',
+  torrent: 'Night.Highway.2023.1080p.WEB-DL.mkv',
+  preview: 'The.Long.Night.2024.2160p.mkv',
+  audio: 'The.Long.Night.2024.2160p.mkv',
+}
+
+const torrent = kind === 'hero' || kind === 'torrent'
+const hover = kind === 'hero' || kind === 'preview'
+
+/* Where the playhead is, how much is buffered and where the cursor rests, as
+   shares of the track — each agreeing with the times printed above it. */
+const TRACK = {
+  hero: '--pos:7.4%;--buf:46%;--hover:24%',
+  torrent: '--pos:0.2%;--buf:9%',
+  preview: '--pos:29.4%;--buf:100%;--hover:52%',
+  audio: '--pos:59.6%;--buf:100%',
+}
+---
+
+<div
+  class:list={['player', 'full', kind]}
+  data-scene
+  data-dur={kind === 'audio' ? 2000 : 1600}
+  data-ease="linear"
+  style={TRACK[kind]}
+  aria-hidden="true"
+>
+  {kind === 'hero' && <Frame name="orion-moon" slot="hero" class="scene" alt="A spacecraft in sunlight with the Moon beyond it" loading="eager" fetchpriority="high" />}
+  {kind === 'torrent' && <Frame name="highway-trails" slot="guide" class="scene" alt="Star trails over a desert highway" />}
+  {kind === 'preview' && <Frame name="lake-galaxy" slot="guide" class="scene" alt="The Milky Way reflected in a mountain lake" />}
+  {kind === 'audio' && <Frame name="lake-trails" slot="guide" class="scene" alt="Star trails turning above a mountain lake" />}
+  <span class="p-scrim"></span>
+  <span class="p-bar">
+    <span class="lights"><i></i><i></i><i></i></span>
+    <span class="p-title">{TITLE[kind]}</span>
+    <span class="p-brand"><span>Frame Player</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>
+    </span>
+  </span>
+
+  {torrent && (
+    <div class="torchip">
+      <span class="torchip-line">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-down"/></svg>
+        <span class="mono">4.2 MB/s<span class="sep"></span>28 peers</span>
+      </span>
+      <span class="torchip-bar"><i></i></span>
+    </div>
+  )}
+
+  {kind === 'hero' && (
+    <span class="skip">Skip intro
+      <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-skip"/></svg>
+    </span>
+  )}
+
+  <div class="osc">
+    <div class="times mono">
+      {kind === 'audio' && (
+        <div class="trackpop">
+          <div class="trackpop-title">Audio track</div>
+          <div class="trackrow sel">English<span class="sep"></span>eng</div>
+          <div class="trackrow">English (5.1)<span class="sep"></span>eng</div>
+          <div class="trackrow">Russian (dub)<span class="sep"></span>rus</div>
+          <div class="trackrow">Add file…</div>
+          <div class="trackpop-rule"></div>
+          <div class="trackpop-title">Delay</div>
+          <div class="delayrow">
+            <span class="delaybtn">−</span>
+            <span class="delayval mono">0.00 s</span>
+            <span class="delaybtn">+</span>
+            <span class="delaysep"></span>
+            <span class="delayreset">Reset</span>
+          </div>
+        </div>
+      )}
+      {kind === 'hero' && <><span>4:12</span><span>56:55</span></>}
+      {kind === 'torrent' && <><span>0:09</span><span>1:48:36</span></>}
+      {kind === 'preview' && <><span>31:40</span><span>1:47:52</span></>}
+      {kind === 'audio' && <><span>1:04:18</span><span>1:47:52</span></>}
+    </div>
+    <div class="seekwrap">
+      {kind === 'hero' && (
+        <div class="hovertip">
+          <span class="thumb"><Frame name="earth-aurora" slot="thumb" alt="Earth at night under the aurora, seen from orbit" loading="eager" /></span>
+          <span class="tip-time mono">13:39</span>
+          <span class="tip-chapter">Chapter 2<span class="sep"></span>The Terminator Line</span>
+        </div>
+      )}
+      {kind === 'preview' && (
+        <div class="hovertip">
+          <span class="thumb"><Frame name="lake-tent" slot="thumb" alt="A lit tent on the shore of a mountain lake" /></span>
+          <span class="tip-time mono">56:05</span>
+          <span class="tip-chapter">Camp at the Shore</span>
+        </div>
+      )}
+      <div class="seektrack">
+        <span class="buffered"></span>
+        <span class="fill"></span>
+        {kind !== 'torrent' && (
+          <>
+            <span class="chap" style="--at:12%"></span>
+            <span class="chap" style="--at:28.6%"></span>
+            <span class="chap" style="--at:61%"></span>
+          </>
+        )}
+        <span class="knob"></span>
+      </div>
+      {hover && <svg class="cursor" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><use href="#i-hand"/></svg>}
+    </div>
+    <div class="controls">
+      <div class="cluster left">
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-volume"/></svg></span>
+        <span class="volume"><i></i><b></b></span>
+        {kind === 'hero' && <span class="speed mono">1.25×</span>}
+      </div>
+      <div class="cluster center">
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-prev"/></svg></span>
+        <span class="b play"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-play"/></svg></span>
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-next"/></svg></span>
+      </div>
+      <div class="cluster right">
+        <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-loop"/></svg></span>
+        {kind !== 'torrent' && (
+          <>
+            <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-queue"/></svg></span>
+            <span class:list={['b', kind === 'audio' ? 'on' : 'opt']}><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-audio"/></svg></span>
+          </>
+        )}
+        <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-subs"/></svg></span>
+        <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-cast"/></svg></span>
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-full"/></svg></span>
+      </div>
+    </div>
+  </div>
+</div>

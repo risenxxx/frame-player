@@ -73,14 +73,14 @@
   .tip-chapter, .tip-time { display: none; }
   /* Taller window, a bigger preview and more air under it: at 16:9 the frame
      was 202px tall and everything in it had to give way at once. */
-  .hero .player { aspect-ratio: 3 / 2; }
+  .player.full { aspect-ratio: 3 / 2; }
   .hovertip { --tw: 132px; bottom: 26px; }
 
   /* A 16:9 window this narrow is under 190px tall: the dialog keeps its title,
      the search and both rows, and gives up the sentence under the search and
      the download counts. */
   .subs-hint, .subs-dl { display: none; }
-  .subs-dlg { top: 3cqw; width: 92cqw; }
+  .subs-dlg { width: 92cqw; }
   .subline { font-size: 12px; }
 
   /* The room's three readouts stack rather than compress into each other. */

@@ -1,5 +1,5 @@
 ---
-import Frame from './Frame.astro'
+import PlayerMock from './mocks/PlayerMock.astro'
 import { downloads } from '../release.ts'
 
 const { version, windows, macos } = await downloads()
@@ -37,68 +37,6 @@ const { version, windows, macos } = await downloads()
         Frame Player playing a 4K file from a torrent: a hover preview of a later scene above the
         seekbar, chapter marks along it, and a skip-intro button over the video.
       </p>
-      <div class="player" data-scene data-dur="1600" data-ease="linear" style="--hover:24%" aria-hidden="true">
-        <Frame name="orion-moon" slot="hero" class="scene" alt="A spacecraft in sunlight with the Moon beyond it" loading="eager" fetchpriority="high" />
-        <span class="p-scrim"></span>
-        <span class="p-bar">
-          <span class="lights"><i></i><i></i><i></i></span>
-          <span class="p-title">Orbital.Night.S02E04.2160p.HDR.DV.mkv</span>
-          <span class="p-brand"><span>Frame Player</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>
-          </span>
-        </span>
-
-        <div class="torchip">
-          <span class="torchip-line">
-            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-down"/></svg>
-            <span class="mono">4.2 MB/s<span class="sep"></span>28 peers</span>
-          </span>
-          <span class="torchip-bar"><i></i></span>
-        </div>
-
-        <span class="skip">Skip intro
-          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-skip"/></svg>
-        </span>
-
-        <div class="osc">
-          <div class="times mono"><span>4:12</span><span>56:55</span></div>
-          <div class="seekwrap">
-            <div class="hovertip">
-              <span class="thumb"><Frame name="earth-aurora" slot="thumb" alt="Earth at night under the aurora, seen from orbit" loading="eager" /></span>
-              <span class="tip-time mono">13:39</span>
-              <span class="tip-chapter">Chapter 2<span class="sep"></span>The Terminator Line</span>
-            </div>
-            <div class="seektrack">
-              <span class="buffered"></span>
-              <span class="fill"></span>
-              <span class="chap" style="--at:12%"></span>
-              <span class="chap" style="--at:28.6%"></span>
-              <span class="chap" style="--at:61%"></span>
-              <span class="knob"></span>
-            </div>
-            <svg class="cursor" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><use href="#i-hand"/></svg>
-          </div>
-          <div class="controls">
-            <div class="cluster left">
-              <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-volume"/></svg></span>
-              <span class="volume"><i></i><b></b></span>
-              <span class="speed mono">1.25×</span>
-            </div>
-            <div class="cluster center">
-              <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-prev"/></svg></span>
-              <span class="b play"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-play"/></svg></span>
-              <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-next"/></svg></span>
-            </div>
-            <div class="cluster right">
-              <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-loop"/></svg></span>
-              <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-queue"/></svg></span>
-              <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-audio"/></svg></span>
-              <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-subs"/></svg></span>
-              <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-cast"/></svg></span>
-              <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-full"/></svg></span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <PlayerMock kind="hero" />
     </div>
   </section>

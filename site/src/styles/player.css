@@ -7,7 +7,8 @@
 
   One file, cut from the application's static/fonts/rubik-latin.woff2 down to
   what these windows can print: ASCII, the no-break space, × for the speed, the
-  em dash in the subtitle panel's verdict and … for a clipped title. ~20 KB
+  em dash in the subtitle panel's verdict, … for a clipped title and the minus
+  sign on the delay stepper. ~20 KB
   against ~82 KB for the four subsets the app ships.
   The weight axis is kept whole, as are kerning and tabular figures (every
   readout here is tabular, as in the app), and so are the copyright and licence
@@ -16,7 +17,7 @@
   glyph, so a new string in a mock has to be checked against the list:
 
     pyftsubset static/fonts/rubik-latin.woff2 \
-      --unicodes="U+0020-007E,U+00A0,U+00D7,U+2014,U+2026" \
+      --unicodes="U+0020-007E,U+00A0,U+00D7,U+2014,U+2026,U+2212" \
       --layout-features='kern,tnum,liga' --name-IDs='0,1,2,3,4,5,6,13,14' \
       --flavor=woff2 --output-file=site/src/assets/fonts/rubik-player.woff2
 */
@@ -26,7 +27,7 @@
   font-weight: 300 900;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+0020-007E, U+00A0, U+00D7, U+2014, U+2026;
+  unicode-range: U+0020-007E, U+00A0, U+00D7, U+2014, U+2026, U+2212;
 }
 
 /* ── the player window ────────────────────────────────────────────────────── */
@@ -236,8 +237,8 @@
 .seekwrap { position: relative; margin: 6px 8px 0; padding: 6px 0; }
 .seektrack { position: relative; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
 .seektrack .buffered, .seektrack .fill { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }
-.seektrack .buffered { background: rgba(255, 255, 255, 0.3); width: 46%; }
-.seektrack .fill { background: #fff; width: 7.4%; }
+.seektrack .buffered { background: rgba(255, 255, 255, 0.3); width: var(--buf, 46%); }
+.seektrack .fill { background: #fff; width: var(--pos, 7.4%); }
 
 .chap {
   position: absolute;
@@ -253,7 +254,7 @@
 .knob {
   position: absolute;
   top: 50%;
-  left: 7.4%;
+  left: var(--pos, 7.4%);
   width: 12px;
   height: 12px;
   margin: -6px 0 0 -6px;
@@ -336,6 +337,76 @@
 .volume i { position: absolute; inset: 0 auto 0 0; width: 62%; border-radius: 2px; background: #fff; }
 .volume b { position: absolute; left: 62%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #fff; }
 .speed { color: #818cf8; font-size: 12px; font-weight: 600; padding: 0 6px; }
+/* A control whose panel is open, in the accent the application lights it with. */
+.b.on { color: #818cf8; }
+
+/*
+  The audio track menu, as TrackMenu.svelte and app.css draw it: the same
+  panel, rows and delay stepper, at the same sizes. It hangs from the time row
+  because that is what the application anchors it to — `.menu` sits at
+  `bottom: calc(100% + 12px)` of the bar, whose top edge is the top of the
+  timestamps, and `right: 24px` of the window, which from inside `.times` is
+  16px. It opens once the interface is up, over the last third of the scene.
+*/
+.player.audio {
+  --menu-t: clamp(0, (var(--p, 1) - 0.58) / 0.26, 1);
+  --menu: calc(1 - (1 - var(--menu-t)) * (1 - var(--menu-t)) * (1 - var(--menu-t)));
+}
+
+.times { position: relative; }
+
+/*
+  The menu is a fixed 260-odd pixels, the window is not: at 16:9 and a guide's
+  640px it ran up under the title bar. A taller window rather than a smaller
+  menu — 3:2, and never shorter than the menu, the bar under it and the title
+  bar over it need (measured: ~415px with the gaps).
+
+  The 3:2 is a percentage padding rather than `aspect-ratio`, because the two
+  together do not mix with a `min-height`: a ratio carries the minimum height
+  across into the element's min-content width, and the guide's column, which
+  sizes itself from its content, came out 636px wide on a 320px phone.
+*/
+.player.full.audio { aspect-ratio: auto; min-height: 424px; }
+.player.full.audio::before { content: ""; display: block; padding-top: 66.667%; }
+
+.trackpop {
+  position: absolute;
+  right: 16px;
+  bottom: calc(100% + 12px);
+  width: 256px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(16, 16, 22, 0.94);
+  line-height: normal;
+  text-align: left;
+  /* Not the time row's tabular figures, which it would otherwise inherit and
+     which spread "(5.1)" apart; the readout in the stepper asks for its own. */
+  font-variant-numeric: normal;
+  opacity: var(--menu);
+  transform: translateY(calc((1 - var(--menu)) * 6px));
+}
+
+.trackpop-title { padding: 6px 10px; color: #9a9aa5; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+.trackrow { padding: 8px 10px; border-radius: 6px; color: #d6d6de; font-size: 13px; }
+.trackrow.sel { color: #818cf8; font-weight: 600; }
+.trackpop-rule { height: 1px; margin: 5px 8px; background: rgba(255, 255, 255, 0.09); }
+
+.delayrow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 2px 8px 6px;
+  padding: 5px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.delaybtn { flex: 0 0 34px; padding: 6px 0; text-align: center; color: #d6d6de; font-size: 15px; line-height: 1; }
+.delayval { flex: 1; text-align: center; color: #e8e8ec; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.delaysep { flex: 0 0 1px; align-self: stretch; margin: 3px 5px; background: rgba(255, 255, 255, 0.14); }
+/* Disabled, as it is while the delay is zero. */
+.delayreset { padding: 0 12px; color: #6a6a74; font-size: 12px; }
 
 /* A narrow window is a real window size for this player, so the chrome shrinks
    rather than the whole picture being scaled into a thumbnail. */

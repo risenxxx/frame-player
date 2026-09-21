@@ -13,10 +13,9 @@
 
   The width ladders follow how large each picture is drawn — see `RUNGS`.
 
-  The derivatives and the manifest are committed. A clean run is a lot of AVIF
-  at the effort below — the Site workflow's ten-minute job never got through one
-  on a CI runner — so pictures are encoded once, on the machine where they
-  changed, and never in CI.
+  The derivatives and the manifest are committed, so pictures are encoded once,
+  on the machine where they changed, and never in CI — a clean run is a lot of
+  AVIF (see `AVIF` below), and an image job in CI is one more thing to time out.
   `npm run images` (and `dev`, which runs it first) encodes whatever is missing
   and prunes what is no longer named. `--check` is what `typecheck` and `build`
   run instead: it encodes nothing and writes nothing, and fails if a file is
@@ -39,8 +38,7 @@ const MANIFEST = join(root, 'src/img-manifest.json')
 /*
   How large each picture is drawn decides how large it is encoded, and that is
   read off the page rather than written down twice. Every `<Frame name slot>`
-  under `src/` (and every `<Shot name [wide]>`, which is a Frame with a slot
-  chosen for it) says where a picture is used; `SIZES` in Frame.astro says how
+  under `src/` says where a picture is used; `SIZES` in Frame.astro says how
   wide that slot is at every viewport. The widest CSS width a picture is ever
   given, times two, is the top of its ladder — rounded up to a multiple of 20 and
   capped at the source, since nothing is upscaled. A 3× screen is the one reason
@@ -61,15 +59,14 @@ const RUNGS = {
   'comet-sea': [400, 620, 840, 1240],
   'ridge-hiker': [400, 620, 840],
   'earth-aurora': [240, 360, 600],
-  'lake-galaxy': [200, 360, 460, 600],
-  'lake-tent': [200, 360, 460, 600],
-  'lake-trails': [200, 360, 460, 600],
-  'highway-trails': [200, 320, 400, 600],
+  'lake-galaxy': [200, 360, 460, 600, 920],
+  'lake-tent': [200, 360, 460, 600, 920],
+  'lake-trails': [200, 360, 460, 600, 920],
+  'highway-trails': [200, 320, 400, 600, 900],
   /* No 200: the frame is nearly black, its 200px WebP is 398 bytes, and an AVIF
      container alone costs about that — no quality gets under it. */
   'moon-eclipse': [320, 400, 600],
   poster: [120, 200],
-  shot: [480, 720, 1080],
 }
 const PHONE = 480
 const STEP = 20
@@ -160,10 +157,6 @@ async function usage() {
       const slot = tag.match(/\bslot="([^"]+)"/)?.[1]
       if (name && slot) add(name, slot)
     }
-    for (const [tag] of text.matchAll(/<Shot\b[^>]*>/g)) {
-      const name = tag.match(/\bname="([^"]+)"/)?.[1]
-      if (name) add(`shot-${name}`, /\swide(?=[\s>/])/.test(tag) ? 'wide' : 'text')
-    }
   }
   return { used, SIZES }
 }
@@ -171,7 +164,7 @@ async function usage() {
 function ladderFor(name, srcWidth, slots, SIZES) {
   const rungs = rungsFor(name)
   if (!rungs) throw new Error(`no rungs for ${name} — add them to RUNGS`)
-  if (!slots) throw new Error(`${name} is in assets/img but no <Frame> or <Shot> uses it`)
+  if (!slots) throw new Error(`${name} is in assets/img but no <Frame> uses it`)
   let need = 0
   for (const slot of slots) {
     const { widest, phone3x } = slotDemand(SIZES[slot])
@@ -189,8 +182,13 @@ function ladderFor(name, srcWidth, slots, SIZES) {
    is checked against its WebP and re-encoded a step lower until it is smaller;
    `AVIF_START` saves those the walk down. Every attempt starts from the source.
    Chroma is 4:2:0 like the WebP beside it: sharp's AVIF default is 4:4:4, which
-   spends ~5% on colour detail the other two formats have already thrown away. */
-const AVIF = { quality: 52, effort: 9, floor: 40, step: 3 }
+   spends ~5% on colour detail the other two formats have already thrown away.
+
+   Effort 6, not the maximum. Measured on the 1920px hero frame, one core: effort
+   5 takes 3.4 s, 6 takes 5.4 s and 9 takes 19 s, and what 9 buys over 6 is 0.8%
+   of the file. A clean run at 9 was 274 s in a four-core Linux container and
+   never finished inside the Site workflow's ten minutes. */
+const AVIF = { quality: 52, effort: 6, floor: 40, step: 3 }
 const AVIF_START = { 'lake-galaxy': 45 }
 const ENC = {
   avif: (p, quality) => p.avif({ quality, effort: AVIF.effort, chromaSubsampling: '4:2:0' }),

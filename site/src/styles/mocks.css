@@ -685,15 +685,18 @@
 
 .subs-dim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.42); opacity: var(--shown); }
 
-/* Anchored from the top rather than centred, so that however short the window
-   gets, the dialog runs off its bottom edge last. */
+/* Centred on the window, as Dialog.svelte centres every dialog. It used to be
+   anchored near the top so a short window would cut its bottom edge first, and
+   with the title bar drawn over the picture that put it flush under the bar.
+   Every width it is drawn at was measured to fit it whole (narrow.css trims the
+   content and makes the window taller where it would not). */
 .subs-dlg {
   position: absolute;
   left: 50%;
-  top: 6cqw;
+  top: 50%;
   width: min(80cqw, 440px);
-  transform: translateX(-50%) scale(calc(0.97 + 0.03 * var(--open) - 0.02 * var(--close)));
-  transform-origin: 50% 0;
+  transform: translate(-50%, -50%) scale(calc(0.97 + 0.03 * var(--open) - 0.02 * var(--close)));
+  transform-origin: 50% 50%;
   opacity: var(--shown);
   padding: 11px 12px 8px;
   border-radius: 12px;
@@ -905,7 +908,25 @@
   white-space: nowrap;
 }
 
-@media (max-width: 860px) { .rail { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/*
+  Fewer cards rather than a second row. Folded two by two, the rail took as much
+  height as the rest of the screen together and its cards dwarfed the buttons
+  above them. Four from 860px, three below it, two below 560 — the card in
+  progress goes first, then the link. `--i` is renumbered so the first card
+  shown is still the first to arrive.
+*/
+@media (max-width: 859px) {
+  .rail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rail .card:nth-child(1) { display: none; }
+  .rail .card:nth-child(2) { --i: 0 !important; }
+  .rail .card:nth-child(3) { --i: 1 !important; }
+  .rail .card:nth-child(4) { --i: 2 !important; }
+}
+
+@media (max-width: 559px) {
+  .rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rail .card:nth-child(4) { display: none; }
+}
 
 /*
   Without JavaScript nothing ever gets `.in`, and the page is served at its

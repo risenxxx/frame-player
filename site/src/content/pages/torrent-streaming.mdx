@@ -24,7 +24,6 @@ faq:
     a: Streaming a torrent is downloading it, so the same rules apply as to any other download — whether a particular one is legal depends on what it is and where you are. Plenty of video is published as torrents on purpose, from public-domain archives to Creative Commons films such as Blender's Sintel and Tears of Steel.
 ---
 
-import Shot from '../../components/prose/Shot.astro'
 import Mock from '../../components/prose/Mock.astro'
 import PieceMap from '../../components/prose/PieceMap.astro'
 import Note from '../../components/prose/Note.astro'
@@ -47,11 +46,10 @@ to watch them, and it plays them as they land.
    only the file that is playing is downloaded.
 4. Playback starts as soon as enough of the beginning has arrived.
 
-<Shot name="torrent" alt="Frame Player playing Tears of Steel from a torrent, with a readout of the download rate and peer count in the top right corner" wide>
+<Mock kind="playing">
   A torrent playing while it downloads. The readout in the corner is the download
   rate, the number of peers and how much of this file is already on disk.
-  Film: Tears of Steel, (CC) Blender Foundation, <a href="https://mango.blender.org">mango.blender.org</a>
-</Shot>
+</Mock>
 
 ## What happens underneath
 
