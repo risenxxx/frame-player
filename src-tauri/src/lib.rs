@@ -870,6 +870,37 @@ fn webview_version() -> Option<String> {
     tauri::webview_version().ok()
 }
 
+/// Whether the primary mouse button is held right now, anywhere on screen.
+///
+/// The one thing that says a native window drag is over. `startDragging` hands
+/// the gesture to the system's own loop, which swallows the pointerup and moves
+/// the window without telling the webview when it lets go — so the mini player
+/// used to snap after the window had sat still for a moment, and a pause in the
+/// middle of a drag pulled it to an edge under a hand that was still moving it.
+/// Asked while move events are arriving, and until the answer is no.
+#[tauri::command]
+fn primary_button_down() -> bool {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
+        // Virtual key codes are physical buttons; "primary" is the right one
+        // when the buttons are swapped for the left hand.
+        let key = if GetSystemMetrics(SM_SWAPBUTTON) != 0 { VK_RBUTTON } else { VK_LBUTTON };
+        (GetAsyncKeyState(key as i32) as u16 & 0x8000) != 0
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // Bit 0 is the primary button, already mapped for a left-handed setup;
+        // a trackpad's tap-and-drag and three-finger drag report it too.
+        objc2_app_kit::NSEvent::pressedMouseButtons() & 1 != 0
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        false
+    }
+}
+
 /// The system double-click threshold. The webview detects dblclick by the same
 /// value, so any single-click delay must match it exactly: set it lower and the
 /// single-click action fires before the system recognizes the double click, so
@@ -1030,6 +1061,7 @@ pub fn run() {
             take_pending_files,
             open_file_ready,
             double_click_time,
+            primary_button_down,
             webview_version,
             hdr_status,
             window_buttons,

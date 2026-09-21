@@ -76,3 +76,34 @@ export function shiftAxis(want: number, size: number, limit: number, pad = PAD):
   if (max < pad) return pad;
   return Math.min(Math.max(want, pad), max);
 }
+
+/**
+ * How wide the seekbar's hover preview may be — the third rule, resize, for the
+ * one floating box whose shape is fixed by the video it shows.
+ *
+ * The preview hangs above the seekbar, so the space for it is what lies between
+ * the bar and the top of the window, less the lines under the frame (the time,
+ * the chapter) — and across, the bar itself, which is what the popup is clamped
+ * to. At full size neither binds; in the mini player, which can be dragged down
+ * to 240×135, both do, and a fixed 184px frame was cut off by the window's top
+ * edge. The frame keeps its aspect and shrinks to whichever of the two runs out
+ * first, and never grows past `max`.
+ */
+export function previewWidth(opts: {
+  /// The largest the frame is ever drawn, the full-window size.
+  max: number;
+  /// The seekbar's width: the popup is clamped inside it.
+  across: number;
+  /// Room from the popup's bottom edge up to the window's top.
+  above: number;
+  /// What the popup stacks under the frame: gaps and text lines.
+  below: number;
+  /// Width over height of the video.
+  aspect: number;
+  pad?: number;
+}): number {
+  const { max, across, above, below, aspect } = opts;
+  const pad = opts.pad ?? PAD;
+  const byHeight = Math.max(0, above - pad - below) * aspect;
+  return Math.max(0, Math.floor(Math.min(max, across, byHeight)));
+}

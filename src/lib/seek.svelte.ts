@@ -33,6 +33,7 @@
 import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 
 import { cast, castSeek } from './cast.svelte';
+import { previewWidth } from './floating';
 import { formatTime } from './format';
 import { t } from './i18n.svelte';
 import { osdSeq, showOsd } from './osd.svelte';
@@ -67,6 +68,20 @@ export function initSeek(config: SeekHooks) {
   hooks = config;
 }
 
+/// The hover preview at full size, outline included.
+const PREVIEW_MAX_W = 184;
+/// How far above the seekbar's bottom edge the popup ends (`.hovertip`'s
+/// `bottom` in SeekBar.svelte).
+const PREVIEW_LIFT = 18;
+/// What the popup stacks under the frame: a 6px gap and the timestamp line —
+/// and, when the file has chapters, another gap and the chapter line (6px of
+/// gap less its -4px margin, and the line).
+const PREVIEW_TEXT = 22;
+const PREVIEW_CHAPTER = 17;
+/// Below this the frame is left out and the popup is the time alone: a picture
+/// a few dozen pixels wide reads as a broken preview, not a small one.
+const PREVIEW_MIN_W = 48;
+
 class Seek {
   /// Where the knob sits. Driven by the gesture while one is running, and by
   /// `time-pos` the rest of the time — never by both, which is what `dragging`,
@@ -75,6 +90,10 @@ class Seek {
   dragging = $state(false);
   hoverTime = $state<number | null>(null);
   hoverX = $state(0);
+  /// The hover preview's width, outline included: 184px wherever the window has
+  /// room, less in a mini player too small to hold that, and 0 when there is no
+  /// room for a frame at all. See `onSeekHover`.
+  thumbW = $state(PREVIEW_MAX_W);
   wrapEl = $state<HTMLElement | null>(null);
 
   /// Holds the knob at the released position until the final seek lands.
@@ -354,16 +373,33 @@ export function onSeekCancel() {
   if (seek.wrapEl && !seek.wrapEl.matches(':hover')) seek.hoverTime = null;
 }
 
+/// The last real aspect of the video. `dwidth`/`dheight` go unavailable
+/// whenever the VO reconfigures (a torrent stalling does it), and the preview
+/// must not change shape for those frames — the same rule as `lastAspect` on
+/// the page.
+let previewAspect = 16 / 9;
+
 export function onSeekHover(e: MouseEvent) {
   if (player.duration <= 0) return;
   const wrap = e.currentTarget as HTMLElement;
   const rect = wrap.getBoundingClientRect();
   const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
   seek.hoverTime = frac * player.duration;
+  // The frame shrinks when the window cannot hold it — in practice, a mini
+  // player dragged small, where the full-size one ran off the top edge.
+  if (player.videoW > 0 && player.videoH > 0) previewAspect = player.videoW / player.videoH;
+  const width = previewWidth({
+    max: PREVIEW_MAX_W,
+    across: rect.width,
+    above: rect.bottom - PREVIEW_LIFT,
+    below: PREVIEW_TEXT + (player.chapters.length > 0 ? PREVIEW_CHAPTER : 0),
+    aspect: previewAspect,
+  });
+  seek.thumbW = width >= PREVIEW_MIN_W ? width : 0;
   // Clamped by half the popup's width, which depends on whether it carries a
-  // thumbnail: keeping the 92px margin for a bare timestamp would stop it
+  // thumbnail: keeping the frame's margin for a bare timestamp would stop it
   // following the cursor well before either end of the bar.
-  const half = thumbs.available ? 92 : 30;
+  const half = thumbs.available && seek.thumbW > 0 ? Math.max(seek.thumbW / 2, 30) : 30;
   seek.hoverX = Math.min(rect.width - half, Math.max(half, e.clientX - rect.left));
   if (thumbs.available) requestThumb(seek.hoverTime, () => seek.hoverTime);
 }

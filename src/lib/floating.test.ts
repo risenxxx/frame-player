@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { flipAxis, shiftAxis } from './floating';
+import { flipAxis, previewWidth, shiftAxis } from './floating';
 
 const PAD = 8;
 
@@ -84,5 +84,33 @@ describe('shiftAxis', () => {
 
   it('takes a caller-supplied padding', () => {
     expect(shiftAxis(-50, 100, 800, 20)).toBe(20);
+  });
+});
+
+describe('previewWidth', () => {
+  const full = { max: 184, below: 22, aspect: 16 / 9 };
+
+  it('is the full size wherever the window has room', () => {
+    expect(previewWidth({ ...full, across: 1200, above: 700 })).toBe(184);
+  });
+
+  it('shrinks to the height left above the bar, keeping the aspect', () => {
+    // A mini player dragged down to its minimum: ~73px over the popup's bottom.
+    // 73 − 8 of margin − 22 of text leaves 43px of frame, 76px wide at 16:9.
+    expect(previewWidth({ ...full, across: 208, above: 73 })).toBe(76);
+  });
+
+  it('shrinks to the bar when that is the narrower limit', () => {
+    expect(previewWidth({ ...full, across: 120, above: 700 })).toBe(120);
+  });
+
+  it('gives a wide film more width for the same height', () => {
+    const scope = previewWidth({ ...full, aspect: 2.39, across: 400, above: 100 });
+    const tv = previewWidth({ ...full, aspect: 4 / 3, across: 400, above: 100 });
+    expect(scope).toBeGreaterThan(tv);
+  });
+
+  it('never goes negative when there is no room at all', () => {
+    expect(previewWidth({ ...full, across: 200, above: 10 })).toBe(0);
   });
 });

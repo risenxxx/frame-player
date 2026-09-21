@@ -53,8 +53,8 @@
     }}
   >
     {#if seek.hoverTime !== null && hasFile && player.duration > 0}
-      <div class="hovertip" style="left: {seek.hoverX}px">
-        {#if hasThumbs}
+      <div class="hovertip" style="left: {seek.hoverX}px; --thumb-w: {seek.thumbW}px">
+        {#if hasThumbs && seek.thumbW > 0}
         <!-- The box keeps the VIDEO's aspect, not a hardcoded 16:9. mpv
              reports `dwidth`/`dheight` — the size with the aspect already
              applied — as soon as a file opens, so this is exact and needs no
@@ -144,22 +144,22 @@
   .seekrow .time:first-child {
     order: 1;
     margin-right: auto;
-    margin-left: 8px;
     text-align: left;
   }
 
   .seekrow .time:last-child {
     order: 2;
-    margin-right: 8px;
     text-align: right;
   }
 
   .seekwrap {
     order: 3;
-    /* slightly narrower than the row: the track edges line up with the visible
-       edges of the icons below */
-    flex: 1 0 calc(100% - 16px);
-    margin: 6px 8px 0;
+    /* The full row: its edges are the window's edge line, which is where the
+       glyphs at the ends of the control row now end too (see `.controls` in
+       Controls.svelte). It used to be 8px narrower on each side to meet those
+       glyphs from the inside, when they stopped short of the bar's padding. */
+    flex: 1 0 100%;
+    margin: 6px 0 0;
     position: relative;
     display: flex;
     align-items: center;
@@ -276,7 +276,7 @@
      tip is exactly that wide, so a long chapter title would push the whole
      popup past the window edge. */
   .hover-chapter {
-    max-width: 184px;
+    max-width: var(--thumb-w, 184px);
     margin-top: -4px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -286,7 +286,10 @@
 
   /* 184, border included — the outer width of the popup, which is the figure
      everything around it is written against: `.hover-chapter` caps itself at
-     the same number, and `onSeekHover` clamps seek.hoverX by half of it (92). Those
+     the same number, and `onSeekHover` clamps seek.hoverX by half of it. It is
+     `--thumb-w`, which `onSeekHover` lowers when the window is too small for
+     184 (a mini player dragged down: the frame ran off the top edge); the
+     radius shrinks with it, or a 60px frame would be mostly corner. Those
      agreed with the rendered box while this said 180 and grew by its outline;
      with the border-box reset they agree with the declaration too.
      One consequence of the box changing meaning: `aspect-ratio` follows
@@ -296,12 +299,12 @@
      part anyone sees. */
   .hovertip .thumb {
     display: block;
-    width: 184px;
+    width: var(--thumb-w, 184px);
     /* Set inline from the video's own dimensions; this is the fallback for the
        moment before mpv has reported them. */
     aspect-ratio: 16 / 9;
     object-fit: cover;
-    border-radius: 10px;
+    border-radius: min(10px, calc(var(--thumb-w, 184px) / 18));
     border: 2px solid rgba(255, 255, 255, 0.85);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   }
@@ -375,7 +378,18 @@
     font-size: 10.5px;
   }
 
+  /* The mini player has no side clusters and no edge line to meet, so it keeps
+     the insets the row used to have everywhere. */
+  .seekrow.mini .time:first-child {
+    margin-left: 8px;
+  }
+
+  .seekrow.mini .time:last-child {
+    margin-right: 8px;
+  }
+
   .seekrow.mini .seekwrap {
+    flex-basis: calc(100% - 12px);
     margin: 2px 6px 0;
   }
   @keyframes thumb-cross {

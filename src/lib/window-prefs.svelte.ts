@@ -193,12 +193,17 @@ export async function toggleMini() {
 /// pixels, for it to be taken the rest of the way.
 const SNAP_DIST = 56;
 
-/// How long the window has to sit still before it is snapped. A native drag
-/// runs its own event loop and does not tell us when it ends, so "stopped
-/// moving" is the only signal there is; long enough that a pause mid-drag
-/// rarely reaches it, short enough to read as the window settling rather than
-/// jumping later on its own.
-const SNAP_SETTLE_MS = 300;
+/// How often the mouse button is asked about once the window stops moving.
+///
+/// A native drag runs the system's own loop and never tells the webview it has
+/// ended, so this used to snap once the window had sat still for 300ms — and a
+/// hand that paused mid-drag had the window pulled to an edge from under it.
+/// Now "stopped moving" only starts the question the drag cannot answer itself:
+/// is the button still down (`primary_button_down`)? The snap waits for no,
+/// and asks often enough that letting go reads as the cause of it. A move with
+/// no button behind it — the system placing the window, the glide itself —
+/// finds it up on the first ask and settles as it always did.
+const SNAP_POLL_MS = 60;
 
 /// How long the glide to a resting place takes. The window teleporting there
 /// reads as a glitch — the eye has nothing to attribute the new position to;
@@ -241,11 +246,21 @@ async function glideTo(win: ReturnType<typeof getCurrentWindow>, fromX: number, 
   }
 }
 
-/// Called for every move event; the work happens once the window comes to rest.
+/// Called for every move event; the work happens once the window has been let go.
 export function scheduleMiniSnap() {
   if (!mini.on || !windowPrefs.snapMini) return;
   clearTimeout(snapTimer);
-  snapTimer = setTimeout(() => void snapMiniToEdges(), SNAP_SETTLE_MS);
+  snapTimer = setTimeout(() => void snapOnRelease(), SNAP_POLL_MS);
+}
+
+async function snapOnRelease() {
+  // A failed ask counts as released: the old behaviour rather than none.
+  const held = await invoke<boolean>('primary_button_down').catch(() => false);
+  if (held) {
+    snapTimer = setTimeout(() => void snapOnRelease(), SNAP_POLL_MS);
+    return;
+  }
+  await snapMiniToEdges();
 }
 
 /**
@@ -409,18 +424,36 @@ export async function restoreGeometry() {
  * full width (visible in the title-bar logo inset) and only settled once
  * something forced a repaint — a poster finishing loading, say. The window is
  * still hidden at this point, so the wait is invisible.
+ *
+ * **Waited on with the `resize` event, never with animation frames.** It used to
+ * poll with a double `requestAnimationFrame`, and a hidden window renders no
+ * frames at all — so with "remember size and position" on, this never
+ * returned, the window stayed hidden until the Rust safety net showed it three
+ * seconds in (lib.rs, `fallback.show()`), and only then did frames and the rest
+ * of startup resume. That was the whole of the slow launch. `resize` is
+ * dispatched whether or not anything is painted, and a timer bounds the wait
+ * for the case where the size was already right or never becomes it.
  */
 async function settleLayout(targetW: number, targetH: number) {
   const dpr = window.devicePixelRatio || 1;
-  const deadline = performance.now() + 400;
-  while (performance.now() < deadline) {
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    // Compare with a tolerance: CSS pixels are rounded, and the outer window
-    // size includes a frame we have exactly as much of as we do not.
-    const w = window.innerWidth * dpr;
-    const h = window.innerHeight * dpr;
-    if (Math.abs(w - targetW) <= 4 * dpr && Math.abs(h - targetH) <= 48 * dpr) return;
-  }
+  // Compare with a tolerance: CSS pixels are rounded, and the outer window
+  // size includes a frame we have exactly as much of as we do not.
+  const settled = () =>
+    Math.abs(window.innerWidth * dpr - targetW) <= 4 * dpr &&
+    Math.abs(window.innerHeight * dpr - targetH) <= 48 * dpr;
+  if (settled()) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', onResize);
+      resolve();
+    };
+    const onResize = () => {
+      if (settled()) done();
+    };
+    const timer = setTimeout(done, 400);
+    window.addEventListener('resize', onResize);
+  });
 }
 
 /**
