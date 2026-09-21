@@ -5,7 +5,11 @@
  *   rest with a transition and a `--dl` stagger.
  * - `[data-scene]` gets `--p`, a number from 0 to 1, animated once over
  *   `data-dur` milliseconds. Every mock reads it for whatever moves, so a scene
- *   is written in CSS and this file never touches a mock's markup.
+ *   is written in CSS and this file never touches a mock's markup. `--p` is
+ *   eased out unless the scene asks for `data-ease="linear"` — a scene that
+ *   cuts its own phases out of `--p` and gives each its own curve needs time,
+ *   not a curve: sliced from an eased `--p`, a phase that owns the first third
+ *   plays in the first eighth of the time.
  *
  * The two want opposite triggers, and running them off one observer was a bug
  * that only showed on the tallest section. A scene must not play while the
@@ -21,7 +25,7 @@
  *
  * The rAF loop runs only while a scene is in flight and stops itself afterwards.
  */
-type Scene = { el: HTMLElement; start: number; dur: number }
+type Scene = { el: HTMLElement; start: number; dur: number; ease: (t: number) => number }
 
 /** Cubic ease-out: fast to start, settles rather than arrives. */
 const easeOut = (t: number): number => 1 - (1 - t) ** 3
@@ -57,7 +61,7 @@ export function initMotion(): void {
       const scene = running[i]
       if (!scene) continue
       const t = Math.min(1, (now - scene.start) / scene.dur)
-      scene.el.style.setProperty('--p', easeOut(t).toFixed(4))
+      scene.el.style.setProperty('--p', scene.ease(t).toFixed(4))
       if (t >= 1) running.splice(i, 1)
     }
     if (running.length > 0) frame = requestAnimationFrame(tick)
@@ -74,7 +78,12 @@ export function initMotion(): void {
     played.add(el)
     el.classList.add('in')
     if (!el.hasAttribute('data-scene')) return
-    running.push({ el, start: performance.now(), dur: Number(el.dataset.dur) || 1400 })
+    running.push({
+      el,
+      start: performance.now(),
+      dur: Number(el.dataset.dur) || 1400,
+      ease: el.dataset.ease === 'linear' ? (t) => t : easeOut,
+    })
     if (frame === 0) frame = requestAnimationFrame(tick)
   }
 

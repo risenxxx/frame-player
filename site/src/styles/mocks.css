@@ -216,9 +216,7 @@
 .row.on { background: var(--acc-soft); color: var(--fg); box-shadow: inset 0 0 0 1px var(--acc-line); }
 .row.on .ico { color: var(--acc); }
 .row.done .nm { color: var(--fg3); }
-.row.sub { grid-template-columns: auto minmax(0, 1fr) auto; }
 .row.step { opacity: clamp(0, (var(--p, 1) - 0.5 - var(--i) * 0.08) / 0.3, 1); }
-.lang { font: 500 11px/1 var(--mono); padding: 4px 6px; border-radius: 5px; background: var(--tint); color: var(--fg2); }
 
 .torfoot {
   display: flex;
@@ -321,9 +319,32 @@
 
 @keyframes rot { to { transform: rotate(360deg); } }
 
-/* The pointer walks to the cast button and the button lights under it — the
-   two halves of "this is where that panel comes from". */
-.sc-cast .player { --ui: 1; --pop: clamp(0, (var(--p, 1) - 0.46) / 0.2, 1); --pick: clamp(0, (var(--p, 1) - 0.72) / 0.2, 1); }
+/*
+  The pointer walks to the cast button and the button lights under it — the
+  two halves of "this is where that panel comes from".
+
+  Each beat has its own time and curve, cut from a LINEAR `--p` over 2200 ms
+  (`data-ease="linear"` on the scene). It used to be sliced from the eased one,
+  and the steepest part of an ease-out is its start: the walk covered half its
+  distance in the first ~100 ms, while the pointer was still fading in, then
+  crept the rest — which read as a pointer parked in the wrong place that
+  jumped to the button and only then moved normally.
+
+    pointer fades in   0–180 ms    ease-out
+    pointer walks      0–800       smoothstep: sets off and lands gently, so
+                                   the fade happens where it starts from
+    button + panel     900–1250    ease-out, a beat after the pointer lands
+    device picked      1450–1900   ease-out
+
+  The `-t` terms are each phase's linear time, the bare names its curve.
+*/
+.sc-cast .player {
+  --ui: 1;
+  --pop-t: clamp(0, (var(--p, 1) - 0.4091) / 0.1591, 1);
+  --pop: calc(1 - (1 - var(--pop-t)) * (1 - var(--pop-t)) * (1 - var(--pop-t)));
+  --pick-t: clamp(0, (var(--p, 1) - 0.6591) / 0.2045, 1);
+  --pick: calc(1 - (1 - var(--pick-t)) * (1 - var(--pick-t)) * (1 - var(--pick-t)));
+}
 .sc-cast .b.cast { color: rgba(232, 232, 236, calc(0.9 - 0.9 * var(--pop))); }
 .sc-cast .b.cast::after {
   content: "";
@@ -335,17 +356,45 @@
 .sc-cast .b { position: relative; }
 .sc-cast .b.cast .lit { position: absolute; inset: 0; display: grid; place-items: center; color: #818cf8; opacity: var(--pop); }
 
+/*
+  The pointer's hotspot, zero-sized, so the arrow and the hand inside it point
+  at the same pixel: it ends on the button's centre (18, 17). Each shape is
+  offset by its own tip — the arrow's at (3.3, 1.4) of its 19px box, the hand's
+  at (8, 1.25) of its 20px one, the figures `.cursor` in player.css uses.
+*/
 .walk {
   position: absolute;
-  width: 19px;
-  height: 19px;
-  left: calc(-150px * (1 - var(--m)) + 14.7px * var(--m));
-  top: calc(-96px * (1 - var(--m)) + 15.6px * var(--m));
-  opacity: clamp(0, var(--p, 1) / 0.12, 1);
+  width: 0;
+  height: 0;
+  left: calc(-146.7px * (1 - var(--m)) + 18px * var(--m));
+  top: calc(-94.6px * (1 - var(--m)) + 17px * var(--m));
+  opacity: var(--walk-in);
   z-index: 6;
 }
 
-.sc-cast .player { --m: clamp(0, var(--p, 1) / 0.44, 1); }
+.walk svg { position: absolute; }
+.walk-arrow { width: 19px; height: 19px; margin: -1.4px 0 0 -3.3px; opacity: calc(1 - var(--hand)); }
+.walk-hand {
+  width: 20px;
+  height: 20px;
+  margin: -1.25px 0 0 -8px;
+  opacity: var(--hand);
+  filter: drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.4));
+}
+
+/*
+  The arrow becomes the hand the moment its tip crosses into the button, and
+  at once, as a system cursor does — not a fade. Solved from the path above,
+  the tip is inside the button's box from `--m` ≈ 0.891 on; the ×1000 turns the
+  clamp into a step there.
+*/
+.sc-cast .player {
+  --walk-in-t: clamp(0, var(--p, 1) / 0.0818, 1);
+  --walk-in: calc(1 - (1 - var(--walk-in-t)) * (1 - var(--walk-in-t)) * (1 - var(--walk-in-t)));
+  --m-t: clamp(0, var(--p, 1) / 0.3636, 1);
+  --m: calc(var(--m-t) * var(--m-t) * (3 - 2 * var(--m-t)));
+  --hand: clamp(0, (var(--m) - 0.891) * 1000, 1);
+}
 
 /*
   The same fixed height as the phone gets, for the other range that shrinks it.
@@ -522,26 +571,35 @@
 
 /* ── mock: subtitles ──────────────────────────────────────────────────────── */
 
-.match {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 14px;
-  background: var(--s0);
-  border-bottom: 1px solid var(--line);
-  font-size: 12.5px;
-  color: var(--fg2);
-}
+/*
+  The player with the subtitle search open over the film, drawn as the
+  application draws it — SubsDialog in Dialog's shell, dark on either theme,
+  because it is the application's own surface. The picture is the ground from
+  the first frame. The version before this put the list above a strip of film,
+  and the list only arrived half way through the scene: for its first second
+  the window showed an empty grey band over a finished frame, which read as a
+  layout bug.
 
-.match svg { width: 15px; height: 15px; color: var(--green); }
-.match b { color: var(--fg); font-weight: 500; }
+  One linear `--p` over 2800 ms (`data-ease="linear"`), each beat with its own
+  curve — `-t` is a beat's linear time, the bare name its curve:
 
-.substrip {
-  position: relative;
-  aspect-ratio: 21 / 9;
-  border-top: 1px solid var(--line);
-  overflow: hidden;
-  background: #08080a;
+    dialog opens       0–450 ms     smoothstep
+    rows arrive        390–750      ease-out, 110 ms apart
+    Download pressed   1400–1600    ease-out
+    dialog closes      1680–1990    smoothstep
+    the line appears   1960–2350    ease-out
+*/
+.player.subs {
+  container-type: inline-size;
+  --open-t: clamp(0, var(--p, 1) / 0.16, 1);
+  --open: calc(var(--open-t) * var(--open-t) * (3 - 2 * var(--open-t)));
+  --press-t: clamp(0, (var(--p, 1) - 0.5) / 0.07, 1);
+  --press: calc(1 - (1 - var(--press-t)) * (1 - var(--press-t)) * (1 - var(--press-t)));
+  --close-t: clamp(0, (var(--p, 1) - 0.6) / 0.11, 1);
+  --close: calc(var(--close-t) * var(--close-t) * (3 - 2 * var(--close-t)));
+  --sub-t: clamp(0, (var(--p, 1) - 0.7) / 0.14, 1);
+  --sub: calc(1 - (1 - var(--sub-t)) * (1 - var(--sub-t)) * (1 - var(--sub-t)));
+  --shown: calc(var(--open) * (1 - var(--close)));
 }
 
 .sub-osc { position: absolute; inset: auto 0 0; height: 54px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.85)); }
@@ -549,21 +607,98 @@
 .sub-osc i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 38%; border-radius: 2px; background: #fff; }
 .sub-osc i::before { content: ""; position: absolute; left: 38%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #fff; }
 
-/* Where mpv puts the line, lifted by the height of the control bar — which is
-   what the player does the moment the chrome comes up. */
+/* Where mpv puts the line with the control bar up: lifted clear of it. The
+   regular weight is mpv's own (`sub-bold=no`), which the player leaves alone. */
 .subline {
   position: absolute;
   left: 50%;
-  bottom: calc(18px + var(--p, 1) * 34px);
+  bottom: 52px;
   transform: translateX(-50%);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
   color: #fff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9);
   max-width: calc(100% - 28px);
   text-align: center;
   text-wrap: balance;
   line-height: 1.35;
+  opacity: var(--sub);
+}
+
+.subs-dim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.42); opacity: var(--shown); }
+
+/* Anchored from the top rather than centred, so that however short the window
+   gets, the dialog runs off its bottom edge last. */
+.subs-dlg {
+  position: absolute;
+  left: 50%;
+  top: 6cqw;
+  width: min(80cqw, 440px);
+  transform: translateX(-50%) scale(calc(0.97 + 0.03 * var(--open) - 0.02 * var(--close)));
+  transform-origin: 50% 0;
+  opacity: var(--shown);
+  padding: 11px 12px 8px;
+  border-radius: 12px;
+  background: rgba(16, 16, 22, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e8e8ec;
+  font-size: 12px;
+  line-height: normal;
+}
+
+.subs-title { margin-bottom: 8px; font-size: 14px; font-weight: 500; }
+.subs-q { display: flex; gap: 8px; }
+.subs-inp {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.subs-go { flex: none; padding: 7px 14px; border-radius: 8px; background: #6366f1; color: #fff; }
+.subs-hint { margin-top: 6px; color: #77777f; font-size: 11px; }
+/* `minmax(0, 1fr)`, not the implicit `auto`: an auto track is as wide as the
+   row's unbroken release name, and on a phone that pushed Download out of the
+   dialog. */
+.subs-list { margin-top: 6px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+
+.subs-row {
+  --r-t: clamp(0, (var(--p, 1) - 0.14 - var(--i) * 0.04) / 0.13, 1);
+  --r: calc(1 - (1 - var(--r-t)) * (1 - var(--r-t)) * (1 - var(--r-t)));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 4px 5px 6px;
+  border-radius: 8px;
+  opacity: var(--r);
+  transform: translateY(calc((1 - var(--r)) * 4px));
+}
+
+.subs-main { flex: 1; min-width: 0; }
+.subs-nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.subs-meta { display: flex; align-items: center; gap: 7px; margin-top: 2px; overflow: hidden; color: #9a9aa5; font-size: 10.5px; white-space: nowrap; }
+.subs-meta b { color: #b9b9c3; font-weight: 600; letter-spacing: 0.04em; }
+.subs-meta .warn { color: #f0a0a0; }
+.subs-badge { padding: 0 6px; border-radius: 999px; background: #6366f1; color: #fff; font-size: 9.5px; line-height: 15px; }
+
+.subs-get {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #d6d6de;
+  font-size: 11px;
+}
+
+.subs-row.first .subs-get {
+  background: rgba(99, 102, 241, var(--press));
+  border-color: rgba(99, 102, 241, calc(0.2 + 0.8 * var(--press)));
+  color: #fff;
 }
 
 /* ── mock: catalog ────────────────────────────────────────────────────────── */

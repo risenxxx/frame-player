@@ -72,14 +72,12 @@
   .hero .player { aspect-ratio: 3 / 2; }
   .hovertip { --tw: 132px; bottom: 26px; }
 
-  /* Two lines rather than three columns fighting for one: the release keeps the
-     width it needs and the verdict about it moves underneath. */
-  .row.sub { grid-template-columns: auto minmax(0, 1fr); height: auto; padding: 7px 10px; row-gap: 1px; }
-  .row.sub .meta { grid-column: 2; justify-self: start; }
-  .substrip { aspect-ratio: 21 / 9; }
+  /* A 16:9 window this narrow is under 190px tall: the dialog keeps its title,
+     the search and both rows, and gives up the sentence under the search and
+     the download counts. */
+  .subs-hint, .subs-dl { display: none; }
+  .subs-dlg { top: 3cqw; width: 92cqw; }
   .subline { font-size: 12px; }
-  .match { align-items: flex-start; }
-  .match svg { margin-top: 2px; }
 
   /* The room's three readouts stack rather than compress into each other. */
   .room-top { flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -127,6 +125,11 @@
   .win-bar { padding: 0 10px; }
   .win-bar .name { max-width: 44%; font-size: 11px; }
   .win-bar .wb-brand { font-size: 11px; }
+  /* Under ~340px of width a 16:9 window is shorter than the dialog, however
+     compact: taller rather than smaller type, as the hero does below 670. */
+  .player.subs { aspect-ratio: 4 / 3; }
+  .subs-meta { gap: 5px; }
+  .subs-badge { padding: 0 5px; }
   .posters { gap: 6px; padding: 10px; }
   .poster .pt { font-size: 9.5px; padding: 14px 5px 5px; }
   .rel-row { font-size: 11.5px; gap: 8px; padding: 0 6px; }

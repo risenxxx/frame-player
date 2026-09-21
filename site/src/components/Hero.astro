@@ -37,7 +37,7 @@ const { version, windows, macos } = await release()
         Frame Player playing a 4K file from a torrent: a hover preview of a later scene above the
         seekbar, chapter marks along it, and a skip-intro button over the video.
       </p>
-      <div class="player" data-scene data-dur="2800" style="--hover:24%" aria-hidden="true">
+      <div class="player" data-scene data-dur="1600" data-ease="linear" style="--hover:24%" aria-hidden="true">
         <Frame name="orion-moon" slot="hero" class="scene" alt="A spacecraft in sunlight with the Moon beyond it" loading="eager" fetchpriority="high" />
         <span class="p-scrim"></span>
         <span class="p-bar">
@@ -76,7 +76,7 @@ const { version, windows, macos } = await release()
               <span class="chap" style="--at:61%"></span>
               <span class="knob"></span>
             </div>
-            <svg class="cursor" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cursor"/></svg>
+            <svg class="cursor" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><use href="#i-hand"/></svg>
           </div>
           <div class="controls">
             <div class="cluster left">

@@ -16,61 +16,63 @@
 </script>
 
 {#if overlays.folded}
-  <!-- Wording borrowed from the context menu's own drill-down: it is the same
-       word for the same gesture, and a second key holding "Назад" would be a
-       translation waiting to drift. -->
-  <button class="menu-item back" onclick={() => toggleMenu('more')}>
-    <svg class="caret" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-      <path
-        d="M10 3.5 5.5 8 10 12.5"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-    </svg>
-    <span>{t('ctx.back')}</span>
-  </button>
+  <!-- The row and the rule under it are the context menu's drill-down back row
+       (`submenuBack` in ContextMenu.svelte) verbatim — the one the mini player
+       shows — and the wording is borrowed with it: a second key holding
+       "Назад" would be a translation waiting to drift. Both panels have the
+       same 6px of padding, so the same markup lands in the same place.
+       The wrapper exists only to keep it in view (see below); it has no
+       geometry of its own that the row could inherit. -->
+  <div class="back-head">
+    <button class="menu-item back" onclick={() => toggleMenu('more')}>
+      <svg class="caret" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M10 3.5 5.5 8 10 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>{t('ctx.back')}</span>
+    </button>
+    <div class="menu-sep"></div>
+  </div>
 {/if}
 
 <style>
-  /* Sticky, and that is not a flourish: the chapter list scrolls itself to the
-     chapter being played the moment it opens, so a row that scrolls with the
-     content would be gone before it was ever seen.
-
-     The geometry is what it takes for content not to show past it. `.menu` is
-     the scroll container, so the sticky offset is measured from its PADDING
-     box — the row therefore has to cover that 6px of padding itself, or rows
-     would slide through the strip above and beside it. It takes the padding
-     back as negative margin and gives the same amount back as padding, so the
-     label does not move between the stuck and unstuck states. The square top
-     corners need no rounding: a scroll container clips to its own padding box,
-     which is already round. */
+  /* Copied from ContextMenu.svelte rather than shared: those rules are scoped
+     there, and a scoped rule cannot reach this markup. Keep the two in step. */
   .menu-item.back {
-    position: sticky;
-    top: 0;
-    z-index: 1;
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: -6px -6px 0;
-    padding: 14px 16px 8px;
     color: #a8a8b3;
-    /* Opaque, unlike the panel's own 0.94: a translucent header shows the rows
-       travelling underneath it. Over anything but a bright frame the two read
-       as the same colour. */
-    background: #101016;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-  }
-
-  /* `.menu-item:hover` is a translucent white wash, which would be see-through
-     here for the same reason — so the hover is mixed down to a flat colour. */
-  .menu-item.back:hover {
-    background: #1e1e26;
   }
 
   .menu-item.back .caret {
     flex: none;
+  }
+
+  /* Sticky, because the chapter list scrolls itself to the chapter being
+     played the moment it opens, and a row scrolled away with it would be gone
+     before it was ever seen. The context menu never needed this — its
+     submenus are short.
+
+     This is the second attempt, and the first one is the reason for the
+     shape. It made the ROW sticky and stretched it over the panel's 6px of
+     padding with negative margins so rows could not slide past its edges —
+     which put its hover highlight flush against the panel's border, changed
+     its padding, and swapped the separator for a hairline sitting directly on
+     the section title. Everything the row looks like belongs to the row, so
+     the sticking is done by a wrapper that paints nothing but a mask:
+     - `top: 6px` is where the panel's padding already puts it, so it does not
+       jump when it starts sticking (the offset is measured from the panel's
+       padding box, not its content);
+     - the shadow is the panel's own colour spread 6px and lifted 6px, which
+       covers the padding strips above and beside it — where passing rows
+       would otherwise show — without painting over the title below;
+     - the background is opaque where the panel's is 0.94, for the same
+       reason; over anything but a bright frame the two are the same colour. */
+  .back-head {
+    position: sticky;
+    top: 6px;
+    z-index: 1;
+    background: #101016;
+    box-shadow: 0 -6px 0 6px #101016;
   }
 </style>

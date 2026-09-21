@@ -23,6 +23,10 @@ html.reveal [data-reveal].in {
   transition-delay: calc(var(--dl, 0) * 70ms);
 }
 
+/* A scene at its start from the first paint on. Its own inline `--p`, written by
+   motion.ts from then on, outranks this. */
+html.scenes [data-scene] { --p: 0; }
+
 /* A reveal that never fires must not swallow the page: printing, saving to PDF
    and anything else that renders without scrolling gets everything at once. */
 @media print {

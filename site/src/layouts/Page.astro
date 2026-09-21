@@ -90,9 +90,23 @@ const jsonLd = {
       the document as scripted (without JS every scene stays at its finished
       state) and applies an explicitly chosen theme, or the page flashes the
       system one while the module that owns the switch is still loading.
+
+      It also parks the scenes at their start (`scenes`, see motion.css), under
+      the same two conditions motion.ts plays them on. The module is deferred,
+      so parking them from there left the first frames showing each scene
+      finished — the hero's interface was visible, then vanished, then faded
+      in. The watchdog is the other half of motion.ts's own rule that what
+      hides the page must be what brings it back: if the module never got as
+      far as starting (`reveal` is its first act), the scenes are released to
+      their finished state rather than left empty.
     */}
     <script is:inline>
       document.documentElement.classList.add('js')
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window) {
+        const root = document.documentElement
+        root.classList.add('scenes')
+        setTimeout(() => { if (!root.classList.contains('reveal')) root.classList.remove('scenes') }, 5000)
+      }
       try {
         const theme = localStorage.getItem('fp-theme')
         if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme

@@ -1,5 +1,34 @@
 /* The player window, rebuilt in HTML from the application's own measurements. */
 
+/*
+  …and in the application's own typeface. The rest of the page is set in Onest,
+  but a mock of the interface in the page's font is a picture of a different
+  program, so the player window alone draws in Rubik, as the application does.
+
+  One file, cut from the application's static/fonts/rubik-latin.woff2 down to
+  what these windows can print: ASCII, the no-break space, × for the speed, the
+  em dash in the subtitle panel's verdict and … for a clipped title. ~20 KB
+  against ~82 KB for the four subsets the app ships.
+  The weight axis is kept whole, as are kerning and tabular figures (every
+  readout here is tabular, as in the app), and so are the copyright and licence
+  records in the name table — the OFL asks for them to travel with the font.
+  A character outside that set falls back to Onest rather than to a missing
+  glyph, so a new string in a mock has to be checked against the list:
+
+    pyftsubset static/fonts/rubik-latin.woff2 \
+      --unicodes="U+0020-007E,U+00A0,U+00D7,U+2014,U+2026" \
+      --layout-features='kern,tnum,liga' --name-IDs='0,1,2,3,4,5,6,13,14' \
+      --flavor=woff2 --output-file=site/src/assets/fonts/rubik-player.woff2
+*/
+@font-face {
+  font-family: "Rubik";
+  src: url("../assets/fonts/rubik-player.woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0, U+00D7, U+2014, U+2026;
+}
+
 /* ── the player window ────────────────────────────────────────────────────── */
 
 .player {
@@ -12,18 +41,41 @@
   background: #08080a;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: var(--sh-win);
-  font-family: var(--sans);
+  font-family: "Rubik", var(--sans);
   color: #e8e8ec;
+  /* The page thins its text with `antialiased`; the application leaves WebKit's
+     default, which on macOS draws the same weight visibly heavier. A mock in
+     the page's smoothing is a lighter interface than the one that ships. */
+  -webkit-font-smoothing: auto;
+  /* The application's one shadow for text over the video (+page.svelte). */
+  --ui-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 6px rgba(0, 0, 0, 0.3);
   /*
-    Three beats in the order a viewer causes them, each reading one window of
-    --p: the overlay comes up, a cursor crosses the timeline, the preview opens
-    above it. The window's own arrival is not one of them — see `.hero .player`
-    below. Nothing scrubs — a bar filling by itself under a still frame says
-    the film is playing, and it plainly is not.
+    Three beats in the order a viewer causes them: the overlay comes up, a
+    cursor reaches the timeline, the preview opens above it. The window's own
+    arrival is not one of them — see `.hero .player` below. Nothing scrubs — a
+    bar filling by itself under a still frame says the film is playing, and it
+    plainly is not.
+
+    Each beat has its own time and its own curve, cut from a LINEAR `--p` over
+    1600 ms (`data-ease="linear"` on the scene) — cut from an eased one, the
+    steep start of the ease compressed the first phase into a jolt:
+
+      interface  0–1104 ms   smoothstep 3x² − 2x³, flat at both ends: it
+                             leaves from a true zero and lands without a bump
+      cursor     720–1024    cubic ease-out 1 − (1 − x)³: moves off quickly
+                             and settles — starting once the interface is
+                             about three quarters in
+      preview    1000–1544   the same ease-out, opening while the interface
+                             is still arriving
+
+    The `-t` terms are the phase's linear time, the bare names its curve.
   */
-  --ui: clamp(0, var(--p, 1) / 0.24, 1);
-  --cursor: clamp(0, (var(--p, 1) - 0.3) / 0.2, 1);
-  --tip: clamp(0, (var(--p, 1) - 0.54) / 0.3, 1);
+  --ui-t: clamp(0, var(--p, 1) / 0.69, 1);
+  --ui: calc(var(--ui-t) * var(--ui-t) * (3 - 2 * var(--ui-t)));
+  --cursor-t: clamp(0, (var(--p, 1) - 0.45) / 0.19, 1);
+  --cursor: calc(1 - (1 - var(--cursor-t)) * (1 - var(--cursor-t)) * (1 - var(--cursor-t)));
+  --tip-t: clamp(0, (var(--p, 1) - 0.625) / 0.34, 1);
+  --tip: calc(1 - (1 - var(--tip-t)) * (1 - var(--tip-t)) * (1 - var(--tip-t)));
 }
 
 /*
@@ -49,6 +101,10 @@
   to { opacity: 1; transform: none; }
 }
 
+/* The page's monospace marks figures elsewhere; the application has none, and
+   draws its readouts in Rubik with tabular figures, which `.mono` keeps. */
+.player .mono { font-family: inherit; }
+
 /* The frame is an <img>: it carries its own dimensions, decodes off the main
    thread and, below the fold, is not fetched until it is needed. */
 .scene {
@@ -72,7 +128,9 @@
   inset: 0 0 auto;
   height: 48px;
   opacity: var(--ui);
-  transform: translateY(calc((1 - var(--ui)) * -6px));
+  /* 3–4 px throughout: over a dissolve this long a larger shift reads as a
+     movement of its own rather than as the interface surfacing. */
+  transform: translateY(calc((1 - var(--ui)) * -3px));
 }
 
 .lights { position: absolute; left: 18px; top: 18px; display: flex; gap: 8px; }
@@ -91,7 +149,10 @@
   line-height: 48px;
   text-align: center;
   font-size: 13px;
-  color: #b9b9c3;
+  /* As TopBar draws it: the muted grey this used to be read as a thinner, half
+     transparent line next to the application's. */
+  color: #e8e8ec;
+  text-shadow: var(--ui-shadow);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -107,9 +168,16 @@
   gap: 8px;
   font-size: 13px;
   font-weight: 500;
+  letter-spacing: 0.02em;
+  text-shadow: var(--ui-shadow);
 }
 
-.p-brand svg { width: 18px; height: 18px; color: #818cf8; }
+.p-brand svg {
+  width: 18px;
+  height: 18px;
+  color: #818cf8;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
 
 .torchip {
   position: absolute;
@@ -150,7 +218,7 @@
   font-size: 14px;
   font-weight: 500;
   opacity: var(--ui);
-  transform: translateY(calc((1 - var(--ui)) * 6px));
+  transform: translateY(calc((1 - var(--ui)) * 3px));
 }
 
 .skip svg { width: 17px; height: 17px; }
@@ -161,7 +229,7 @@
   padding: 44px 8px 10px;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.66) 34%, rgba(0, 0, 0, 0.28) 66%, transparent);
   opacity: var(--ui);
-  transform: translateY(calc((1 - var(--ui)) * 8px));
+  transform: translateY(calc((1 - var(--ui)) * 4px));
 }
 
 .times { display: flex; justify-content: space-between; padding: 0 8px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -193,15 +261,18 @@
   background: #fff;
 }
 
-/* The tip of the drawn cursor is at (4.2, 1.8) of its 24-unit box, so the
-   offsets put that point on the track rather than the corner of the box. */
+/* The pointing hand, because the track is a link to a moment in the film and
+   the cursor should say so before the click. Its hotspot is the fingertip at
+   (9.65, 1.5) of the 24-unit box — × 20/24 gives the offsets that put that
+   point on the track rather than the corner of the box. */
 .cursor {
   position: absolute;
   top: 50%;
   left: var(--hover);
-  width: 19px;
-  height: 19px;
-  margin: -1.4px 0 0 -3.3px;
+  width: 20px;
+  height: 20px;
+  margin: -1.25px 0 0 -8px;
+  filter: drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.4));
   opacity: var(--cursor);
   transform: translate(calc((1 - var(--cursor)) * -4px), calc((1 - var(--cursor)) * 4px));
 }
@@ -238,8 +309,19 @@
   overflow: hidden;
 }
 
-.tip-time { font-size: 13px; color: #fff; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
-.tip-chapter { margin-top: -4px; font-size: 11px; color: #d6d6de; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+/* As SeekBar.svelte draws them, one for one: the timestamp is the popup's own
+   13px white, the chapter 12px #d6d6de, both at the regular weight under the
+   application's one shadow for text over the video. `line-height: normal`
+   because the application never sets one, and the 1.6 this window would
+   otherwise inherit from the page spreads the two lines apart. */
+.tip-time,
+.tip-chapter {
+  line-height: normal;
+  text-shadow: var(--ui-shadow);
+}
+
+.tip-time { color: #fff; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tip-chapter { margin-top: -4px; color: #d6d6de; font-size: 12px; }
 
 .controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 8px; }
 .cluster { display: flex; align-items: center; gap: 6px; }

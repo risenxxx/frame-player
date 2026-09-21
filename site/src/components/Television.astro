@@ -21,7 +21,7 @@ import Frame from './Frame.astro'
         </ul>
       </div>
       <div class="feat-mock" data-reveal style="--dl:1">
-        <div class="win" data-scene data-dur="3600" aria-hidden="true">
+        <div class="win" data-scene data-dur="2200" data-ease="linear" aria-hidden="true">
           <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name mono">Orbital.Night.S02E03.2160p.HDR.mkv</span><span class="wb-brand"><span>Frame Player</span><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg></span></div>
           <div class="player mini">
             <Frame name="comet-sea" slot="mock" class="scene" alt="A comet low over a calm sea at night" />
@@ -74,10 +74,13 @@ import Frame from './Frame.astro'
                   <span class="b cast">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-cast"/></svg>
                     <span class="lit"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-cast"/></svg></span>
-                    <svg class="walk" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cursor"/></svg>
+                    <span class="walk">
+                      <svg class="walk-arrow" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cursor"/></svg>
+                      <svg class="walk-hand" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-hand"/></svg>
+                    </span>
                     <!-- The pointer is a child of the button it is pointing at, so
-                         "on the icon" is arithmetic rather than a tuned offset: the
-                         cursor's own tip sits at (3.3, 1.4) of its 19px box. -->
+                         "on the icon" is arithmetic rather than a tuned offset:
+                         `.walk` is the hotspot itself, see mocks.css. -->
                           </span>
                   <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-full"/></svg></span>
                 </div>
