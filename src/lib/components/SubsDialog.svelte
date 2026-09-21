@@ -10,6 +10,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener';
   import {
     OPENSUBTITLES_SIGNUP,
+    answerFpsOffer,
     downloadSub,
     openSubsAuth,
     runSubsSearch,
@@ -17,6 +18,7 @@
     subsSignIn,
     subsSignOut,
   } from '$lib/subs.svelte';
+  import { formatFps } from '$lib/tracks.svelte';
 </script>
 
 <Dialog title={t('subs.title')} variant="subs" onclose={() => (subs.open = false)}>
@@ -40,6 +42,29 @@
       {subs.busy ? t('subs.searching') : t('subs.search')}
     </button>
   </div>
+
+  <!-- Asked rather than applied: the rate is what the uploader typed, and
+       acting on a wrong one would make a subtitle that was in sync drift.
+       Up here, under the field, because the download that raised it may have
+       been clicked far down a scrolled list. -->
+  {#if subs.fpsOffer}
+    <div class="subs-fps-offer">
+      <div>
+        {t('subs.fps_offer', {
+          sub: formatFps(subs.fpsOffer.subFps),
+          video: formatFps(subs.fpsOffer.videoFps),
+        })}
+      </div>
+      <div class="link-actions">
+        <button class="btn-outline" onclick={() => answerFpsOffer(false)}>
+          {t('subs.fps_keep')}
+        </button>
+        <button class="primary" onclick={() => answerFpsOffer(true)}>
+          {t('subs.fps_fit')}
+        </button>
+      </div>
+    </div>
+  {/if}
 
   <!-- Said out loud: without it, a list of episodes coming back for a
        two-word query reads as the search guessing. -->
@@ -338,6 +363,16 @@
 
   .subs-fps.warn {
     color: #f0a0a0;
+  }
+
+  .subs-fps-offer {
+    margin: 4px 0 10px;
+    padding: 10px 12px 12px;
+    border-radius: 8px;
+    background: rgba(99, 102, 241, 0.14);
+    color: #e8e8ec;
+    font-size: 13px;
+    line-height: 1.45;
   }
 
   .subs-badges {

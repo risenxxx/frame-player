@@ -307,6 +307,10 @@ const ru = {
   'subs.quota_spent': 'Дневной лимит загрузок исчерпан.',
   'subs.quota_spent_reset': 'Дневной лимит загрузок исчерпан — обновится через {time}.',
   'subs.fps_off': 'Частота кадров не совпадает с видео — субтитры будут постепенно уходить',
+  'subs.fps_offer':
+    'Эти субтитры сделаны под {sub} кадр/с, а видео идёт с частотой {video} кадр/с. Без подгонки они будут расходиться с речью тем сильнее, чем дальше от начала.',
+  'subs.fps_fit': 'Подогнать под видео',
+  'subs.fps_keep': 'Оставить как есть',
   'subs.badge_hash': 'точное совпадение',
   'subs.badge_hi': 'для слабослышащих',
   'subs.badge_ai': 'машинный перевод',
@@ -583,6 +587,8 @@ const ru = {
   'set.hwdec_sw':
     'программное (аппаратное недоступно для этого кодека — точная перемотка будет медленнее)',
   'set.hwdec_hw': 'аппаратное, {name}',
+  'set.webview_foot_win': 'Интерфейс: WebView2 {version}',
+  'set.webview_foot_mac': 'Интерфейс: WebKit {version}',
   // Says «файл целиком» on purpose: mpv refuses initialization over one bad
   // option, so the loss is never just that line — and a viewer who reads it as
   // "one setting was skipped" will go looking for the wrong thing.
@@ -767,6 +773,11 @@ const ru = {
   'osc.delay': 'Задержка',
   'osc.delay_reset': 'Сброс',
   'osc.delay_value': '{value} с',
+  'osc.sub_speed': 'Частота кадров',
+  'osc.sub_speed_off': 'Как есть',
+  'osc.sub_speed_pair': '{from} → {to} кадр/с',
+  'osc.sub_speed_tip': 'Субтитры сделаны под {from} кадр/с, видео идёт с {to} кадр/с. Действует только на текстовые субтитры',
+  'osc.sub_speed_custom': 'Растянуто ×{value}',
   'osc.add_file': 'Добавить файл…',
   'osc.sub_remove': 'Убрать эти субтитры',
 
@@ -1138,6 +1149,10 @@ const en: Record<MessageKey, string> = {
   'subs.quota_spent': 'The daily download limit is spent.',
   'subs.quota_spent_reset': 'The daily download limit is spent — it renews in {time}.',
   'subs.fps_off': 'Frame rate differs from the video — these will drift out of sync',
+  'subs.fps_offer':
+    'These subtitles were made for {sub} fps and the video runs at {video} fps. Left as they are, they drift further from the speech the longer you watch.',
+  'subs.fps_fit': 'Fit to the video',
+  'subs.fps_keep': 'Leave as is',
   'subs.badge_hash': 'exact match',
   'subs.badge_hi': 'hearing impaired',
   'subs.badge_ai': 'machine translated',
@@ -1400,6 +1415,8 @@ const en: Record<MessageKey, string> = {
   'set.hwdec_sw':
     'software (hardware decoding is unavailable for this codec — exact seeking will be slower)',
   'set.hwdec_hw': 'hardware, {name}',
+  'set.webview_foot_win': 'Interface: WebView2 {version}',
+  'set.webview_foot_mac': 'Interface: WebKit {version}',
   'set.conf_ignored':
     'mpv refused a setting in mpv.conf, so the whole file was left unapplied — the player started with its defaults. What mpv said:',
   'set.conf_foot':
@@ -1569,6 +1586,11 @@ const en: Record<MessageKey, string> = {
   'osc.delay': 'Delay',
   'osc.delay_reset': 'Reset',
   'osc.delay_value': '{value} s',
+  'osc.sub_speed': 'Frame rate',
+  'osc.sub_speed_off': 'As is',
+  'osc.sub_speed_pair': '{from} → {to} fps',
+  'osc.sub_speed_tip': 'Subtitles made for {from} fps on a video running at {to} fps. Text subtitles only',
+  'osc.sub_speed_custom': 'Stretched ×{value}',
   'osc.add_file': 'Add file…',
   'osc.sub_remove': 'Remove these subtitles',
 

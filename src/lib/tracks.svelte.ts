@@ -32,10 +32,15 @@ import { withFileDialog } from './chrome.svelte';
 import {
   delaysFor,
   rememberDelay,
+  rememberSubSpeed,
   rememberTrack,
+  subSpeedFor,
   trackChoiceFor,
   trackWishFor,
 } from './history.svelte';
+import { locale, t } from './i18n.svelte';
+import { showOsd } from './osd.svelte';
+import { SUB_SPEED_PRESETS, isPreset, isUnitSpeed, type SubSpeedPreset } from './sub-speed';
 import {
   describeTrack,
   loadTracks,
@@ -286,12 +291,55 @@ export function resetDelayHere(kind: 'sub' | 'audio') {
   if (player.filePath) rememberDelay(player.filePath, kind, 0);
 }
 
-/// mpv keeps `sub-delay` across a file change (measured), so a correction
-/// dialled in for one episode silently applies to the next. Every file therefore
-/// gets an explicit value — its own, or zero.
-export function applyDelays() {
+/// mpv keeps `sub-delay`, `audio-delay` and `sub-speed` across a file change
+/// (all three measured), so a correction dialled in for one episode silently
+/// applies to the next. Every file therefore gets an explicit value for each —
+/// its own, or the default.
+export function applyTiming() {
   if (!player.filePath) return;
   const saved = delaysFor(player.filePath);
   void setProperty('sub-delay', saved.sub).catch(() => {});
   void setProperty('audio-delay', saved.audio).catch(() => {});
+  void setProperty('sub-speed', subSpeedFor(player.filePath)).catch(() => {});
+}
+
+// ---- Subtitle frame rate --------------------------------------------------
+
+/**
+ * Stretch the subtitles by `factor` (subtitle fps / video fps; see sub-speed.ts)
+ * and remember it for this file.
+ *
+ * Written straight, not debounced like a delay: this is picked once from a
+ * list, not dialled in. mpv applies it at render time, so a line already on
+ * screen moves with it — measured, no seek or reload is needed.
+ */
+export function setSubSpeedHere(factor: number) {
+  if (!player.hasFile) return;
+  const value = isUnitSpeed(factor) ? 1 : factor;
+  void setProperty('sub-speed', value).catch(() => {});
+  if (player.filePath) rememberSubSpeed(player.filePath, value);
+  showOsd(t('osc.sub_speed'), { sub: subSpeedLabel(value) });
+}
+
+/// A frame rate as a person writes it: 23.976 rather than 23.976023976…, with
+/// the interface's own decimal separator.
+export function formatFps(fps: number): string {
+  return fps.toLocaleString(locale(), { maximumFractionDigits: 3 });
+}
+
+export function presetLabel(preset: SubSpeedPreset): string {
+  return t('osc.sub_speed_pair', { from: formatFps(preset.from), to: formatFps(preset.to) });
+}
+
+/// What a factor mpv holds means, in the words the menu uses for it. A factor
+/// that is none of the presets — fitted from a search result with an unusual
+/// pair, or set in mpv.conf — is shown as the bare ratio.
+export function subSpeedLabel(factor: number): string {
+  if (isUnitSpeed(factor)) return t('osc.sub_speed_off');
+  const preset = SUB_SPEED_PRESETS.find((p) => isPreset(factor, p));
+  return preset
+    ? presetLabel(preset)
+    : t('osc.sub_speed_custom', {
+        value: factor.toLocaleString(locale(), { maximumFractionDigits: 4 }),
+      });
 }

@@ -858,6 +858,17 @@ fn window_float_over_fullscreen(window: tauri::WebviewWindow, on: bool) {
     }
 }
 
+/// The engine under the UI: the WebView2 runtime on Windows (Evergreen, so
+/// Microsoft updates it on its own schedule, and a preview channel shows up as
+/// a suffix such as "beta"), the system WebKit build on macOS. Shown in the
+/// settings footer because the whole interface composites over mpv's view, and
+/// a runtime update that changes that is the one breakage no release of ours
+/// caused — the version is the first thing to ask for.
+#[tauri::command]
+fn webview_version() -> Option<String> {
+    tauri::webview_version().ok()
+}
+
 /// The system double-click threshold. The webview detects dblclick by the same
 /// value, so any single-click delay must match it exactly: set it lower and the
 /// single-click action fires before the system recognizes the double click, so
@@ -1018,6 +1029,7 @@ pub fn run() {
             take_pending_files,
             open_file_ready,
             double_click_time,
+            webview_version,
             hdr_status,
             window_buttons,
             window_float_over_fullscreen,

@@ -391,6 +391,9 @@
   /// and software decoding is plainly visible, and a silent fallback to
   /// software was previously impossible to notice.
   let hwdecCurrent = $state<string | null>(null);
+  /// The WebView2 / WebKit build drawing this sheet. Evergreen on Windows, so
+  /// it changes under us between releases — see `webview_version` in lib.rs.
+  let webviewVersion = $state<string | null>(null);
   /// Settings dialog tab, split by who owns the setting: "Video" is what ends
   /// up in mpv.conf, "General" is what the player keeps itself. "General" by
   /// default: video options are fine-tuning, reached deliberately, whereas the
@@ -528,6 +531,9 @@
       for (const [k, v] of conf.options) if (k in map) map[k] = v;
       settingsValues = map;
       void refreshHdrStatus();
+      void invoke<string | null>('webview_version')
+        .then((v) => (webviewVersion = v))
+        .catch(() => {});
       hwdecCurrent = player.hasFile
         ? ((await getProperty('hwdec-current', 'string').catch(() => null)) ?? null)
         : null;
@@ -1529,6 +1535,11 @@
         {hwdecCurrent === 'no'
           ? t('set.hwdec_sw')
           : t('set.hwdec_hw', { name: hwdecCurrent })}
+      </div>
+    {/if}
+    {#if webviewVersion}
+      <div class="settings-foot">
+        {t(IS_MAC ? 'set.webview_foot_mac' : 'set.webview_foot_win', { version: webviewVersion })}
       </div>
     {/if}
     {/if}

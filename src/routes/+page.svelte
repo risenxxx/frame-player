@@ -126,7 +126,7 @@
   } from '$lib/catalog.svelte';
   import {
     addTrackFile,
-    applyDelays,
+    applyTiming,
     initTracks,
     nudgeDelayHere,
     resetDelayHere,
@@ -1017,10 +1017,10 @@
     resetZoom(true);
     // Rotation and aspect are global mpv options: a phone clip turned upright
     // would still be turned for the next episode. Loop points and track delays
-    // likewise.
+    // likewise, and the subtitle frame-rate stretch.
     resetPicture();
     resetAbLoop();
-    applyDelays();
+    applyTiming();
     // Subtitles the torrent itself carries. `sub-auto` finds nothing here —
     // there is no local file to look beside — so without this they sit in the
     // torrent unreachable while the viewer searches OpenSubtitles for something

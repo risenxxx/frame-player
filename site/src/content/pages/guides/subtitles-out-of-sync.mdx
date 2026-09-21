@@ -122,12 +122,20 @@ configuration file), which is why converting the file is usually the better fix.
 - **A different frame rate is flagged before you download.** When a result was
   made for a frame rate other than your video's, the panel marks it, so the one
   that is going to drift is not the one you pick.
-- **The delay you set is kept for that file**, and only that file, so a constant
-  gap stays fixed the next time you open it and does not leak into the next
-  episode.
+- **It offers to fit the subtitles to your video.** Download one made for a
+  different frame rate and the panel asks whether to stretch it to match. It asks
+  rather than doing it, because the frame rate on a subtitle site is whatever the
+  uploader typed.
+- **The subtitle menu can stretch any subtitle by hand**: 25 → 23.976,
+  23.976 → 25 or 24 → 23.976. That covers a file you already had and a track
+  inside the video, where nobody said which frame rate it was made for. It works
+  on text subtitles; picture-based ones (PGS, VobSub) cannot be stretched.
+- **The speed and the delay you set are kept for that file**, and only that file,
+  so the subtitles stay fixed the next time you open it and nothing leaks into
+  the next episode.
 - **Subtitles inside a torrent are attached by themselves**, matched to the
   episode you are playing.
 
-Frame Player has no speed control for subtitles yet. When the only file available
-was made for a different frame rate, converting it in Subtitle Edit is the fix
-that lasts.
+Fix the speed first, then use the delay for whatever gap is left. If you want the
+subtitle file itself fixed for every player, converting it in Subtitle Edit still
+does that for good.

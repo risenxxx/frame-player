@@ -85,6 +85,10 @@ type TrackEntry = {
   /// second every time it is opened, long after the position is forgotten.
   subDelay?: number;
   audioDelay?: number;
+  /// mpv's `sub-speed`: subtitle fps / video fps, for a subtitle made for a
+  /// different frame rate. Here for the same reason as the delays, and per
+  /// source for the same reason too.
+  subSpeed?: number;
   ts: number;
 };
 
@@ -400,6 +404,27 @@ export function delaysFor(path: string): { sub: number; audio: number } {
   if (isPrivatePath(path)) return { sub: 0, audio: 0 };
   const entry = entriesLoad(TRACKS_KEY)[sourceId(path)];
   return { sub: entry?.subDelay ?? 0, audio: entry?.audioDelay ?? 0 };
+}
+
+/// Record the subtitle stretch chosen for this source. 1 deletes the record,
+/// for the reason zero does for a delay.
+export function rememberSubSpeed(path: string, factor: number) {
+  if (isPrivatePath(path)) return;
+  const map = entriesLoad(TRACKS_KEY);
+  const id = sourceId(path);
+  const entry: TrackEntry = { ...map[id], ts: Date.now() };
+  if (factor === 1) delete entry.subSpeed;
+  else entry.subSpeed = factor;
+  map[id] = entry;
+  entriesSave(TRACKS_KEY, map, 300);
+}
+
+/// The stretch recorded for this source, 1 meaning none — which, like a zero
+/// delay, has to be applied rather than assumed: mpv keeps `sub-speed` across
+/// a `loadfile` (measured on 0.41).
+export function subSpeedFor(path: string): number {
+  if (isPrivatePath(path)) return 1;
+  return entriesLoad(TRACKS_KEY)[sourceId(path)]?.subSpeed ?? 1;
 }
 
 /// What to look for in this file: what was picked here before, or failing that

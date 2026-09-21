@@ -24,6 +24,8 @@ import { locale, t } from '$lib/i18n.svelte';
 import { languageName, parseLangList } from '$lib/languages';
 import { showOsd } from '$lib/osd.svelte';
 import { attachTrack, player, removeSubTrack, type Track } from '$lib/player.svelte';
+import { subSpeedFactor } from '$lib/sub-speed';
+import { setSubSpeedHere } from '$lib/tracks.svelte';
 
 export type SubHit = {
   file_id: number;
@@ -98,6 +100,13 @@ class Subs {
   /// title search and shown in the panel, because otherwise a list of episodes
   /// appearing for a one-word query looks like magic.
   episode = $state<EpisodeRef | null>(null);
+
+  /// A subtitle just downloaded for another frame rate, and the stretch that
+  /// would fit it. **Asked, never applied**: the fps on OpenSubtitles is what
+  /// the uploader typed, and a wrong one would turn a subtitle that was in sync
+  /// into one that drifts. The panel stays open on the question; closing it
+  /// any other way leaves the subtitle as it is.
+  fpsOffer = $state<{ subFps: number; videoFps: number; factor: number } | null>(null);
 
   // ---- The OpenSubtitles account ----------------------------------------
   //
@@ -251,6 +260,7 @@ export async function removeSubtitle(track: Track) {
 }
 
 export async function openSubsDialog() {
+  subs.fpsOffer = null;
   subs.error = null;
   subs.hits = null;
   subs.busyId = null;
@@ -342,7 +352,8 @@ export async function downloadSub(hit: SubHit) {
     // Straight through the same path a dropped .srt takes, so it is selected and
     // the track list refreshes without a second mechanism.
     await attachTrack('sub', result.path);
-    subs.open = false;
+    subs.fpsOffer = fpsOfferFor(hit.fps);
+    if (!subs.fpsOffer) subs.open = false;
   } catch (e) {
     console.warn('subtitle download failed:', e);
     // A spent quota is a state with a way out, not a breakage: measured, the API
@@ -364,4 +375,20 @@ export async function downloadSub(hit: SubHit) {
   } finally {
     subs.busyId = null;
   }
+}
+
+/// The question worth asking about a subtitle just downloaded, or null. Nothing
+/// is asked when the stretch it wants is already in force — a second subtitle
+/// for the same PAL release, say.
+function fpsOfferFor(subFps: number | null): typeof subs.fpsOffer {
+  if (subFps === null || subs.videoFps === null || !subs.fpsOff(subFps)) return null;
+  const factor = subSpeedFactor(subFps, subs.videoFps);
+  if (Math.abs(factor - player.subSpeed) < 1e-4) return null;
+  return { subFps, videoFps: subs.videoFps, factor };
+}
+
+export function answerFpsOffer(fit: boolean) {
+  if (fit && subs.fpsOffer) setSubSpeedHere(subs.fpsOffer.factor);
+  subs.fpsOffer = null;
+  subs.open = false;
 }

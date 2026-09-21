@@ -163,6 +163,9 @@ const OBSERVED = [
   ['dheight', 'int64', 'none'],
   ['sub-delay', 'double', 'none'],
   ['audio-delay', 'double', 'none'],
+  // Observed so the subtitle menu can tick the factor in force, including one
+  // from the user's own mpv.conf.
+  ['sub-speed', 'double', 'none'],
   // The VO has been configured and paints its field (black before the first
   // frame, thanks to force-window). The page keeps an opaque fill over the
   // transparent window until this reports true — a timer was a guess that
@@ -242,6 +245,7 @@ const RESYNC: Record<ObservedName, boolean> = {
   'eof-reached': true,
   'sub-delay': true,
   'audio-delay': true,
+  'sub-speed': true,
   chapter: true,
   // Everything about *neighbours* is computed from this — the end screen's two
   // cards, the auto-advance, the skip button's "next episode" offer — and while
@@ -344,6 +348,7 @@ class Player {
   speed = $state(1);
   subDelay = $state(0);
   audioDelay = $state(0);
+  subSpeed = $state(1);
   loopMode = $state<LoopMode>('off');
   eofReached = $state(false);
   playlistPos = $state(0);
@@ -771,6 +776,7 @@ function applyProperty(ev: PropertyChange) {
     case 'speed': player.speed = ev.data; break;
     case 'sub-delay': player.subDelay = ev.data ?? 0; break;
     case 'audio-delay': player.audioDelay = ev.data ?? 0; break;
+    case 'sub-speed': player.subSpeed = ev.data ?? 1; break;
     // The mode is ours; mpv is only told about it. Reading it back would
     // make `all` on a one-entry playlist (which also sets loop-file) look
     // like `one` and flip the button under the viewer.

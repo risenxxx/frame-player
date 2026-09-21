@@ -5,7 +5,9 @@
   import { t } from '$lib/i18n.svelte';
   import { playback } from '$lib/playback.svelte';
   import { delayIsZero, formatDelay, player, type Track } from '$lib/player.svelte';
+  import { SUB_SPEED_PRESETS, isPreset, isUnitSpeed, presetFactor } from '$lib/sub-speed';
   import { openSubsDialog, removeSubtitle } from '$lib/subs.svelte';
+  import { formatFps, presetLabel, setSubSpeedHere, subSpeedLabel } from '$lib/tracks.svelte';
   import MenuBack from './MenuBack.svelte';
 
   /// One press of the stepper. Matches mpv's own default sub-delay granularity.
@@ -110,6 +112,40 @@
       {t('osc.delay_reset')}
     </button>
   </div>
+  {#if kind === 'sub'}
+    <!-- The manual half of fitting a subtitle to the video's frame rate, for
+         when nobody told us the subtitle's: an external file, an embedded
+         track. A search result that knows its rate asks by itself (see
+         `fpsOffer`). A list rather than pills: three "25 → 23.976" labels
+         do not fit a 256px row, and a ticked list is how this menu already
+         picks one of several. Stays open, like the delay — the choice is
+         judged by watching the next line land. -->
+    <div class="menu-sep"></div>
+    <div class="menu-title">{t('osc.sub_speed')}</div>
+    <button
+      class="menu-item"
+      class:sel={isUnitSpeed(player.subSpeed)}
+      onclick={() => setSubSpeedHere(1)}
+    >
+      {t('osc.sub_speed_off')}
+    </button>
+    {#each SUB_SPEED_PRESETS as preset (presetFactor(preset))}
+      <button
+        class="menu-item"
+        class:sel={isPreset(player.subSpeed, preset)}
+        data-tip={t('osc.sub_speed_tip', { from: formatFps(preset.from), to: formatFps(preset.to) })}
+        onclick={() => setSubSpeedHere(presetFactor(preset))}
+      >
+        {presetLabel(preset)}
+      </button>
+    {/each}
+    <!-- A factor that is none of the above — fitted from a search result with
+         an unusual pair, or set in mpv.conf — is still shown, or the list
+         would claim nothing is in force. -->
+    {#if !isUnitSpeed(player.subSpeed) && !SUB_SPEED_PRESETS.some((p) => isPreset(player.subSpeed, p))}
+      <div class="menu-item sel">{subSpeedLabel(player.subSpeed)}</div>
+    {/if}
+  {/if}
 </div>
 
 <style>
