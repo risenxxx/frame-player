@@ -181,7 +181,11 @@
   `cover`, so the slightly squarer window only crops it.
 */
 .sc-cast .player.mini { aspect-ratio: 611 / 384; }
-.player.mini .osc { padding: 40px 6px 8px; }
+/* 4px, so the fullscreen glyph ends where the title bar's mark does: 17px in.
+   The dots in that bar start at 15, two short of the line; the bar's padding
+   is the mark's too, so they are moved on their own. */
+.win-bar.over .dots { margin-left: 2px; }
+.player.mini .osc { padding: 40px 4px 8px; }
 
 /* ── mock: open anything ──────────────────────────────────────────────────── */
 
@@ -337,7 +341,7 @@
 */
 .castpop {
   position: absolute;
-  right: 14px;
+  right: 16px;
   bottom: 112px;
   width: min(268px, calc(100% - 36px));
   padding: 6px;
@@ -661,7 +665,7 @@
 }
 
 .sub-osc { position: absolute; inset: auto 0 0; height: 54px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.85)); }
-.sub-osc i { position: absolute; left: 14px; right: 14px; bottom: 15px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
+.sub-osc i { position: absolute; left: 16px; right: 16px; bottom: 15px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
 .sub-osc i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 38%; border-radius: 2px; background: #fff; }
 .sub-osc i::before { content: ""; position: absolute; left: 38%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #fff; }
 

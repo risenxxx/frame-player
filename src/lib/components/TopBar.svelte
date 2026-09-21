@@ -397,7 +397,7 @@
   }
 
   /* **Right**, and that is not a preference: `.osd` — the popup every volume
-     change, seek and speed change raises — is `top: 60px; left: 18px`, which is
+     change, seek and speed change raises — is `top: 60px; left: 20px`, which is
      within two pixels of where this sat. A status readout that the next volume
      nudge covers completely is worse than no readout, because it is there right
      up until the moment you look. Nothing else occupies this corner: the window
@@ -410,7 +410,8 @@
   .torchip {
     position: absolute;
     top: 58px;
-    right: 18px;
+    /* The window's edge line — see `.controls` in Controls.svelte. */
+    right: 20px;
     display: flex;
     flex-direction: column;
     gap: 5px;
@@ -488,7 +489,7 @@
   .roomchip {
     position: absolute;
     top: 58px;
-    right: 18px;
+    right: 20px;
     display: flex;
     flex-direction: column;
     align-items: flex-start;

@@ -134,7 +134,7 @@
   transform: translateY(calc((1 - var(--ui)) * -3px));
 }
 
-.lights { position: absolute; left: 18px; top: 18px; display: flex; gap: 8px; }
+.lights { position: absolute; left: 20px; top: 18px; display: flex; gap: 8px; }
 .lights i { width: 12px; height: 12px; border-radius: 50%; }
 .lights i:nth-child(1) { background: #ff5f57; }
 .lights i:nth-child(2) { background: #febc2e; }
@@ -180,10 +180,19 @@
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
 }
 
+/*
+  One right edge for everything on the right of the window: the mark in the
+  title bar ends 21px in (its 18px box at `right: 18px`, the glyph inset in it),
+  and so does the fullscreen glyph at the end of the control row. The readout,
+  the skip button and the track menu end on that line too — at the
+  application's own `right: 18px` / `16px` they sat two to four pixels short of
+  it, which is exactly the size of misalignment an eye catches. The border is
+  the other pixel: these offsets are from the padding box.
+*/
 .torchip {
   position: absolute;
   top: 58px;
-  right: 18px;
+  right: 20px;
   min-width: 178px;
   padding: 7px 11px 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -206,7 +215,7 @@
 
 .skip {
   position: absolute;
-  right: 16px;
+  right: 20px;
   bottom: 108px;
   display: flex;
   align-items: center;
@@ -233,8 +242,10 @@
   transform: translateY(calc((1 - var(--ui)) * 4px));
 }
 
-.times { display: flex; justify-content: space-between; padding: 0 8px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.seekwrap { position: relative; margin: 6px 8px 0; padding: 6px 0; }
+/* The track and the times end on the window's edge line too, as they do in the
+   application (`.osc`'s padding there): 12px in from the bar's padding. */
+.times { display: flex; justify-content: space-between; padding: 0 12px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.seekwrap { position: relative; margin: 6px 12px 0; padding: 6px 0; }
 .seektrack { position: relative; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
 .seektrack .buffered, .seektrack .fill { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }
 .seektrack .buffered { background: rgba(255, 255, 255, 0.3); width: var(--buf, 46%); }
@@ -326,7 +337,9 @@
 
 .controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 8px; }
 .cluster { display: flex; align-items: center; gap: 6px; }
-.cluster.left { justify-self: start; }
+/* The volume glyph starts 2.5 units into its box where fullscreen ends 5 in,
+   so the left cluster steps in by the difference to start on the same line. */
+.cluster.left { justify-self: start; margin-left: 1.5px; }
 .cluster.center { justify-self: center; gap: 14px; }
 .cluster.right { justify-self: end; }
 .b { width: 36px; height: 34px; display: grid; place-items: center; }
@@ -345,8 +358,10 @@
   panel, rows and delay stepper, at the same sizes. It hangs from the time row
   because that is what the application anchors it to — `.menu` sits at
   `bottom: calc(100% + 12px)` of the bar, whose top edge is the top of the
-  timestamps, and `right: 24px` of the window, which from inside `.times` is
-  16px. It opens once the interface is up, over the last third of the scene.
+  timestamps. Its right edge is the window's one (see `.torchip`): 12px inside
+  `.times`, which starts at the bar's padding, puts it on that line at every
+  width down to 620px. It opens once the interface is up, over the last third
+  of the scene.
 */
 .player.audio {
   --menu-t: clamp(0, (var(--p, 1) - 0.58) / 0.26, 1);
@@ -371,7 +386,7 @@
 
 .trackpop {
   position: absolute;
-  right: 16px;
+  right: 12px;
   bottom: calc(100% + 12px);
   width: 256px;
   padding: 6px;
@@ -415,5 +430,9 @@
   .torchip, .skip, .cluster.left .volume, .cluster.left .speed { display: none; }
   .osc { padding: 28px 4px 6px; }
   .hovertip .thumb { width: 124px; height: 70px; }
+  /* The bar's padding went from 8 to 4, and the control row with it; the lights
+     and the mark follow, so each side of the window keeps one edge. */
+  .lights { left: 16px; }
+  .p-brand { right: 14px; }
   .p-brand span { display: none; }
 }

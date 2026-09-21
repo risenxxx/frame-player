@@ -356,11 +356,24 @@
   </div>
 </div>
 
-<style>  .controls {
+<style>  /* One edge per side of the window, 20px in, and everything that sits against
+     a side ends on it: the seekbar and the timestamps (`.osc`'s padding), the
+     *glyphs* at the ends of this row, the logo in the title bar, the track
+     menus, the skip button, the torrent and room readouts, the OSD — and the
+     system's own traffic lights and window buttons, which is why the line is
+     20 rather than anything rounder: they are the two things here nobody gets
+     to move. A button's glyph sits 11px inside its 36px box (fullscreen: 6 of
+     box, 5 of path; volume: 8 and 2.5), so the row reaches 11px past the bar's
+     padding for the glyphs to land on the line. It used to stop at the padding,
+     which put the fullscreen glyph 35px in against a logo at 20 and a menu at
+     24 — three edges on one side of the window.
+     A margin on the row, not on the clusters: `avail` below is the row's own
+     width, so the fold arithmetic sees the extra 22px by itself. */
+  .controls {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    margin-top: 8px;
+    margin: 8px -11px 0;
   }
 
   .cluster {
@@ -473,7 +486,7 @@
   .controls.mini {
     grid-template-columns: 1fr;
     justify-items: center;
-    margin-top: 4px;
+    margin: 4px 0 0;
   }
 
   .controls.mini button.play {

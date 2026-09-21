@@ -35,7 +35,8 @@
   .osd {
     position: absolute;
     top: 60px;
-    left: 18px;
+    /* The window's edge line — see `.controls` in Controls.svelte. */
+    left: 20px;
     display: flex;
     flex-direction: column;
     gap: 8px;

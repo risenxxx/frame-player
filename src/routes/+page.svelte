@@ -1713,8 +1713,10 @@
     bottom: 0;
     /* No top padding: those 44px were pure gradient with no controls, yet they
        caught clicks (see .topbar). The gradient moved into ::before, which
-       extends the same 44px upwards and receives no events. */
-    padding: 0 24px 12px;
+       extends the same 44px upwards and receives no events.
+       20px at the sides is the window's one edge — see `.controls` in
+       Controls.svelte, which is what else sits on it. */
+    padding: 0 20px 12px;
     /* Its own stacking context, so that z-index: -1 on ::before lowers the
        gradient under the controls without dropping it behind the whole bar. */
     isolation: isolate;

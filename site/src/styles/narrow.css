@@ -27,7 +27,7 @@
   /* 110px, not the 100 the phone uses: the full control row is still on screen
      down to 620px, so the bar is ~10px taller here and a shared number put the
      panel flush against the elapsed time. Both ranges clear it by 10px. */
-  .castpop { right: 12px; bottom: 110px; padding: 4px; }
+  .castpop { right: 16px; bottom: 110px; padding: 4px; }
   .castpop-title { padding: 5px 8px; font-size: 10px; }
   .castrow { padding: 6px 8px; gap: 6px; }
   .castrow .cast-name { font-size: 12px; }
@@ -58,14 +58,22 @@
   */
   .b.opt { display: none; }
   .sc-cast .win { height: 334px; }
-  .castpop { bottom: 100px; }
+  /* The controls shrink here and end 15px in; the title bar over a picture
+     and everything on the right follow them. */
+  .castpop { right: 14px; bottom: 100px; }
+  .win-bar.over { padding: 0 12px; }
+  .sub-osc i { left: 14px; right: 14px; }
+  .trackpop { right: 10px; }
   .b { width: 30px; height: 30px; }
   .b svg { width: 18px; height: 18px; }
   .b.play { width: 38px; height: 34px; }
   .b.play svg { width: 26px; height: 26px; }
   .cluster.center { gap: 8px; }
-  .times { font-size: 11px; padding: 0 6px; }
+  .times { font-size: 11px; padding: 0 10px; }
+  .seekwrap { margin-inline: 10px; }
   .p-title { padding: 0 50px 0 78px; font-size: 11.5px; }
+  .lights { left: 14px; }
+  .cluster.left { margin-left: 2px; }
   .p-brand { right: 12px; }
 
   /* The preview is a picture; its caption lands on the timestamps at this size,

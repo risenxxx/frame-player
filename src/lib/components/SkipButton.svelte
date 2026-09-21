@@ -75,7 +75,8 @@
      video the accent shouts, and it means "on/selected" everywhere else. */
   .skipbtn {
     position: absolute;
-    right: 24px;
+    /* The window's edge line — see `.controls` in Controls.svelte. */
+    right: 20px;
     bottom: 108px;
     /* Above the bar, below everything in the popup scale (.osd is 30). The OSC
        is the reason this is needed at all: its scrim reaches 44px above the

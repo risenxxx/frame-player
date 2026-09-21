@@ -546,9 +546,10 @@ button.primary:hover {
      worked out by hand (12 + 42 + 8 + 16 + 6 + the 12px line) — correct to
      within 2px, and those 2px were the entire gap: the panel sat on the
      timestamps. The percentage also follows the bar wherever its height is
-     not that sum, which the mini player is. */
+     not that sum, which the mini player is.
+     `right` is the window's edge line — see `.controls` in Controls.svelte. */
   bottom: calc(100% + 12px);
-  right: 24px;
+  right: 20px;
   min-width: 256px;
   /* The panel sizes itself to its longest row, and without a ceiling that is
      unbounded in the one direction nobody watches: it is positioned by its
