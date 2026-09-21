@@ -4,13 +4,13 @@ Local files, links and magnet torrents in one window, on **Tauri 2 + libmpv** â€
 frame-accurate, instant, and unusually careful about the details.
 
 <p align="center">
-  <img src="docs/intro.jpg" width="900"
-       alt="Frame Player playing a file: a hover preview of a distant scene above the seekbar, chapter marks along it, and a skip-intro button over the video">
+  <img src="docs/intro.webp" width="900"
+       alt="Frame Player playing a night-sky episode: hovering the seekbar shows a preview frame of a tent on a lakeshore, labelled 1:56 and with the chapter name Camp at the Shore, above a seekbar divided by chapter marks">
 </p>
 
 <p align="center">
-  <sub>Hovering the seekbar previews the frame you would land on; the chapter is
-  an opening, so the player offers to skip it.</sub>
+  <sub>Hovering the seekbar previews the frame you would land on, and names the
+  chapter it belongs to.</sub>
 </p>
 
 Decoding is libmpv, the same engine as mpv and IINA, so format coverage,
