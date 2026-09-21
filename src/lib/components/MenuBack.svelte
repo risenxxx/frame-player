@@ -9,29 +9,33 @@
   /// the flag falls, the row disappears, and the button it came from is in the
   /// bar again.
   ///
-  /// One component rather than the same six lines in four panels, which is also
-  /// what keeps the sticky arithmetic below in one place.
+  /// One component rather than the same six lines in four panels.
   import { t } from '$lib/i18n.svelte';
   import { overlays, toggleMenu } from '$lib/overlays.svelte';
 </script>
 
 {#if overlays.folded}
-  <!-- The row and the rule under it are the context menu's drill-down back row
-       (`submenuBack` in ContextMenu.svelte) verbatim — the one the mini player
-       shows — and the wording is borrowed with it: a second key holding
-       "Назад" would be a translation waiting to drift. Both panels have the
-       same 6px of padding, so the same markup lands in the same place.
-       The wrapper exists only to keep it in view (see below); it has no
-       geometry of its own that the row could inherit. -->
-  <div class="back-head">
-    <button class="menu-item back" onclick={() => toggleMenu('more')}>
-      <svg class="caret" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <path d="M10 3.5 5.5 8 10 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span>{t('ctx.back')}</span>
-    </button>
-    <div class="menu-sep"></div>
-  </div>
+  <!-- The context menu's drill-down back row (`submenuBack` in
+       ContextMenu.svelte) verbatim — the one the mini player shows — with its
+       wording: a second key holding "Назад" would be a translation waiting to
+       drift. Both panels carry 6px of padding, so the same markup lands in the
+       same place, 6px from the top as from the sides.
+
+       It scrolls with the list, exactly as the panel's own heading does. Two
+       attempts to make it sticky are why: a sticky row inside a panel whose
+       background is translucent needs a background of its own to hide the rows
+       passing under it, and any background there lies ON TOP of the panel's —
+       darker than the rest of the popup however it is tinted — while the mask
+       that hides the padding strips around it reads as extra space above the
+       row. Keeping it in view would take the panels splitting into a header and
+       a scrolling body, not styling on this row. -->
+  <button class="menu-item back" onclick={() => toggleMenu('more')}>
+    <svg class="caret" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path d="M10 3.5 5.5 8 10 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span>{t('ctx.back')}</span>
+  </button>
+  <div class="menu-sep"></div>
 {/if}
 
 <style>
@@ -46,33 +50,5 @@
 
   .menu-item.back .caret {
     flex: none;
-  }
-
-  /* Sticky, because the chapter list scrolls itself to the chapter being
-     played the moment it opens, and a row scrolled away with it would be gone
-     before it was ever seen. The context menu never needed this — its
-     submenus are short.
-
-     This is the second attempt, and the first one is the reason for the
-     shape. It made the ROW sticky and stretched it over the panel's 6px of
-     padding with negative margins so rows could not slide past its edges —
-     which put its hover highlight flush against the panel's border, changed
-     its padding, and swapped the separator for a hairline sitting directly on
-     the section title. Everything the row looks like belongs to the row, so
-     the sticking is done by a wrapper that paints nothing but a mask:
-     - `top: 6px` is where the panel's padding already puts it, so it does not
-       jump when it starts sticking (the offset is measured from the panel's
-       padding box, not its content);
-     - the shadow is the panel's own colour spread 6px and lifted 6px, which
-       covers the padding strips above and beside it — where passing rows
-       would otherwise show — without painting over the title below;
-     - the background is opaque where the panel's is 0.94, for the same
-       reason; over anything but a bright frame the two are the same colour. */
-  .back-head {
-    position: sticky;
-    top: 6px;
-    z-index: 1;
-    background: #101016;
-    box-shadow: 0 -6px 0 6px #101016;
   }
 </style>
