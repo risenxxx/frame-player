@@ -69,6 +69,16 @@ so an option you wrote by hand is still there after the next launch.
 
 ## Where Frame Player goes further
 
+**An interface designed as a whole.** Everything ordinary is reached from the
+window itself — a settings sheet, a context menu, a shortcut editor — so nothing
+you would want day to day needs a config file or a script. And the small things
+are worked out rather than left to chance: subtitles lift out of the way when the
+controls appear, so the line you are reading is never behind the seekbar; every
+tooltip and menu row shows its shortcut, and shortcuts follow the physical key,
+so they work in any keyboard layout; when the window gets narrow the control bar
+folds its extra buttons into one instead of pushing play off centre; and a film
+reopens where you stopped, with the dub and the subtitles you chose.
+
 **Previews that show the frame you land on.** The seekbar thumbnail sharpens to the
 exact position once the cursor stops, instead of showing the keyframe before it,
 and it shows the chapter as well.
@@ -122,7 +132,8 @@ extended with mpv scripts. If that is how you like to use mpv, it is an excellen
 choice. **mpv itself** is the engine all of these are built on, with a minimal
 interface of its own and everything else done through scripts.
 
-Frame Player takes the other road: the features most people end up adding with
+Frame Player takes the other road: an interface meant to be used with the mouse
+as much as the keyboard, and the features most people end up adding with
 scripts — previews, subtitle search, skipping intros, remembering tracks — are in
 the player, with a settings sheet instead of a config file, while your mpv.conf
 still applies underneath.
