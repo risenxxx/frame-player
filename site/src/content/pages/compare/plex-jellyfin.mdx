@@ -1,0 +1,159 @@
+---
+title: Plex or Jellyfin just to watch on your computer and TV? — Frame Player compared
+description: Plex and Jellyfin are media servers, built to serve a library to many screens. Frame Player is a player that plays the file itself, sends it to the television's own player without an app, and streams torrents while they download. How they compare, honestly.
+heading: Plex, Jellyfin, or just a player?
+lede: Plex and Jellyfin are excellent at what they are — media servers that keep a library and hand it to every screen in the house. But a lot of people install one only to watch films on their own computer and put them on the television. For that, a server is a detour. Here is where each approach is the right one.
+eyebrow: Comparison
+short: Frame Player vs Plex and Jellyfin
+updated: 2026-09-22
+order: 47
+related:
+  - cast-to-tv
+  - torrent-streaming
+  - compare/vlc
+faq:
+  - q: Is Frame Player a media server like Plex or Jellyfin?
+    a: No. Frame Player is a video player for Windows and macOS. It plays the file on your computer and can send it to a television on the same network, but it does not keep a library for other devices, does not transcode for them and does not stream away from home.
+  - q: Why does Plex or Jellyfin transcode in the browser?
+    a: Because the browser can only play what the browser supports. No browser plays DTS sound, Firefox and Safari do not open MKV, and ASS and PGS subtitles often have to be burned into the picture, which Jellyfin's own documentation calls the most intensive kind of transcoding. When the browser cannot play something, the server converts it on the fly.
+  - q: Can Plex or Jellyfin play a torrent while it downloads?
+    a: No. Both play files from their library, so a torrent has to be downloaded in full by a torrent client and picked up by a library scan first. Frame Player plays a magnet link seconds after it is added, fetching the pieces you are about to watch first.
+  - q: Do I need an app on my TV to cast from Frame Player?
+    a: No. A DLNA television plays the file with its own built-in player, and a Chromecast or a television with Chromecast built in plays it through Google Cast. Nothing is installed on the television and no server runs in the background.
+  - q: Can I use Frame Player together with Plex or Jellyfin?
+    a: Yes — they do different jobs. A server on a NAS that feeds the whole house and a player on the computer you sit at are not in each other's way.
+---
+
+import Mock from '../../../components/prose/Mock.astro'
+import Note from '../../../components/prose/Note.astro'
+
+[Plex](https://www.plex.tv/) and [Jellyfin](https://jellyfin.org/) solve a real
+problem: a library of films kept in one place — often a NAS — and played on every
+screen in the house, and away from it. Both do that well. What they are not is a
+video player. They are a server that indexes your folders and a family of client
+apps that ask it for streams, and when all you want is to watch a film on the
+computer it is on, or put it on the television in the same room, everything in
+between is overhead. [Frame Player](/) is the other shape: a player that plays the
+file itself, casts it, and streams torrents while they download.
+
+<Mock kind="playing">
+  A torrent playing while it downloads. The readout shows the speed and the
+  peers, and the seekbar how much of the file is already on disk.
+</Mock>
+
+## At a glance
+
+| Compared | [Frame Player](/) | Plex | Jellyfin |
+|---|---|---|---|
+| What it is | A video player | A media server plus client apps | A media server plus client apps |
+| To start watching | Open the file | Install the server, add the folders, wait for the scan | Install the server, add the folders, wait for the scan |
+| Plays | Any file you open, from anywhere | What is in its library | What is in its library |
+| On the computer | mpv, the file itself | Web app, or the desktop app | Web app, or Jellyfin Desktop |
+| On a TV | The TV's own player over DLNA, or Google Cast — no app on the TV | Plex app on the TV, or cast from the phone or the browser | Jellyfin app on the TV, or cast from the phone or the browser |
+| Converts the picture for the TV | Never | When the client cannot play it | When the client cannot play it |
+| Torrents | Plays while downloading, on the computer and on the TV | Only once fully downloaded and scanned | Only once fully downloaded and scanned |
+| Away from home | — | Plex Pass or Remote Watch Pass | Free, with your own remote access set up |
+| Price | Free, GPL-3.0 | Free at home, paid for remote playback | Free, GPL-2.0 |
+
+<p class="table-note">Checked against Jellyfin 12.1, Jellyfin Desktop 2.0 and Plex as of September 2026.</p>
+
+## In a browser, a player is only as good as the browser
+
+The easiest way to watch from Plex or Jellyfin on a computer is the web app, and
+there the browser decides what plays. By
+[Jellyfin's own codec table](https://jellyfin.org/docs/general/clients/codec-support/),
+no browser plays DTS sound, Firefox and Safari do not open MKV at all, and ASS
+and PGS subtitles often cannot be shown as they are — so they are burned into
+the picture, which the same page calls *"the most intensive method of
+transcoding"*. Whatever the browser cannot play, the server converts on the fly:
+the fan spins up, seeking waits for the encoder, and styled anime subtitles lose
+their styling.
+
+Both projects know this, and both have a desktop client that avoids it — Jellyfin
+Desktop and Plex's desktop app play through mpv, the same engine Frame Player is
+built on. With those, the picture on the computer is as good as ours. What
+remains is the shape:
+
+- **They play the library, not a file.** A film has to be in a folder the server
+  watches, and scanned, before it can be played. A file you just downloaded, one
+  on a USB stick, or one a friend sent you is opened in Frame Player with a
+  double-click — and the folder around it becomes the queue.
+- **A server has to be running.** Two programs instead of one, a database, a
+  scheduled scan — and seekbar thumbnails that are generated in advance by a
+  background task for the whole library. Frame Player makes its previews while
+  you watch, for the file you are watching.
+- **Casting is the other clients' job.** Jellyfin Desktop has had
+  [an open request for Chromecast](https://github.com/jellyfin/jellyfin-desktop/issues/490)
+  since 2023; casting from Plex or Jellyfin is usually done from the phone app or
+  from the web app in Chrome — the client that transcodes.
+
+## On the television
+
+A server's way to a television is **its own app on the television**: the Plex or
+Jellyfin app on a smart TV, a streaming stick or a console, which asks the server
+for a stream and gets a transcoded one whenever the file is something that app
+cannot play. Casting to a Chromecast works the same way — the device runs the
+server's receiver app and the server feeds it, converted when needed. Both can
+also act as a DLNA server that the television browses by itself — in Jellyfin
+through a plugin since 10.9 — but then you pick the film with the TV's remote,
+in the TV's menus, from the library the server has scanned.
+
+Frame Player needs no app on the television and no server behind it:
+
+- **DLNA plays the file on the television's own player** — the one the set uses
+  for a USB stick — so a release the set already handles goes over untouched.
+  Measured on a 4K LG set: a 6.3 GB HEVC HDR10 MKV with Dolby 5.1 sound, no
+  preparation, seeking included.
+- **Google Cast gets the file as it is, or repacked — never re-encoded.** When
+  only the container is the problem, the file is repacked with the picture copied
+  as it is, in about ten seconds for a film, and the copy is kept for next time.
+- **Each television says what will happen before you pick it** — plays as it is,
+  prepared first, or cannot play and why — and the player window becomes the
+  remote: seekbar, keys, chapters, the queue and the audio track.
+
+The details are in [how casting works](/cast-to-tv).
+
+<Mock kind="cast">
+  The cast panel. Each television says what will happen to this particular file
+  on it.
+</Mock>
+
+## Torrents, while they download
+
+This is the one thing a media server cannot do by design. Plex and Jellyfin play
+files from their library, so a torrent has to be downloaded in full by a separate
+client, land in a watched folder and be picked up by a scan before the first
+frame. For a 20 GB 4K release that is the whole evening.
+
+In Frame Player a magnet link or a `.torrent` file **starts playing in seconds**.
+The pieces under the playhead are fetched first, a seek moves the download to
+where you jumped, and the readout shows how far ahead of you the file is on disk
+([how it works](/torrent-streaming)). The same stream can go to the television
+while it downloads, when the set can play the file as it is. And the built-in
+catalog finds the release to begin with — posters, seasons, the releases for each,
+with their quality, dubs and seeders.
+
+## Where Plex or Jellyfin is the better choice
+
+<Note>
+  **If the films live on a NAS and are watched on several screens**, run a
+  server. That is exactly what Plex and Jellyfin are for, and Frame Player is not
+  one.
+</Note>
+
+- **One library, every screen, several people.** Apps for almost every TV,
+  phone, stick and console, with profiles, watched status that follows each
+  person, and parental controls.
+- **Away from home.** A server can stream to you anywhere — Jellyfin for free
+  once remote access is set up, Plex with Plex Pass or a Remote Watch Pass since
+  April 2025. Frame Player plays what is on the computer and the network it is
+  on.
+- **Transcoding for weak devices.** A server can turn a 4K HEVC file into
+  something an old phone or a slow connection can take. Frame Player never
+  re-encodes a picture, so a device that cannot decode the file cannot play it.
+- **Beyond films.** Music, photos, live TV and recording — the server is the
+  whole media centre.
+
+The two go together, too: a server on the NAS for the living room and the phones,
+and Frame Player on the computer you sit at, for the files that never went into
+the library and the torrents you want to watch tonight.
