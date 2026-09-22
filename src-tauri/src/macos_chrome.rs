@@ -120,8 +120,97 @@ pub fn apply(window: &tauri::WebviewWindow) {
 fn install_toolbar(ns: &NSWindow, mtm: MainThreadMarker) {
     let toolbar = NSToolbar::new(mtm);
     toolbar.setAllowsUserCustomization(false);
-    ns.setToolbar(Some(&toolbar));
-    ns.setToolbarStyle(NSWindowToolbarStyle::Unified);
+    if set_toolbar_guarded(ns, Some(&toolbar)) {
+        ns.setToolbarStyle(NSWindowToolbarStyle::Unified);
+    }
+}
+
+/// Take the toolbar off, if it is still on.
+fn remove_toolbar(ns: &NSWindow) {
+    if ns.toolbar().is_some() {
+        set_toolbar_guarded(ns, None);
+    }
+}
+
+/// `setToolbar`, with an Objective-C exception turned into a log line.
+///
+/// Swapping the toolbar tears the title bar's views down and rebuilds them, and
+/// on macOS 26 that has thrown from inside AppKit: a view leaving the window
+/// removed a key-value observer from the NSWindow that was not registered
+/// (`-[NSObject(NSKeyValueObserverRegistration) _removeObserver:forProperty:]`,
+/// under `-[NSThemeFrame _showHideToolbar:…]`). The observer is AppKit's own —
+/// nothing here observes the window — so there is no imbalance on our side to
+/// fix. What made it fatal is where it happened: in the `WillEnterFullScreen`
+/// notification, inside `NSPerformVisuallyAtomicChange`, called from tao's Rust
+/// dispatch closure. The exception unwound into Rust frames, which cannot
+/// unwind it, and the process aborted. Caught here it costs at most a title bar
+/// that is the wrong height until the next swap.
+fn set_toolbar_guarded(ns: &NSWindow, toolbar: Option<&NSToolbar>) -> bool {
+    let swap = std::panic::AssertUnwindSafe(|| ns.setToolbar(toolbar));
+    match objc2::exception::catch(swap) {
+        Ok(()) => true,
+        Err(exception) => {
+            let what = exception.map_or_else(|| "nil".to_owned(), |e| e.to_string());
+            log_warn(&format!("setToolbar threw: {what}"));
+            false
+        }
+    }
+}
+
+/// Whether `enter_fullscreen` hid the traffic lights on its way in, so the
+/// `WillEnterFullScreen` handler knows to show them again. Only what it hid
+/// comes back: buttons the idle UI had already hidden stay the way they were.
+static HIDDEN_FOR_ENTRY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Go fullscreen with the toolbar already off, so AppKit's transition never has
+/// to take it away. Main thread only. Answers `false` when it did not start the
+/// transition, and the caller should go through tao instead — where the
+/// `WillEnterFullScreen` handler still removes the toolbar, which is also the
+/// path for the green button and ⌃⌘F.
+///
+/// Taking the toolbar away mid-transition is what crashed (see
+/// `set_toolbar_guarded`); doing it beforehand means the title bar is rebuilt
+/// outside `NSPerformVisuallyAtomicChange`, in a window no transition is
+/// holding snapshots of. Two things about the order are measured, not chosen.
+/// The traffic lights are hidden first: removing the toolbar drops them from
+/// (19, 33) to the system's (9, 9), and on its own that hop was on screen for
+/// three frames before the zoom began. And the transition is started in the
+/// **same** main-thread turn, by `toggleFullScreen:` here rather than by a
+/// second IPC call: the hidden buttons and the short title bar are then never
+/// committed to the screen — recorded, the frames are indistinguishable from
+/// the old path — and the buttons come back in `WillEnterFullScreen`, in the
+/// strip where they belong. tao sees this the way it sees the green button.
+pub fn enter_fullscreen(window: &tauri::WebviewWindow) -> bool {
+    use std::sync::atomic::Ordering;
+
+    let Some(ns) = ns_window(window) else {
+        return false;
+    };
+    if ns.styleMask().contains(NSWindowStyleMask::FullScreen) {
+        return true;
+    }
+    // Without it `toggleFullScreen:` does nothing (the mini player takes it
+    // away), and a window left with no toolbar and no buttons would be worse
+    // than tao reporting the same no-op.
+    if !ns
+        .collectionBehavior()
+        .contains(NSWindowCollectionBehavior::FullScreenPrimary)
+    {
+        return false;
+    }
+    let mut hid = false;
+    for kind in TRAFFIC_LIGHTS {
+        if let Some(btn) = ns.standardWindowButton(kind) {
+            if !btn.isHidden() {
+                btn.setHidden(true);
+                hid = true;
+            }
+        }
+    }
+    HIDDEN_FOR_ENTRY.store(hid, Ordering::Relaxed);
+    remove_toolbar(&ns);
+    ns.toggleFullScreen(None);
+    true
 }
 
 /// Take the toolbar away for the duration of fullscreen.
@@ -161,7 +250,16 @@ fn toolbar_off_in_fullscreen(ns: &NSWindow) {
 
     let win = ns.retain();
     let entering = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
-        win.setToolbar(None);
+        // Already off when `enter_fullscreen` started this; still on for the
+        // green button, ⌃⌘F and tao's own path.
+        remove_toolbar(&win);
+        if HIDDEN_FOR_ENTRY.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            for kind in TRAFFIC_LIGHTS {
+                if let Some(btn) = win.standardWindowButton(kind) {
+                    btn.setHidden(false);
+                }
+            }
+        }
     });
 
     let win = ns.retain();

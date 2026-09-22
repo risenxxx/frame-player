@@ -379,6 +379,9 @@ export async function toggleFullscreen() {
   }
   await maskFullscreenTransition();
   chrome.fullscreen = true;
+  // macOS: the native side takes the title-bar toolbar off before the
+  // transition starts, not inside it — see `window_enter_fullscreen`.
+  if (IS_MAC && (await invoke<boolean>('window_enter_fullscreen').catch(() => false))) return;
   await getCurrentWindow().setFullscreen(true);
 }
 

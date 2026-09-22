@@ -842,6 +842,35 @@ async fn window_buttons(window: tauri::WebviewWindow, visible: bool) -> bool {
     }
 }
 
+/// Enter fullscreen through `macos_chrome::enter_fullscreen`, which takes the
+/// toolbar off before AppKit's transition starts rather than in the middle of
+/// it (where it once crashed the player). Answers `false` when it did not start
+/// the transition — always, outside macOS — and the frontend then goes through
+/// `setFullscreen` as before. Waits for the main thread for the same reason
+/// `window_buttons` does: the answer is only known once the closure has run.
+#[tauri::command]
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+async fn window_enter_fullscreen(window: tauri::WebviewWindow) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let (tx, mut rx) = tauri::async_runtime::channel::<bool>(1);
+        let win = window.clone();
+        if window
+            .run_on_main_thread(move || {
+                let _ = tx.try_send(macos_chrome::enter_fullscreen(&win));
+            })
+            .is_err()
+        {
+            return false;
+        }
+        rx.recv().await.unwrap_or(false)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 /// Let the window float over *other applications'* fullscreen spaces, for the
 /// mini player (macOS). A no-op elsewhere: on Windows an always-on-top window is
 /// already as high as a Win32 window goes, and there is no system compact-overlay
@@ -1065,6 +1094,7 @@ pub fn run() {
             webview_version,
             hdr_status,
             window_buttons,
+            window_enter_fullscreen,
             window_float_over_fullscreen,
             zoom_pan,
             folder_entries,

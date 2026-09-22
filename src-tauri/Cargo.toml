@@ -1,6 +1,6 @@
 [package]
 name = "frameplayer"
-version = "1.13.2"
+version = "1.13.3"
 description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
 authors = ["Evgenii Zakharov"]
 edition = "2021"
@@ -109,7 +109,9 @@ tauri-plugin-deep-link = "2.4.9"
 # macOS: native window chrome (rounded corners, transparent title bar, the
 # system traffic-light buttons) — see macos_chrome in lib.rs.
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6.4"
+# `exception`: `catch` around the toolbar calls AppKit makes during a
+# fullscreen transition (see `set_toolbar_guarded`).
+objc2 = { version = "0.6.4", features = ["exception"] }
 objc2-app-kit = { version = "0.3.2", features = [
     "NSWindow",
     "NSView",
