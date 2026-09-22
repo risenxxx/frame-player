@@ -15,7 +15,9 @@ faq:
   - q: Is Frame Player based on VLC?
     a: No. VLC is built on its own engine, libVLC. Frame Player is built on libmpv, the library form of mpv, which is the engine behind IINA and mpv.net as well. Both use FFmpeg's decoders underneath, so the list of formats that play is much the same.
   - q: Does VLC have thumbnail previews on the seekbar?
-    a: Not as of VLC 3.0.23, the current release. It has been asked for for years. Frame Player shows the frame under the cursor as you hover the seekbar, and sharpens it to the exact position once the cursor stops.
+    a: Not as of VLC 3.0.24, the current release. It has been asked for for years. Frame Player shows the frame under the cursor as you hover the seekbar, and sharpens it to the exact position once the cursor stops.
+  - q: Why does VLC show a black screen on my Chromecast?
+    a: Usually because the file's video is something the device cannot decode — HEVC and 10-bit video are the common cases — and VLC sent it anyway, so the television shows the title and a black picture while the sound plays. It is one of 56 open Chromecast issues in VLC's bug tracker. Frame Player checks each file against each device before it starts and says what will happen, so a file the device cannot show is never sent to it.
   - q: Can VLC cast to a DLNA television?
     a: VLC 3 casts to Chromecast devices through Playback → Renderer, converting the video on the fly when the device cannot play it. It can browse a DLNA media server, but it cannot send a video to a DLNA television. Frame Player does both, Chromecast and DLNA.
   - q: Is Frame Player free like VLC?
@@ -50,13 +52,13 @@ through an extension. [Frame Player](/) was built for exactly that part.
 | Remembers where you stopped | Yes, and the audio and subtitle tracks you chose | Asks whether to continue |
 | Frame by frame | Forwards and backwards | Forwards only |
 | Skip intro | From the file's chapters | — |
-| Cast to a TV | Chromecast and DLNA | Chromecast |
+| Cast to a TV | Chromecast and DLNA, the picture never re-encoded | Chromecast, converting the video on the fly when the device cannot play it |
 | Torrents | Built in, watch while downloading | — |
 | Watch together | Built in | Through Syncplay |
 | YouTube and other sites | Through yt-dlp, installed from the player | Through VLC's own scripts |
 | Licence | GPL-3.0 | GPL-2.0 or later |
 
-<p class="table-note">Checked against VLC 3.0.23 in September 2026. VLC 4, with a new interface, is in development but not released.</p>
+<p class="table-note">Checked against VLC 3.0.24 in September 2026. VLC 4, with a new interface, is in development but not released.</p>
 
 ## What is the same
 
@@ -84,7 +86,7 @@ thumbnail sharpens to the exact frame rather than the keyframe before it.
 
 **The picture, mpv's way.** HDR is tone mapped by libplacebo, the renderer mpv
 is known for, and that includes Dolby Vision releases with no HDR10 fallback,
-which VLC 3 shows in green and purple.
+which VLC 3 has long shown in green and purple.
 
 **A series picks up where you left it.** Frame Player reopens a file at the
 position you stopped at without asking, and remembers the dub and subtitles you
@@ -104,12 +106,57 @@ subtitles made for exactly that copy, and a subtitle made for a different frame
 rate is flagged before you download it — that is the one that
 [drifts further out of sync](/guides/subtitles-out-of-sync) the longer you watch.
 
-**Torrents, casting and watching together, built in.** A magnet link plays while
-it downloads ([how](/torrent-streaming)). A film goes to a Chromecast *or* a DLNA
-television — the television's own player, which usually handles the file as it
-is ([how](/cast-to-tv)). And a six-character code keeps friends in other places
-on the same frame ([how](/watch-together)); with VLC that takes Syncplay, a
-separate program.
+**Torrents and watching together, built in.** A magnet link plays while it
+downloads ([how](/torrent-streaming)), and a six-character code keeps friends in
+other places on the same frame ([how](/watch-together)); with VLC that takes
+Syncplay, a separate program.
+
+## Casting to a television
+
+This is where the two differ most. VLC can send a video to a Chromecast, and when
+it works it is convenient — but its bug tracker lists
+[56 open Chromecast issues](https://code.videolan.org/videolan/vlc/-/issues/?label_name%5B%5D=Component%3A%3AStream%20output%3A%20Chromecast),
+and the same few come up again and again: a
+[black screen with only the title on it](https://code.videolan.org/videolan/vlc/-/issues/25359),
+[HEVC](https://code.videolan.org/videolan/vlc/-/issues/27671) and
+[10-bit video](https://code.videolan.org/videolan/vlc/-/issues/27127) that play
+as sound only, casting that
+[stops after a few minutes](https://code.videolan.org/videolan/vlc/-/issues/25366),
+an [audio track that will not change](https://code.videolan.org/videolan/vlc/-/issues/25492)
+while casting, and, since 3.0.22, some Chromecasts
+[no longer appearing in the list at all](https://code.videolan.org/videolan/vlc/-/issues/29654).
+When the device cannot play a file, VLC converts the video on the fly and warns
+that the conversion can use all the power the computer has — which is where the
+stutter comes from.
+
+Frame Player's casting was built and measured against real televisions, and it
+works the other way round:
+
+- **It says what will happen before anything starts.** Each television in the
+  cast panel says, for this file, whether it **plays as it is**, is **prepared
+  before it starts**, or cannot play and why. A file the device cannot show is
+  never sent to it, so there is no black screen to wait out.
+- **The picture is never re-encoded.** When only the container is the problem,
+  the file is repacked with the video copied as it is — about ten seconds for a
+  film, and the copy is kept, so casting it again is instant. After that the
+  television plays a plain file, which is why seeking on it is as quick as on
+  anything else it plays.
+- **DLNA as well as Chromecast.** A DLNA television plays the file with its own
+  player, so a release the set already handles goes over untouched — measured on
+  a 4K LG set with a 6.3 GB HEVC HDR10 MKV and Dolby 5.1 sound, seeking included.
+  When a set speaks both, the player picks the one that fits the file, and falls
+  back to the other if a start fails.
+- **The window becomes the remote.** The seekbar, the keys, chapters, the queue
+  and the audio track all act on the television; changing the dub prepares the
+  new track while the old one keeps playing, then swaps. Disconnecting hands the
+  film back to the window at the position the set had reached.
+- **When something is wrong, it says what.** The search also asks the devices on
+  your network directly, for routers that do not pass discovery between Wi-Fi
+  bands; a television that is found but never starts is reported as the firewall
+  problem it almost always is; and a check under each device shows what the set
+  says it can play, with a copy button for a bug report.
+
+The details are in [how casting works](/cast-to-tv).
 
 ## Where VLC is the better choice
 
