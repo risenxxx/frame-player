@@ -1,0 +1,136 @@
+---
+title: A VLC alternative for Windows and Mac — Frame Player vs VLC
+description: VLC plays almost anything on almost any device. Frame Player is built on mpv instead and adds what VLC still lacks — seekbar previews, subtitles matched to your release, torrent streaming, DLNA casting and watch-together. How the two compare, honestly.
+heading: Frame Player or VLC?
+lede: VLC is the player everybody already has, and it has earned that — it plays almost anything, on almost any device. Frame Player is built on a different engine, mpv, with an interface designed from scratch around it. Here is where each of them is the better choice.
+eyebrow: Comparison
+short: Frame Player vs VLC
+updated: 2026-09-22
+order: 45
+related:
+  - compare/iina
+  - cast-to-tv
+  - guides/subtitles-out-of-sync
+faq:
+  - q: Is Frame Player based on VLC?
+    a: No. VLC is built on its own engine, libVLC. Frame Player is built on libmpv, the library form of mpv, which is the engine behind IINA and mpv.net as well. Both use FFmpeg's decoders underneath, so the list of formats that play is much the same.
+  - q: Does VLC have thumbnail previews on the seekbar?
+    a: Not as of VLC 3.0.23, the current release. It has been asked for for years. Frame Player shows the frame under the cursor as you hover the seekbar, and sharpens it to the exact position once the cursor stops.
+  - q: Can VLC cast to a DLNA television?
+    a: VLC 3 casts to Chromecast devices through Playback → Renderer, converting the video on the fly when the device cannot play it. It can browse a DLNA media server, but it cannot send a video to a DLNA television. Frame Player does both, Chromecast and DLNA.
+  - q: Is Frame Player free like VLC?
+    a: Yes. Both are free and open source — Frame Player under the GPL-3.0, VLC under the GPL-2.0 or later. Neither has an account, a subscription or advertising.
+  - q: Does Frame Player run on Linux, Android or iPhone?
+    a: No — Windows 10 and 11, and macOS on Apple Silicon. On Linux, on a phone, on an Intel Mac or on a Windows ARM laptop, VLC is the one to use.
+---
+
+import Mock from '../../../components/prose/Mock.astro'
+import Note from '../../../components/prose/Note.astro'
+
+VLC is the default answer to "what should I use to play this file", and for good
+reason: it plays nearly everything, it runs nearly everywhere, and it has for
+twenty years. What people who switch away from it usually miss is not a format
+but the experience around the picture — an interface that has changed little in
+a decade, a seekbar that shows nothing when you hover it, subtitles found
+through an extension. [Frame Player](/) was built for exactly that part.
+
+<Mock kind="preview">
+  Hovering the seekbar shows the frame you would land on, and the chapter it
+  belongs to — the one thing VLC users ask for most often.
+</Mock>
+
+## At a glance
+
+| Compared | [Frame Player](/) | VLC |
+|---|---|---|
+| Runs on | Windows 10 and 11, macOS on Apple Silicon | Windows (including ARM), macOS, Linux, Android, iOS and more |
+| Engine | libmpv, with FFmpeg's decoders | libVLC, with FFmpeg's decoders |
+| Seekbar previews | Built in | — |
+| Subtitle search | Built in, OpenSubtitles, matched to the exact release | VLSub extension, OpenSubtitles |
+| Remembers where you stopped | Yes, and the audio and subtitle tracks you chose | Asks whether to continue |
+| Frame by frame | Forwards and backwards | Forwards only |
+| Skip intro | From the file's chapters | — |
+| Cast to a TV | Chromecast and DLNA | Chromecast |
+| Torrents | Built in, watch while downloading | — |
+| Watch together | Built in | Through Syncplay |
+| YouTube and other sites | Through yt-dlp, installed from the player | Through VLC's own scripts |
+| Licence | GPL-3.0 | GPL-2.0 or later |
+
+<p class="table-note">Checked against VLC 3.0.23 in September 2026. VLC 4, with a new interface, is in development but not released.</p>
+
+## What is the same
+
+**The formats.** Both players decode with FFmpeg underneath, so the everyday
+files — MKV, MP4, AVI, HEVC, AV1, every common audio and subtitle format — play
+in either one, with hardware decoding where the graphics card has it.
+
+**The price.** Both are free and open source, with no account, no subscription
+and nothing sent home.
+
+## Where Frame Player goes further
+
+**An interface designed as a whole.** VLC has every function somewhere, in menus
+several levels deep; Frame Player puts the ones you use on the video, and the
+rest in one settings sheet. The small things are worked out: subtitles lift out
+of the way when the controls appear, so the line you are reading is never behind
+the seekbar; every tooltip and menu row shows its shortcut, and shortcuts follow
+the physical key, so they work in any keyboard layout; when the window gets
+narrow the control bar folds its extra buttons into one instead of pushing play
+off centre.
+
+**Previews that show the frame you land on.** Hover the seekbar and you see where
+you are going, with the chapter it belongs to. Once the cursor stops, the
+thumbnail sharpens to the exact frame rather than the keyframe before it.
+
+**The picture, mpv's way.** HDR is tone mapped by libplacebo, the renderer mpv
+is known for, and that includes Dolby Vision releases with no HDR10 fallback,
+which VLC 3 shows in green and purple.
+
+**A series picks up where you left it.** Frame Player reopens a file at the
+position you stopped at without asking, and remembers the dub and subtitles you
+chose by their language and title — so the choice you made in episode one is
+found again in episode two, even when the track number is different. When an
+episode ends, the next one in the folder is offered; when a chapter is named as
+an opening, a recap or the credits, a skip button appears.
+
+<Mock kind="audio">
+  The audio menu. The track you choose is remembered for the whole folder, not
+  just for one file.
+</Mock>
+
+**Subtitles matched to your release.** Subtitle search is part of the player,
+not an extension. It searches by the file's own fingerprint first, which finds
+subtitles made for exactly that copy, and a subtitle made for a different frame
+rate is flagged before you download it — that is the one that
+[drifts further out of sync](/guides/subtitles-out-of-sync) the longer you watch.
+
+**Torrents, casting and watching together, built in.** A magnet link plays while
+it downloads ([how](/torrent-streaming)). A film goes to a Chromecast *or* a DLNA
+television — the television's own player, which usually handles the file as it
+is ([how](/cast-to-tv)). And a six-character code keeps friends in other places
+on the same frame ([how](/watch-together)); with VLC that takes Syncplay, a
+separate program.
+
+## Where VLC is the better choice
+
+<Note>
+  **On Linux, a phone, an Intel Mac or a Windows ARM laptop**, use VLC: Frame
+  Player runs on Windows on Intel and AMD, and on Apple Silicon Macs.
+</Note>
+
+- **It runs everywhere.** One player on the desktop, the phone, the tablet and
+  the Apple TV is worth a lot, and nothing else covers as much.
+- **Discs.** VLC plays DVDs with their menus. Frame Player plays files and links,
+  not discs.
+- **Beyond playback.** VLC converts files, records streams, streams to other
+  machines and plays internet radio and podcasts. Frame Player is a player and
+  nothing else.
+- **Extensions.** VLC can be extended with Lua scripts. Frame Player has no
+  plugin system — though your mpv.conf applies underneath it.
+- **Twenty years of use.** VLC has met more strange files than any other player,
+  and the long tail of fixes that comes with that.
+
+If what you want is one tool that does everything media on every device, that is
+VLC. If what you want is the best time watching films and series on a Windows PC
+or a Mac, that is what Frame Player is for. And if you came here looking for
+IINA on Windows, [that comparison is here](/compare/iina).
