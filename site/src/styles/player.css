@@ -427,7 +427,12 @@
    rather than the whole picture being scaled into a thumbnail. */
 @media (max-width: 760px) {
   .player { border-radius: 10px; }
-  .torchip, .skip, .cluster.left .volume, .cluster.left .speed { display: none; }
+  .skip, .cluster.left .volume, .cluster.left .speed { display: none; }
+  /* The readout is the whole point of the torrent mock, and between the title
+     bar and the timestamps there is room for it even at 320px once it moves up
+     under the bar. The hero keeps it off: its hover preview needs that space. */
+  .player.hero .torchip { display: none; }
+  .torchip { top: 44px; right: 16px; }
   .osc { padding: 28px 4px 6px; }
   .hovertip .thumb { width: 124px; height: 70px; }
   /* The bar's padding went from 8 to 4, and the control row with it; the lights
