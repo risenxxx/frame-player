@@ -76,7 +76,27 @@
   the item whose basis decides the row.
 */
 .foot .facts { flex: 0 0 100%; font-size: 12.5px; color: var(--fg3); }
+/* Its own line rather than a third fact: the facts' wrap width is measured
+   (see base.css), and a signature is not a fact about the player. */
+.foot .made { flex: 0 0 100%; margin-top: -8px; font-size: 12.5px; color: var(--fg3); }
+.foot .made a { color: var(--fg2); text-decoration: underline; text-underline-offset: 2px; }
+.foot .made a:hover { color: var(--fg); }
+.foot .made .heart { width: 16px; height: 16px; margin-inline: 1px; vertical-align: -3.5px; stroke: none; color: var(--acc); fill: currentColor; }
 .foot-theme { display: none; }
+
+/* The widest layout only (every narrower one begins at 1200px): the guides
+   run edge to edge — see `spread` in Footer.astro for when they may. */
+@media (min-width: 1201px) {
+  .foot .guides.spread { justify-content: space-between; }
+}
+
+/* The signature takes the bottom-right corner, opposite the facts, and ends on
+   the same right edge as the links. At 760px the footer becomes one centred
+   column (narrow.css) and the facts stack, so there is no corner left. */
+@media (min-width: 761px) {
+  .foot .facts { flex: 1 1 auto; }
+  .foot .made { flex: none; margin: 0 0 0 auto; }
+}
 .foot-theme .theme { margin-left: auto; }
 
 /* ── icons ────────────────────────────────────────────────────────────────── */

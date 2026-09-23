@@ -7,6 +7,16 @@ const home = Astro.url.pathname === '/'
 /* Every guide, on every page: the footer is the one list a crawler and a
    reader both reach from anywhere. */
 const guides = (await getCollection('pages')).sort((a, b) => a.data.order - b.data.order)
+
+/* On the widest layout the list is spread edge to edge, which is only right
+   while it fits on one line: a wrapped row under `space-between` flings a
+   lone last link to one edge and a pair of them to both. Nothing in CSS can
+   ask whether a row wrapped, so the answer is estimated here, where the list
+   is known. At 13.5px the titles measured 6.46px a character; 6.8 is that
+   with room for a wider one, 20px is the gap, 1136px the row at 1201px. Five
+   is the floor because fewer links stretched over the row read as holes. */
+const guideChars = guides.reduce((n, g) => n + g.data.short.length, 0)
+const spread = guides.length >= 5 && guideChars * 6.8 + 20 * (guides.length - 1) <= 1136
 ---
 
 <footer class="foot">
@@ -33,12 +43,13 @@ const guides = (await getCollection('pages')).sort((a, b) => a.data.order - b.da
       <a href="https://github.com/risenxxx/frame-player/blob/main/LICENSE">Licence</a>
     </nav>
     {guides.length > 0 && (
-      <nav class="guides" aria-label="Guides">
+      <nav class:list={['guides', { spread }]} aria-label="Guides">
         {guides.map((g) => <a href={`/${g.id}`}>{g.data.short}</a>)}
       </nav>
     )}
     <p class="facts facts-line">
       <span class="nb">GPL-3.0-or-later</span><span class="sep"></span><span class="nb">built on libmpv, FFmpeg and librqbit</span>
     </p>
+    <p class="made">Made with <svg class="ic heart" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-heart"/></svg><span class="vh">love</span> by <a href="https://risen.dev" target="_blank">Risen</a></p>
   </div>
 </footer>
