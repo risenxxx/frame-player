@@ -274,16 +274,16 @@
 }
 
 /* The pointing hand, because the track is a link to a moment in the film and
-   the cursor should say so before the click. Its hotspot is the fingertip at
-   (9.65, 1.5) of the 24-unit box — × 20/24 gives the offsets that put that
-   point on the track rather than the corner of the box. */
+   the cursor should say so before the click. It is macOS's own, drawn at its
+   native 15×19; the hotspot is the fingertip at (5.65, 1), and the margins put
+   that point on the track rather than the corner of the box. */
 .cursor {
   position: absolute;
   top: 50%;
   left: var(--hover);
-  width: 20px;
-  height: 20px;
-  margin: -1.25px 0 0 -8px;
+  width: 15px;
+  height: 19px;
+  margin: -1px 0 0 -5.65px;
   filter: drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.4));
   opacity: var(--cursor);
   transform: translate(calc((1 - var(--cursor)) * -4px), calc((1 - var(--cursor)) * 4px));

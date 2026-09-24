@@ -422,8 +422,8 @@
 /*
   The pointer's hotspot, zero-sized, so the arrow and the hand inside it point
   at the same pixel: it ends on the button's centre (18, 17). Each shape is
-  offset by its own tip — the arrow's at (3.3, 1.4) of its 19px box, the hand's
-  at (8, 1.25) of its 20px one, the figures `.cursor` in player.css uses.
+  offset by its own tip — the arrow's at (1.1, 1.5) of its 11×18 box, the
+  hand's at (5.65, 1) of its 15×19 one, the figures `.cursor` in player.css uses.
 */
 .walk {
   position: absolute;
@@ -435,14 +435,13 @@
   z-index: 6;
 }
 
-.walk svg { position: absolute; }
-.walk-arrow { width: 19px; height: 19px; margin: -1.4px 0 0 -3.3px; opacity: calc(1 - var(--hand)); }
+.walk svg { position: absolute; filter: drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.4)); }
+.walk-arrow { width: 11px; height: 18px; margin: -1.5px 0 0 -1.1px; opacity: calc(1 - var(--hand)); }
 .walk-hand {
-  width: 20px;
-  height: 20px;
-  margin: -1.25px 0 0 -8px;
+  width: 15px;
+  height: 19px;
+  margin: -1px 0 0 -5.65px;
   opacity: var(--hand);
-  filter: drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.4));
 }
 
 /*
