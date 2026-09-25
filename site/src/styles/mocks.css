@@ -435,7 +435,7 @@
   z-index: 6;
 }
 
-.walk svg { position: absolute; filter: drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.4)); }
+:is(.walk, .ptr) svg { position: absolute; filter: drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.4)); }
 .walk-arrow { width: 11px; height: 18px; margin: -1.5px 0 0 -1.1px; opacity: calc(1 - var(--hand)); }
 .walk-hand {
   width: 15px;
@@ -477,6 +477,8 @@
      stretching off, and this player's picture is absolutely positioned, so its
      fit-content width is zero. */
   .sc-cast .player.mini { flex: 1; min-height: 0; aspect-ratio: auto; margin-inline: 0; }
+  /* The subtitle window beside it follows, so the two stay one height. */
+  .player.subs { aspect-ratio: auto; width: 100%; height: 384px; }
 }
 
 /* ── mock: two machines on one timeline ───────────────────────────────────── */
@@ -641,45 +643,89 @@
   the window showed an empty grey band over a finished frame, which read as a
   layout bug.
 
-  One linear `--p` over 2800 ms (`data-ease="linear"`), each beat with its own
-  curve — `-t` is a beat's linear time, the bare name its curve:
+  The search is reached the way it is in the application: from the subtitle
+  menu on the control bar. One linear `--p` over 5000 ms (`data-ease="linear"`),
+  each beat with its own curve — `-t` is a beat's linear time, the bare name
+  its curve:
 
-    dialog opens       0–450 ms     smoothstep
-    rows arrive        390–750      ease-out, 110 ms apart
-    Download pressed   1400–1600    ease-out
-    dialog closes      1680–1990    smoothstep
-    the line appears   1960–2350    ease-out
+    pointer fades in    0–180 ms      ease-out
+    walks to the button 0–800         smoothstep
+    menu opens          900–1200      ease-out, the button lit under it
+    walks to "Find"     1350–1950     smoothstep, the row lit on arrival
+    menu closes         2100–2300     smoothstep
+    dialog opens        2150–2600     smoothstep
+    rows arrive         2550–2980     ease-out, 110 ms apart
+    walks to Download   2700–3400     smoothstep
+    Download pressed    3500–3700     ease-out
+    dialog closes       3800–4100     smoothstep
+    the line appears    4100–4500     ease-out
+    pointer fades out   4300–4700     smoothstep, as it hides on idle
+
+  The pointer is an arrow while it travels and the hand over each of the three
+  things it clicks, switching at once, as a system cursor does. Where those
+  three are is measured by scripts/pointer.ts (`--x1`…`--y3`); the walk is a
+  sum of three legs, each weighted by how far through it the pointer is.
 */
+/* The same proportion as the cast window beside it (see `.sc-cast .player.mini`),
+   so the two mocks in the column's full width are one height; a plain 16:9 was
+   40px shorter. narrow.css still makes it squarer on a phone. */
 .player.subs {
+  aspect-ratio: 611 / 384;
   container-type: inline-size;
-  --open-t: clamp(0, var(--p, 1) / 0.16, 1);
+  --ui: 1;
+  --in-t: clamp(0, var(--p, 1) / 0.036, 1);
+  --in: calc(1 - (1 - var(--in-t)) * (1 - var(--in-t)) * (1 - var(--in-t)));
+  --m1-t: clamp(0, var(--p, 1) / 0.16, 1);
+  --m1: calc(var(--m1-t) * var(--m1-t) * (3 - 2 * var(--m1-t)));
+  --menu-in-t: clamp(0, (var(--p, 1) - 0.18) / 0.06, 1);
+  --menu-in: calc(1 - (1 - var(--menu-in-t)) * (1 - var(--menu-in-t)) * (1 - var(--menu-in-t)));
+  --m2-t: clamp(0, (var(--p, 1) - 0.27) / 0.12, 1);
+  --m2: calc(var(--m2-t) * var(--m2-t) * (3 - 2 * var(--m2-t)));
+  --hov: clamp(0, (var(--p, 1) - 0.385) * 1000, 1);
+  --menu-out-t: clamp(0, (var(--p, 1) - 0.42) / 0.04, 1);
+  --menu-out: calc(var(--menu-out-t) * var(--menu-out-t) * (3 - 2 * var(--menu-out-t)));
+  --menu: calc(var(--menu-in) * (1 - var(--menu-out)));
+  --open-t: clamp(0, (var(--p, 1) - 0.43) / 0.09, 1);
   --open: calc(var(--open-t) * var(--open-t) * (3 - 2 * var(--open-t)));
-  --press-t: clamp(0, (var(--p, 1) - 0.5) / 0.07, 1);
+  --m3-t: clamp(0, (var(--p, 1) - 0.54) / 0.14, 1);
+  --m3: calc(var(--m3-t) * var(--m3-t) * (3 - 2 * var(--m3-t)));
+  --press-t: clamp(0, (var(--p, 1) - 0.7) / 0.04, 1);
   --press: calc(1 - (1 - var(--press-t)) * (1 - var(--press-t)) * (1 - var(--press-t)));
-  --close-t: clamp(0, (var(--p, 1) - 0.6) / 0.11, 1);
+  --close-t: clamp(0, (var(--p, 1) - 0.76) / 0.06, 1);
   --close: calc(var(--close-t) * var(--close-t) * (3 - 2 * var(--close-t)));
-  --sub-t: clamp(0, (var(--p, 1) - 0.7) / 0.14, 1);
+  --sub-t: clamp(0, (var(--p, 1) - 0.82) / 0.08, 1);
   --sub: calc(1 - (1 - var(--sub-t)) * (1 - var(--sub-t)) * (1 - var(--sub-t)));
+  --out-t: clamp(0, (var(--p, 1) - 0.86) / 0.08, 1);
+  --out: calc(var(--out-t) * var(--out-t) * (3 - 2 * var(--out-t)));
   --shown: calc(var(--open) * (1 - var(--close)));
+  --hand: calc(
+    clamp(0, (var(--p, 1) - 0.15) * 1000, 1) - clamp(0, (var(--p, 1) - 0.27) * 1000, 1)
+    + clamp(0, (var(--p, 1) - 0.38) * 1000, 1) - clamp(0, (var(--p, 1) - 0.54) * 1000, 1)
+    + clamp(0, (var(--p, 1) - 0.67) * 1000, 1)
+  );
 }
 
-.sub-osc { position: absolute; inset: auto 0 0; height: 54px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.85)); }
-.sub-osc i { position: absolute; left: 16px; right: 16px; bottom: 15px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
-.sub-osc i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 38%; border-radius: 2px; background: #fff; }
-.sub-osc i::before { content: ""; position: absolute; left: 38%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #fff; }
+/* The button lights while its menu is open, as `.b.on` does in the audio mock,
+   with the same pill under it as the cast button. */
+.subsbtn { position: relative; color: rgba(232, 232, 236, calc(0.9 - 0.9 * var(--menu))); }
+.subsbtn::after { content: ""; position: absolute; inset: 0; border-radius: 7px; background: rgba(255, 255, 255, calc(0.1 * var(--menu))); }
+.subsbtn .lit { position: absolute; inset: 0; display: grid; place-items: center; color: #818cf8; opacity: var(--menu); }
+.player.subs .trackrow.find { background: rgba(255, 255, 255, calc(0.09 * var(--hov))); }
 
-/* Where mpv puts the line with the control bar up: lifted clear of it. The
-   regular weight is mpv's own (`sub-bold=no`), which the player leaves alone. */
+/* Where mpv puts the line with the control bar up: lifted clear of it, which
+   is above the timestamps. The regular weight is mpv's own (`sub-bold=no`),
+   which the player leaves alone. Centred by auto margins rather than `left:
+   50%`, which would give it half the window to wrap in. */
 .subline {
   position: absolute;
-  left: 50%;
-  bottom: 52px;
-  transform: translateX(-50%);
+  inset: auto 14px calc(100% + 10px);
+  width: fit-content;
+  margin-inline: auto;
   font-size: 14px;
   font-weight: 400;
+  font-variant-numeric: normal;
   color: #fff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9);
-  max-width: calc(100% - 28px);
   text-align: center;
   text-wrap: balance;
   line-height: 1.35;
@@ -692,13 +738,16 @@
    anchored near the top so a short window would cut its bottom edge first, and
    with the title bar drawn over the picture that put it flush under the bar.
    Every width it is drawn at was measured to fit it whole (narrow.css trims the
-   content and makes the window taller where it would not). */
+   content and makes the window taller where it would not). Centred with auto
+   margins rather than a translate, so the pointer's measurement of Download
+   (layout offsets, which ignore transforms) is where it is drawn. */
 .subs-dlg {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  inset: 0;
+  margin: auto;
   width: min(80cqw, 440px);
-  transform: translate(-50%, -50%) scale(calc(0.97 + 0.03 * var(--open) - 0.02 * var(--close)));
+  height: fit-content;
+  transform: scale(calc(0.97 + 0.03 * var(--open) - 0.02 * var(--close)));
   transform-origin: 50% 50%;
   opacity: var(--shown);
   padding: 11px 12px 8px;
@@ -710,6 +759,20 @@
   font-size: 12px;
   line-height: normal;
 }
+
+/* A zero-sized box at the hotspot; the two shapes hang off it by their own
+   tips (see `.walk`). Not drawn until the stops are measured. */
+.ptr {
+  position: absolute;
+  display: none;
+  width: 0;
+  height: 0;
+  left: calc(34% * (1 - var(--m1)) + var(--x1, 0px) * (var(--m1) - var(--m2)) + var(--x2, 0px) * (var(--m2) - var(--m3)) + var(--x3, 0px) * var(--m3));
+  top: calc(40% * (1 - var(--m1)) + var(--y1, 0px) * (var(--m1) - var(--m2)) + var(--y2, 0px) * (var(--m2) - var(--m3)) + var(--y3, 0px) * var(--m3));
+  opacity: calc(var(--in) * (1 - var(--out)));
+  z-index: 6;
+}
+.pointed .ptr { display: block; }
 
 .subs-title { margin-bottom: 8px; font-size: 14px; font-weight: 500; }
 .subs-q { display: flex; gap: 8px; }
@@ -732,7 +795,7 @@
 .subs-list { margin-top: 6px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
 
 .subs-row {
-  --r-t: clamp(0, (var(--p, 1) - 0.14 - var(--i) * 0.04) / 0.13, 1);
+  --r-t: clamp(0, (var(--p, 1) - 0.51 - var(--i) * 0.022) / 0.072, 1);
   --r: calc(1 - (1 - var(--r-t)) * (1 - var(--r-t)) * (1 - var(--r-t)));
   display: flex;
   align-items: center;

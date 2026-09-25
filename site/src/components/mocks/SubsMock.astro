@@ -3,14 +3,54 @@ import Frame from '../Frame.astro'
 import TitleBar from './TitleBar.astro'
 ---
 
-<!-- The player with the subtitle search open over the film, as the
-     application draws it (SubsDialog): the dialog opens, the exact
-     match is downloaded, the dialog closes and the line is on screen. -->
-<div class="player subs" data-scene data-dur="2800" data-ease="linear" aria-hidden="true">
+<!-- The player with the subtitle search reached the way the application
+     reaches it: the pointer opens the subtitle menu on the control bar, picks
+     "Find subtitles…", the search opens over the film (SubsDialog), the exact
+     match is downloaded, the dialog closes and the line is on screen. The
+     three places the pointer stops carry `data-stop`; scripts/pointer.ts
+     measures them, see mocks.css. -->
+<div class="player subs" data-scene data-dur="5000" data-ease="linear" data-pointer aria-hidden="true">
   <Frame name="ridge-hiker" slot="mock" class="scene" alt="A hiker under the Milky Way on a dark ridge" />
   <TitleBar over>Orbital.Night.S02E03.WEB-DL.2160p.mkv</TitleBar>
-  <span class="sub-osc"><i></i></span>
-  <span class="subline">— Everything you can see out there is older than the ground you stand on.</span>
+  <div class="osc">
+    <div class="times mono">
+      <span class="subline">— Everything you can see out there is older than the ground you stand on.</span>
+      <div class="trackpop">
+        <div class="trackpop-title">Subtitles</div>
+        <div class="trackrow sel">Off</div>
+        <div class="trackrow">Add file…</div>
+        <div class="trackrow find" data-stop="2" data-fx="0.3">Find subtitles…</div>
+      </div>
+      <span>18:42</span><span>47:10</span>
+    </div>
+    <div class="seekwrap">
+      <div class="seektrack">
+        <span class="buffered" style="width:100%;background:rgba(255,255,255,.18)"></span>
+        <span class="fill" style="width:40%"></span>
+        <span class="knob" style="left:40%"></span>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="cluster left">
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-volume"/></svg></span>
+        <span class="volume"><i></i><b></b></span>
+      </div>
+      <div class="cluster center">
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-prev"/></svg></span>
+        <span class="b play"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-pause"/></svg></span>
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-next"/></svg></span>
+      </div>
+      <div class="cluster right">
+        <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-audio"/></svg></span>
+        <span class="b subsbtn" data-stop="1">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-subs"/></svg>
+          <span class="lit"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-subs"/></svg></span>
+        </span>
+        <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-cast"/></svg></span>
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-full"/></svg></span>
+      </div>
+    </div>
+  </div>
   <span class="subs-dim"></span>
   <div class="subs-dlg">
     <div class="subs-title">Find subtitles</div>
@@ -22,7 +62,7 @@ import TitleBar from './TitleBar.astro'
           <div class="subs-nm">Orbital.Night.S02E03.WEB-DL.2160p</div>
           <div class="subs-meta"><b>RU</b><span>23.976 fps</span><span class="subs-dl">4 812 downloads</span><span class="subs-badge">exact match</span></div>
         </div>
-        <span class="subs-get">Download</span>
+        <span class="subs-get" data-stop="3">Download</span>
       </div>
       <div class="subs-row" style="--i:1">
         <div class="subs-main">
@@ -33,4 +73,8 @@ import TitleBar from './TitleBar.astro'
       </div>
     </div>
   </div>
+  <span class="ptr">
+    <svg class="walk-arrow" viewBox="0 0 11 18" aria-hidden="true"><use href="#i-cursor"/></svg>
+    <svg class="walk-hand" viewBox="0 0 15 19" aria-hidden="true"><use href="#i-hand"/></svg>
+  </span>
 </div>
