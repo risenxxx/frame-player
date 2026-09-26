@@ -26,7 +26,6 @@ import Footer from '../components/Footer.astro'
     <section class="hero nf">
       <div class="hero-light" aria-hidden="true"></div>
       <div class="wrap hero-copy">
-        <p class="eyebrow enter">404</p>
         <h1 class="enter" style="--dl:1">
           <span>Seeked past the end.</span>
         </h1>
@@ -61,7 +60,7 @@ import Footer from '../components/Footer.astro'
 
           <div class="nf-osd" aria-hidden="true">
             <span class="nf-osd-label">Nothing to play</span>
-            <span class="nf-osd-sub" data-osd>Failed to open this address</span>
+            <span class="nf-osd-sub" data-osd>404 — failed to open this address</span>
           </div>
 
           <span class="subline nf-sub" aria-hidden="true">— Are you sure this is the right address?</span>
@@ -121,16 +120,18 @@ import Footer from '../components/Footer.astro'
     if (path) {
       for (const el of document.querySelectorAll<HTMLElement>('[data-path]')) el.textContent = path
       const osd = document.querySelector<HTMLElement>('[data-osd]')
-      if (osd) osd.textContent = `Failed to open /${path}`
+      if (osd) osd.textContent = `404 — failed to open /${path}`
     }
   </script>
 </Page>
 
 <style>
-  /* The hero's own rhythm, a little tighter: there is one thing to say. */
+  /*
+    The hero's own rhythm, a little tighter: there is one thing to say. The
+    code is not printed over the headline — it is in the window, where an error
+    belongs: the readout says what failed, and the timeline is parked at 4:04.
+  */
   .nf { padding-bottom: 96px; }
-  .nf .eyebrow { justify-content: center; margin-bottom: 20px; }
-  .nf .eyebrow::after { content: ""; width: 18px; height: 1px; background: var(--acc-line); }
 
   /*
     SMPTE-style bars, drawn rather than shipped: seven 75% bars, the reversed
@@ -165,24 +166,20 @@ import Footer from '../components/Footer.astro'
   }
 
   /*
-    The static on top of it, faint: one tile of turbulence moved in steps, so it
-    flickers like a dead input rather than drifting like fog. Reduced motion
-    stops it through the global rule in motion.css.
+    The grain and the scan lines a camera picks up off a screen, and both are
+    still. The first version moved a 160px tile of turbulence in steps to read
+    as live static, which is what a dead input does — but blended over bars this
+    saturated it read as a patch of shadow wobbling in one corner rather than as
+    noise, because what the eye tracks in a repeating tile is the tile, not the
+    grain. A still picture of a test card is the thing being drawn anyway.
   */
   .noise {
-    inset: -40px;
-    opacity: 0.16;
-    mix-blend-mode: overlay;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.4 -0.2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-    animation: static 0.5s steps(4) infinite;
-  }
-
-  @keyframes static {
-    0% { transform: translate(0, 0); }
-    25% { transform: translate(-17px, 11px); }
-    50% { transform: translate(9px, -23px); }
-    75% { transform: translate(-29px, -7px); }
-    100% { transform: translate(0, 0); }
+    inset: 0;
+    opacity: 0.5;
+    mix-blend-mode: soft-light;
+    background-image:
+      repeating-linear-gradient(rgba(0, 0, 0, 0.5) 0 1px, transparent 1px 3px),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.1 -0.15'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   }
 
   /* The application's OSD: top left under the title bar, the same surface as
@@ -216,8 +213,13 @@ import Footer from '../components/Footer.astro'
      bar is up. */
   .nf-sub { bottom: 150px; font-size: 18px; }
 
-  /* A real link in the place of the application's skip button. */
-  .nf-skip { color: inherit; transition: background-color 0.15s, border-color 0.15s; }
+  /*
+    A real link in the place of the application's skip button — and above the
+    control bar, not under it. `.osc` is a later sibling, so without this it
+    paints over the button's lower half and swallows the clicks there. In the
+    application the skip button sits outside `.osc` for the same reason.
+  */
+  .nf-skip { z-index: 2; color: inherit; transition: background-color 0.15s, border-color 0.15s; }
   .nf-skip:hover { background: rgba(28, 28, 38, 0.92); border-color: rgba(255, 255, 255, 0.3); }
   .nf-skip:focus-visible { outline-offset: 3px; border-radius: 999px; }
 
