@@ -108,9 +108,13 @@ class Chrome {
       (windowPrefs.autoHide === 'fullscreen' && (this.fullscreen || mini.on)),
   );
 
-  idle = $derived(
-    this.mayHide &&
-      player.hasFile &&
+  /// The pointer has rested long enough, and on nothing that must keep it —
+  /// what `idle` is before the "hide the controls" setting has its say. The
+  /// cursor reads this directly when it is set to hide on its own
+  /// (`CursorHide` `always`), which is how the bar can stay while the pointer
+  /// goes.
+  pointerIdle = $derived(
+    player.hasFile &&
       !seek.dragging &&
       !this.oscHover &&
       !this.barHover &&
@@ -122,6 +126,8 @@ class Chrome {
       // nothing and hiding the controls of a remote is actively wrong.
       !playback.session,
   );
+
+  idle = $derived(this.mayHide && this.pointerIdle);
 }
 
 export const chrome = new Chrome();
@@ -236,9 +242,11 @@ function cursorEffect() {
   $effect(() => {
     clearTimeout(cursorTimer);
     const run = ++cursorRun;
-    // `hideCursor` can only keep the cursor where the chrome is gone, never
-    // take it from under chrome that is still up: `idle` comes first.
-    if (!chrome.idle || chrome.pointerInTitlebar || !windowPrefs.hideCursor) {
+    // `always` hides on the pointer's own idle, so the cursor can go while a bar
+    // the viewer asked to keep stays up; the default follows the chrome.
+    const mode = windowPrefs.cursorHide;
+    const rested = mode === 'always' ? chrome.pointerIdle : mode === 'controls' && chrome.idle;
+    if (!rested || chrome.pointerInTitlebar) {
       // Showing it again is never delayed: that half is a response to the
       // pointer moving, and any lag there is felt immediately.
       chrome.cursorHidden = false;

@@ -53,6 +53,22 @@ const PREFS_VERSION = 2;
 export type AutoHide = 'always' | 'fullscreen' | 'never';
 export const AUTO_HIDE_CHOICES: AutoHide[] = ['always', 'fullscreen', 'never'];
 
+/**
+ * When the cursor hides, asked separately from the controls because the two
+ * answers are wanted apart: a bar that stays in the window (`AutoHide` at
+ * `never` or `fullscreen`) over a picture the pointer should still get off.
+ *
+ * - `controls` — the default: the cursor goes exactly when the chrome does, so
+ *   it follows `autoHide` wherever that is set.
+ * - `always` — on the same idle timer whether or not the chrome is allowed to
+ *   fade. Never while the pointer rests on a bar, a dialog is open or the
+ *   seekbar is held: the pointer disappearing from under a control about to be
+ *   clicked is a bug in either mode.
+ * - `never` — the cursor stays.
+ */
+export type CursorHide = 'controls' | 'always' | 'never';
+export const CURSOR_HIDE_CHOICES: CursorHide[] = ['controls', 'always', 'never'];
+
 class WindowPrefs {
   /// Remember the geometry between runs. Off by default while restore is buggy.
   remember = $state(false);
@@ -65,9 +81,8 @@ class WindowPrefs {
   snapMini = $state(true);
   /// When the chrome may fade out on its own — see `AutoHide`.
   autoHide = $state<AutoHide>('always');
-  /// Whether the cursor goes with it. It never goes *without* it: a pointer
-  /// that has vanished while the controls are still up is a bug, not a mode.
-  hideCursor = $state(true);
+  /// When the cursor hides — see `CursorHide`.
+  cursorHide = $state<CursorHide>('controls');
   geometry = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 }
 
@@ -359,7 +374,9 @@ export function loadWindowPrefs() {
     if (typeof saved.alwaysOnTop === 'boolean') windowPrefs.alwaysOnTop = saved.alwaysOnTop;
     if (typeof saved.snapMini === 'boolean') windowPrefs.snapMini = saved.snapMini;
     if (saved.autoHide && AUTO_HIDE_CHOICES.includes(saved.autoHide)) windowPrefs.autoHide = saved.autoHide;
-    if (typeof saved.hideCursor === 'boolean') windowPrefs.hideCursor = saved.hideCursor;
+    if (saved.cursorHide && CURSOR_HIDE_CHOICES.includes(saved.cursorHide)) {
+      windowPrefs.cursorHide = saved.cursorHide;
+    }
     if (saved.geometry) windowPrefs.geometry = saved.geometry;
   } catch {
     // corrupt entry — the defaults stay
@@ -377,7 +394,7 @@ function saveWindowPrefs() {
         alwaysOnTop: windowPrefs.alwaysOnTop,
         snapMini: windowPrefs.snapMini,
         autoHide: windowPrefs.autoHide,
-        hideCursor: windowPrefs.hideCursor,
+        cursorHide: windowPrefs.cursorHide,
         geometry: windowPrefs.geometry,
       }),
     );
@@ -597,8 +614,8 @@ export function setAutoHide(v: AutoHide) {
   saveWindowPrefs();
 }
 
-export function setHideCursor(on: boolean) {
-  windowPrefs.hideCursor = on;
+export function setCursorHide(v: CursorHide) {
+  windowPrefs.cursorHide = v;
   saveWindowPrefs();
 }
 

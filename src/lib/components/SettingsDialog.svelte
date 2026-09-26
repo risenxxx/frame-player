@@ -67,8 +67,9 @@
   import { showOsd } from '$lib/osd.svelte';
   import {
     AUTO_HIDE_CHOICES,
+    CURSOR_HIDE_CHOICES,
     setAutoHide,
-    setHideCursor,
+    setCursorHide,
     syncMenuChecks,
     windowPrefs,
   } from '$lib/window-prefs.svelte';
@@ -913,8 +914,8 @@
     <!-- A pill, not a switch: three named places the controls may fade in,
          and the middle one is the answer for anybody who comes from VLC or
          MPC. The cursor sits right under it because it is the same question
-         asked of the pointer — and it is muted under "never", where there is
-         no idle for it to follow. -->
+         asked of the pointer, answered separately so the bar can stay while
+         the pointer goes. -->
     <div class="setting">
       <div class="setting-label">{t('set.autohide')}</div>
       <div class="segmented">
@@ -927,23 +928,16 @@
       <div class="setting-hint">{t('set.autohide_hint')}</div>
     </div>
 
-    <div class="setting" class:muted={windowPrefs.autoHide === 'never'}>
-      <div class="row-toggle">
-        <div class="row-text">
-          <div class="setting-label">{t('set.hide_cursor')}</div>
-          <div class="setting-hint">{t('set.hide_cursor_hint')}</div>
-        </div>
-        <button
-          class="switch"
-          class:on={windowPrefs.hideCursor}
-          role="switch"
-          aria-checked={windowPrefs.hideCursor}
-          aria-label={t('set.hide_cursor')}
-          onclick={() => setHideCursor(!windowPrefs.hideCursor)}
-        >
-          <span class="switch-knob"></span>
-        </button>
+    <div class="setting">
+      <div class="setting-label">{t('set.cursor_hide')}</div>
+      <div class="segmented">
+        {#each CURSOR_HIDE_CHOICES as v (v)}
+          <button class="segopt" class:sel={windowPrefs.cursorHide === v} onclick={() => setCursorHide(v)}>
+            {t(`set.cursor_hide_${v}`)}
+          </button>
+        {/each}
       </div>
+      <div class="setting-hint">{t('set.cursor_hide_hint')}</div>
     </div>
 
     <!-- Watching together needs a server both ends agree on, and this is where

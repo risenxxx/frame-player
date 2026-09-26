@@ -609,8 +609,12 @@ const ru = {
   'set.autohide_never': 'Никогда',
   'set.autohide_hint':
     'Когда мышь не двигается, панель уходит через секунду. «В полноэкранном» оставляет её в окне; мини-плеер считается полноэкранным.',
-  'set.hide_cursor': 'Скрывать курсор вместе с панелью',
-  'set.hide_cursor_hint': 'Курсор пропадает не раньше панели и возвращается от первого движения мыши.',
+  'set.cursor_hide': 'Скрывать курсор',
+  'set.cursor_hide_controls': 'С панелью',
+  'set.cursor_hide_always': 'Всегда',
+  'set.cursor_hide_never': 'Никогда',
+  'set.cursor_hide_hint':
+    '«Всегда» прячет курсор через секунду покоя, даже если панель остаётся на экране. Над панелью и в диалогах он не пропадает.',
   'set.hdr_unsupported': 'Монитор не поддерживает HDR — всегда тонмаппинг в SDR',
   'set.hdr_off_mac':
     'Сейчас нет запаса яркости (EDR) — действует тонмаппинг в SDR; убавьте яркость SDR или включите HDR в «Мониторах»',
@@ -1492,8 +1496,12 @@ const en: Record<MessageKey, string> = {
   'set.autohide_never': 'Never',
   'set.autohide_hint':
     'When the mouse stops, the controls fade after a second. “In fullscreen” keeps them in a window; the mini player counts as fullscreen.',
-  'set.hide_cursor': 'Hide the cursor with the controls',
-  'set.hide_cursor_hint': 'The cursor never goes before the controls do, and comes back with the first mouse move.',
+  'set.cursor_hide': 'Hide the cursor',
+  'set.cursor_hide_controls': 'With the controls',
+  'set.cursor_hide_always': 'Always',
+  'set.cursor_hide_never': 'Never',
+  'set.cursor_hide_hint':
+    '“Always” hides the cursor after a second of rest even while the controls stay on screen. It never hides over the controls or in a dialog.',
   'set.hdr_unsupported': 'This display has no HDR — always tone-mapped to SDR',
   'set.hdr_off_mac':
     'No brightness headroom (EDR) right now — tone-mapping to SDR; lower SDR brightness or enable HDR in Displays',
