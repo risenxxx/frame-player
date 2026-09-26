@@ -48,14 +48,26 @@ const updated = d.updated.toLocaleDateString('en-GB', { day: 'numeric', month: '
 
 const schema: Record<string, unknown>[] = [
   {
-    '@type': 'Article',
+    '@type': 'TechArticle',
+    '@id': `${url}#article`,
     headline: d.heading,
+    name: d.title,
     description: d.description,
+    /*
+      `published` is the day the page first went up and `updated` the day it was
+      last checked against the player; a page that has never been revised has
+      one date and prints it as both, which is what it is.
+    */
+    datePublished: (d.published ?? d.updated).toISOString(),
     dateModified: d.updated.toISOString(),
     mainEntityOfPage: url,
+    url,
+    inLanguage: 'en',
     image: new URL(image, Astro.site).href,
+    isPartOf: { '@id': `${home}#website` },
     author: { '@type': 'Organization', name: 'Frame Player', url: home },
-    about: { '@type': 'SoftwareApplication', name: 'Frame Player' },
+    publisher: { '@type': 'Organization', name: 'Frame Player', url: home },
+    about: { '@id': `${home}#app` },
   },
   {
     '@type': 'BreadcrumbList',
@@ -74,7 +86,15 @@ if (d.faq.length > 0) {
 }
 ---
 
-<Page title={d.title} description={d.description} ogType="article" image={image} imageAlt={d.heading} schema={schema}>
+<Page
+  title={d.title}
+  description={d.description}
+  ogType="article"
+  image={image}
+  imageAlt={d.heading}
+  schema={schema}
+  markdown={`/${entry.id}.md`}
+>
   <Icons />
   <Nav />
   <main id="top">

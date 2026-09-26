@@ -1,5 +1,6 @@
 ---
 import onestLatin from '@fontsource-variable/onest/files/onest-latin-wght-normal.woff2?url'
+import { getCollection } from 'astro:content'
 import { downloads } from '../release.ts'
 import '@fontsource-variable/onest'
 import '@fontsource-variable/jetbrains-mono'
@@ -23,6 +24,8 @@ interface Props {
   imageAlt?: string
   /** Structured data this page adds to the application's own record. */
   schema?: Record<string, unknown>[]
+  /** The page's Markdown twin, for anything that would rather read than render. */
+  markdown?: string
   /** The 404: no canonical address, and nothing for a search engine to keep. */
   noindex?: boolean
 }
@@ -36,6 +39,7 @@ const {
   image = '/og.png',
   imageAlt = 'Frame Player: files, links, magnets. One player that gets them right.',
   schema = [],
+  markdown,
   noindex = false,
 } = Astro.props
 
@@ -45,7 +49,7 @@ const {
 */
 const canonical = new URL(Astro.url.pathname.replace(/\.html$/, ''), Astro.site)
 const ogImage = new URL(image, Astro.site)
-const { version, windows } = await downloads()
+const { version, windows, date } = await downloads()
 
 /*
   One structured record for the one thing every page is about. `SoftwareApplication`
@@ -55,13 +59,28 @@ const { version, windows } = await downloads()
   player. A page with more to say — an article, its breadcrumbs — adds records
   beside this one rather than replacing it.
 */
+/* The guides, so the application's own record points at the pages that explain
+   it: one place an agent can read the whole site's shape from. */
+const guides = (await getCollection('pages')).sort((a, b) => a.data.order - b.data.order)
+
+const site = new URL('/', Astro.site).href
+const ORG = { '@type': 'Organization', name: 'Frame Player', url: site, logo: new URL('/apple-touch-icon.png', Astro.site).href }
+
 const app = {
   '@type': 'SoftwareApplication',
+  '@id': `${site}#app`,
   name: 'Frame Player',
   applicationCategory: 'MultimediaApplication',
   operatingSystem: 'Windows 10, Windows 11, macOS',
   softwareVersion: version,
-  url: new URL('/', Astro.site).href,
+  /* When this version was published — the one date the application itself has,
+     and what says the page is current rather than merely undated. */
+  ...(date ? { datePublished: date, dateModified: date } : {}),
+  url: site,
+  inLanguage: 'en',
+  author: ORG,
+  publisher: ORG,
+  softwareHelp: guides.map((g) => ({ '@type': 'WebPage', name: g.data.short, url: new URL(`/${g.id}`, Astro.site).href })),
   downloadUrl: new URL(windows, Astro.site).href,
   license: 'https://www.gnu.org/licenses/gpl-3.0.html',
   isAccessibleForFree: true,
@@ -71,7 +90,19 @@ const app = {
     'Free, open-source video player on mpv for Windows and macOS: watch a torrent as it downloads, ' +
     'cast to the TV untouched, resume anything.',
 }
-const jsonLd = { '@context': 'https://schema.org', '@graph': [app, ...schema] }
+/* The site itself, so a page, its guides and the application are one graph
+   rather than three records that happen to share a domain. */
+const website = {
+  '@type': 'WebSite',
+  '@id': `${site}#website`,
+  name: 'Frame Player',
+  url: site,
+  inLanguage: 'en',
+  publisher: ORG,
+  about: { '@id': `${site}#app` },
+}
+
+const jsonLd = { '@context': 'https://schema.org', '@graph': [website, app, ...schema] }
 ---
 
 <!doctype html>
@@ -81,7 +112,16 @@ const jsonLd = { '@context': 'https://schema.org', '@graph': [app, ...schema] }
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
+    {noindex ? (
+      <meta name="robots" content="noindex" />
+    ) : (
+      <>
+        <link rel="canonical" href={canonical} />
+        {/* Nothing withheld from a snippet: a page that means to be quoted says so. */}
+        <meta name="robots" content="max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+        {markdown && <link rel="alternate" type="text/markdown" href={new URL(markdown, Astro.site)} />}
+      </>
+    )}
 
     <meta property="og:type" content={ogType} />
     <meta property="og:site_name" content="Frame Player" />

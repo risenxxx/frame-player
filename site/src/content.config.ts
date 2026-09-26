@@ -13,10 +13,16 @@ import { glob } from 'astro/loaders'
 const pages = defineCollection({
   loader: glob({ pattern: '**/*.mdx', base: './src/content/pages' }),
   schema: z.object({
+    /*
+      Both are capped rather than merely described: a title past ~70 characters
+      and a description past ~170 are cut off in a search result, in a link
+      preview and in whatever an agent quotes, and the cut lands wherever it
+      lands. The build fails instead.
+    */
     /** The document title — what a search result shows. */
-    title: z.string(),
+    title: z.string().max(70),
     /** The meta description, and the link card's text. */
-    description: z.string(),
+    description: z.string().max(170),
     /** The page's own headline, which can be longer than the title. */
     heading: z.string(),
     lede: z.string(),
@@ -25,6 +31,9 @@ const pages = defineCollection({
     eyebrow: z.string(),
     /** What the page is called wherever it is a link: the footer, "Read next". */
     short: z.string(),
+    /** When the page first went up. Optional: a page that has never been
+        revised is published and updated on the same day. */
+    published: z.coerce.date().optional(),
     updated: z.coerce.date(),
     /** Order in the footer and in lists of pages. */
     order: z.number().default(100),

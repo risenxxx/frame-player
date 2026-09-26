@@ -59,6 +59,39 @@ than the 720px text column takes `wide`, up to 1040px. After adding a page, run
 `npm run og` for its link card (`public/og/<id>.png`; without one the page uses
 the site's), and `npm run audit` against it with `AUDIT_URL`.
 
+## What an agent reads
+
+Every guide is also built as Markdown, at its own address plus `.md`
+(`src/pages/[...slug].md.ts` with `src/markdown.ts`): the MDX body with the
+imports dropped and its three components turned into the text they stand for,
+under the heading, the lede, the source address and the date the page was last
+checked. `/llms.txt` is the index of those — the llms.txt convention, generated
+like the sitemap, so a new page appears in it by existing.
+
+The same address answers with either, by content negotiation:
+`worker/index.ts` is a worker in front of the assets that hands back the
+Markdown twin when the request asks for `text/markdown` at least as strongly as
+for `text/html`, and the page otherwise, with `Vary: Accept` on both. That is
+Cloudflare's "Markdown for Agents" without its plan: the Markdown is built with
+the site rather than converted at the edge, so what an agent reads is the
+page's own source. `run_worker_first` in `wrangler.jsonc` keeps everything with
+an extension — the hashed bundles, the pictures — on the CDN, where the worker
+never sees it.
+
+```bash
+curl -H 'Accept: text/markdown' https://frameplayer.app/torrent-streaming
+curl https://frameplayer.app/torrent-streaming.md   # the same bytes
+curl https://frameplayer.app/llms.txt
+```
+
+Titles are capped at 70 characters and descriptions at 170 by the collection
+schema, because past that a search result, a link preview and a quote all cut
+them somewhere nobody chose. Structured data is one `@graph` per page (`WebSite`,
+`SoftwareApplication` with the release date from `latest.json`, and on a guide a
+`TechArticle` with `datePublished`/`dateModified` plus its breadcrumbs and
+questions), so what a page says about itself and what it says about the player
+are one record rather than three.
+
 Addresses have no trailing slash and no extension: the build writes
 `torrent-streaming.html` (`build.format: 'file'`), Workers serve it at
 `/torrent-streaming`, and the canonical link says the same.

@@ -33,6 +33,10 @@ export interface Release {
   version: string
   windows: string
   macos: string
+  /** When that version was published, ISO 8601, from `latest.json`'s `pub_date`.
+      Null when the manifest could not be read — a date is either known or not
+      claimed. */
+  date: string | null
   /** True when the buttons hand over a file rather than a release page. */
   direct: boolean
 }
@@ -72,6 +76,7 @@ export async function release(): Promise<Release> {
     version: await versionFromRepo(),
     windows: `${GITHUB}/releases/latest`,
     macos: `${GITHUB}/releases/latest`,
+    date: null,
     direct: false,
   })
 
@@ -80,13 +85,14 @@ export async function release(): Promise<Release> {
   try {
     const res = await fetch(`${origin}/latest.json`, { signal: AbortSignal.timeout(8000) })
     if (!res.ok) throw new Error(`latest.json: ${res.status}`)
-    const manifest = (await res.json()) as { version?: string }
+    const manifest = (await res.json()) as { version?: string; pub_date?: string }
     const version = manifest.version
     if (!version) throw new Error('latest.json carries no version')
     return {
       version,
       windows: `${origin}/FramePlayer_${version}_x64-setup.exe`,
       macos: `${origin}/FramePlayer_${version}_aarch64.dmg`,
+      date: manifest.pub_date ?? null,
       direct: true,
     }
   } catch (error) {

@@ -2,9 +2,18 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "frame-player-site",
   "compatibility_date": "2026-09-01",
+  /*
+    The worker sits in front of the documents only, to answer a request for
+    `text/markdown` with the page's Markdown twin (worker/index.ts). Everything
+    with an extension — the hashed bundles, the pictures, the manifests — is
+    served straight from the CDN and never wakes it.
+  */
+  "main": "worker/index.ts",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "404-page"
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/*", "!/_astro/*", "!/gen/*", "!/og/*", "!/*.*"]
   },
   "routes": [{ "pattern": "frameplayer.app", "custom_domain": true }],
   "workers_dev": false,
