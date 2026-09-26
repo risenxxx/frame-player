@@ -21,6 +21,7 @@ mod step_engine;
 mod thumb_service;
 mod torrent;
 mod torrent_storage;
+mod trash;
 mod upnp;
 mod window_guard;
 
@@ -1117,6 +1118,7 @@ pub fn run() {
             thumb_service::poster_frame,
             thumb_service::set_private_paths,
             thumb_service::forget_thumbs,
+            trash::trash_file,
             thumb_service::forget_thumbs_under,
             thumb_service::clear_thumb_cache,
             torrent::torrent_add,

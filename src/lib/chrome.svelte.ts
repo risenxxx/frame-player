@@ -25,7 +25,7 @@ import { IS_MAC } from './platform';
 import { flushPosition } from './history.svelte';
 import { player } from './player.svelte';
 import { seek } from './seek.svelte';
-import { mini, toggleMini } from './window-prefs.svelte';
+import { mini, toggleMini, windowPrefs } from './window-prefs.svelte';
 
 /// How long the chrome stays up after the pointer stops.
 const UI_HIDE_MS = 1200;
@@ -97,8 +97,20 @@ class Chrome {
   brandEl = $state<HTMLElement | null>(null);
   chromeEl = $state<HTMLElement | null>(null);
 
+  /// The viewer's "hide the controls" setting allows it here at all. Part of
+  /// `idle` itself rather than a gate in front of the bars, because everything
+  /// that fades — the bars, the traffic lights, the cursor, the mini player's
+  /// exit button — already reads `idle`, and one of them left reading the raw
+  /// timer is exactly the controls-up-cursor-gone bug the setting must not
+  /// introduce. Mini counts as fullscreen; `AutoHide` says why.
+  mayHide = $derived(
+    windowPrefs.autoHide === 'always' ||
+      (windowPrefs.autoHide === 'fullscreen' && (this.fullscreen || mini.on)),
+  );
+
   idle = $derived(
-    player.hasFile &&
+    this.mayHide &&
+      player.hasFile &&
       !seek.dragging &&
       !this.oscHover &&
       !this.barHover &&
@@ -224,7 +236,9 @@ function cursorEffect() {
   $effect(() => {
     clearTimeout(cursorTimer);
     const run = ++cursorRun;
-    if (!chrome.idle || chrome.pointerInTitlebar) {
+    // `hideCursor` can only keep the cursor where the chrome is gone, never
+    // take it from under chrome that is still up: `idle` comes first.
+    if (!chrome.idle || chrome.pointerInTitlebar || !windowPrefs.hideCursor) {
       // Showing it again is never delayed: that half is a response to the
       // pointer moving, and any lag there is felt immediately.
       chrome.cursorHidden = false;

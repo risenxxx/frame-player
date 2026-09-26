@@ -36,6 +36,23 @@ const WINDOW_PREFS_KEY = 'frameplayer.window';
 /// saves with the current version and sticks.
 const PREFS_VERSION = 2;
 
+/**
+ * When the controls hide themselves after the pointer stops.
+ *
+ * `always` is the player's own behaviour and the default. `fullscreen` is what
+ * somebody coming from VLC or MPC expects — a bar that belongs to the window
+ * and stays there, and a picture with nothing on it once the window *is* the
+ * picture. `never` means never, fullscreen included; a setting that says
+ * "never" and then hides something in some mode is lying.
+ *
+ * The mini player counts as fullscreen here, not as a window: it has no bar to
+ * leave in place, only controls drawn over a 420 px picture that is usually
+ * watched while the pointer is busy in another application — kept up, they
+ * would cover a third of it for the whole film. `never` still keeps them.
+ */
+export type AutoHide = 'always' | 'fullscreen' | 'never';
+export const AUTO_HIDE_CHOICES: AutoHide[] = ['always', 'fullscreen', 'never'];
+
 class WindowPrefs {
   /// Remember the geometry between runs. Off by default while restore is buggy.
   remember = $state(false);
@@ -46,6 +63,11 @@ class WindowPrefs {
   /// where it is meant to be out of the way, and pixel-accurate placement is
   /// not what anyone is trying to do with it.
   snapMini = $state(true);
+  /// When the chrome may fade out on its own — see `AutoHide`.
+  autoHide = $state<AutoHide>('always');
+  /// Whether the cursor goes with it. It never goes *without* it: a pointer
+  /// that has vanished while the controls are still up is a bug, not a mode.
+  hideCursor = $state(true);
   geometry = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 }
 
@@ -336,6 +358,8 @@ export function loadWindowPrefs() {
     }
     if (typeof saved.alwaysOnTop === 'boolean') windowPrefs.alwaysOnTop = saved.alwaysOnTop;
     if (typeof saved.snapMini === 'boolean') windowPrefs.snapMini = saved.snapMini;
+    if (saved.autoHide && AUTO_HIDE_CHOICES.includes(saved.autoHide)) windowPrefs.autoHide = saved.autoHide;
+    if (typeof saved.hideCursor === 'boolean') windowPrefs.hideCursor = saved.hideCursor;
     if (saved.geometry) windowPrefs.geometry = saved.geometry;
   } catch {
     // corrupt entry — the defaults stay
@@ -352,6 +376,8 @@ function saveWindowPrefs() {
         fitToVideo: windowPrefs.fitToVideo,
         alwaysOnTop: windowPrefs.alwaysOnTop,
         snapMini: windowPrefs.snapMini,
+        autoHide: windowPrefs.autoHide,
+        hideCursor: windowPrefs.hideCursor,
         geometry: windowPrefs.geometry,
       }),
     );
@@ -564,6 +590,16 @@ export async function applyAlwaysOnTop() {
   } catch {
     // not critical
   }
+}
+
+export function setAutoHide(v: AutoHide) {
+  windowPrefs.autoHide = v;
+  saveWindowPrefs();
+}
+
+export function setHideCursor(on: boolean) {
+  windowPrefs.hideCursor = on;
+  saveWindowPrefs();
 }
 
 export function toggleWindowPref(key: 'remember' | 'fitToVideo' | 'alwaysOnTop' | 'snapMini') {

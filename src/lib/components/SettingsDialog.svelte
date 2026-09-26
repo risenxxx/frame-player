@@ -48,7 +48,7 @@
     removeExcludedFolder,
     toggleHistory,
   } from '$lib/history.svelte';
-  import { applyNormalize, player, readList } from '$lib/player.svelte';
+  import { applyNormalize, applySdrColor, player, readList } from '$lib/player.svelte';
   import { playlist, setPlaylistPref } from '$lib/playlist.svelte';
   import {
     net,
@@ -65,7 +65,13 @@
   import { proxyLooksValid } from '$lib/source';
   import { castCacheCapGb, setCastCacheCapGb } from '$lib/cast.svelte';
   import { showOsd } from '$lib/osd.svelte';
-  import { syncMenuChecks } from '$lib/window-prefs.svelte';
+  import {
+    AUTO_HIDE_CHOICES,
+    setAutoHide,
+    setHideCursor,
+    syncMenuChecks,
+    windowPrefs,
+  } from '$lib/window-prefs.svelte';
   import { DEFAULT_RELAY, relayUrl, setRelayUrl } from '$lib/sync/wire.svelte';
   import {
     DEFAULT_INDEXER,
@@ -904,6 +910,42 @@
       </div>
     </div>
 
+    <!-- A pill, not a switch: three named places the controls may fade in,
+         and the middle one is the answer for anybody who comes from VLC or
+         MPC. The cursor sits right under it because it is the same question
+         asked of the pointer — and it is muted under "never", where there is
+         no idle for it to follow. -->
+    <div class="setting">
+      <div class="setting-label">{t('set.autohide')}</div>
+      <div class="segmented">
+        {#each AUTO_HIDE_CHOICES as v (v)}
+          <button class="segopt" class:sel={windowPrefs.autoHide === v} onclick={() => setAutoHide(v)}>
+            {t(`set.autohide_${v}`)}
+          </button>
+        {/each}
+      </div>
+      <div class="setting-hint">{t('set.autohide_hint')}</div>
+    </div>
+
+    <div class="setting" class:muted={windowPrefs.autoHide === 'never'}>
+      <div class="row-toggle">
+        <div class="row-text">
+          <div class="setting-label">{t('set.hide_cursor')}</div>
+          <div class="setting-hint">{t('set.hide_cursor_hint')}</div>
+        </div>
+        <button
+          class="switch"
+          class:on={windowPrefs.hideCursor}
+          role="switch"
+          aria-checked={windowPrefs.hideCursor}
+          aria-label={t('set.hide_cursor')}
+          onclick={() => setHideCursor(!windowPrefs.hideCursor)}
+        >
+          <span class="switch-knob"></span>
+        </button>
+      </div>
+    </div>
+
     <!-- Watching together needs a server both ends agree on, and this is where
          it lives rather than in the room dialog: practically nobody runs their
          own, so a field on the way into every room was asking a question with
@@ -1462,6 +1504,8 @@
           <div class="setting-hint keynote">{t('keys.press_hint')}</div>
         {:else if keyNote?.id === def.id}
           <div class="setting-hint keynote">{keyNote.text}</div>
+        {:else if def.note}
+          <div class="setting-hint keynote">{t(def.note)}</div>
         {/if}
       {/each}
     {/each}
@@ -1657,6 +1701,33 @@
 
     {/if}
     {#if settingsTab === 'video'}
+    <!-- macOS only: the difference is between mpv and AVFoundation, and on
+         Windows there is no system player whose curve anyone expects. A pill,
+         not a switch — both positions are named ways of drawing, neither is
+         "off". Kept by the player rather than in mpv.conf (see
+         `applySdrColor`). -->
+    {#if IS_MAC}
+      <div class="setting">
+        <div class="setting-label">{t('vset.sdr_color')}</div>
+        <div class="segmented">
+          <button
+            class="segopt"
+            class:sel={player.sdrColor === 'mpv'}
+            onclick={() => applySdrColor('mpv')}
+          >
+            {t('vset.sdr_color_mpv')}
+          </button>
+          <button
+            class="segopt"
+            class:sel={player.sdrColor === 'system'}
+            onclick={() => applySdrColor('system')}
+          >
+            {t('vset.sdr_color_system')}
+          </button>
+        </div>
+        <div class="setting-hint">{t('vset.sdr_color_hint')}</div>
+      </div>
+    {/if}
     {#if hwdecCurrent}
       <div class="settings-foot">
         {t('set.hwdec_foot')}

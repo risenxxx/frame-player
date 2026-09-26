@@ -757,6 +757,10 @@ async function loadPosters(run: Attempt) {
  */
 export function forgetRecent(path: string) {
   const id = sourceId(path);
+  // The pending position goes too, or the next `flushPosition` writes the entry
+  // straight back — which is what forgetting the file that was just sent to the
+  // trash would otherwise come to.
+  if (lastKnownPos && sourceId(lastKnownPos.path) === id) lastKnownPos = null;
   purgeStores((other) => other === id);
   // Thumbnails are addressed in Rust by a hash of the file path, so this half
   // is the one thing that legitimately still speaks in paths.

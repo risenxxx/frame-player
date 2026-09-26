@@ -47,6 +47,7 @@ import { DELAY_STEP, clearAbLoop, cycleAbLoop, cycleLoop, player } from './playe
 import { copyScreenshot, saveScreenshot } from './screenshot';
 import { scrubBy } from './seek.svelte';
 import { stepBy } from './step-engine.svelte';
+import { trashCurrentFile } from './trash';
 import { nudgeDelayHere } from './tracks.svelte';
 import { mini, toggleMini } from './window-prefs.svelte';
 import { isZoomed, panBy, resetZoom, zoomAt } from './zoom.svelte';
@@ -387,6 +388,7 @@ export function runAction(id: ActionId) {
     case 'screenshot': void saveScreenshot(false); break;
     case 'screenshot_subs': void saveScreenshot(true); break;
     case 'copy_frame': void copyScreenshot(); break;
+    case 'trash_file': void trashCurrentFile(); break;
   }
 }
 

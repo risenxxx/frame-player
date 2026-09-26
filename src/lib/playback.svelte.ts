@@ -112,7 +112,8 @@ export type Feature =
   | 'loop'
   | 'delays'
   | 'screenshot'
-  | 'mini';
+  | 'mini'
+  | 'trash';
 
 class Playback {
   /// The television owns playback and this window is a remote. False while
@@ -182,6 +183,11 @@ class Playback {
       delays: !remote,
       screenshot: !remote,
       mini: !remote,
+      // `active`, not `remote`, and the one entry that says so: while a session
+      // is even being prepared the television may be about to fetch this very
+      // file from our server, and a file taken off the disk under it is a cast
+      // that fails for a reason nobody on the sofa can see.
+      trash: !cast.active,
     };
   }
 }
@@ -451,6 +457,7 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
   screenshot: 'screenshot',
   screenshot_subs: 'screenshot',
   copy_frame: 'screenshot',
+  trash_file: 'trash',
 };
 
 // ---- Hotkeys while a room is watching along ---------------------------------
@@ -473,9 +480,12 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
  *   presentation, which is precisely what the roadmap's rule says not to do:
  *   *sync the timeline, not the presentation*.
  * - `'solo'` — it would make the shared timeline mean two different things at
- *   once, so it is refused out loud while a room is on. Only the A–B loop
- *   qualifies: it holds playback inside a segment, which drift correction would
- *   fight once a second for as long as the loop lasts.
+ *   once, so it is refused out loud while a room is on. The A–B loop holds
+ *   playback inside a segment, which drift correction would fight once a second
+ *   for as long as the loop lasts. Sending the file to the trash takes away the
+ *   very content the room is watching and moves this player on to another, and
+ *   the room would follow it there — a deletion on one disk is not something
+ *   the others agreed to have happen to their evening.
  *
  * Frame stepping is deliberately `personal` rather than `solo`: it moves the
  * position by a frame, which is an order of magnitude under the drift threshold,
@@ -521,6 +531,7 @@ const SYNC_BEHAVIOR: Record<ActionId, 'shared' | 'personal' | 'solo'> = {
   screenshot: 'personal',
   screenshot_subs: 'personal',
   copy_frame: 'personal',
+  trash_file: 'solo',
 };
 
 /**

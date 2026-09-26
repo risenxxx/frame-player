@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isLocalFile,
   isMagnet,
   isTorrentLink,
   magnetFor,
@@ -169,5 +170,32 @@ describe('torrent links', () => {
     expect(torrentId(HASH.toUpperCase(), 3)).toBe(
       sourceId(`http://127.0.0.1:1/t/${HASH}/3/Ep03.mkv`),
     );
+  });
+});
+
+// The one gate in front of a key that moves the file on screen to the trash,
+// so both directions matter: a path refused is a key that says no, a URL let
+// through is a Rust call that at best fails and at worst finds something.
+describe('isLocalFile', () => {
+  it('takes absolute paths on both platforms', () => {
+    expect(isLocalFile('/Users/me/Movies/a.mkv')).toBe(true);
+    expect(isLocalFile('C:\\Films\\a.mkv')).toBe(true);
+    expect(isLocalFile('D:/Films/a.mkv')).toBe(true);
+    expect(isLocalFile('\\\\nas\\share\\a.mkv')).toBe(true);
+  });
+
+  it('refuses streams, torrents and every other scheme', () => {
+    expect(isLocalFile('https://youtu.be/abc')).toBe(false);
+    expect(isLocalFile('http://127.0.0.1:51234/t/abcdef/0/ep1.mkv')).toBe(false);
+    expect(isLocalFile('magnet:?xt=urn:btih:abc')).toBe(false);
+    expect(isLocalFile('edl://a.mkv,0,10')).toBe(false);
+    expect(isLocalFile('file:///Users/me/a.mkv')).toBe(false);
+    expect(isLocalFile('dvd://')).toBe(false);
+  });
+
+  it('refuses relative paths and nothing at all', () => {
+    expect(isLocalFile('a.mkv')).toBe(false);
+    expect(isLocalFile('')).toBe(false);
+    expect(isLocalFile(null)).toBe(false);
   });
 });

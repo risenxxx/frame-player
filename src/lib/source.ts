@@ -43,6 +43,24 @@ const TRACKING_PARAMS = new Set([
 ]);
 
 /**
+ * A file on this machine's disk, addressed by an absolute path.
+ *
+ * Narrower than `!isNetworkSource`, and on purpose: that one answers "does
+ * reading this cost bandwidth", while this answers "is there a file here that
+ * the player may act on" — so every scheme mpv understands counts against it,
+ * `edl://`, `av://`, `dvd://` and `memory://` included, not only the network
+ * ones. A torrent is covered twice over: it plays from a loopback URL, and its
+ * data belongs to the torrent store, never to a key in the player.
+ * `C:\…` is a path and not a scheme, which is why a scheme is two letters or
+ * more.
+ */
+export function isLocalFile(path: string | null): boolean {
+  if (!path || isNetworkSource(path)) return false;
+  if (/^[a-z][a-z0-9+.-]+:/i.test(path)) return false;
+  return path.startsWith('/') || /^[a-z]:[\\/]/i.test(path) || path.startsWith('\\\\');
+}
+
+/**
  * Something to hand the torrent client rather than mpv.
  *
  * A magnet, or a link to a `.torrent` file — the two forms a torrent arrives in.

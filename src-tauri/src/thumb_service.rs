@@ -883,6 +883,21 @@ fn ensure_path(inner: &mut ThumbInner, path: &str) {
     }
 }
 
+/// Let go of a file that is about to leave the disk (`trash::trash_file`).
+///
+/// The decode session holds the file open for as long as it is the current
+/// one, and the background pass would keep writing its storyboard back into
+/// the cache — a cache file for a video that no longer exists. Bumping the
+/// generation stops the pass at its next cell; forgetting the path drops the
+/// session with its handle.
+pub fn release_file(state: &ThumbState, path: &str) {
+    state.generation.fetch_add(1, Ordering::SeqCst);
+    let mut inner = lock(&state.inner);
+    if inner.path == path {
+        ensure_path(&mut inner, "");
+    }
+}
+
 /// Number of grid cells the storyboard generates for a file.
 fn bucket_count(duration: f64, interval: f64) -> usize {
     ((duration / interval).ceil() as usize).clamp(1, MAX_BUCKETS)

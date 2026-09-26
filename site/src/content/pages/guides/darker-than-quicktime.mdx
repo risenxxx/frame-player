@@ -1,0 +1,159 @@
+---
+title: Why mpv and IINA look darker than QuickTime — Frame Player
+description: The same file looks darker in mpv-based players than in QuickTime on a Mac. We measured why, which of the two follows the standard, and how to get either look.
+heading: Why the same video looks darker in mpv and IINA than in QuickTime
+lede: Open one file in QuickTime and in an mpv-based player side by side on a Mac, and the mpv one looks darker and heavier in the shadows. Neither player is broken. They read the same video with two different tone curves — we measured both, and here is what the difference is, which one the standard is on the side of, and how to get the other one.
+eyebrow: Guide
+short: Darker than QuickTime
+updated: 2026-09-27
+order: 55
+related:
+  - compare/iina
+  - guides/subtitles-out-of-sync
+faq:
+  - q: Is mpv showing the video wrong?
+    a: No. Measured against QuickTime on the same display, mpv is darker through the lower mid-tones by up to 12 levels out of 255, and the colours are the same. That is a different tone curve, not an error — and it is the one closer to the broadcast standard, which assumes a dim room. QuickTime draws the same video lighter on purpose.
+  - q: Is it because the file has no colour information?
+    a: No. A copy of the same file tagged as BT.709 measured exactly like the untagged one, in both players. Both guess BT.709 for an untagged HD video; they simply draw BT.709 differently.
+  - q: Which one is right?
+    a: By the standard, the darker one is closer. By what people on a Mac compare against, the lighter one — QuickTime's curve is what the system's own player shows, and a video edited and checked on a Mac was often approved looking like that. Which to use depends on which of the two you expect.
+  - q: Does this affect HDR video?
+    a: No. HDR video uses a different transfer function and goes through tone mapping; the difference described here is about SDR only.
+  - q: Does this happen on Windows?
+    a: The question does not really come up there. The difference is between mpv and Apple's own video framework, and Windows has no system player whose curve people compare against.
+---
+
+import Note from '../../../components/prose/Note.astro'
+
+Put the same film in QuickTime and in IINA, mpv or Frame Player on a Mac, and the
+mpv-based ones look darker: faces in a dim room lose their shape, a night scene
+turns into a black field with lights in it. The usual explanations are that mpv
+"crushes the shadows", or that the file has no colour information and mpv guesses
+wrong. We measured it, and neither is quite what happens.
+
+## What the difference actually is
+
+The test was one frame of H.264 video with sixteen grey bars of known brightness,
+played in QuickTime and in Frame Player on the same MacBook Pro display, both
+windows captured and read pixel by pixel. The numbers are what each player sent
+to the screen, out of 255:
+
+| Brightness in the file (16 = black, 235 = white) | QuickTime | mpv's curve | Difference |
+|---|---|---|---|
+| 20 | 3.7 | 4.3 | +0.6 |
+| 28 | 11.0 | 13.6 | +2.6 |
+| 40 | 29.7 | 27.6 | −2.1 |
+| 64 | 63.3 | 55.5 | −7.8 |
+| 96 | 102.3 | 91.6 | −10.7 |
+| 128 (mid-grey) | 140.0 | 128.7 | −11.3 |
+| 160 | 176.7 | 167.1 | −9.6 |
+| 224 | 242.7 | 240.6 | −2.1 |
+
+Two things stand out. The very darkest steps are not darker in mpv at all — they
+are a level or two lighter. What mpv draws darker is **the lower mid-tones**, and
+by up to 12 levels. That is where most of a dim scene lives, which is why it reads
+as lost shadow detail.
+
+On real footage the gap is the same shape: on a bright animated frame the whole
+picture averaged 177.5 in QuickTime and 170.9 in mpv's curve, and the pixels in
+the file's own shadows 54.6 against 47.9 — about an eighth darker.
+
+The colours themselves are identical. Pure red came out as 232, 51, 35 in QuickTime
+and 231, 50, 34 in Frame Player. This is a tone curve, not a colour shift.
+
+<Note>
+  **IINA draws what mpv draws.** On the same frame IINA matched Frame Player's
+  default to within half a level on every bar. It is mpv's behaviour, not one
+  player's mistake.
+</Note>
+
+## Why: two ways to read BT.709
+
+Almost every SDR video — films, series, YouTube — is BT.709. The standard says how
+the picture is *encoded*; how a screen should turn it back into light is a separate
+standard, BT.1886, and it describes a curve of roughly 2.4 for a dim room, the room
+a colourist grades in.
+
+- **mpv** hands the screen the video's values unchanged. The Mac's display then
+  reads them with its own curve, close to 2.2 — a little lighter than the 2.4 of
+  the reference, but the same family.
+- **QuickTime** decodes BT.709 with a curve of about **1.96** and then
+  encodes the result for the display. At mid-grey that is 140 instead of 129. It
+  is a long-standing Apple choice, discussed among video editors as the
+  "QuickTime gamma shift", and it fits our measurements closely: the model
+  predicts 63.6 at the 64 bar and 141 at mid-grey; QuickTime showed 63.3 and 140.
+
+So by the standard, mpv's darker picture is the closer one. By habit, on a Mac,
+QuickTime's lighter one is the familiar one: it is what the system's own player
+shows — and, by the reports that prompted this test, what other players built
+on Apple's video framework show too — and a video edited and checked on a Mac
+was often signed off looking like that. Neither is a bug, and neither is universally right.
+
+## "The file has no colour information"
+
+Many reports of this involve MKV files where `ffprobe` shows no `color_space` and
+no `color_range`, so it is natural to suspect that the player guesses badly. We
+stripped every colour tag from the test video, and then made a copy tagged
+properly as BT.709. Both players drew the tagged and the untagged copy
+**identically**, bar for bar. mpv assumes BT.709 for an untagged HD video, and so
+does QuickTime; they then draw BT.709 each in their own way. Adding tags to your
+files will not change the picture.
+
+## The recipe that goes around, and why it did not work for us
+
+The fix usually passed along for IINA is three mpv settings:
+
+```
+gamma-factor=1.1218765935747068
+vf=format=gamma=gamma2.2
+icc-profile-auto=yes
+```
+
+The first two are the heart of it: they tell mpv to treat the video as a plain 2.2
+curve and then bend it by 2.2 / 1.961 — Apple's 1.96. In Frame Player the tone
+curve came out right with them. But the third, the display's ICC profile, made
+every colour paler: pure red went from 232, 51, 35 to 213, 68, 49, green from 117,
+251, 76 to 152, 244, 103. The picture was being colour-managed twice — once by mpv
+for the display, and once more by macOS, which already converts Frame Player's
+video layer for the screen on its own.
+
+Without the ICC line, the curve alone lifted the deepest shadows too far (the 28
+bar at 18.7 instead of QuickTime's 11.0), because mpv then encodes for a pure 2.2
+display while the Mac's display curve has a straight section near black. What
+finally matched was a fourth setting that makes mpv use that real curve:
+
+```
+target-trc=srgb
+treat-srgb-as-power22=no
+```
+
+With the format filter and the gamma factor, that reproduced QuickTime to within
+half a level from the 32 bar up, and to within two units on every colour.
+
+<Note>
+  **These are the settings that matched in Frame Player.** How a player hands its
+  picture to macOS decides whether ICC belongs in the recipe, and we did not
+  measure IINA's or mpv's own window with them. If you try them elsewhere, compare
+  against QuickTime before keeping them — and apply them to SDR files only, since
+  the format filter would mislabel an HDR video.
+</Note>
+
+## How Frame Player handles it
+
+Frame Player keeps mpv's curve by default, and offers QuickTime's as a choice:
+**Settings › Video › SDR video color › As in macOS**.
+
+- **It is the combination measured above**, without ICC, so the colours stay
+  exactly as they were and only the tone curve changes.
+- **It changes the picture at once**, even on a paused frame — flip it back and
+  forth to see which you prefer.
+- **It touches SDR video only.** HDR files keep their own tone mapping, and images
+  are left alone. When an HDR file follows an SDR one, the settings are back
+  before its first frame is drawn.
+- **Your own mpv.conf wins.** If you set `gamma-factor` or `target-trc` there
+  yourself, the switch leaves that line alone.
+- **Screenshots follow the choice**, so a frame you export looks the way the
+  player showed it.
+
+The switch is on macOS only: the question it answers is "mpv or Apple", and on
+Windows there is no Apple side to match.

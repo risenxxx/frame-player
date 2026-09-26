@@ -1,6 +1,6 @@
 [package]
 name = "frameplayer"
-version = "1.13.3"
+version = "1.14.0"
 description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
 authors = ["Evgenii Zakharov"]
 edition = "2021"
@@ -151,6 +151,11 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
     "Win32_Networking_WinSock",
+    # trash.rs: the Recycle Bin (SHFileOperationW), and the drive type that
+    # says whether this volume has one at all.
+    "Win32_UI_Shell",
+    "Win32_Storage_FileSystem",
+    "Win32_System_WindowsProgramming",
 ] }
 
 # librqbit crates vendored with changes upstream has in no release — see

@@ -75,7 +75,8 @@ export type ActionId =
   | 'open_link'
   | 'screenshot'
   | 'screenshot_subs'
-  | 'copy_frame';
+  | 'copy_frame'
+  | 'trash_file';
 
 export type ActionGroup = 'playback' | 'seek' | 'audio' | 'subs' | 'view' | 'file';
 
@@ -97,6 +98,11 @@ export interface ActionDef {
    * not look as though it is missing something the menu plainly does.
    */
   menuMac?: string;
+  /**
+   * A line the editor prints under the row — for the one action whose cost has
+   * to be read before a key is given to it.
+   */
+  note?: MessageKey;
 }
 
 /**
@@ -179,6 +185,18 @@ export const ACTIONS: ActionDef[] = [
   // ⌘C is deliberately absent from the Edit menu (it is this player's copy-frame
   // key, and a menu item would swallow it), so it is ours to bind on macOS.
   { id: 'copy_frame', group: 'file', def: ['ctrl+KeyC'], defMac: ['meta+KeyC'], noRepeat: true },
+  // **Unbound by default, and that is the design.** A key that removes the
+  // file on screen is one nobody should find by accident: a stray press costs a
+  // trip to the Trash at best, and the viewer who wants it binds it once. It is
+  // also not `quiet` — the OSD it raises names the file, and that popup is the
+  // only receipt of what just left the disk.
+  {
+    id: 'trash_file',
+    group: 'file',
+    def: [],
+    noRepeat: true,
+    note: IS_MAC ? 'keys.trash_file_note_mac' : 'keys.trash_file_note_win',
+  },
 ];
 
 export const GROUP_ORDER: ActionGroup[] = ['playback', 'seek', 'audio', 'subs', 'view', 'file'];
@@ -470,12 +488,15 @@ export function holderOf(chord: string): ActionId | null {
 }
 
 /**
- * Typed rather than cast on purpose: `keys.${ActionId}` is a union of 36
+ * Typed rather than cast on purpose: `keys.${ActionId}` is a union of 37
  * literals, so this only compiles while the dictionary names every action. A
  * cast here would have turned a missing translation into an `undefined` in the
  * middle of the panel, found by looking at it.
  */
 export function actionLabel(id: ActionId): string {
+  // The one label that names a place the platform names differently: the
+  // Trash is the Recycle Bin on Windows.
+  if (id === 'trash_file' && !IS_MAC) return t('keys.trash_file_win');
   const key: MessageKey = `keys.${id}`;
   return t(key);
 }
