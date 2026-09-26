@@ -30,6 +30,7 @@
     chordOf,
     chordsOf,
     hasCustomBindings,
+    hintPair,
     isCustom,
     isDigitJump,
     isMenuAccelerator,
@@ -50,6 +51,7 @@
   } from '$lib/history.svelte';
   import { applyNormalize, applySdrColor, player, readList } from '$lib/player.svelte';
   import { playlist, setPlaylistPref } from '$lib/playlist.svelte';
+  import { LONG_STEPS, SHORT_STEPS, seekSteps, setSeekStep } from '$lib/seek-steps.svelte';
   import {
     net,
     refreshNet,
@@ -1405,6 +1407,38 @@
       </button>
     </div>
   {:else if settingsTab === 'playback'}
+    <!-- Pills rather than a slider: nobody wants a 7-second step, and five
+         round numbers are quicker to hit than a thumb. The key names come from
+         the binding table, because the keys can be moved. -->
+    <div class="setting">
+      <div class="setting-label">{t('set.seek_short')}</div>
+      <div class="segmented">
+        {#each SHORT_STEPS as v (v)}
+          <button class="segopt" class:sel={seekSteps.short === v} onclick={() => setSeekStep('short', v)}>
+            {t('set.seek_sec', { s: v })}
+          </button>
+        {/each}
+      </div>
+      <div class="setting-hint">
+        {t('set.seek_short_hint', {
+          keys: hintPair('seek_back', 'seek_fwd'),
+          precise: hintPair('seek_back_precise', 'seek_fwd_precise'),
+        })}
+      </div>
+    </div>
+
+    <div class="setting">
+      <div class="setting-label">{t('set.seek_long')}</div>
+      <div class="segmented">
+        {#each LONG_STEPS as v (v)}
+          <button class="segopt" class:sel={seekSteps.long === v} onclick={() => setSeekStep('long', v)}>
+            {t('set.seek_sec', { s: v })}
+          </button>
+        {/each}
+      </div>
+      <div class="setting-hint">{t('set.seek_long_hint', { keys: hintPair('seek_back_10', 'seek_fwd_10') })}</div>
+    </div>
+
     <div class="setting">
       <div class="row-toggle">
         <div class="row-text">

@@ -38,6 +38,7 @@
 
 import { t, type MessageKey } from './i18n.svelte';
 import { IS_MAC } from './platform';
+import { seekSteps } from './seek-steps.svelte';
 
 export type ActionId =
   | 'pause'
@@ -497,6 +498,10 @@ export function actionLabel(id: ActionId): string {
   // The one label that names a place the platform names differently: the
   // Trash is the Recycle Bin on Windows.
   if (id === 'trash_file' && !IS_MAC) return t('keys.trash_file_win');
+  // The two seek pairs jump as far as the settings say, and the label has to
+  // say the same thing.
+  if (id === 'seek_back' || id === 'seek_fwd') return t(`keys.${id}`, { s: seekSteps.short });
+  if (id === 'seek_back_10' || id === 'seek_fwd_10') return t(`keys.${id}`, { s: seekSteps.long });
   const key: MessageKey = `keys.${id}`;
   return t(key);
 }

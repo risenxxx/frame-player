@@ -760,6 +760,88 @@ pub async fn poster_frame(
     .map_err(|e| e.to_string())?
 }
 
+/// How many frames `crop_detect` looks at, spread over 10–90 % of the file.
+/// Eight keyframe decodes is about a second on a 4K HEVC file in software, and
+/// enough that one scene cannot decide the answer (see crop.rs).
+const CROP_SAMPLES: usize = 8;
+
+/// The black bars baked into this file's picture, as the rectangle to keep:
+/// `None` when there are none worth removing.
+///
+/// Keyframes only, never a decode forward to an exact time. Where exactly a
+/// sample lands does not matter, only that the samples are far apart, and a
+/// keyframe is the cheap frame to reach.
+#[tauri::command]
+pub async fn crop_detect(path: String) -> Result<Option<crate::crop::Rect>, String> {
+    tauri::async_runtime::spawn_blocking(move || detect_crop(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn detect_crop(path: &str) -> Result<Option<crate::crop::Rect>, String> {
+    let mut session = ThumbSession::open(path)?;
+    let duration = {
+        let d = session.ictx.duration();
+        if d > 0 { d as f64 / ffmpeg::ffi::AV_TIME_BASE as f64 } else { 0.0 }
+    };
+    let positions: Vec<f64> = if duration > 1.0 {
+        (0..CROP_SAMPLES)
+            .map(|i| duration * (0.1 + 0.8 * i as f64 / (CROP_SAMPLES - 1) as f64))
+            .collect()
+    } else {
+        vec![0.0]
+    };
+    let mut frames = Vec::new();
+    let mut size = None;
+    for pos in positions {
+        if session.seek_to_keyframe(pos).is_err() || !session.decode_next().unwrap_or(false) {
+            continue;
+        }
+        let Some(luma) = luma_of(&session.frame) else {
+            return Err(format!("unsupported pixel format {:?}", session.frame.format()));
+        };
+        size = Some((luma.width, luma.height));
+        if let Some(bars) = crate::crop::frame_bars(&luma) {
+            frames.push(bars);
+        }
+    }
+    let Some((w, h)) = size else {
+        return Err("no frame decoded".into());
+    };
+    let rect = crate::crop::combine(&frames, w, h);
+    eprintln!("[crop] {} frames measured, {w}x{h} -> {rect:?}", frames.len());
+    Ok(rect)
+}
+
+/// The luma plane of a decoded frame, or `None` for a layout it cannot be read
+/// from: RGB, big-endian, or a sample wider than two bytes.
+fn luma_of(frame: &Video) -> Option<crate::crop::Luma<'_>> {
+    let desc = frame.format().descriptor()?;
+    // SAFETY: a descriptor pointer from FFmpeg's static table, valid for the
+    // life of the process.
+    let d = unsafe { &*desc.as_ptr() };
+    let refused = ffmpeg::ffi::AV_PIX_FMT_FLAG_RGB as u64
+        | ffmpeg::ffi::AV_PIX_FMT_FLAG_BE as u64
+        | ffmpeg::ffi::AV_PIX_FMT_FLAG_HWACCEL as u64;
+    if d.flags & refused != 0 {
+        return None;
+    }
+    let c = d.comp[0];
+    if c.plane != 0 || !(1..=2).contains(&c.step) || c.offset != 0 {
+        return None;
+    }
+    Some(crate::crop::Luma {
+        data: frame.data(0),
+        stride: frame.stride(0),
+        width: frame.width() as usize,
+        height: frame.height() as usize,
+        bytes: c.step as usize,
+        shift: c.shift as u32,
+        depth: c.depth as u32,
+        full_range: frame.color_range() == ffmpeg::util::color::Range::JPEG,
+    })
+}
+
 fn respond(pts: f64, jpeg: &[u8]) -> tauri::ipc::Response {
     let mut out = Vec::with_capacity(8 + jpeg.len());
     out.extend_from_slice(&pts.to_le_bytes());
@@ -1070,6 +1152,19 @@ pub fn thumb_start(
 
 #[cfg(test)]
 mod tests {
+    /// `FP_TEST_VIDEO=<abs path> cargo test --lib crop_smoke -- --nocapture`.
+    /// Prints what the detector found; asserts only that it ran.
+    #[test]
+    fn crop_smoke() {
+        let Ok(path) = std::env::var("FP_TEST_VIDEO") else {
+            eprintln!("FP_TEST_VIDEO not set, skipping");
+            return;
+        };
+        let t = std::time::Instant::now();
+        let rect = super::detect_crop(&path).expect("detect");
+        eprintln!("crop: {rect:?} in {:?}", t.elapsed());
+    }
+
     use super::*;
 
     /// The privacy predicate, against the vectors the JS twin also reads.

@@ -225,6 +225,8 @@
     playlist,
     queueFolder,
   } from '$lib/playlist.svelte';
+  import { loadSeekSteps } from '$lib/seek-steps.svelte';
+  import { restoreCrop } from '$lib/crop.svelte';
   import {
     attachTorrentSubtitles,
     releaseTorrent,
@@ -556,6 +558,7 @@
     // reads as a jump. Anything off-screen is caught by window_guard.
     loadHistoryPrefs();
     loadPlaylistPrefs();
+    loadSeekSteps();
     loadTorrentPrefs();
     // **Awaited**, unlike everything else started here, and both are cheap: the
     // recents list settles after one batched `stat` (its posters keep filling in
@@ -1023,6 +1026,7 @@
     // would still be turned for the next episode. Loop points and track delays
     // likewise, and the subtitle frame-rate stretch.
     resetPicture();
+    restoreCrop();
     resetAbLoop();
     applyTiming();
     // Subtitles the torrent itself carries. `sub-auto` finds nothing here —

@@ -10,6 +10,7 @@
   import { chapterTitle, player, type Chapter } from '$lib/player.svelte';
   import { onSeekCancel, onSeekDown, onSeekMove, onSeekUp, seek } from '$lib/seek.svelte';
   import { thumbs } from '$lib/thumbs.svelte';
+  import { crop } from '$lib/crop.svelte';
   import { positionBuffered, torrent } from '$lib/torrent.svelte';
 
   interface Props {
@@ -71,7 +72,12 @@
           !thumbs.partial || positionBuffered(seek.hoverTime / Math.max(1e-9, player.duration))}
         <div class="thumbwrap" class:loading={thumbs.loading && previewable}>
           {#if previewable && thumbs.src}
-            <img class="thumb" src={thumbs.src} alt="" style="aspect-ratio: {aspect}" />
+            <img
+              class="thumb"
+              src={thumbs.src}
+              alt=""
+              style="aspect-ratio: {aspect}; object-position: {crop.objectPosition}"
+            />
           {:else if previewable}
             <div class="thumb placeholder" style="aspect-ratio: {aspect}"></div>
           {:else}
@@ -93,7 +99,7 @@
                  therefore restarts the animation instead of inheriting a
                  finished one. -->
             {#key thumbs.fading}
-              <img class="thumb fading" src={thumbs.fading} alt="" />
+              <img class="thumb fading" src={thumbs.fading} alt="" style="object-position: {crop.objectPosition}" />
             {/key}
           {/if}
           <div class="spinner" class:on={thumbs.loading && previewable}></div>

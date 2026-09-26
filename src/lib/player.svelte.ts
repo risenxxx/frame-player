@@ -198,6 +198,9 @@ const OBSERVED = [
   ['video-rotate', 'int64', 'none'],
   ['video-aspect-override', 'double', 'none'],
   ['panscan', 'double', 'none'],
+  // `WxH+X+Y`, or empty for none. dwidth/dheight follow it (measured), which is
+  // what lets the window fit and the hover preview take the cropped shape.
+  ['video-crop', 'string', 'none'],
   // Frames that were lost, and where. Observed rather than read when the media
   // info panel opens, and that is the whole point of them: a stall lasts a
   // fraction of a second and happens while the viewer is watching the video,
@@ -269,6 +272,7 @@ const RESYNC: Record<ObservedName, boolean> = {
   'video-rotate': true,
   'video-aspect-override': true,
   panscan: true,
+  'video-crop': true,
   // A stall is entered and left by one event each, and it is the *leaving* one
   // that matters: `player.stalled` puts "waiting for data" in the top bar, so a
   // dropped `false` leaves that sentence standing over playing video with
@@ -416,6 +420,8 @@ class Player {
   videoRotate = $state(0);
   aspectOverride = $state(-2);
   panscan = $state(0);
+  /// `video-crop` as mpv reports it: `WxH+X+Y`, or empty for none.
+  videoCrop = $state('');
 
   chapters = $state<Chapter[]>([]);
   /// Index of the chapter being played, or -1 when the file has none.
@@ -819,6 +825,7 @@ function applyProperty(ev: PropertyChange) {
     case 'video-rotate': player.videoRotate = ev.data ?? 0; break;
     case 'video-aspect-override': player.aspectOverride = ev.data ?? -2; break;
     case 'panscan': player.panscan = ev.data ?? 0; break;
+    case 'video-crop': player.videoCrop = ev.data ?? ''; break;
     case 'frame-drop-count': player.dropVo.note(ev.data); break;
     case 'decoder-frame-drop-count': player.dropDecoder.note(ev.data); break;
     case 'video-params/gamma':
@@ -1500,7 +1507,9 @@ export const ASPECT_AUTO = '-2';
 /// one that drifts.
 export const LOOP_LABEL = { off: 'loop.off', all: 'loop.all', one: 'loop.one' } as const;
 
-export function setPicture(prop: 'video-rotate' | 'video-aspect-override' | 'panscan', value: string) {
+export type PictureProp = 'video-rotate' | 'video-aspect-override' | 'panscan' | 'video-crop';
+
+export function setPicture(prop: PictureProp, value: string) {
   pictureTouched = true;
   void command('set', [prop, value]).catch(() => {});
 }
@@ -1523,6 +1532,7 @@ export function resetPicture() {
   void command('set', ['video-rotate', '0']).catch(() => {});
   void command('set', ['video-aspect-override', ASPECT_AUTO]).catch(() => {});
   void command('set', ['panscan', '0']).catch(() => {});
+  void command('set', ['video-crop', '']).catch(() => {});
 }
 
 // ---- Chapters -------------------------------------------------------------

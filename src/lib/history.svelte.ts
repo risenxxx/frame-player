@@ -89,8 +89,18 @@ type TrackEntry = {
   /// different frame rate. Here for the same reason as the delays, and per
   /// source for the same reason too.
   subSpeed?: number;
+  /// The black bars removed from this file's picture (crop.svelte.ts). Per
+  /// source and never per folder: episodes of one show usually share their
+  /// bars, but a crop wrongly inherited cuts picture off, which is worse than
+  /// asking again.
+  crop?: SavedCrop;
   ts: number;
 };
+
+/// How a crop was chosen, and the rectangle it came to. The rectangle is stored
+/// rather than recomputed so reopening a file does not decode it again; the
+/// frame size beside it is what places the hover preview on the kept part.
+export type SavedCrop = { mode: string; rect: string; fw: number; fh: number };
 
 function tracksLoad(): Record<string, TrackChoice> {
   try {
@@ -425,6 +435,23 @@ export function rememberSubSpeed(path: string, factor: number) {
 export function subSpeedFor(path: string): number {
   if (isPrivatePath(path)) return 1;
   return entriesLoad(TRACKS_KEY)[sourceId(path)]?.subSpeed ?? 1;
+}
+
+/// Record the crop chosen for this source; null deletes it.
+export function rememberCrop(path: string, crop: SavedCrop | null) {
+  if (isPrivatePath(path)) return;
+  const map = entriesLoad(TRACKS_KEY);
+  const id = sourceId(path);
+  const entry: TrackEntry = { ...map[id], ts: Date.now() };
+  if (crop) entry.crop = crop;
+  else delete entry.crop;
+  map[id] = entry;
+  entriesSave(TRACKS_KEY, map, 300);
+}
+
+export function cropFor(path: string): SavedCrop | null {
+  if (isPrivatePath(path)) return null;
+  return entriesLoad(TRACKS_KEY)[sourceId(path)]?.crop ?? null;
 }
 
 /// What to look for in this file: what was picked here before, or failing that

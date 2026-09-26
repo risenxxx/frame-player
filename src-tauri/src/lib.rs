@@ -9,6 +9,7 @@ mod macos_chrome;
 mod macos_menu;
 mod cast;
 mod color;
+mod crop;
 mod catalog;
 mod dlna;
 mod feed;
@@ -1116,6 +1117,7 @@ pub fn run() {
             thumb_service::thumb_get,
             thumb_service::container_titles,
             thumb_service::poster_frame,
+            thumb_service::crop_detect,
             thumb_service::set_private_paths,
             thumb_service::forget_thumbs,
             trash::trash_file,

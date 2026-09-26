@@ -22,9 +22,10 @@
   import { hint } from '$lib/keys.svelte';
   import { showOsd } from '$lib/osd.svelte';
   import { IS_MAC } from '$lib/platform';
-  import { ASPECT_AUTO, LOOP_LABEL, isNetworkSource, player } from '$lib/player.svelte';
+  import { ASPECT_AUTO, LOOP_LABEL, isNetworkSource, player, type PictureProp } from '$lib/player.svelte';
   import { blockContextMenu } from '$lib/dom';
   import { copyScreenshot, saveScreenshot } from '$lib/screenshot';
+  import { CROP_MODES, canDetectCrop, crop, cropLabel, setCrop, type CropMode } from '$lib/crop.svelte';
   import { openSubsDialog } from '$lib/subs.svelte';
   import {
     fitWindowToVideo,
@@ -53,16 +54,20 @@
       cycleLoop: () => void;
       cycleAbLoop: () => void;
       jumpChapter: (delta: -1 | 1) => void;
-      setPicture: (
-        prop: 'video-rotate' | 'video-aspect-override' | 'panscan',
-        value: string,
-      ) => void;
+      setPicture: (prop: PictureProp, value: string) => void;
     };
   }
 
   let { at, fullscreen, close, actions }: Props = $props();
 
   const hasFile = $derived(player.hasFile);
+
+  /// A crop mode is ticked only while mpv agrees: a remembered rectangle that
+  /// does not fit this file is refused and cleared by mpv, and the menu must
+  /// not go on claiming it.
+  function cropSelected(m: CropMode): boolean {
+    return m === 'none' ? !player.videoCrop : crop.mode === m && !!player.videoCrop;
+  }
 
   /// The aspect overrides the menu offers. mpv reports an override as a decimal
   /// (`4:3` reads back as 1.333333), so the menu compares numerically rather
@@ -458,6 +463,21 @@
         onclick={() => actions.setPicture('video-aspect-override', a.label)}
       >
         {a.label}
+      </button>
+    {/each}
+  </div>
+  <div class="menu-title">{t('ctx.crop')}</div>
+  <div class="speedrow">
+    {#each CROP_MODES as m (m)}
+      {@const noAuto = m === 'auto' && !canDetectCrop()}
+      <button
+        class="speedopt"
+        class:sel={cropSelected(m)}
+        disabled={noAuto || (m === 'auto' && crop.busy)}
+        data-tip={m === 'auto' ? t(noAuto ? 'crop.auto_local' : 'crop.auto_tip') : undefined}
+        onclick={() => void setCrop(m)}
+      >
+        {cropLabel(m)}
       </button>
     {/each}
   </div>

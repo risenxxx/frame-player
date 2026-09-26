@@ -647,6 +647,17 @@ button.primary:hover {
   font-weight: 600;
 }
 
+/* The crop row's "auto" while a detection runs, and for a stream, where it
+   cannot run at all. Same treatment as a disabled `.segopt`. */
+.speedopt:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.speedopt:disabled:hover {
+  background: transparent;
+}
+
 /* A line of explanation inside a menu — why a control is missing or inert.
    Shared by the cast picker and the track menu, which says the same kind of
    thing about a DLNA session. */

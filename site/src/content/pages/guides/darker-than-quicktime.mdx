@@ -12,12 +12,12 @@ related:
   - guides/subtitles-out-of-sync
 faq:
   - q: Is mpv showing the video wrong?
-    a: No. Measured against QuickTime on the same display, mpv is darker through the lower mid-tones by up to 12 levels out of 255, and the colours are the same. That is a different tone curve, not an error — and it is the one closer to the broadcast standard, which assumes a dim room. QuickTime draws the same video lighter on purpose.
-  - q: Is it because the file has no colour information?
+    a: No. Measured against QuickTime on the same display, mpv is darker through the lower mid-tones by up to 12 levels out of 255, and the colors are the same. That is a different tone curve, not an error — and it is the one closer to the broadcast standard, which assumes a dim room. QuickTime draws the same video lighter on purpose.
+  - q: Is it because the file has no color information?
     a: Not in QuickTime or Frame Player — a copy of the same file tagged as BT.709 measured exactly like the untagged one in both. IINA varied between two looks from one open to the next, and we could not pin that on the tag.
   - q: Which one is right?
     a: By the standard, the darker one is closer. By what people on a Mac compare against, the lighter one — QuickTime's curve is what the system's own player shows, and a video edited and checked on a Mac was often approved looking like that. Which to use depends on which of the two you expect.
-  - q: A colour-bar test says mpv is the most accurate player. Is it?
+  - q: A color-bar test says mpv is the most accurate player. Is it?
     a: It depends on the reference. Against the file's raw numbers (180 and 16) it rewards a player that skips the limited-to-full range expansion. Against the correctly expanded values (191 and 0) it rewards mpv's convention by design — mpv scores about 0.3 levels, QuickTime about 3.3. Either way it tells you which conventions a player follows, and the bars barely touch the mid-tones, where mpv and QuickTime differ most.
   - q: Does this affect HDR video?
     a: No. HDR video uses a different transfer function and goes through tone mapping; the difference described here is about SDR only.
@@ -30,12 +30,12 @@ import Note from '../../../components/prose/Note.astro'
 Put the same film in QuickTime and in IINA, mpv or Frame Player on a Mac, and the
 mpv-based ones look darker: faces in a dim room lose their shape, a night scene
 turns into a black field with lights in it. The usual explanations are that mpv
-"crushes the shadows", or that the file has no colour information and mpv guesses
+"crushes the shadows", or that the file has no color information and mpv guesses
 wrong. We measured it, and neither is quite what happens.
 
 ## What the difference actually is
 
-The test was one frame of H.264 video with sixteen grey bars of known brightness,
+The test was one frame of H.264 video with sixteen gray bars of known brightness,
 played in QuickTime and in Frame Player on the same MacBook Pro display, both
 windows captured and read pixel by pixel. The numbers are what each player sent
 to the screen, out of 255:
@@ -47,7 +47,7 @@ to the screen, out of 255:
 | 40 | 29.7 | 27.6 | −2.1 |
 | 64 | 63.3 | 55.5 | −7.8 |
 | 96 | 102.3 | 91.6 | −10.7 |
-| 128 (mid-grey) | 140.0 | 128.7 | −11.3 |
+| 128 (mid-gray) | 140.0 | 128.7 | −11.3 |
 | 160 | 176.7 | 167.1 | −9.6 |
 | 224 | 242.7 | 240.6 | −2.1 |
 
@@ -60,13 +60,13 @@ On real footage the gap is the same shape: on a bright animated frame the whole
 picture averaged 177.5 in QuickTime and 170.9 in mpv's curve, and the pixels in
 the file's own shadows 54.6 against 47.9 — about an eighth darker.
 
-The colours themselves are identical. Pure red came out as 232, 51, 35 in QuickTime
-and 231, 50, 34 in Frame Player. This is a tone curve, not a colour shift.
+The colors themselves are identical. Pure red came out as 232, 51, 35 in QuickTime
+and 231, 50, 34 in Frame Player. This is a tone curve, not a color shift.
 
 <Note>
   **IINA drew one of two pictures.** Often it matched Frame Player's default
   to within half a level on every bar. On other opens of the same kind of file
-  it drew darker still: mid-grey at 122, and the step that QuickTime shows at 11
+  it drew darker still: mid-gray at 122, and the step that QuickTime shows at 11
   at 3. That one really is shadows going black. We did not find what switches
   it, so if IINA looks darker to you than this page describes, you may be
   seeing that second state.
@@ -77,16 +77,16 @@ and 231, 50, 34 in Frame Player. This is a tone curve, not a colour shift.
 Almost every SDR video — films, series, YouTube — is BT.709. The standard says how
 the picture is *encoded*; how a screen should turn it back into light is a separate
 standard, BT.1886, and it describes a curve of roughly 2.4 for a dim room, the room
-a colourist grades in.
+a colorist grades in.
 
 - **mpv** hands the screen the video's values unchanged. The Mac's display then
   reads them with its own curve, close to 2.2 — a little lighter than the 2.4 of
   the reference, but the same family.
 - **QuickTime** decodes BT.709 with a curve of about **1.96** and then
-  encodes the result for the display. At mid-grey that is 140 instead of 129. It
+  encodes the result for the display. At mid-gray that is 140 instead of 129. It
   is a long-standing Apple choice, discussed among video editors as the
   "QuickTime gamma shift", and it fits our measurements closely: the model
-  predicts 63.6 at the 64 bar and 141 at mid-grey; QuickTime showed 63.3 and 140.
+  predicts 63.6 at the 64 bar and 141 at mid-gray; QuickTime showed 63.3 and 140.
 
 So by the standard, mpv's darker picture is the closer one. By habit, on a Mac,
 QuickTime's lighter one is the familiar one: it is what the system's own player
@@ -94,23 +94,23 @@ shows — and, by the reports that prompted this test, what other players built
 on Apple's video framework show too — and a video edited and checked on a Mac
 was often signed off looking like that. Neither is a bug, and neither is universally right.
 
-## "The file has no colour information"
+## "The file has no color information"
 
 Many reports of this involve MKV files where `ffprobe` shows no `color_space` and
 no `color_range`, so it is natural to suspect that the player guesses badly. We
-stripped every colour tag from the test video, and then made a copy tagged
+stripped every color tag from the test video, and then made a copy tagged
 properly as BT.709. Both players drew the tagged and the untagged copy
 **identically**, bar for bar. mpv assumes BT.709 for an untagged HD video, and so
 does QuickTime; they then draw BT.709 each in their own way. Adding tags to your
 files will not change the picture in either.
 
-## What a colour-bar test measures
+## What a color-bar test measures
 
-Another way these players get compared is SMPTE colour bars: generate them in
+Another way these players get compared is SMPTE color bars: generate them in
 BT.709, read each bar off the screen with Digital Color Meter in "Display in
 sRGB" mode, and average how far it lands from the "theoretical" value. We ran
 that test too, and it turned out to measure two things before it measures
-colour.
+color.
 
 **First, the range.** The bars are stored as *limited-range* video, where
 black is code 16 and a 75 % bar is 180. A player is supposed to stretch that to
@@ -119,7 +119,7 @@ the screen's 0–255: (180 − 16) × 255 / 219 = 191, and 16 becomes 0. If the
 every player that decodes the file correctly is marked down by 11 levels in
 each full channel and 16 in each empty one, and one that skips the stretch
 looks nearly perfect. We checked
-with two files identical in every pixel, one labelled limited and one full
+with two files identical in every pixel, one labeled limited and one full
 range: the same player on the same pixels scored 12.9 against 180/16 when it
 decoded correctly and 1.9 when told not to stretch. Against the correct
 191/0 it was the reverse, 0.5 and 11.4. A ranking against 180/16 sorts players
@@ -133,17 +133,17 @@ their own is what mpv does. The score tells you which convention a player
 follows, not whether it is accurate.
 
 And it hides most of the difference. Seven of the 27 patches are pure black
-or full white, where every curve agrees; most of the rest are 75 % colours,
+or full white, where every curve agrees; most of the rest are 75 % colors,
 near the top of the curve; only two are mid-tones. Between QuickTime and mpv
-the bars differ by 3.4 levels on average, while a plain grey ladder shows 8.3
+the bars differ by 3.4 levels on average, while a plain gray ladder shows 8.3
 in the mid-tones — more than twice as much, in the part of the picture where
-a dim scene actually lives. If you want to see this difference, look at greys,
-not at colour bars.
+a dim scene actually lives. If you want to see this difference, look at grays,
+not at color bars.
 
 <Note>
   **If you make the bars yourself, check them first.** FFmpeg labels its
   `smptehdbars` output as BT.601, so adding `-colorspace bt709` to the command
-  quietly converts the bars and changes their colours (75 % red comes out at 174
+  quietly converts the bars and changes their colors (75 % red comes out at 174
   instead of 191). Label the frames with `-vf setparams=colorspace=bt709:…`
   instead. And if you compare your numbers with ours: our window captures read
   within one level of Digital Color Meter in "Display in sRGB" mode on the same
@@ -163,8 +163,8 @@ icc-profile-auto=yes
 The first two are the heart of it: they tell mpv to treat the video as a plain 2.2
 curve and then bend it by 2.2 / 1.961 — Apple's 1.96. In Frame Player the tone
 curve came out right with them. But the third, the display's ICC profile, made
-every colour paler: pure red went from 232, 51, 35 to 213, 68, 49, green from 117,
-251, 76 to 152, 244, 103. The picture was being colour-managed twice — once by mpv
+every color paler: pure red went from 232, 51, 35 to 213, 68, 49, green from 117,
+251, 76 to 152, 244, 103. The picture was being color-managed twice — once by mpv
 for the display, and once more by macOS, which already converts Frame Player's
 video layer for the screen on its own.
 
@@ -179,7 +179,7 @@ treat-srgb-as-power22=no
 ```
 
 With the format filter and the gamma factor, that reproduced QuickTime to within
-half a level from the 32 bar up, and to within two units on every colour.
+half a level from the 32 bar up, and to within two units on every color.
 
 <Note>
   **These are the settings that matched in Frame Player.** How a player hands its
@@ -194,7 +194,7 @@ half a level from the 32 bar up, and to within two units on every colour.
 Frame Player keeps mpv's curve by default, and offers QuickTime's as a choice:
 **Settings › Video › SDR video color › As in macOS**.
 
-- **It is the combination measured above**, without ICC, so the colours stay
+- **It is the combination measured above**, without ICC, so the colors stay
   exactly as they were and only the tone curve changes.
 - **It changes the picture at once**, even on a paused frame — flip it back and
   forth to see which you prefer.

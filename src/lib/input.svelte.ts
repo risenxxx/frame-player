@@ -46,6 +46,7 @@ import {
 import { DELAY_STEP, clearAbLoop, cycleAbLoop, cycleLoop, player } from './player.svelte';
 import { copyScreenshot, saveScreenshot } from './screenshot';
 import { scrubBy } from './seek.svelte';
+import { seekSteps } from './seek-steps.svelte';
 import { stepBy } from './step-engine.svelte';
 import { trashCurrentFile } from './trash';
 import { nudgeDelayHere } from './tracks.svelte';
@@ -353,12 +354,12 @@ export function runAction(id: ActionId) {
   if (refusedBySession(id)) return;
   switch (id) {
     case 'pause': togglePause(); break;
-    case 'seek_back': seekBy(-5); break;
-    case 'seek_fwd': seekBy(5); break;
+    case 'seek_back': seekBy(-seekSteps.short); break;
+    case 'seek_fwd': seekBy(seekSteps.short); break;
     case 'seek_back_precise': seekBy(-1, true); break;
     case 'seek_fwd_precise': seekBy(1, true); break;
-    case 'seek_back_10': seekBy(-10); break;
-    case 'seek_fwd_10': seekBy(10); break;
+    case 'seek_back_10': seekBy(-seekSteps.long); break;
+    case 'seek_fwd_10': seekBy(seekSteps.long); break;
     case 'seek_start': seekFraction(0); break;
     case 'seek_end': seekFraction(100); break;
     case 'frame_prev': void stepBy(-1); break;
