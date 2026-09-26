@@ -72,6 +72,16 @@ export type ActionId =
   | 'mini'
   | 'info'
   | 'reset_zoom'
+  | 'picture_menu'
+  | 'brightness_down'
+  | 'brightness_up'
+  | 'contrast_down'
+  | 'contrast_up'
+  | 'saturation_down'
+  | 'saturation_up'
+  | 'gamma_down'
+  | 'gamma_up'
+  | 'adjust_reset'
   | 'open_file'
   | 'open_link'
   | 'screenshot'
@@ -79,7 +89,7 @@ export type ActionId =
   | 'copy_frame'
   | 'trash_file';
 
-export type ActionGroup = 'playback' | 'seek' | 'audio' | 'subs' | 'view' | 'file';
+export type ActionGroup = 'playback' | 'seek' | 'audio' | 'subs' | 'view' | 'picture' | 'file';
 
 export interface ActionDef {
   id: ActionId;
@@ -167,6 +177,19 @@ export const ACTIONS: ActionDef[] = [
   { id: 'mini', group: 'view', def: ['KeyP'], noRepeat: true, menuMac: 'shift+meta+KeyM' },
   { id: 'info', group: 'view', def: ['KeyI'], noRepeat: true, menuMac: 'meta+KeyI' },
   { id: 'reset_zoom', group: 'view', def: ['ctrl+Digit0'], quiet: true },
+  // The picture panel is the only one with a default key: the eight steps below
+  // are for somebody who adjusts often enough to want them, and mpv's own keys
+  // for them (1–8) are the digit jumps here.
+  { id: 'picture_menu', group: 'picture', def: ['KeyC'], noRepeat: true },
+  { id: 'brightness_down', group: 'picture', def: [], quiet: true },
+  { id: 'brightness_up', group: 'picture', def: [], quiet: true },
+  { id: 'contrast_down', group: 'picture', def: [], quiet: true },
+  { id: 'contrast_up', group: 'picture', def: [], quiet: true },
+  { id: 'saturation_down', group: 'picture', def: [], quiet: true },
+  { id: 'saturation_up', group: 'picture', def: [], quiet: true },
+  { id: 'gamma_down', group: 'picture', def: [], quiet: true },
+  { id: 'gamma_up', group: 'picture', def: [], quiet: true },
+  { id: 'adjust_reset', group: 'picture', def: [], noRepeat: true, quiet: true },
 
   // File and frames
   { id: 'open_file', group: 'file', def: ['KeyO'], noRepeat: true, menuMac: 'meta+KeyO' },
@@ -200,7 +223,7 @@ export const ACTIONS: ActionDef[] = [
   },
 ];
 
-export const GROUP_ORDER: ActionGroup[] = ['playback', 'seek', 'audio', 'subs', 'view', 'file'];
+export const GROUP_ORDER: ActionGroup[] = ['playback', 'seek', 'audio', 'subs', 'view', 'picture', 'file'];
 
 const BY_ID = new Map(ACTIONS.map((a) => [a.id, a]));
 

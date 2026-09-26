@@ -1423,6 +1423,12 @@ const SDR_COLOR_OPTIONS: Record<string, [on: string, off: string]> = {
 /// Keys that came from the user's mpv.conf and were accepted. Empty when mpv
 /// refused the file and started without it — then nothing of theirs is in force.
 let userConfKeys = new Set<string>();
+
+/// Whether the viewer's own mpv.conf sets this option. Anything the player
+/// would set on its own initiative steps aside for it.
+export function isUserConfKey(name: string): boolean {
+  return userConfKeys.has(name);
+}
 /// What is in force in mpv right now. Ours, for the reason `normalize` is:
 /// `vf` answers in its own form, and the three options may be the user's.
 let sdrColorActive = false;

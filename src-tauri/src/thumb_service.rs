@@ -772,19 +772,27 @@ const CROP_SAMPLES: usize = 8;
 /// sample lands does not matter, only that the samples are far apart, and a
 /// keyframe is the cheap frame to reach.
 #[tauri::command]
-pub async fn crop_detect(path: String) -> Result<Option<crate::crop::Rect>, String> {
-    tauri::async_runtime::spawn_blocking(move || detect_crop(&path))
+pub async fn crop_detect(
+    path: String,
+    positions: Option<Vec<f64>>,
+) -> Result<Option<crate::crop::Rect>, String> {
+    tauri::async_runtime::spawn_blocking(move || detect_crop(&path, positions))
         .await
         .map_err(|e| e.to_string())?
 }
 
-fn detect_crop(path: &str) -> Result<Option<crate::crop::Rect>, String> {
+/// `positions` are where to look, in seconds, when the caller knows better than
+/// an even spread: a torrent still arriving, where only the downloaded stretches
+/// hold frames and a seek into a hole decodes nothing worth measuring.
+fn detect_crop(path: &str, positions: Option<Vec<f64>>) -> Result<Option<crate::crop::Rect>, String> {
     let mut session = ThumbSession::open(path)?;
     let duration = {
         let d = session.ictx.duration();
         if d > 0 { d as f64 / ffmpeg::ffi::AV_TIME_BASE as f64 } else { 0.0 }
     };
-    let positions: Vec<f64> = if duration > 1.0 {
+    let positions: Vec<f64> = if let Some(p) = positions.filter(|p| !p.is_empty()) {
+        p.into_iter().take(CROP_SAMPLES * 2).collect()
+    } else if duration > 1.0 {
         (0..CROP_SAMPLES)
             .map(|i| duration * (0.1 + 0.8 * i as f64 / (CROP_SAMPLES - 1) as f64))
             .collect()
@@ -1161,7 +1169,10 @@ mod tests {
             return;
         };
         let t = std::time::Instant::now();
-        let rect = super::detect_crop(&path).expect("detect");
+        let positions = std::env::var("FP_TEST_POS").ok().map(|p| {
+            p.split(',').filter_map(|x| x.trim().parse::<f64>().ok()).collect::<Vec<_>>()
+        });
+        let rect = super::detect_crop(&path, positions).expect("detect");
         eprintln!("crop: {rect:?} in {:?}", t.elapsed());
     }
 

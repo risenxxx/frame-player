@@ -884,6 +884,20 @@ input[type='range']:disabled {
   cursor: default;
 }
 
+/* A slider whose zero is in the middle — the picture adjustments — filled from
+   there to the value, whichever side that is on (`bipolarFill`). Two
+   components draw it: the context menu's picture panel and the settings
+   sheet. */
+input[type='range'].bipolar {
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.28) var(--lo, 50%),
+    #ffffff var(--lo, 50%),
+    #ffffff var(--hi, 50%),
+    rgba(255, 255, 255, 0.28) var(--hi, 50%)
+  );
+}
+
 /* The scrolling list panel: the chapter list and the play queue.
 
    Two components draw one and they deliberately share their markup — the queue

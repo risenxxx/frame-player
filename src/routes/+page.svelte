@@ -227,6 +227,7 @@
   } from '$lib/playlist.svelte';
   import { loadSeekSteps } from '$lib/seek-steps.svelte';
   import { restoreCrop } from '$lib/crop.svelte';
+  import { restoreAdjust } from '$lib/picture-adjust.svelte';
   import {
     attachTorrentSubtitles,
     releaseTorrent,
@@ -1027,6 +1028,7 @@
     // likewise, and the subtitle frame-rate stretch.
     resetPicture();
     restoreCrop();
+    restoreAdjust();
     resetAbLoop();
     applyTiming();
     // Subtitles the torrent itself carries. `sub-auto` finds nothing here —

@@ -40,8 +40,9 @@ nothing about watching a film.
 | 32 | Watching together — a shared timeline over a small relay, with torrents picked up by the other players automatically |
 | 33 | Catalog — browse and search films and series, then pick a release for one, with metadata through a proxy of our own so the player carries no API key |
 | 28 | Subtitles lifted clear of the control bar while it is up |
-| 34 | Black bars removed: measured across the whole file, or cut to a named shape, and remembered per file |
+| 34 | Black bars removed: measured across the whole file, or cut to a named shape; the choice holds for the whole playlist and each file is measured for itself |
 | 35 | Seek steps the viewer sets, for the arrows and for J/L |
+| 36 | Brightness, contrast, saturation and gamma, per file, per playlist or for every file, set in a menu that turns see-through while a slider moves |
 
 Details for the larger ones: [torrents.md](torrents.md), [casting.md](casting.md),
 [watch-together.md](watch-together.md), [catalog.md](catalog.md).

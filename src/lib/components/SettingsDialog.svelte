@@ -53,6 +53,19 @@
   import { playlist, setPlaylistPref } from '$lib/playlist.svelte';
   import { LONG_STEPS, SHORT_STEPS, seekSteps, setSeekStep } from '$lib/seek-steps.svelte';
   import {
+    ADJUST_PARAMS,
+    adjust,
+    adjustLabel,
+    bipolarFill,
+    isZero,
+    resetGlobalAdjust,
+    setGlobalAdjust,
+    signed,
+    type AdjustParam,
+  } from '$lib/picture-adjust.svelte';
+  import { chrome } from '$lib/chrome.svelte';
+  import { holdSlider } from '$lib/dom';
+  import {
     net,
     refreshNet,
     refreshPortStatus,
@@ -422,6 +435,22 @@
   /// settings rather than claiming everything on the page is one of them.
   type SettingsTab = 'general' | 'video' | 'playback' | 'audio' | 'subs' | 'torrents' | 'tv' | 'keys';
   let settingsTab = $state<SettingsTab>('general');
+
+  /// The picture slider being dragged, which turns the sheet see-through (see
+  /// `peek` on Dialog). The control bar is kept away from the first touch until
+  /// the sheet closes, as in the context menu.
+  let peeking = $state<AdjustParam | null>(null);
+
+  function startPeek(k: AdjustParam, e: PointerEvent) {
+    if (e.button !== 0) return;
+    peeking = k;
+    chrome.tuning = true;
+    holdSlider(e, () => (peeking = null));
+  }
+
+  $effect(() => () => {
+    chrome.tuning = false;
+  });
   // The tab row is nowrap with hidden overflow, and the sheet's width is sized
   // from it (598px fits seven Russian labels with ~50px slack) — which is why
   // this tab is «ТВ», not «Трансляция»: two characters ride in the slack, a
@@ -899,7 +928,7 @@
   </div>
 {/snippet}
 
-<Dialog title={t('set.title')} scrollable header={tabs} {onclose}>
+<Dialog title={t('set.title')} scrollable header={tabs} peek={!!peeking} {onclose}>
   {#if settingsTab === 'general'}
     <div class="setting">
       <div class="setting-label">{t('set.language')}</div>
@@ -1756,6 +1785,47 @@
         <div class="setting-hint">{t('vset.sdr_color_hint')}</div>
       </div>
     {/if}
+    <!-- The global end of the picture adjustments; the file and playlist ends
+         are in the context menu, next to the picture they are judged against.
+         Dragging a slider here turns the sheet see-through for the same
+         reason it does there. -->
+    <div class="setting peek-keep" class:peeking={!!peeking}>
+      <div class="setting-label">{t('vset.adjust')}</div>
+      {#each ADJUST_PARAMS as k (k)}
+        {@const v = adjust.global?.[k] ?? 0}
+        <div class="slider-row adj-set-row" class:live={peeking === k}>
+          <label class="adj-set-label" for="set-adj-{k}">{adjustLabel(k)}</label>
+          <input
+            id="set-adj-{k}"
+            type="range"
+            class="bipolar"
+            min="-100"
+            max="100"
+            step="1"
+            value={v}
+            style={bipolarFill(v)}
+            oninput={(e) => {
+              chrome.tuning = true;
+              setGlobalAdjust(k, +e.currentTarget.value);
+            }}
+            onpointerdown={(e) => startPeek(k, e)}
+            ondblclick={() => setGlobalAdjust(k, 0)}
+          />
+          <span class="slider-value">{signed(v)}</span>
+        </div>
+      {/each}
+      <div class="setting-hint">
+        {#if player.hasFile && !adjust.followsGlobal}
+          {t(adjust.scope === 'folder' ? 'vset.adjust_own_folder' : 'vset.adjust_own_file')}
+        {:else}
+          {t('vset.adjust_hint')}
+        {/if}
+      </div>
+      <button class="btn-outline adj-reset" disabled={isZero(adjust.global)} onclick={resetGlobalAdjust}>
+        {t('adj.reset')}
+      </button>
+    </div>
+
     {#if hwdecCurrent}
       <div class="settings-foot">
         {t('set.hwdec_foot')}
@@ -2381,6 +2451,42 @@
 
   /* Same control, stacked: device names are phrases, and a row of pills would
      either overflow the dialog or truncate them to uselessness. */
+  .adj-set-row {
+    padding: 4px 8px;
+    margin: 0 -8px;
+    border-radius: 8px;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+  }
+
+  .adj-set-row input {
+    flex: 1;
+  }
+
+  .adj-set-label {
+    flex: 0 0 104px;
+    color: #b9b9c3;
+    font-size: 12.5px;
+  }
+
+  .adj-reset {
+    margin-top: 10px;
+  }
+
+  /* While a slider is dragged, only its own row is left, on a backing of its
+     own: the sheet around it has gone transparent (Dialog's `peek`). */
+  .peek-keep.peeking > :not(.adj-set-row),
+  .peek-keep.peeking .adj-set-row:not(.live) {
+    opacity: 0;
+  }
+
+  .peek-keep.peeking .adj-set-row.live {
+    background: rgba(16, 16, 22, 0.8);
+  }
+
+  .peek-keep > * {
+    transition: opacity 0.15s ease;
+  }
+
   .segmented.vertical {
     flex-direction: column;
     gap: 1px;

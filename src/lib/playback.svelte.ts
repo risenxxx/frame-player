@@ -113,7 +113,8 @@ export type Feature =
   | 'delays'
   | 'screenshot'
   | 'mini'
-  | 'trash';
+  | 'trash'
+  | 'picture';
 
 class Playback {
   /// The television owns playback and this window is a remote. False while
@@ -188,6 +189,8 @@ class Playback {
       // file from our server, and a file taken off the disk under it is a cast
       // that fails for a reason nobody on the sofa can see.
       trash: !cast.active,
+      // Adjusts the frame mpv draws, and while the television plays there is none.
+      picture: !remote,
     };
   }
 }
@@ -452,6 +455,16 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
   mini: 'mini',
   info: 'local',
   reset_zoom: 'zoom',
+  picture_menu: 'local',
+  brightness_down: 'picture',
+  brightness_up: 'picture',
+  contrast_down: 'picture',
+  contrast_up: 'picture',
+  saturation_down: 'picture',
+  saturation_up: 'picture',
+  gamma_down: 'picture',
+  gamma_up: 'picture',
+  adjust_reset: 'picture',
   open_file: 'local',
   open_link: 'local',
   screenshot: 'screenshot',
@@ -526,6 +539,16 @@ const SYNC_BEHAVIOR: Record<ActionId, 'shared' | 'personal' | 'solo'> = {
   mini: 'personal',
   info: 'personal',
   reset_zoom: 'personal',
+  picture_menu: 'personal',
+  brightness_down: 'personal',
+  brightness_up: 'personal',
+  contrast_down: 'personal',
+  contrast_up: 'personal',
+  saturation_down: 'personal',
+  saturation_up: 'personal',
+  gamma_down: 'personal',
+  gamma_up: 'personal',
+  adjust_reset: 'personal',
   open_file: 'personal',
   open_link: 'personal',
   screenshot: 'personal',

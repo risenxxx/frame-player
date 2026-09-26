@@ -41,6 +41,11 @@
     /// screen belongs here. Its parameter scrolls the sheet back to the top,
     /// which a tab row needs and cannot reach on its own.
     header?: Snippet<[() => void]>;
+    /// A picture slider inside is being dragged: the backdrop and the sheet go
+    /// transparent, and so does every direct child of the sheet but the one
+    /// marked `peek-keep`, so the frame is judged whole and undimmed. What is
+    /// shown *inside* that child is the caller's business.
+    peek?: boolean;
     /// While set, neither the backdrop nor the × closes the dialog. The yt-dlp
     /// update dialog uses it to hold itself open across a download.
     closeDisabled?: boolean;
@@ -54,6 +59,7 @@
     variant = 'settings',
     scrollable = false,
     closeDisabled = false,
+    peek = false,
     header,
     onclose,
     children,
@@ -98,6 +104,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   class="settings-backdrop"
+  class:peeking={peek}
   role="presentation"
   onclick={requestClose}
   ondblclick={(e) => e.stopPropagation()}
@@ -146,6 +153,7 @@
 
 <style>
   .settings-backdrop {
+    transition: background-color 0.15s ease;
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.45);
@@ -380,5 +388,31 @@
 
   .settings-close:hover {
     background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* See-through while a picture slider is dragged (`peek`). */
+  .settings-backdrop.peeking {
+    background: transparent;
+  }
+
+  .settings-backdrop.peeking .settings {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .settings > :global(*) {
+    transition: opacity 0.15s ease;
+  }
+
+  .settings-backdrop.peeking .settings > :global(:not(.peek-keep)) {
+    opacity: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .settings-backdrop,
+    .settings > :global(*) {
+      transition: none;
+    }
   }
 </style>

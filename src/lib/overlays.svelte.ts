@@ -34,7 +34,9 @@ class Overlays {
   menu = $state<OscMenu | null>(null);
   /// Where the right-click landed, or null when no menu is up. Only the point:
   /// the menu places itself from its own measured size.
-  ctxAt = $state<{ x: number; y: number } | null>(null);
+  ///
+  /// `sub` opens a submenu with it: the picture panel's key.
+  ctxAt = $state<{ x: number; y: number; sub?: 'picture' } | null>(null);
   settings = $state(false);
   info = $state(false);
   /// Watching together: getting into a room, and the room you are in. A sheet

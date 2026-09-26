@@ -47,6 +47,7 @@ import { DELAY_STEP, clearAbLoop, cycleAbLoop, cycleLoop, player } from './playe
 import { copyScreenshot, saveScreenshot } from './screenshot';
 import { scrubBy } from './seek.svelte';
 import { seekSteps } from './seek-steps.svelte';
+import { ADJUST_KEY_STEP, nudgeAdjust, resetAdjust } from './picture-adjust.svelte';
 import { stepBy } from './step-engine.svelte';
 import { trashCurrentFile } from './trash';
 import { nudgeDelayHere } from './tracks.svelte';
@@ -205,6 +206,18 @@ export function clearCastClick() {
     clearTimeout(castClickTimer);
     castClickTimer = null;
   }
+}
+
+/// The picture panel from the keyboard: the context menu opened near the top
+/// left with its picture submenu already out, so the panel stands beside it
+/// and the middle of the frame stays in view. The same key closes it.
+function togglePictureMenu() {
+  if (overlays.ctxAt) {
+    overlays.ctxAt = null;
+    return;
+  }
+  if (!player.hasFile) return;
+  overlays.ctxAt = { x: 24, y: 64, sub: 'picture' };
 }
 
 export function onContextMenu(e: MouseEvent) {
@@ -384,6 +397,16 @@ export function runAction(id: ActionId) {
     case 'mini': if (player.hasFile || mini.on) void toggleMini(); break;
     case 'info': toggleInfo(player.hasFile); break;
     case 'reset_zoom': resetZoom(); break;
+    case 'picture_menu': togglePictureMenu(); break;
+    case 'brightness_down': nudgeAdjust('brightness', -ADJUST_KEY_STEP); break;
+    case 'brightness_up': nudgeAdjust('brightness', ADJUST_KEY_STEP); break;
+    case 'contrast_down': nudgeAdjust('contrast', -ADJUST_KEY_STEP); break;
+    case 'contrast_up': nudgeAdjust('contrast', ADJUST_KEY_STEP); break;
+    case 'saturation_down': nudgeAdjust('saturation', -ADJUST_KEY_STEP); break;
+    case 'saturation_up': nudgeAdjust('saturation', ADJUST_KEY_STEP); break;
+    case 'gamma_down': nudgeAdjust('gamma', -ADJUST_KEY_STEP); break;
+    case 'gamma_up': nudgeAdjust('gamma', ADJUST_KEY_STEP); break;
+    case 'adjust_reset': resetAdjust(); break;
     case 'open_file': void openFileDialog(); break;
     case 'open_link': void openLinkDialog(); break;
     case 'screenshot': void saveScreenshot(false); break;

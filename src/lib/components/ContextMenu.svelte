@@ -23,9 +23,25 @@
   import { showOsd } from '$lib/osd.svelte';
   import { IS_MAC } from '$lib/platform';
   import { ASPECT_AUTO, LOOP_LABEL, isNetworkSource, player, type PictureProp } from '$lib/player.svelte';
-  import { blockContextMenu } from '$lib/dom';
+  import { blockContextMenu, holdSlider } from '$lib/dom';
   import { copyScreenshot, saveScreenshot } from '$lib/screenshot';
   import { CROP_MODES, canDetectCrop, crop, cropLabel, setCrop, type CropMode } from '$lib/crop.svelte';
+  import {
+    ADJUST_PARAMS,
+    ADJUST_SCOPES,
+    adjust,
+    adjustLabel,
+    bipolarFill,
+    describeAdjust,
+    dismissAdjustConflict,
+    resetAdjust,
+    resolveAdjustConflict,
+    setAdjust,
+    setAdjustScope,
+    signed,
+    type AdjustParam,
+  } from '$lib/picture-adjust.svelte';
+  import { chrome } from '$lib/chrome.svelte';
   import { openSubsDialog } from '$lib/subs.svelte';
   import {
     fitWindowToVideo,
@@ -36,8 +52,9 @@
   } from '$lib/window-prefs.svelte';
 
   interface Props {
-    /// Where the right-click landed. The menu places itself from it.
-    at: { x: number; y: number };
+    /// Where the right-click landed. The menu places itself from it. `sub`
+    /// opens with a submenu already out (the picture panel's key).
+    at: { x: number; y: number; sub?: 'picture' };
     fullscreen: boolean;
     close: () => void;
     /// Everything the menu cannot do by itself. One object rather than a dozen
@@ -62,11 +79,15 @@
 
   const hasFile = $derived(player.hasFile);
 
-  /// A crop mode is ticked only while mpv agrees: a remembered rectangle that
-  /// does not fit this file is refused and cleared by mpv, and the menu must
-  /// not go on claiming it.
+  /// The mode in force. "Auto" is ticked whether or not this file turned out
+  /// to have bars — the mode is on, and the next file will be measured too. A
+  /// named shape is ticked only while mpv agrees: a rectangle that does not fit
+  /// the frame is refused and cleared by mpv, and the menu must not go on
+  /// claiming it.
   function cropSelected(m: CropMode): boolean {
-    return m === 'none' ? !player.videoCrop : crop.mode === m && !!player.videoCrop;
+    if (m === 'auto') return crop.mode === 'auto';
+    if (m === 'none') return crop.mode === 'none' || (crop.mode !== 'auto' && !player.videoCrop);
+    return crop.mode === m && !!player.videoCrop;
   }
 
   /// The aspect overrides the menu offers. mpv reports an override as a decimal
@@ -115,6 +136,7 @@
         y: v.pos,
         maxH: v.room,
       };
+      if (point.sub) openSubmenu(point.sub);
     });
   });
 
@@ -179,8 +201,36 @@
   }
 
   function hoverLeaveSubmenu() {
-    if (!ctxDrill) closeSubmenuSoon();
+    // A slider drag routinely leaves the panel, and closing it under the drag
+    // would take the slider away mid-gesture.
+    if (!ctxDrill && !peeking) closeSubmenuSoon();
   }
+
+  /// The picture slider being dragged. While one is, both menus go almost
+  /// transparent except for that slider's own row, so the adjustment is judged
+  /// against the whole frame and not against the part the menu leaves showing.
+  let peeking = $state<AdjustParam | null>(null);
+
+  function startPeek(k: AdjustParam, e: PointerEvent) {
+    if (e.button !== 0) return;
+    peeking = k;
+    chrome.tuning = true;
+    holdSlider(e, () => (peeking = null));
+  }
+
+  /// The bars stay away from the first touch of a slider until the picture
+  /// panel closes, rather than for the length of each drag: between drags the
+  /// pointer moves too, and bars bobbing up in the pauses were the complaint.
+  /// A question the panel asked is dropped with it.
+  $effect(() => {
+    if (ctxSubmenu === 'picture') return;
+    chrome.tuning = false;
+    dismissAdjustConflict();
+  });
+  $effect(() => () => {
+    chrome.tuning = false;
+    dismissAdjustConflict();
+  });
 
   function closeSubmenuNow() {
     clearTimeout(ctxSubTimer);
@@ -233,6 +283,7 @@
 <div
   class="ctxmenu scrollable"
   class:masked={ctxDrill && !!ctxSubmenu}
+  class:peek={!!peeking}
   bind:this={ctxEl}
   style="left: {at_.x}px; top: {at_.y}px; max-height: {at_.maxH}px"
   role="menu"
@@ -332,6 +383,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       class="ctxmenu submenu scrollable"
+      class:peek={!!peeking}
       role="menu"
       tabindex="-1"
       bind:this={ctxSubEl}
@@ -467,6 +519,9 @@
     {/each}
   </div>
   <div class="menu-title">{t('ctx.crop')}</div>
+  {#if crop.playlist}
+    <div class="crop-note">{t('crop.playlist_note')}</div>
+  {/if}
   <div class="speedrow">
     {#each CROP_MODES as m (m)}
       {@const noAuto = m === 'auto' && !canDetectCrop()}
@@ -488,6 +543,62 @@
     onclick={() => actions.setPicture('panscan', player.panscan > 0 ? '0' : '1')}
   >
     {t('ctx.panscan')}
+  </button>
+  <div class="menu-sep"></div>
+  <div class="menu-title">{t('ctx.color')}</div>
+  <div class="adjust">
+    {#each ADJUST_PARAMS as k (k)}
+      <div class="adj-row" class:live={peeking === k}>
+        <label for="adj-{k}" data-tip={t('adj.slider_tip')}>{adjustLabel(k)}</label>
+        <input
+          id="adj-{k}"
+          type="range"
+          min="-100"
+          max="100"
+          step="1"
+          value={adjust.values[k]}
+          class="bipolar"
+          style={bipolarFill(adjust.values[k])}
+          oninput={(e) => {
+            chrome.tuning = true;
+            setAdjust(k, +e.currentTarget.value);
+          }}
+          onpointerdown={(e) => startPeek(k, e)}
+          ondblclick={() => setAdjust(k, 0)}
+        />
+        <output for="adj-{k}" class:changed={adjust.values[k] !== 0}>{signed(adjust.values[k])}</output>
+      </div>
+    {/each}
+  </div>
+  <div class="menu-title">{t('adj.apply_to')}</div>
+  <div class="speedrow">
+    {#each ADJUST_SCOPES as scope (scope)}
+      {@const off = scope === 'folder' && !adjust.hasFolder}
+      <button
+        class="speedopt"
+        class:sel={adjust.scope === scope}
+        disabled={off}
+        data-tip={t(off ? 'adj.scope_folder_none' : `adj.scope_${scope}_tip`)}
+        onclick={() => setAdjustScope(scope)}
+      >
+        {t(`adj.scope_${scope}`)}
+      </button>
+    {/each}
+  </div>
+  <!-- Moving to a scope that already holds other values: both sets are
+       somebody's deliberate choice, so the menu asks which one survives. -->
+  {#if adjust.conflict}
+    {@const c = adjust.conflict}
+    <div class="adj-question">
+      {t(`adj.conflict_${c.scope}`, { values: describeAdjust(c.theirs) || t('adj.conflict_none') })}
+    </div>
+    <div class="speedrow">
+      <button class="speedopt" onclick={() => resolveAdjustConflict('mine')}>{t('adj.keep_mine')}</button>
+      <button class="speedopt" onclick={() => resolveAdjustConflict('theirs')}>{t('adj.keep_theirs')}</button>
+    </div>
+  {/if}
+  <button class="menu-item" disabled={!adjust.changed} onclick={resetAdjust}>
+    {t('adj.reset')} <span class="hint">{hint('adjust_reset')}</span>
   </button>
 {/snippet}
 
@@ -661,6 +772,97 @@
     padding: 5px;
     background: rgba(255, 255, 255, 0.07);
     border-radius: 11px;
+  }
+
+  /* The picture sliders. Three columns so the four tracks start and end on the
+     same x whatever the label, and a fixed readout so the digits do not push
+     the track while it moves. */
+  .adjust {
+    display: grid;
+    gap: 2px;
+    padding: 0 10px 4px;
+  }
+
+  .adj-row {
+    display: grid;
+    grid-template-columns: 96px 1fr 30px;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 6px;
+    margin: 0 -6px;
+    border-radius: 8px;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+  }
+
+  .adj-row label {
+    color: #b9b9c3;
+    font-size: 12.5px;
+  }
+
+  .adj-row output {
+    text-align: right;
+    color: #d6d6de;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .adj-row output.changed {
+    color: #818cf8;
+  }
+
+  .crop-note {
+    padding: 0 10px 4px;
+    max-width: 280px;
+    color: #77777f;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+
+  .adj-question {
+    padding: 6px 10px 2px;
+    max-width: 280px;
+    color: #b9b9c3;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .adj-row input {
+    width: 100%;
+    margin: 0;
+  }
+
+  /* See-through while a picture slider is dragged (`peeking`). Everything but
+     the slider in hand fades out, and the menus' own fill with it, so the frame
+     is judged whole. The live row keeps a backing of its own: over a bright
+     frame a white track on nothing would be lost. */
+  .ctxmenu {
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .ctxmenu > * {
+    transition: opacity 0.15s ease;
+  }
+
+  .ctxmenu.peek {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .ctxmenu.peek > :not(.adjust),
+  .ctxmenu.peek .adj-row:not(.live) {
+    opacity: 0;
+  }
+
+  .ctxmenu.peek .adj-row.live {
+    background: rgba(16, 16, 22, 0.8);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ctxmenu,
+    .ctxmenu > *,
+    .adj-row {
+      transition: none;
+    }
   }
 
   /* `.speedopt` itself lives in app.css: the delay stepper in the track menus

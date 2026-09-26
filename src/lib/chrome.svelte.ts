@@ -127,7 +127,17 @@ class Chrome {
       !playback.session,
   );
 
-  idle = $derived(this.mayHide && this.pointerIdle);
+  /// A picture slider is in use (brightness and the rest, in the context menu
+  /// or the settings sheet). Every mouse move raises the bars, and a slider is
+  /// nothing but mouse moves, so the control bar kept covering the bottom of
+  /// the very frame being judged. Set from the first touch of a slider until
+  /// the surface holding it closes, and it hides the bars **and nothing
+  /// else**: the cursor is what drags the slider.
+  tuning = $state(false);
+
+  /// The bars are away: the pointer rested and the setting allows it, or a
+  /// picture slider is being worked. Everything that fades reads this.
+  idle = $derived(this.tuning || (this.mayHide && this.pointerIdle));
 }
 
 export const chrome = new Chrome();
@@ -245,7 +255,10 @@ function cursorEffect() {
     // `always` hides on the pointer's own idle, so the cursor can go while a bar
     // the viewer asked to keep stays up; the default follows the chrome.
     const mode = windowPrefs.cursorHide;
-    const rested = mode === 'always' ? chrome.pointerIdle : mode === 'controls' && chrome.idle;
+    // `tuning` hides the bars under a pointer that is busy dragging, so it is
+    // taken back out here: that cursor must stay.
+    const rested =
+      mode === 'always' ? chrome.pointerIdle : mode === 'controls' && chrome.idle && !chrome.tuning;
     if (!rested || chrome.pointerInTitlebar) {
       // Showing it again is never delayed: that half is a response to the
       // pointer moving, and any lag there is felt immediately.

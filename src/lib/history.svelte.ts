@@ -89,13 +89,23 @@ type TrackEntry = {
   /// different frame rate. Here for the same reason as the delays, and per
   /// source for the same reason too.
   subSpeed?: number;
-  /// The black bars removed from this file's picture (crop.svelte.ts). Per
-  /// source and never per folder: episodes of one show usually share their
-  /// bars, but a crop wrongly inherited cuts picture off, which is worse than
-  /// asking again.
+  /// The black bars removed from this file's picture (crop.svelte.ts), as a
+  /// cache of the rectangle this file came to. What the viewer *chose* is
+  /// `cropMode`, kept for the playlist; the rectangle is never shared, because
+  /// one file's bars inherited by another cut picture off.
   crop?: SavedCrop;
+  /// In the folder store only: the crop mode chosen anywhere in this playlist
+  /// ('none' included, so turning it off on one episode turns it off for all).
+  cropMode?: string;
+  /// Brightness, contrast, saturation and gamma (picture-adjust.svelte.ts). In
+  /// the file store when it applies to one file, in the folder store when it
+  /// applies to the playlist.
+  adjust?: Adjust;
   ts: number;
 };
+
+/// mpv's four equalizer properties, each -100..100.
+export type Adjust = { brightness: number; contrast: number; saturation: number; gamma: number };
 
 /// How a crop was chosen, and the rectangle it came to. The rectangle is stored
 /// rather than recomputed so reopening a file does not decode it again; the
@@ -452,6 +462,92 @@ export function rememberCrop(path: string, crop: SavedCrop | null) {
 export function cropFor(path: string): SavedCrop | null {
   if (isPrivatePath(path)) return null;
   return entriesLoad(TRACKS_KEY)[sourceId(path)]?.crop ?? null;
+}
+
+/// Whether this source has a playlist scope at all: a folder, or a torrent.
+export function hasPlaylistScope(path: string): boolean {
+  return !!folderScopeKey(path);
+}
+
+/// Record the crop mode for this source's playlist. No-op for a link, which
+/// has none.
+export function rememberCropMode(path: string, mode: string) {
+  if (isPrivatePath(path)) return;
+  const key = folderScopeKey(path);
+  if (!key) return;
+  const map = entriesLoad(FOLDER_TRACKS_KEY);
+  map[key] = { ...map[key], cropMode: mode, ts: Date.now() };
+  entriesSave(FOLDER_TRACKS_KEY, map, 200);
+}
+
+export function cropModeFor(path: string): string | null {
+  if (isPrivatePath(path)) return null;
+  const key = folderScopeKey(path);
+  return key ? (entriesLoad(FOLDER_TRACKS_KEY)[key]?.cropMode ?? null) : null;
+}
+
+// ---- Picture adjustments ---------------------------------------------------
+// Three scopes, narrowest first: this file, its playlist (the folder, or the
+// torrent), every file. The global one has a key of its own because it belongs
+// to no source at all.
+
+const ADJUST_KEY = 'frameplayer.picture';
+
+export type AdjustScope = 'file' | 'folder' | 'all';
+
+/// What each scope holds for this source, and whether it has a folder scope at
+/// all (a link does not).
+export function adjustScopes(path: string): {
+  file: Adjust | null;
+  folder: Adjust | null;
+  all: Adjust | null;
+  hasFolder: boolean;
+} {
+  const folderKey = folderScopeKey(path);
+  const priv = isPrivatePath(path);
+  return {
+    file: priv ? null : (entriesLoad(TRACKS_KEY)[sourceId(path)]?.adjust ?? null),
+    folder: priv || !folderKey ? null : (entriesLoad(FOLDER_TRACKS_KEY)[folderKey]?.adjust ?? null),
+    all: loadAdjustAll(),
+    hasFolder: !!folderKey,
+  };
+}
+
+export function loadAdjustAll(): Adjust | null {
+  try {
+    const raw = localStorage.getItem(ADJUST_KEY);
+    return raw ? (JSON.parse(raw) as Adjust) : null;
+  } catch {
+    return null;
+  }
+}
+
+/// Write one scope for this source; null deletes it. A file under a private
+/// root keeps nothing in the per-source stores, as with every other record.
+/// `path` is not read for `all`.
+export function writeAdjust(path: string, scope: AdjustScope, value: Adjust | null) {
+  if (scope === 'all') {
+    try {
+      if (value) localStorage.setItem(ADJUST_KEY, JSON.stringify(value));
+      else localStorage.removeItem(ADJUST_KEY);
+    } catch {
+      // not critical: the choice simply will not survive a restart
+    }
+    return;
+  }
+  if (isPrivatePath(path)) return;
+  const [key, id, limit] =
+    scope === 'file'
+      ? [TRACKS_KEY, sourceId(path), 300]
+      : [FOLDER_TRACKS_KEY, folderScopeKey(path), 200];
+  if (!id) return;
+  const map = entriesLoad(key);
+  if (!value && !map[id]?.adjust) return;
+  const entry: TrackEntry = { ...map[id], ts: Date.now() };
+  if (value) entry.adjust = value;
+  else delete entry.adjust;
+  map[id] = entry;
+  entriesSave(key, map, limit as number);
 }
 
 /// What to look for in this file: what was picked here before, or failing that
