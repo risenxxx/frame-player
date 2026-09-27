@@ -144,6 +144,18 @@
 
 .feat.rev .feat-mock { order: -1; }
 
+/* The picture stage takes its height from this column's width. */
+.feat.mock-wide .feat-mock { container-type: inline-size; }
+
+/* A mirrored section whose mock needs the wide column all the same: the picture
+   scene ends on a window cropped to 2.39:1, which in the narrow column was a
+   193px strip. The proportions mirror with the order, so the mock keeps the
+   share it has in an unmirrored section. Two columns only — below 900 there is
+   one. */
+@media (min-width: 901px) {
+  .feat.rev.mock-wide .feat-in { grid-template-columns: minmax(0, 1.14fr) minmax(0, 0.86fr); }
+}
+
 /* Without this a mock wider than its column widens the column instead, and the
    copy beside it goes off the screen with it. */
 .feat-in > * { min-width: 0; }
@@ -630,6 +642,288 @@
 
 @media (max-width: 560px) {
   .rigs { grid-template-columns: 1fr; gap: 28px; }
+}
+
+/* ── mock: the picture — colour, then crop ────────────────────────────────── */
+
+/*
+  The readout next to the dragged slider counts in whole steps, as the
+  application's does. A registered integer is what rounds it: `counter-reset`
+  wants an integer, and the value it is fed is a product of `--p`.
+*/
+@property --bv {
+  syntax: "<integer>";
+  inherits: true;
+  initial-value: 0;
+}
+
+/*
+  One linear `--p` over 7800 ms (`data-ease="linear"`), each beat with its own
+  curve — `-t` is a beat's linear time, the bare name its curve:
+
+    pointer fades in          0–190 ms    ease-out
+    walks to the click        0–770       smoothstep; the menu opens at the
+                                          point clicked, as a context menu does
+    menu opens                820–1100    ease-out
+    walks to Brightness       1150–1820   smoothstep
+    the menu turns see-through 1920–2110  smoothstep, as the drag starts, and
+                                          the title and control bars go
+    drags to +44              2110–3460   smoothstep, the frame brightening
+    the menu comes back       3550–3740   smoothstep, on release
+    walks to Playlist         3940–4700   smoothstep, pressed at 4850
+    walks to Auto             5090–5760   smoothstep, pressed at 5900
+    menu closes               6050–6340   smoothstep; the pointer hides with it
+    "Looking for black bars"  6140–7010
+    the window takes the 5:3  6720–7490  smoothstep
+    "Crop · Auto"             6910–7055   and it stays: the scene ends on
+                                          the film in its own shape, the popup
+                                          saying what happened
+
+  The pointer is an arrow while it travels and the hand over what it acts on,
+  switching at once, as a system cursor does. Where the five stops are is
+  measured by scripts/pointer.ts (`--x1`…`--y5`).
+*/
+.pic-stage {
+  position: relative;
+  /* 4:3, the file's shape: the film inside it is 5:3, so it is letterboxed,
+     with bars of at least 7.5% of the width each. Never under 430px tall:
+     the picture panel is 262px, starts 10px under the 40px title bar and has
+     to end clear of the control bar's timestamps, ~103px up from the bottom —
+     measured, 400 still left it 9px into them (a 4:3 stage is only 330px in
+     the narrowest column, at a 901px page). Where the floor holds, the bars
+     only grow. The window is centred in this box and resizes inside it, so
+     its changing height never moves the page.
+
+     Written as a height off the column's width rather than as
+     `aspect-ratio` plus `min-height`: that pair carries the minimum height
+     across into a minimum *width* (430 × 4/3), and the stage came out 573px
+     wide on a 375px phone — `min-width: 0` did not undo it. `cqw` here is the
+     column's (`.mock-wide .feat-mock` below), and 611px is the stage's cap. */
+  width: 100%;
+  height: max(430px, min(611px, 100cqw) * 3 / 4);
+  container-type: size;
+
+  --in-t: clamp(0, var(--p, 1) / 0.0244, 1);
+  --in: calc(1 - (1 - var(--in-t)) * (1 - var(--in-t)) * (1 - var(--in-t)));
+  --m1-t: clamp(0, var(--p, 1) / 0.0987, 1);
+  --m1: calc(var(--m1-t) * var(--m1-t) * (3 - 2 * var(--m1-t)));
+  --menu-in-t: clamp(0, (var(--p, 1) - 0.1051) / 0.0359, 1);
+  --menu-in: calc(1 - (1 - var(--menu-in-t)) * (1 - var(--menu-in-t)) * (1 - var(--menu-in-t)));
+  --m2-t: clamp(0, (var(--p, 1) - 0.1474) / 0.0859, 1);
+  --m2: calc(var(--m2-t) * var(--m2-t) * (3 - 2 * var(--m2-t)));
+  --peek-in-t: clamp(0, (var(--p, 1) - 0.2462) / 0.0244, 1);
+  --peek-in: calc(var(--peek-in-t) * var(--peek-in-t) * (3 - 2 * var(--peek-in-t)));
+  --d-t: clamp(0, (var(--p, 1) - 0.2705) / 0.1731, 1);
+  --d: calc(var(--d-t) * var(--d-t) * (3 - 2 * var(--d-t)));
+  --peek-out-t: clamp(0, (var(--p, 1) - 0.4551) / 0.0244, 1);
+  --peek-out: calc(var(--peek-out-t) * var(--peek-out-t) * (3 - 2 * var(--peek-out-t)));
+  --peek: calc(var(--peek-in) * (1 - var(--peek-out)));
+  --m4-t: clamp(0, (var(--p, 1) - 0.5051) / 0.0974, 1);
+  --m4: calc(var(--m4-t) * var(--m4-t) * (3 - 2 * var(--m4-t)));
+  --scope-t: clamp(0, (var(--p, 1) - 0.6218) / 0.0186, 1);
+  --scope: calc(1 - (1 - var(--scope-t)) * (1 - var(--scope-t)) * (1 - var(--scope-t)));
+  --m5-t: clamp(0, (var(--p, 1) - 0.6526) / 0.0859, 1);
+  --m5: calc(var(--m5-t) * var(--m5-t) * (3 - 2 * var(--m5-t)));
+  --crop-on-t: clamp(0, (var(--p, 1) - 0.7564) / 0.0186, 1);
+  --crop-on: calc(1 - (1 - var(--crop-on-t)) * (1 - var(--crop-on-t)) * (1 - var(--crop-on-t)));
+  --menu-out-t: clamp(0, (var(--p, 1) - 0.7756) / 0.0372, 1);
+  --menu-out: calc(var(--menu-out-t) * var(--menu-out-t) * (3 - 2 * var(--menu-out-t)));
+  --menu: calc(var(--menu-in) * (1 - var(--menu-out)));
+  --out-t: clamp(0, (var(--p, 1) - 0.7756) / 0.0487, 1);
+  --out: calc(var(--out-t) * var(--out-t) * (3 - 2 * var(--out-t)));
+  --hand: calc(
+    clamp(0, (var(--p, 1) - 0.2277) * 1000, 1) - clamp(0, (var(--p, 1) - 0.4923) * 1000, 1)
+    + clamp(0, (var(--p, 1) - 0.5908) * 1000, 1) - clamp(0, (var(--p, 1) - 0.6523) * 1000, 1)
+    + clamp(0, (var(--p, 1) - 0.7262) * 1000, 1) - clamp(0, (var(--p, 1) - 0.7938) * 1000, 1)
+  );
+  --o1: calc(clamp(0, (var(--p, 1) - 0.7872) / 0.0244, 1) * (1 - clamp(0, (var(--p, 1) - 0.8859) / 0.0128, 1)));
+  --c-t: clamp(0, (var(--p, 1) - 0.8615) / 0.0987, 1);
+  --c: calc(var(--c-t) * var(--c-t) * (3 - 2 * var(--c-t)));
+  --o2: clamp(0, (var(--p, 1) - 0.8859) / 0.0186, 1);
+  --lit: clamp(0, var(--d) * 1000, 1);
+  --bv: calc(var(--d) * 44);
+  /* The picture: 5:3 across the full width, the bars above and below it only.
+     5:3 rather than the 2.39 of a scope film because the window ends the scene
+     at this shape, next to a column of copy: at 2.39 it was a 256px strip
+     beside 560px of text. A 4:3 picture pillarboxed kept the height but made
+     the window narrow sideways, which is not how a player window is seen to
+     change. */
+  --pw: 100cqw;
+  --ph: calc(100cqw * 3 / 5);
+}
+
+/* The window, from the whole stage to exactly the picture. Both sides are
+   written out, so the same rule narrows it (pillarbox) or flattens it
+   (letterbox), whichever the stage's shape made. */
+.player.pic {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: none;
+  aspect-ratio: auto;
+  width: calc(100cqw * (1 - var(--c)) + var(--pw) * var(--c));
+  height: calc(100cqh * (1 - var(--c)) + var(--ph) * var(--c));
+  /* The chrome — control bar (player.css reads `--ui`) and title bar — is up
+     from the start and to the end, and away while Brightness is dragged, as
+     the application's is while a picture slider is in use (`chrome.tuning`).
+     The player's own `--ui` fades in over most of its scene, which is the
+     hero's beat, not this one. */
+  --ui: calc(1 - var(--peek));
+}
+
+.pic .win-bar { opacity: var(--ui); }
+
+/* The picture, centred at its own shape; the black around it is the window's. */
+.pic-lb {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: var(--pw);
+  height: var(--ph);
+  overflow: hidden;
+}
+
+.pic-lb .scene { filter: brightness(calc(1 + 0.3 * var(--d))); }
+
+/* As Osd.svelte draws it: the context menu's surface, top left under the bar,
+   on the window's left edge line — the one the lights and the control bar
+   start on: 17px in here, 15px under 760px (narrow.css), counted from the
+   outside of the window's 1px border. The application's own 20px is its
+   line, not this mock's. */
+.pic-osd {
+  position: absolute;
+  top: 52px;
+  left: 16px;
+  min-width: 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(16, 16, 22, 0.96);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: #e8e8ec;
+  font-size: 13px;
+  line-height: normal;
+  z-index: 3;
+}
+
+.pic-osd .osd-sub { color: #b9b9c3; font-size: 12px; }
+.pic-osd.o1 { opacity: var(--o1); }
+.pic-osd.o2 { opacity: var(--o2); }
+
+/*
+  The context menu's picture panel, trimmed to the two things the scene uses:
+  the crop row and the colour block with its scope. Sizes are the
+  application's, a few rows' padding tighter so the panel fits the window
+  down to the phone's 344px. While a slider is dragged (`--peek`) it becomes
+  what the application's does: nothing but the slider's own row, on a backing
+  of its own.
+*/
+.pic-menu {
+  position: absolute;
+  /* Opened over the picture rather than at the window's edge, where it sat
+     half on the bar; kept inside the window on a phone. */
+  left: clamp(12px, 50cqw - 150px, 100cqw - 268px);
+  top: 50px;
+  width: 256px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, calc(0.08 * (1 - var(--peek))));
+  border-radius: 10px;
+  background: rgba(16, 16, 22, calc(0.96 * (1 - var(--peek))));
+  box-shadow: 0 10px 34px rgba(0, 0, 0, calc(0.5 * (1 - var(--peek))));
+  color: #d6d6de;
+  line-height: normal;
+  text-align: left;
+  opacity: var(--menu);
+  transform: translateY(calc((1 - var(--menu-in)) * -4px));
+  z-index: 4;
+}
+
+.pic-menu > :not(.pm-adjust),
+.pm-row:not(.live) { opacity: calc(1 - var(--peek)); }
+
+.pm-title { padding: 5px 10px; color: #9a9aa5; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+.pm-sep { height: 1px; margin: 4px 8px; background: rgba(255, 255, 255, 0.09); }
+
+.pm-pills {
+  display: flex;
+  gap: 2px;
+  margin: 2px 8px 5px;
+  padding: 5px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.pm-pill { flex: 1; padding: 5px 0; border-radius: 6px; color: #d6d6de; font-size: 12px; font-weight: 500; text-align: center; white-space: nowrap; }
+.pm-pills.crop { --on: var(--crop-on); }
+.pm-pills.scope { --on: var(--scope); }
+.pm-pill.was { background: rgba(99, 102, 241, calc(1 - var(--on))); color: #fff; }
+.pm-pill.now { background: rgba(99, 102, 241, var(--on)); color: #fff; }
+
+.pm-adjust { padding: 0 10px 3px; }
+
+.pm-row {
+  display: grid;
+  grid-template-columns: 82px 1fr 28px;
+  align-items: center;
+  gap: 9px;
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.pm-row.live { background: rgba(16, 16, 22, calc(0.8 * var(--peek))); }
+.pm-label { color: #b9b9c3; font-size: 12px; }
+.pm-track { position: relative; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); }
+
+/* From the middle, as the application's bipolar slider fills. */
+.pm-fill { position: absolute; inset: 0 auto 0 50%; width: calc(22% * var(--d)); border-radius: 2px; background: #fff; }
+
+.pm-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.pm-row.live .pm-knob { left: calc(50% + 22% * var(--d)); }
+/* Where the drag ends: +44, i.e. 72% of the track. */
+.pm-to { position: absolute; left: 72%; top: 50%; width: 0; height: 0; }
+
+.pm-val { color: #d6d6de; font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+
+.pm-row.live .pm-val {
+  counter-reset: bv var(--bv);
+  color: rgb(calc(214 - 85 * var(--lit)), calc(214 - 74 * var(--lit)), calc(222 + 26 * var(--lit)));
+}
+
+.pm-row.live .pm-val::after { content: counter(bv); }
+.pm-plus { opacity: var(--lit); }
+
+.player.pic .ptr {
+  left: calc(
+    62% * (1 - var(--m1))
+    + var(--x1, 0px) * (var(--m1) - var(--m2))
+    + var(--x2, 0px) * (var(--m2) - var(--d))
+    + var(--x3, 0px) * (var(--d) - var(--m4))
+    + var(--x4, 0px) * (var(--m4) - var(--m5))
+    + var(--x5, 0px) * var(--m5)
+  );
+  top: calc(
+    58% * (1 - var(--m1))
+    + var(--y1, 0px) * (var(--m1) - var(--m2))
+    + var(--y2, 0px) * (var(--m2) - var(--d))
+    + var(--y3, 0px) * (var(--d) - var(--m4))
+    + var(--y4, 0px) * (var(--m4) - var(--m5))
+    + var(--y5, 0px) * var(--m5)
+  );
+  opacity: calc(var(--in) * (1 - var(--out)));
 }
 
 /* ── mock: subtitles ──────────────────────────────────────────────────────── */

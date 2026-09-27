@@ -105,7 +105,7 @@ Addresses have no trailing slash and no extension: the build writes
 | `src/pages/404.astro` | Every missing address: the path the reader asked for, drawn as a file the player failed to open, over a test card. `noindex`, no canonical |
 | `src/components/` | One file per section; `mocks/` holds the interface mocks the sections and the guides share — the player window, the title bar every other window carries, and one per section, `prose/` what a guide can use in its text. Each mock is the application's own surface rebuilt in HTML — the control row, the cast panel and the start screen carry the measurements and the glyphs from `src/lib/components/` rather than a screenshot |
 | `src/scripts/` | `theme.ts` (system/light/dark, two switches, one state), `nav.ts` (the header's backdrop, driven by an observer on a 1 px marker rather than a scroll handler), `motion.ts` (`--p` from 0 to 1 per scene, once, when the section is properly in view) |
-| `assets/img/` | One source per frame, committed and **never published**. **Placeholders** — see below |
+| `assets/img/` | One source per frame, committed and **never published**. They are the final frames, not stand-ins for screenshots — see below |
 | `public/gen/` | What `npm run images` makes from them: three formats, a handful of widths, hashed names. Generated locally and **committed** — CI never encodes |
 | `scripts/images.mjs` | The generator, and the width ladders it uses |
 | `tools/og.mjs` | Renders the link card, and one per guide page from its frontmatter, with the local browser. Run by hand when the design changes or a page is added; the result is committed |
@@ -114,7 +114,7 @@ Addresses have no trailing slash and no extension: the build writes
 ## The frames
 
 `assets/img/*.jpg` are the frames inside the mocks. Two are photographs from
-NASA and are public domain; the other seven, and the four `poster-*.jpg`, were
+NASA and are public domain; the other eight, and the four `poster-*.jpg`, were
 generated for this page and belong to the project. Nothing here needs a credit
 line, and nothing here is share-alike — no frame drags a licence onto the page
 around it.

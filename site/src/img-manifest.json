@@ -412,5 +412,35 @@
         "1120": "/gen/ridge-hiker-1120.497a19d0.jpg"
       }
     }
+  },
+  "surf-glow": {
+    "w": 1600,
+    "h": 953,
+    "widths": [
+      400,
+      620,
+      840,
+      1600
+    ],
+    "formats": {
+      "avif": {
+        "400": "/gen/surf-glow-400.dff4d2d9.avif",
+        "620": "/gen/surf-glow-620.9b1ee8db.avif",
+        "840": "/gen/surf-glow-840.9db6fb47.avif",
+        "1600": "/gen/surf-glow-1600.cdc98256.avif"
+      },
+      "webp": {
+        "400": "/gen/surf-glow-400.48d25a5d.webp",
+        "620": "/gen/surf-glow-620.8977ca5c.webp",
+        "840": "/gen/surf-glow-840.ecbb074e.webp",
+        "1600": "/gen/surf-glow-1600.33970cb3.webp"
+      },
+      "jpg": {
+        "400": "/gen/surf-glow-400.605f5b7d.jpg",
+        "620": "/gen/surf-glow-620.b09f7a8e.jpg",
+        "840": "/gen/surf-glow-840.29fc0f77.jpg",
+        "1600": "/gen/surf-glow-1600.a9821cad.jpg"
+      }
+    }
   }
 }

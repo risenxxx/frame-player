@@ -38,6 +38,30 @@
   .castrow .cast-model { font-size: 10.5px; }
 }
 
+/* The picture scene's popup follows the window's edge line in (see
+   `.pic-osd`), and on a phone it is drawn smaller: at full size it covered a
+   third of a window that ends the scene 206px tall. */
+@media (max-width: 760px) {
+  .pic-osd { left: 14px; }
+}
+
+@media (max-width: 560px) {
+  .pic-osd { top: 46px; min-width: 120px; gap: 3px; padding: 7px 11px; border-radius: 9px; font-size: 12px; }
+  .pic-osd .osd-sub { font-size: 11px; }
+}
+
+/* At the narrowest the cropped window is too short to hold it above the
+   control bar at all, so the scene ends without it. */
+@media (max-width: 379px) {
+  .pic-osd.o2 { display: none; }
+}
+
+/* The picture scene in one column: the mock at the width it has beside the
+   copy rather than the page's, or its 4:3 stage would be 600px tall. */
+@media (max-width: 900px) {
+  .pic-stage { max-width: 611px; margin-inline: auto; }
+}
+
 @media (max-width: 560px) {
   /* Nobody installs a desktop player from a phone. The line goes where the
      download buttons stack — the same breakpoint, since that is the width

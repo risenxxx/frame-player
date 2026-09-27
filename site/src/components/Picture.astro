@@ -1,0 +1,30 @@
+---
+import PictureMock from './mocks/PictureMock.astro'
+---
+
+  <section class="feat rev mock-wide" id="picture">
+    <div class="wrap feat-in">
+      <div class="feat-copy" data-reveal>
+        <h2>The picture, cropped and tuned by eye</h2>
+        <p class="lede">
+          Auto crop finds the black bars baked into a picture, above and below it or at its sides,
+          by measuring frames from across the whole file rather than the scene on screen, and the
+          window takes the picture's own shape.
+          Brightness, contrast, saturation and gamma are sliders the menu clears out of the way of
+          while you drag one, so you judge the whole frame rather than what is left around a panel.
+        </p>
+        <ul class="checks">
+          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><b>One choice for the whole season.</b> Pick Auto on one episode and every episode in the folder or torrent is measured for itself as it opens, so a finale shot wider is never cut to the pilot's bars.</span></li>
+          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><b>It works on a torrent still downloading</b>, from the stretches that have already arrived.</span></li>
+          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><b>A correction for one file, its playlist or everything</b>, and when two of them disagree the player asks which one to keep instead of overwriting either.</span></li>
+        </ul>
+        <a class="more-link" href="/guides/darker-than-quicktime">Why the same video looks darker in mpv than in QuickTime</a>
+      </div>
+      <div class="feat-mock" data-reveal style="--dl:1">
+        <PictureMock />
+      </div>
+    </div>
+  </section>

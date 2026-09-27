@@ -1,0 +1,92 @@
+---
+import Frame from '../Frame.astro'
+import TitleBar from './TitleBar.astro'
+---
+
+<!-- One episode, and the picture panel on it.
+
+     It opens letterboxed: a 5:3 film in a 4:3 file, black above and below
+     it. The pointer right-clicks, the context menu's picture
+     panel comes up (ContextMenu.svelte, trimmed to the crop row and the colour
+     block), drags Brightness — the panel goes see-through while it does, as the
+     application's does — sets the correction for the playlist and picks Auto
+     crop. The window closes on the film's own shape, and the scene ends there.
+
+     The control bar is up, as it is while the menu is open, and gives the
+     window its bottom edge while that edge is still a black bar. It and the
+     title bar get out of the way for the drag, with the panel, as the
+     application's chrome does while a picture slider is in use.
+
+     The stage is a fixed box and the window is centred in it, so resizing the
+     window never moves the page under the reader. Where the pointer stops is
+     measured by scripts/pointer.ts, as in the subtitle scene. -->
+<div class="pic-stage" data-scene data-dur="7800" data-ease="linear" aria-hidden="true">
+  <div class="player pic" data-pointer>
+    <div class="pic-lb"><Frame name="surf-glow" slot="mock" class="scene" alt="Bioluminescent surf on a beach at night" /></div>
+    <TitleBar over>Orbital.Night.S02E05.2160p.mkv</TitleBar>
+    <div class="osc">
+      <div class="times mono"><span>12:07</span><span>44:31</span></div>
+      <div class="seekwrap">
+        <div class="seektrack">
+          <span class="buffered" style="width:100%;background:rgba(255,255,255,.18)"></span>
+          <span class="fill" style="width:27%"></span>
+          <span class="knob" style="left:27%"></span>
+        </div>
+      </div>
+      <div class="controls">
+        <div class="cluster left">
+          <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-volume"/></svg></span>
+          <span class="volume"><i></i><b></b></span>
+        </div>
+        <div class="cluster center">
+          <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-prev"/></svg></span>
+          <span class="b play"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-pause"/></svg></span>
+          <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-next"/></svg></span>
+        </div>
+        <div class="cluster right">
+          <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-audio"/></svg></span>
+          <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-subs"/></svg></span>
+          <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-cast"/></svg></span>
+          <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-full"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pic-osd o1">Looking for black bars…</div>
+    <div class="pic-osd o2">Crop<span class="osd-sub">Auto</span></div>
+
+    <div class="pic-menu" data-stop="1" data-fx="0" data-fy="0">
+      <div class="pm-title">Crop</div>
+      <div class="pm-pills crop">
+        <span class="pm-pill was">None</span>
+        <span class="pm-pill now" data-stop="5">Auto</span>
+        <span class="pm-pill">2.39</span>
+        <span class="pm-pill">1.85</span>
+        <span class="pm-pill">4:3</span>
+      </div>
+      <div class="pm-sep"></div>
+      <div class="pm-title">Brightness and color</div>
+      <div class="pm-adjust">
+        <div class="pm-row live">
+          <span class="pm-label">Brightness</span>
+          <span class="pm-track" data-stop="2"><i class="pm-fill"></i><b class="pm-knob"></b><span class="pm-to" data-stop="3"></span></span>
+          <span class="pm-val"><span class="pm-plus">+</span></span>
+        </div>
+        <div class="pm-row"><span class="pm-label">Contrast</span><span class="pm-track"><b class="pm-knob"></b></span><span class="pm-val zero">0</span></div>
+        <div class="pm-row"><span class="pm-label">Saturation</span><span class="pm-track"><b class="pm-knob"></b></span><span class="pm-val zero">0</span></div>
+        <div class="pm-row"><span class="pm-label">Gamma</span><span class="pm-track"><b class="pm-knob"></b></span><span class="pm-val zero">0</span></div>
+      </div>
+      <div class="pm-title">Apply to</div>
+      <div class="pm-pills scope">
+        <span class="pm-pill was">This file</span>
+        <span class="pm-pill now" data-stop="4">Playlist</span>
+        <span class="pm-pill">All files</span>
+      </div>
+    </div>
+
+    <span class="ptr">
+      <svg class="walk-arrow" viewBox="0 0 11 18" aria-hidden="true"><use href="#i-cursor"/></svg>
+      <svg class="walk-hand" viewBox="0 0 15 19" aria-hidden="true"><use href="#i-hand"/></svg>
+    </span>
+  </div>
+</div>
