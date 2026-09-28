@@ -25,6 +25,7 @@ mod torrent_storage;
 mod trash;
 mod upnp;
 mod window_guard;
+mod window_shape;
 
 const OPEN_FILE_EVENT: &str = "frameplayer://open-file";
 
@@ -1098,6 +1099,7 @@ pub fn run() {
             window_buttons,
             window_enter_fullscreen,
             window_float_over_fullscreen,
+            window_shape::window_shape_lock,
             zoom_pan,
             folder_entries,
             paths_exist,
@@ -1254,6 +1256,11 @@ pub fn run() {
                         eprintln!("[macos_menu] failed to build the menu: {e}");
                     }
                 }
+                // The resize constraint behind "match video aspect ratio". Here
+                // because a window can only be subclassed from the thread that
+                // owns it; macOS needs nothing installed.
+                #[cfg(windows)]
+                window_shape::install(&win);
                 window_guard::clamp_to_visible_area(&win);
                 // The window is created hidden (visible: false) and shown from
                 // JS once it has a black background. Safety net for a broken

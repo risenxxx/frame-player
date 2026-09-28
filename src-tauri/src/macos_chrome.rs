@@ -468,6 +468,37 @@ fn pointer_over_buttons(ns: &NSWindow) -> bool {
         && p.y <= area.origin.y + area.size.height + PAD
 }
 
+// ---- Holding the picture's shape -----------------------------------------
+
+/// Hold the content to a shape while the viewer resizes the window, or let it
+/// go. Called from the `window_shape_lock` command — main thread only.
+///
+/// `contentAspectRatio` is AppKit's own constraint and everything about it
+/// below is measured, with a probe window driven by posted mouse events:
+///
+/// * It binds the **live resize and the zoom button**, and nothing else.
+///   `setContentSize` with another shape is accepted as given, so setting a
+///   ratio does not reshape the window — fitting it is still the frontend's
+///   job — and fullscreen fills the screen as it always did, which is why
+///   nothing here looks at the fullscreen notifications.
+/// * **The ratio outranks the minimum size.** With a minimum of 480×320 and
+///   16:9, the window was dragged down to 480×270: AppKit clamps the proposed
+///   size per axis and applies the ratio afterwards. So the minimum has to be
+///   a size *of this shape* before the ratio goes on, which the frontend sees
+///   to (`floorForShape`), through tao, so the minimum keeps one owner.
+/// * There is no "none" to set. The ratio and the resize increments are one
+///   constraint with two spellings, and writing the increments as a single
+///   point is how the ratio comes off (read back: it is then 0×0).
+pub fn set_shape_lock(window: &tauri::WebviewWindow, shape: Option<(f64, f64)>) {
+    let Some(ns) = ns_window(window) else {
+        return;
+    };
+    match shape {
+        Some((w, h)) => ns.setContentAspectRatio(NSSize::new(w, h)),
+        None => ns.setResizeIncrements(NSSize::new(1.0, 1.0)),
+    }
+}
+
 // ---- Floating over other apps' fullscreen --------------------------------
 //
 // Floating over ANOTHER application's fullscreen space is the one thing a

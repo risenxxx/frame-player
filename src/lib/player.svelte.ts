@@ -161,6 +161,13 @@ const OBSERVED = [
   ['playlist-count', 'int64'],
   ['dwidth', 'int64', 'none'],
   ['dheight', 'int64', 'none'],
+  // How far the VO turns the picture as it draws it. `dwidth`/`dheight` are
+  // the size *before* that turn (measured on 0.41 with a rotating VO: a clip
+  // carrying a 90° display matrix reports 1280x720 and is drawn upright), so
+  // anything that needs the shape on screen needs this as well. It is the sum
+  // of the file's own rotation and `video-rotate`, which is why the window's
+  // shape reads this one and not the option.
+  ['video-out-params/rotate', 'int64', 'none'],
   ['sub-delay', 'double', 'none'],
   ['audio-delay', 'double', 'none'],
   // Observed so the subtitle menu can tick the factor in force, including one
@@ -296,6 +303,10 @@ const RESYNC: Record<ObservedName, boolean> = {
   'cache-buffering-state': false,
   'dwidth': false,
   'dheight': false,
+  // Set once per file and then stands, and what hangs off it is the shape the
+  // window is held to: lost, an upright clip keeps a landscape window until
+  // the next file.
+  'video-out-params/rotate': true,
   // The identity of what is open. Deliberately NOT swept, and the reason is the
   // sweep's own shape rather than the value's: `resyncState` writes mirrors
   // without calling the `property` hook, and for these three the hook is where
@@ -373,6 +384,9 @@ class Player {
   /// dwidth/dheight — the video size including aspect.
   videoW = $state(0);
   videoH = $state(0);
+  /// `video-out-params/rotate` — the turn the VO applies on top of that size,
+  /// in degrees. The shape on screen is `pictureShape` of the three.
+  voRotate = $state(0);
 
   /// vo-configured — the VO exists and is painting (its field is black until
   /// the first frame). The page latches its dark backdrop off on this.
@@ -814,6 +828,7 @@ function applyProperty(ev: PropertyChange) {
     case 'playlist-count': player.playlistCount = ev.data; break;
     case 'dwidth': player.videoW = ev.data ?? 0; break;
     case 'dheight': player.videoH = ev.data ?? 0; break;
+    case 'video-out-params/rotate': player.voRotate = ev.data ?? 0; break;
     case 'vo-configured': player.voConfigured = ev.data; break;
     case 'track-list/count': void loadTracks(); break;
     case 'chapter-list/count': void loadChapters(); break;

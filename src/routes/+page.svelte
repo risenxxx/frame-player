@@ -208,7 +208,7 @@
     applyAlwaysOnTop,
     fitWindowToVideo,
     loadWindowPrefs,
-    maybeFitWindow,
+    initWindowShape,
     mini,
     restoreGeometry,
     scheduleGeometrySave,
@@ -1010,13 +1010,6 @@
           lastPlaylistPos = player.playlistPos;
         }
         break;
-      // dwidth/dheight arrive separately, so the window fit hangs off both and
-      // guards against repeats: recomputing it on every event (including a
-      // track change at the same resolution) is pointless.
-      case 'dwidth':
-      case 'dheight':
-        maybeFitWindow();
-        break;
     }
   }
 
@@ -1063,6 +1056,14 @@
   // lights, and the title bar's side measurement. Started from here rather than
   // left at the module's top level: see the note on `initChrome`.
   initChrome();
+  // Keeps the window in the picture's shape while "match video aspect ratio"
+  // is on. It is told when the shell owns the window's size, because a fit
+  // that stood down for fullscreen has to be given its turn afterwards, and
+  // when the start screen is up, where the window is nobody's.
+  initWindowShape({
+    sizeOwned: () => chrome.fullscreen || chrome.isMaximized,
+    resting: () => showEmpty,
+  });
   // Lifts the subtitles clear of the control bar while it is up. Its own
   // effects rather than the chrome's: what it measures is the bar, but what it
   // writes is an mpv option, and the shell has no business knowing about those.

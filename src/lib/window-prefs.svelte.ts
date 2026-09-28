@@ -1,5 +1,6 @@
 /**
- * Window geometry, the "fit to video" rule and always-on-top.
+ * Window geometry, the window's shape ("match video aspect ratio") and
+ * always-on-top.
  *
  * Stored in localStorage next to volume and loop. Geometry is restored from the
  * frontend rather than natively: the window is created hidden and shown from
@@ -8,13 +9,15 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
+import { LogicalSize, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
 import { currentMonitor, getCurrentWindow } from '@tauri-apps/api/window';
 
 import { t } from './i18n.svelte';
+import { latest, type Attempt } from './latest';
 import { showOsd } from './osd.svelte';
 import { IS_MAC } from './platform';
 import { player } from './player.svelte';
+import { fitWindow, floorForShape, pictureShape, shapeFits, shapeKey, type Size } from './window-fit';
 
 /// Minimum window size in LOGICAL pixels. Duplicates minWidth/minHeight from
 /// tauri.conf.json: there is no way to read them back from the window, and
@@ -30,11 +33,14 @@ const SCREEN_PADDING = 24;
 const WINDOW_PREFS_KEY = 'frameplayer.window';
 
 /// Bumped when the defaults change in a way that must reach existing installs.
-/// v2: remember/fitToVideo forced back to off — both misbehave and are disabled
-/// by default until fixed. Payloads without a version predate the reset, so
-/// their remember/fitToVideo are ignored; an explicit toggle after this build
-/// saves with the current version and sticks.
-const PREFS_VERSION = 2;
+/// v2: remember/fitToVideo forced back to off — both misbehaved. Payloads
+/// without a version predate that reset, so their remember/fitToVideo are
+/// ignored.
+/// v3: fitToVideo is on by default, with what made it misbehave fixed (see
+/// `fitToShape`). Every payload carries every field, so an "off" written under
+/// v2 was the default of its day and not anybody's choice — it is not read.
+/// One written under v3 is, and sticks.
+const PREFS_VERSION = 3;
 
 /**
  * When the controls hide themselves after the pointer stops.
@@ -72,8 +78,9 @@ export const CURSOR_HIDE_CHOICES: CursorHide[] = ['controls', 'always', 'never']
 class WindowPrefs {
   /// Remember the geometry between runs. Off by default while restore is buggy.
   remember = $state(false);
-  /// Fit the window to the video aspect when a file opens.
-  fitToVideo = $state(false);
+  /// The window has the picture's shape: it takes it when a file opens and
+  /// keeps it while it is resized by hand — see `initWindowShape`.
+  fitToVideo = $state(true);
   alwaysOnTop = $state(false);
   /// Magnetic edges for the mini window. On by default: a corner window is put
   /// where it is meant to be out of the way, and pixel-accurate placement is
@@ -154,6 +161,8 @@ export async function toggleMini() {
   const win = getCurrentWindow();
   // Whatever a snap in flight was aiming at, this supersedes it.
   glideSeq++;
+  // The minimum is about to be written from here, whichever way this goes.
+  holding = '';
   if (mini.on) {
     const back = beforeMini;
     try {
@@ -162,7 +171,10 @@ export async function toggleMini() {
       // be made fullscreen again — which `toggleFullscreen` does immediately
       // after leaving mini.
       await floatOverFullscreen(false);
-      await win.setMinSize(new PhysicalSize(MIN_WINDOW_W, MIN_WINDOW_H));
+      // Logical, as the config states it. This read `PhysicalSize` once, which
+      // on a Retina screen is half of it: one visit to the mini player left an
+      // ordinary window that could be dragged down to 240×160.
+      await win.setMinSize(new LogicalSize(MIN_WINDOW_W, MIN_WINDOW_H));
       if (back) {
         await win.setSize(new PhysicalSize(back.w, back.h));
         await win.setPosition(new PhysicalPosition(back.x, back.y));
@@ -191,7 +203,7 @@ export async function toggleMini() {
     const w = Math.round(MINI_WIDTH * dpr);
     const h = Math.round((MINI_WIDTH / aspect) * dpr);
 
-    await win.setMinSize(new PhysicalSize(Math.round(MINI_MIN_W * dpr), Math.round(MINI_MIN_H * dpr)));
+    await win.setMinSize(new LogicalSize(MINI_MIN_W, MINI_MIN_H));
     await win.setSize(new PhysicalSize(w, h));
 
     // Bottom-right of the work area, which already excludes the Dock and the
@@ -219,7 +231,7 @@ export async function toggleMini() {
     // Undo the one thing that may already have landed, so an ordinary window
     // is not left resizable down to nothing.
     try {
-      await win.setMinSize(new PhysicalSize(MIN_WINDOW_W, MIN_WINDOW_H));
+      await win.setMinSize(new LogicalSize(MIN_WINDOW_W, MIN_WINDOW_H));
     } catch {
       // nothing further to do
     }
@@ -365,12 +377,11 @@ export function loadWindowPrefs() {
     const raw = localStorage.getItem(WINDOW_PREFS_KEY);
     if (!raw) return;
     const saved = JSON.parse(raw) as Partial<WindowPrefs> & { v?: number };
-    // Pre-reset payloads (no version) keep only alwaysOnTop and the geometry
-    // itself — remember/fitToVideo revert to the new off defaults once.
-    if (saved.v === PREFS_VERSION) {
-      if (typeof saved.remember === 'boolean') windowPrefs.remember = saved.remember;
-      if (typeof saved.fitToVideo === 'boolean') windowPrefs.fitToVideo = saved.fitToVideo;
-    }
+    const v = typeof saved.v === 'number' ? saved.v : 0;
+    // Each of the two is read only from a payload written while its default
+    // was the one it has now — see `PREFS_VERSION`.
+    if (v >= 2 && typeof saved.remember === 'boolean') windowPrefs.remember = saved.remember;
+    if (v >= 3 && typeof saved.fitToVideo === 'boolean') windowPrefs.fitToVideo = saved.fitToVideo;
     if (typeof saved.alwaysOnTop === 'boolean') windowPrefs.alwaysOnTop = saved.alwaysOnTop;
     if (typeof saved.snapMini === 'boolean') windowPrefs.snapMini = saved.snapMini;
     if (saved.autoHide && AUTO_HIDE_CHOICES.includes(saved.autoHide)) windowPrefs.autoHide = saved.autoHide;
@@ -499,66 +510,277 @@ async function settleLayout(targetW: number, targetH: number) {
   });
 }
 
+// ---- The window's shape ---------------------------------------------------
+//
+// "Match video aspect ratio" is a standing constraint, not an event. It used to
+// be one resize when a file opened, after which any edge could be dragged into
+// a shape the picture does not have — the setting still ticked, over a window
+// showing black bars. Three things keep it true now, and `adoptShape` is the
+// one place that does them, in an order that is load-bearing:
+//
+//   1. the window is **fitted** once per new shape (`fitToShape`);
+//   2. its **minimum** becomes the smallest size *of that shape*;
+//   3. the platform is told to **hold** the shape while an edge is dragged
+//      (`window_shape_lock`: `contentAspectRatio` on macOS, `WM_SIZING` on
+//      Windows).
+//
+// Maximizing, fullscreen and the system's snap layouts are left alone: each is
+// a shape asked for by name, and bars there are what was asked for.
+
+/// The shape the picture had last, and for which file.
+///
+/// `dwidth`/`dheight` are reported *unavailable* whenever the VO reconfigures —
+/// on a torrent, every time playback stalls for pieces — and a window that let
+/// go of its shape for those frames could be caught mid-drag without one. So a
+/// shape only ever moves to a real value while the file is the same, the rule
+/// the hover preview's box already follows; a new file starts with none, or an
+/// audio track would inherit the window of the film before it.
+let known: { path: string | null; shape: Size } | null = null;
+
+function currentShape(): Size | null {
+  // A size is not yet a picture. `force-window` gives the VO a 960×540 field
+  // of its own to paint black — before the first frame of every file, and for
+  // the whole of a file that has no picture — and `dwidth`/`dheight` report
+  // that field as readily as a film (measured: an audio file reads 960×540).
+  // What says a picture exists is the decoder, which `sourceTransfer` mirrors;
+  // taking the size alone reshaped the window twice on opening anything that
+  // is not 16:9, once for the field and once for the film.
+  const now =
+    player.sourceTransfer !== null
+      ? pictureShape(player.videoW, player.videoH, player.voRotate)
+      : null;
+  if (now) {
+    known = { path: player.filePath, shape: now };
+    return now;
+  }
+  return known && player.hasFile && known.path === player.filePath ? known.shape : null;
+}
+
+/// The shape the window was last fitted to. Fitting is once per shape: the next
+/// episode at the same shape must not undo a size chosen during the previous
+/// one. It is written only when a fit **landed** — it used to be written when
+/// one was asked for, so a file that changed in fullscreen was marked as fitted
+/// by a fit that had stood down, and leaving fullscreen showed the new picture
+/// in the old one's window.
+let fittedFor = '';
+
+/// What the last fit left the window at, and the area it was aiming for. If the
+/// window is still that size the next fit aims for the same area again, rather
+/// than for whatever the screen or the minimum left of it: read from the window
+/// each time, one upright clip on a small screen took the area down and every
+/// film after it opened in the smaller window.
+let lastFit: { w: number; h: number; area: number } | null = null;
+
+/// What the page knows and this module may not import: the shell imports
+/// *this*, and the start screen is the page's own.
+export interface ShapeHooks {
+  /// The window is in a mode that owns its size — fullscreen or maximized.
+  sizeOwned: () => boolean;
+  /// The start screen is up (the page's debounced flag, not `!hasFile`, which
+  /// blinks between two entries of a playlist).
+  resting: () => boolean;
+}
+
+let hooks: ShapeHooks = { sizeOwned: () => false, resting: () => true };
+
+/// What the platform was last told — the shape held and the minimum — so that
+/// the effect re-running for a reason that changes neither costs no round
+/// trip. Starts as the window is created: nothing held, the config's minimum.
+/// Emptied by anything else that writes the minimum.
+let holding = holdKey(null, { w: MIN_WINDOW_W, h: MIN_WINDOW_H });
+
+function holdKey(held: Size | null, floor: Size): string {
+  return `${held ? shapeKey(held) : 'free'} over ${shapeKey(floor)}`;
+}
+
+const shapeRuns = latest();
+
+/// `dwidth`, `dheight` and the rotation arrive as three events, and a fit
+/// started on the first would be for a shape that never existed (1080×1080, on
+/// the way from a film to an upright clip).
+const SHAPE_SETTLE_MS = 80;
+
+/// A fit finds the window still fullscreen while it is on its way out — the
+/// mirror flips before the transition and the system's answer after it. Asked
+/// again this often, this many times: the macOS animation is about 0.7 s.
+const FIT_RETRY_MS = 250;
+const FIT_RETRIES = 12;
+
+let shapeTimer: ReturnType<typeof setTimeout> | undefined;
+
 /**
- * Fit the window so the video area matches the frame's aspect ratio.
- * `scale` is a fraction of the video's natural size (1 = pixel for pixel), or
- * null to keep the current window area and change only the aspect.
+ * Keep the window in the picture's shape for as long as the setting is on.
+ *
+ * A standing effect rather than a call on `dwidth`: the 1 s sweep repairs a
+ * mirror without telling anyone (`resyncState` skips the `property` hook), so
+ * anything hanging off the event misses exactly the change that was lost once
+ * already.
  */
-export async function fitWindowToVideo(scale: number | null) {
-  if (player.videoW <= 0 || player.videoH <= 0) return;
+export function initWindowShape(page: ShapeHooks) {
+  hooks = page;
+  $effect(() => {
+    // Read for the dependency, all of them: the setting, the picture, the
+    // start screen, and the two modes — leaving one is when a fit that stood
+    // down gets its turn, and the minimum is the mode's while mini is on.
+    void windowPrefs.fitToVideo;
+    void currentShape();
+    void page.resting();
+    void page.sizeOwned();
+    void mini.on;
+    scheduleShape();
+    return () => clearTimeout(shapeTimer);
+  });
+}
+
+/**
+ * Something the window's shape depends on has changed; look again shortly.
+ *
+ * The state is read when the timer fires rather than when it was set, so the
+ * three events of one file change are one look at the file they add up to.
+ * Exported for the tests, which are compiled the way a server build is and
+ * have no effects to run.
+ */
+export function scheduleShape() {
+  clearTimeout(shapeTimer);
+  shapeTimer = setTimeout(() => {
+    const resting = hooks.resting();
+    // On the start screen the window is free, and whatever shape it is given
+    // there is not the picture's: the next file is fitted even at the shape
+    // of the last one.
+    if (resting) fittedFor = '';
+    void adoptShape(windowPrefs.fitToVideo && !resting ? currentShape() : null);
+  }, SHAPE_SETTLE_MS);
+}
+
+async function adoptShape(shape: Size | null, tries = 0) {
+  const run = shapeRuns.begin();
+  try {
+    if (shape && shapeKey(shape) !== fittedFor) {
+      const outcome = await fitToShape(shape, null, run);
+      if (run.stale) return;
+      // Stood down with nothing of ours owning the size: a transition is in
+      // flight. Anything else that stood it down ends with this effect
+      // running again.
+      if (outcome === 'away' && !mini.on && !hooks.sizeOwned() && tries < FIT_RETRIES) {
+        shapeTimer = setTimeout(() => void adoptShape(shape, tries + 1), FIT_RETRY_MS);
+      }
+    }
+    await holdShape(shape, run);
+  } catch (e) {
+    console.warn('adoptShape failed:', e);
+  }
+}
+
+/// The window, its screen and what is left of one around the other — all in
+/// physical pixels.
+async function measure(win: ReturnType<typeof getCurrentWindow>) {
+  const mon = await currentMonitor();
+  const dpr = await win.scaleFactor();
+  // Our chrome (title bar and OSC are drawn over the video) takes no height,
+  // but the window frame does: take outer minus inner size.
+  const outer = await win.outerSize();
+  const inner = await win.innerSize();
+  const frame = { w: outer.width - inner.width, h: outer.height - inner.height };
+  // workArea, not size: it already excludes the Dock and the taskbar, whereas
+  // the old "95% and 90% of the screen" was eyeballed guesswork — it undershot
+  // on a monitor with a Dock on the left and overshot without one.
+  const pad = SCREEN_PADDING * dpr;
+  const area = mon?.workArea ?? null;
+  const room = area
+    ? { w: area.size.width - pad * 2 - frame.w, h: area.size.height - pad * 2 - frame.h }
+    : null;
+  // The lower bound is in PHYSICAL pixels, i.e. the config minimum times the
+  // screen scale. Comparing a logical minimum against a physical size directly
+  // does not work: on Retina (dpr = 2), "no smaller than 480" became 240
+  // logical — half the real minimum — and vertical video at 50% shrank the
+  // window until the bottom controls were cut off.
+  const min = { w: MIN_WINDOW_W * dpr, h: MIN_WINDOW_H * dpr };
+  return { dpr, inner, frame, pad, area, room, min };
+}
+
+/**
+ * The minimum size and the resize constraint that go with a shape, or with
+ * none.
+ *
+ * The minimum goes through tao like every other minimum here, so that it has
+ * one owner: set natively, `contentMinSize` outranks the `minSize` tao writes,
+ * and the mini player's own minimum would then be silently ignored — the
+ * window that will not shrink, with nothing to say why.
+ *
+ * In the mini player the minimum stays the mode's. Its floor exists for the
+ * seek row's width, and tao grows a window that is under a minimum it is
+ * given (`set_min_inner_size`): raised to the floor of an upright clip's
+ * shape, 240×427, it would stretch a 420×236 corner window on the spot.
+ */
+async function holdShape(shape: Size | null, run: Attempt) {
+  const win = getCurrentWindow();
+  let held = shape;
+  let floor: Size = mini.on ? { w: MINI_MIN_W, h: MINI_MIN_H } : { w: MIN_WINDOW_W, h: MIN_WINDOW_H };
+  if (shape && !mini.on) {
+    const { dpr, room } = await measure(win);
+    if (run.stale) return;
+    const wanted = floorForShape(shape, floor);
+    if (shapeFits(wanted, room && { w: room.w / dpr, h: room.h / dpr })) floor = wanted;
+    // The shape cannot be had on this screen at a size the controls fit in,
+    // and a constraint would hold the window to one it cannot take.
+    else held = null;
+  }
+  const key = holdKey(held, floor);
+  if (key === holding) return;
+  // Unknown until both have landed: a run that goes stale between the two has
+  // told the platform half of it.
+  holding = '';
+  await win.setMinSize(new LogicalSize(floor.w, floor.h));
+  if (run.stale) return;
+  await invoke('window_shape_lock', { width: held?.w ?? 0, height: held?.h ?? 0 });
+  if (!run.stale) holding = key;
+}
+
+type FitOutcome = 'done' | 'away' | 'stale' | 'failed';
+
+/**
+ * Give the window the picture's shape.
+ * `scale` is a fraction of the video's natural size (1 = pixel for pixel), or
+ * null to keep the window's area and change only the shape.
+ */
+async function fitToShape(shape: Size, scale: number | null, run: Attempt): Promise<FitOutcome> {
   // Mini is a size the viewer asked for; a new video's aspect must not undo it.
-  if (mini.on) return;
+  if (mini.on) return 'away';
   const win = getCurrentWindow();
   try {
-    if ((await win.isFullscreen()) || (await win.isMaximized())) return;
-    const mon = await currentMonitor();
-    const dpr = await win.scaleFactor();
-    // Our chrome (title bar and OSC are drawn over the video) takes no height,
-    // but the window frame does: take outer minus inner size.
-    const outer = await win.outerSize();
-    const inner = await win.innerSize();
-    const chromeW = outer.width - inner.width;
-    const chromeH = outer.height - inner.height;
+    if ((await win.isFullscreen()) || (await win.isMaximized())) return 'away';
+    const { dpr, inner, frame, pad, area, room, min } = await measure(win);
+    if (run.stale) return 'stale';
 
-    let targetW: number;
-    let targetH: number;
+    let wanted: number;
     if (scale === null) {
       // Same area, new aspect — the window does not jump in size.
-      const area = inner.width * inner.height;
-      const k = Math.sqrt(area / (player.videoW * player.videoH));
-      targetW = player.videoW * k;
-      targetH = player.videoH * k;
+      const untouched =
+        lastFit !== null &&
+        Math.abs(inner.width - lastFit.w) <= 2 &&
+        Math.abs(inner.height - lastFit.h) <= 2;
+      wanted = untouched && lastFit ? lastFit.area : inner.width * inner.height;
     } else {
-      targetW = player.videoW * scale * dpr;
-      targetH = player.videoH * scale * dpr;
+      wanted = shape.w * scale * dpr * (shape.h * scale * dpr);
     }
+    const fit = fitWindow({ shape, area: wanted, min, room });
+    const outW = fit.w + frame.w;
+    const outH = fit.h + frame.h;
 
-    // Fit into the monitor's work area with margins. workArea, not size: it
-    // already excludes the Dock and the taskbar, whereas the old "95% and 90%
-    // of the screen" was eyeballed guesswork — it undershot on a monitor with a
-    // Dock on the left and overshot without one.
-    const pad = SCREEN_PADDING * dpr;
-    const area = mon?.workArea;
-    // Whether the requested size had to be shrunk to fit decides whether the
-    // position is kept or the window is centered (see below).
-    let shrunk = false;
-    if (area) {
-      const maxW = area.size.width - pad * 2 - chromeW;
-      const maxH = area.size.height - pad * 2 - chromeH;
-      const shrink = Math.min(1, maxW / targetW, maxH / targetH);
-      shrunk = shrink < 1;
-      targetW *= shrink;
-      targetH *= shrink;
-    }
-
-    // The lower bound is in PHYSICAL pixels, i.e. the config minimum times the
-    // screen scale. Comparing a logical minimum against a physical size
-    // directly does not work: on Retina (dpr = 2), "no smaller than 480" became
-    // 240 logical — half the real minimum — and vertical video at 50% shrank
-    // the window until the bottom controls were cut off.
-    const outW = Math.max(MIN_WINDOW_W * dpr, Math.round(targetW + chromeW));
-    const outH = Math.max(MIN_WINDOW_H * dpr, Math.round(targetH + chromeH));
+    // The minimum is still the previous shape's — 480×853 after an upright
+    // clip, which no 16:9 size at this area is over. macOS takes a size under
+    // the minimum as given (measured: `setContentSize` does not answer to
+    // `minSize`); a Win32 window answers `SetWindowPos` with its tracking
+    // minimum, the silent clamp the mini player was written around. So the
+    // minimum goes down first and up to the new shape's once the size has
+    // landed (`holdShape`) — raised before it, tao would grow the window to
+    // meet it and the fit would then shrink it again, two jumps for one.
+    holding = '';
+    await win.setMinSize(new LogicalSize(MIN_WINDOW_W, MIN_WINDOW_H));
+    if (run.stale) return 'stale';
     await win.setSize(new PhysicalSize(outW, outH));
+    lastFit = { w: fit.w, h: fit.h, area: wanted };
+    fittedFor = shapeKey(shape);
 
     // The size changed around the TOP-LEFT corner, so a window near the right
     // or bottom edge grows outwards. Pull it back into the work area, keeping
@@ -576,27 +798,33 @@ export async function fitWindowToVideo(scale: number | null) {
       //    and is only pulled back inside if it overflowed;
       //  • the size had to be shrunk to fit (or it hit the minimum, in which
       //    case maxX < minX) — the old position is meaningless, so center it.
-      const x = shrunk || maxX < minX ? centerX : Math.min(Math.max(pos.x, minX), maxX);
-      const y = shrunk || maxY < minY ? centerY : Math.min(Math.max(pos.y, minY), maxY);
+      const x = fit.shrunk || maxX < minX ? centerX : Math.min(Math.max(pos.x, minX), maxX);
+      const y = fit.shrunk || maxY < minY ? centerY : Math.min(Math.max(pos.y, minY), maxY);
       if (x !== pos.x || y !== pos.y) {
         await win.setPosition(new PhysicalPosition(x, y));
       }
     }
     void captureGeometry();
+    return 'done';
   } catch (e) {
-    console.warn('fitWindowToVideo failed:', e);
+    console.warn('fitToShape failed:', e);
+    return 'failed';
   }
 }
 
-/// Fit for a new file — once per new resolution.
-let fittedFor = '';
-
-export function maybeFitWindow() {
-  if (!windowPrefs.fitToVideo || player.videoW <= 0 || player.videoH <= 0) return;
-  const key = `${player.videoW}x${player.videoH}`;
-  if (fittedFor === key) return;
-  fittedFor = key;
-  void fitWindowToVideo(null);
+/// The sizes in the window menu: 50 %, 100 %, 200 % of the picture.
+export async function fitWindowToVideo(scale: number) {
+  const shape = currentShape();
+  if (!shape) return;
+  const run = shapeRuns.begin();
+  const outcome = await fitToShape(shape, scale, run);
+  // The fit left the minimum at the window's own; what the setting adds to it
+  // goes back on.
+  if (outcome === 'done') {
+    await holdShape(windowPrefs.fitToVideo ? shape : null, run).catch((e) =>
+      console.warn('holdShape failed:', e),
+    );
+  }
 }
 
 export async function applyAlwaysOnTop() {
@@ -636,7 +864,11 @@ export function toggleWindowPref(key: 'remember' | 'fitToVideo' | 'alwaysOnTop' 
     if (windowPrefs.remember) void captureGeometry();
     showOsd(t(windowPrefs.remember ? 'osd.remember_on' : 'osd.remember_off'));
   } else {
-    if (windowPrefs.fitToVideo && player.hasFile) void fitWindowToVideo(null);
+    // Whichever way it went, the window has been anybody's since the last fit:
+    // free to take any shape while the setting was off, and about to be. The
+    // fit and the constraint themselves follow from the setting
+    // (`initWindowShape`).
+    fittedFor = '';
     showOsd(t(windowPrefs.fitToVideo ? 'osd.fit_on' : 'osd.fit_off'));
   }
 }
