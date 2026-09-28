@@ -45,13 +45,32 @@ vi.mock('tauri-plugin-libmpv-api', () => ({
   setProperty: vi.fn(async () => undefined),
 }));
 
+/// Whether the platform can move a frame as one thing. Off, the two calls of
+/// the window API are what is left.
+let canGlide = true;
+/// How long the last glide was asked to take.
+let glided: number | null = null;
+
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(async (name: string, args: { width: number; height: number }) => {
-    if (name !== 'window_shape_lock') return undefined;
-    locked = args.width > 0 && args.height > 0 ? args : null;
-    calls.push(locked ? `lock ${args.width}x${args.height}` : 'unlock');
-    return undefined;
-  }),
+  invoke: vi.fn(
+    async (name: string, args: { x: number; y: number; width: number; height: number; ms: number }) => {
+      if (name === 'window_frame_glide') {
+        if (!canGlide) return false;
+        // The refusal is silent: the size is clamped and the call succeeds.
+        win.w = Math.max(args.width, win.min.w);
+        win.h = Math.max(args.height, win.min.h);
+        win.x = args.x;
+        win.y = args.y;
+        glided = args.ms;
+        calls.push(`size ${win.w}x${win.h}`);
+        return true;
+      }
+      if (name !== 'window_shape_lock') return undefined;
+      locked = args.width > 0 && args.height > 0 ? { width: args.width, height: args.height } : null;
+      calls.push(locked ? `lock ${args.width}x${args.height}` : 'unlock');
+      return undefined;
+    },
+  ),
 }));
 
 vi.mock('@tauri-apps/api/dpi', () => {
@@ -94,7 +113,6 @@ vi.mock('@tauri-apps/api/window', () => ({
       calls.push(`min ${s.width}x${s.height}`);
     },
     setSize: async (s: { width: number; height: number }) => {
-      // The refusal is silent: the size is clamped and the call succeeds.
       win.w = Math.max(s.width, win.min.w);
       win.h = Math.max(s.height, win.min.h);
       calls.push(`size ${win.w}x${win.h}`);
@@ -148,6 +166,7 @@ function show(path: string, w: number, h: number, rotate = 0) {
 }
 
 const ratio = () => win.w / win.h;
+const center = () => ({ x: win.x + win.w / 2, y: win.y + win.h / 2 });
 
 beforeEach(async () => {
   vi.useFakeTimers();
@@ -164,6 +183,8 @@ beforeEach(async () => {
   });
   page.owned = false;
   page.resting = false;
+  canGlide = true;
+  glided = null;
   windowPrefs.fitToVideo = true;
   show('/nothing', 0, 0);
   player.filename = null;
@@ -296,6 +317,46 @@ describe('the window follows the picture', () => {
     await settle();
     expect(calls).toEqual([]);
     expect(locked).toBeNull();
+  });
+});
+
+describe('how the window gets there', () => {
+  it('changes shape around its own center', async () => {
+    Object.assign(win, { x: 300, y: 150, w: 1200, h: 600 });
+    const before = center();
+    show('/clip.mp4', 1080, 1080);
+    await settle();
+    expect(ratio()).toBeCloseTo(1, 2);
+    expect(Math.abs(center().x - before.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(center().y - before.y)).toBeLessThanOrEqual(1);
+  });
+
+  it('gives way to the screen`s edge', async () => {
+    // Close to the top: the square would reach above the work area.
+    Object.assign(win, { x: 300, y: 30, w: 1200, h: 600 });
+    show('/clip.mp4', 1080, 1080);
+    await settle();
+    expect(win.y).toBe(24);
+    expect(Math.abs(center().x - 900)).toBeLessThanOrEqual(1);
+  });
+
+  it('takes its time, as one frame', async () => {
+    show('/clip.mp4', 1080, 1080);
+    await settle();
+    expect(glided).toBeGreaterThan(0);
+    // One change, not a size and then a position.
+    expect(calls.filter((c) => c.startsWith('size'))).toHaveLength(1);
+  });
+
+  it('still arrives where the frame cannot be moved as one', async () => {
+    canGlide = false;
+    Object.assign(win, { x: 300, y: 150, w: 1200, h: 600 });
+    const before = center();
+    show('/clip.mp4', 1080, 1080);
+    await settle();
+    expect(ratio()).toBeCloseTo(1, 2);
+    expect(Math.abs(center().x - before.x)).toBeLessThanOrEqual(1);
+    expect(locked).toEqual({ width: 1080, height: 1080 });
   });
 });
 

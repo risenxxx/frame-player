@@ -111,3 +111,39 @@ export function fitWindow({ shape, area, min, room }: FitInput): Fit {
   if (w < floor.w || h < floor.h) return { ...floor, shrunk, held: true };
   return { w: Math.round(w), h: Math.round(h), shrunk, held: true };
 }
+
+export interface Rect extends Size {
+  x: number;
+  y: number;
+}
+
+/**
+ * Where a window of `size` goes when it takes the place of `from`: around the
+ * same center, and inside the screen.
+ *
+ * The center is what the eye is on — the picture is in the middle of the
+ * window — and a window resized from its top-left corner, which is what a bare
+ * `setSize` does, throws the picture sideways by half of whatever the width
+ * changed by: from a 2:1 film to a square clip, 200 px on an ordinary window.
+ *
+ * `area` is the screen's work area and `pad` the margin kept from its edges;
+ * each axis is settled on its own, so a window the screen had to shrink in
+ * height still keeps its center across. Where the size is more than the
+ * margins leave, it is centered on the work area and overhangs evenly.
+ */
+export function placeAround(from: Rect, size: Size, area: Rect | null, pad: number): Rect {
+  let x = Math.round(from.x + (from.w - size.w) / 2);
+  let y = Math.round(from.y + (from.h - size.h) / 2);
+  if (area) {
+    x = keepInside(x, size.w, area.x, area.w, pad);
+    y = keepInside(y, size.h, area.y, area.h, pad);
+  }
+  return { x, y, w: size.w, h: size.h };
+}
+
+function keepInside(at: number, length: number, start: number, extent: number, pad: number): number {
+  const first = start + pad;
+  const last = start + extent - pad - length;
+  if (last < first) return start + Math.round((extent - length) / 2);
+  return Math.min(Math.max(at, first), last);
+}

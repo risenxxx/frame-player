@@ -499,6 +499,51 @@ pub fn set_shape_lock(window: &tauri::WebviewWindow, shape: Option<(f64, f64)>) 
     }
 }
 
+// The window's frame in the coordinates the frontend has: top-left origin,
+// y growing downwards, physical pixels. The conversion is tao's own, to the
+// letter — `outerPosition` comes out of `CGDisplayPixelsHigh` of the main
+// display and the window's own scale factor, so what goes back in has to be
+// un-done with the same two numbers or the window lands a menu bar away from
+// where it was asked to be.
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGMainDisplayID() -> u32;
+    fn CGDisplayPixelsHigh(display: u32) -> usize;
+}
+
+fn main_display_height() -> f64 {
+    unsafe { CGDisplayPixelsHigh(CGMainDisplayID()) as f64 }
+}
+
+/// Where the window is. Main thread only.
+pub fn frame(window: &tauri::WebviewWindow) -> Option<crate::window_shape::Frame> {
+    let ns = ns_window(window)?;
+    let f = ns.frame();
+    let scale = ns.backingScaleFactor();
+    Some(crate::window_shape::Frame {
+        x: f.origin.x * scale,
+        y: (main_display_height() - (f.origin.y + f.size.height)) * scale,
+        w: f.size.width * scale,
+        h: f.size.height * scale,
+    })
+}
+
+/// Put the window at a frame, position and size in one change. Main thread
+/// only. `setFrame:display:` answers to neither the minimum size nor the
+/// aspect ratio — both bind what the viewer does, not what the window is told.
+pub fn set_frame(window: &tauri::WebviewWindow, frame: crate::window_shape::Frame) {
+    let Some(ns) = ns_window(window) else {
+        return;
+    };
+    let scale = ns.backingScaleFactor();
+    if scale <= 0.0 {
+        return;
+    }
+    let (w, h) = (frame.w / scale, frame.h / scale);
+    let origin = NSPoint::new(frame.x / scale, main_display_height() - frame.y / scale - h);
+    ns.setFrame_display(NSRect::new(origin, NSSize::new(w, h)), true);
+}
+
 // ---- Floating over other apps' fullscreen --------------------------------
 //
 // Floating over ANOTHER application's fullscreen space is the one thing a

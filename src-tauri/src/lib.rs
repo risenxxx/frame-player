@@ -1100,6 +1100,7 @@ pub fn run() {
             window_enter_fullscreen,
             window_float_over_fullscreen,
             window_shape::window_shape_lock,
+            window_shape::window_frame_glide,
             zoom_pan,
             folder_entries,
             paths_exist,

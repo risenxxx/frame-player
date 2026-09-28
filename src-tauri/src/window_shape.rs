@@ -19,6 +19,9 @@
 //! What this deliberately does **not** constrain: maximizing, fullscreen and
 //! the system's snap layouts. None of them goes through `WM_SIZING`, and each
 //! is a shape the viewer asked for by name.
+//!
+//! The other half of the file is how the window *gets* to a new shape
+//! (`window_frame_glide`): the position and the size as one frame, over time.
 
 /// A rectangle in screen coordinates, edges as `WM_SIZING` hands them over.
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
@@ -262,6 +265,197 @@ unsafe fn min_track(hwnd: windows_sys::Win32::Foundation::HWND) -> (i32, i32) {
     (info.ptMinTrackSize.x.max(0), info.ptMinTrackSize.y.max(0))
 }
 
+// ---- Moving the frame as one thing ---------------------------------------
+//
+// A fit changes the window's size and its position, and the two are one change:
+// the window takes the new picture's shape *around its own center*. Through the
+// window API they are two calls — `setSize` grows the window from its top-left
+// corner, `setPosition` then pulls it back — each queued to the main thread on
+// its own, and nothing makes the two land in one frame. Once is a jump either
+// way; twenty times in a row, which is what a morph is, it is a window that
+// may show every step twice. Neither tao nor Tauri has a call that takes both,
+// hence this one.
+//
+// It is stepped from here rather than from the frontend for the same reason:
+// one main-thread turn per step, with nothing between the two halves. The
+// steps are driven by elapsed time, not counted, so a busy main thread
+// stretches them and not the animation.
+//
+// Measured on macOS, in the player, from a 2:1 film to a square clip and back
+// (a thread reading the frame every 4 ms): some twenty steps over 210 ms, 10 ms
+// apart at the median and 21 at the worst, the center within a point of where
+// it started; a screen recording shows the picture centered in the window at
+// every step and nothing uncovered at the edges.
+
+/// A window's outer frame: its top-left corner and its size, in the physical
+/// pixels `outerPosition` and `outerSize` report.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Frame {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// In and out: the window starts from rest and comes to rest. The mini player's
+/// glide eases out only, because that window is being *caught* by an edge and
+/// its motion belongs next to the gesture; nothing is holding this one.
+#[cfg_attr(not(any(windows, target_os = "macos", test)), allow(dead_code))]
+pub fn ease(t: f64) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    if t < 0.5 {
+        4.0 * t * t * t
+    } else {
+        1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+    }
+}
+
+/// The frame `k` of the way from one to the other, on whole pixels.
+///
+/// The center and the size are what is interpolated, and the corner follows
+/// from them. Rounding the four edges separately lets the width and the corner
+/// round in opposite directions, and the side that should be standing still
+/// ticks back and forth by a pixel for the length of the animation.
+#[cfg_attr(not(any(windows, target_os = "macos", test)), allow(dead_code))]
+pub fn between(from: Frame, to: Frame, k: f64) -> Frame {
+    if k >= 1.0 {
+        return to;
+    }
+    let mix = |a: f64, b: f64| a + (b - a) * k;
+    let w = mix(from.w, to.w).round();
+    let h = mix(from.h, to.h).round();
+    let cx = mix(from.x + from.w / 2.0, to.x + to.w / 2.0);
+    let cy = mix(from.y + from.h / 2.0, to.y + to.h / 2.0);
+    Frame { x: (cx - w / 2.0).round(), y: (cy - h / 2.0).round(), w, h }
+}
+
+/// Which glide is the newest. One that finds a newer number has been
+/// superseded and stops where it is: the newer one starts from there.
+#[cfg(any(windows, target_os = "macos"))]
+static GLIDE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Between two steps. Shorter than a frame of any display this runs on; the
+/// steps that land inside one frame cost a main-thread turn each and nothing
+/// else.
+#[cfg(any(windows, target_os = "macos"))]
+const GLIDE_STEP: std::time::Duration = std::time::Duration::from_millis(8);
+
+/// Take the window to a frame over `ms` milliseconds, or at once for zero.
+///
+/// Answers `true` when the window is at that frame, `false` when it is not —
+/// superseded by a newer glide, or on a platform with no way to do it, where
+/// the frontend falls back to the two calls it used to make.
+#[tauri::command]
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(unused_variables))]
+pub async fn window_frame_glide(
+    window: tauri::WebviewWindow,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    ms: u32,
+) -> bool {
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        use std::sync::atomic::Ordering;
+
+        let mine = GLIDE.fetch_add(1, Ordering::SeqCst) + 1;
+        let to = Frame { x, y, w: width, h: height };
+        let Some(from) = on_main(&window, frame_now).await.flatten() else {
+            return false;
+        };
+        let length = f64::from(ms) / 1000.0;
+        let started = std::time::Instant::now();
+        loop {
+            if GLIDE.load(Ordering::SeqCst) != mine {
+                return false;
+            }
+            let t = if length > 0.0 {
+                (started.elapsed().as_secs_f64() / length).min(1.0)
+            } else {
+                1.0
+            };
+            let step = between(from, to, ease(t));
+            if on_main(&window, move |w| set_frame(w, step)).await.is_none() {
+                return false;
+            }
+            if t >= 1.0 {
+                return true;
+            }
+            tokio::time::sleep(GLIDE_STEP).await;
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        false
+    }
+}
+
+/// Run on the thread that owns the window and wait for the answer:
+/// `run_on_main_thread` by itself returns as soon as the closure is queued.
+#[cfg(any(windows, target_os = "macos"))]
+async fn on_main<T: Send + 'static>(
+    window: &tauri::WebviewWindow,
+    f: impl FnOnce(&tauri::WebviewWindow) -> T + Send + 'static,
+) -> Option<T> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let win = window.clone();
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(f(&win));
+        })
+        .ok()?;
+    rx.await.ok()
+}
+
+#[cfg(target_os = "macos")]
+fn frame_now(window: &tauri::WebviewWindow) -> Option<Frame> {
+    crate::macos_chrome::frame(window)
+}
+
+#[cfg(target_os = "macos")]
+fn set_frame(window: &tauri::WebviewWindow, frame: Frame) {
+    crate::macos_chrome::set_frame(window, frame);
+}
+
+#[cfg(windows)]
+fn frame_now(window: &tauri::WebviewWindow) -> Option<Frame> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let hwnd = window.hwnd().ok()?;
+    let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    if unsafe { GetWindowRect(hwnd.0 as _, &mut r) } == 0 {
+        return None;
+    }
+    Some(Frame {
+        x: f64::from(r.left),
+        y: f64::from(r.top),
+        w: f64::from(r.right - r.left),
+        h: f64::from(r.bottom - r.top),
+    })
+}
+
+#[cfg(windows)]
+fn set_frame(window: &tauri::WebviewWindow, frame: Frame) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER,
+    };
+
+    let Ok(hwnd) = window.hwnd() else { return };
+    unsafe {
+        SetWindowPos(
+            hwnd.0 as _,
+            std::ptr::null_mut(),
+            frame.x as i32,
+            frame.y as i32,
+            frame.w as i32,
+            frame.h as i32,
+            SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,6 +547,45 @@ mod tests {
         // A frame of 16x39: the content must be 16:9, the outer size is not.
         let held = hold_shape(at(0, 0, 1616, 400), Grip::Right, WIDE, (16, 39), NO_MIN);
         assert_eq!(size(held), (1616, 939));
+    }
+
+    #[test]
+    fn a_glide_starts_and_ends_at_rest_and_never_turns_back() {
+        assert_eq!(ease(0.0), 0.0);
+        assert_eq!(ease(1.0), 1.0);
+        assert!((ease(0.5) - 0.5).abs() < 1e-9);
+        let mut last = 0.0;
+        for i in 0..=100 {
+            let k = ease(f64::from(i) / 100.0);
+            assert!(k >= last, "turned back at {i}");
+            last = k;
+        }
+        // Out of range is the end it is nearest to, not an extrapolation.
+        assert_eq!(ease(-1.0), 0.0);
+        assert_eq!(ease(2.0), 1.0);
+    }
+
+    #[test]
+    fn a_glide_ends_on_the_frame_it_was_given() {
+        let from = Frame { x: 100.0, y: 100.0, w: 1414.0, h: 707.0 };
+        let to = Frame { x: 307.5, y: -46.0, w: 999.0, h: 999.0 };
+        assert_eq!(between(from, to, 1.0), to);
+        assert_eq!(between(from, to, 0.0), from);
+    }
+
+    #[test]
+    fn a_morph_around_the_center_keeps_the_center() {
+        // 2:1 to 1:1 at the same area, around (807, 453).
+        let from = Frame { x: 100.0, y: 100.0, w: 1414.0, h: 706.0 };
+        let to = Frame { x: 307.0, y: -47.0, w: 1000.0, h: 1000.0 };
+        for i in 0..=50 {
+            let f = between(from, to, ease(f64::from(i) / 50.0));
+            // Whole pixels, so half of one is the most it can be off by.
+            assert!((f.x + f.w / 2.0 - 807.0).abs() <= 0.5, "x at step {i}: {f:?}");
+            assert!((f.y + f.h / 2.0 - 453.0).abs() <= 0.5, "y at step {i}: {f:?}");
+            assert_eq!(f.x, f.x.round());
+            assert_eq!(f.w, f.w.round());
+        }
     }
 
     #[test]

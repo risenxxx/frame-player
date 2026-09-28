@@ -17,7 +17,16 @@ import { latest, type Attempt } from './latest';
 import { showOsd } from './osd.svelte';
 import { IS_MAC } from './platform';
 import { player } from './player.svelte';
-import { fitWindow, floorForShape, pictureShape, shapeFits, shapeKey, type Size } from './window-fit';
+import {
+  fitWindow,
+  floorForShape,
+  pictureShape,
+  placeAround,
+  shapeFits,
+  shapeKey,
+  type Rect,
+  type Size,
+} from './window-fit';
 
 /// Minimum window size in LOGICAL pixels. Duplicates minWidth/minHeight from
 /// tauri.conf.json: there is no way to read them back from the window, and
@@ -518,7 +527,8 @@ async function settleLayout(targetW: number, targetH: number) {
 // showing black bars. Three things keep it true now, and `adoptShape` is the
 // one place that does them, in an order that is load-bearing:
 //
-//   1. the window is **fitted** once per new shape (`fitToShape`);
+//   1. the window is **fitted** once per new shape (`fitToShape`), around its
+//      own center and over `MORPH_MS` rather than in one jump;
 //   2. its **minimum** becomes the smallest size *of that shape*;
 //   3. the platform is told to **hold** the shape while an edge is dragged
 //      (`window_shape_lock`: `contentAspectRatio` on macOS, `WM_SIZING` on
@@ -558,10 +568,12 @@ function currentShape(): Size | null {
 
 /// The shape the window was last fitted to. Fitting is once per shape: the next
 /// episode at the same shape must not undo a size chosen during the previous
-/// one. It is written only when a fit **landed** — it used to be written when
-/// one was asked for, so a file that changed in fullscreen was marked as fitted
-/// by a fit that had stood down, and leaving fullscreen showed the new picture
-/// in the old one's window.
+/// one. It is written once a fit is past standing down and about to move the
+/// window — it used to be written when one was asked for, so a file that
+/// changed in fullscreen was marked as fitted by a fit that had stood down, and
+/// leaving fullscreen showed the new picture in the old one's window. Not as
+/// late as the landing, either: whatever looks again while the window is in
+/// the air would start a second fit from the middle of the first.
 let fittedFor = '';
 
 /// What the last fit left the window at, and the area it was aiming for. If the
@@ -570,6 +582,17 @@ let fittedFor = '';
 /// each time, one upright clip on a small screen took the area down and every
 /// film after it opened in the smaller window.
 let lastFit: { w: number; h: number; area: number } | null = null;
+
+/// How many fits are on their way to the size in `lastFit`. While one is, the
+/// window is between two sizes and is nobody's choice: a fit that starts then
+/// aims for the same area as the one it interrupts.
+let fitsInFlight = 0;
+
+/// How long the window takes to get from one shape to the next. A window that
+/// jumps reads as a glitch — the eye has nothing to attribute the new frame
+/// to — and one that takes longer than this is in the way of the film that
+/// has already started.
+const MORPH_MS = 240;
 
 /// What the page knows and this module may not import: the shell imports
 /// *this*, and the start screen is the page's own.
@@ -597,8 +620,11 @@ const shapeRuns = latest();
 
 /// `dwidth`, `dheight` and the rotation arrive as three events, and a fit
 /// started on the first would be for a shape that never existed (1080×1080, on
-/// the way from a film to an upright clip).
-const SHAPE_SETTLE_MS = 80;
+/// the way from a film to an upright clip). mpv sends them together and they
+/// land within a few milliseconds of each other; the rest of this is margin,
+/// and it is kept short because the new picture is already on screen while it
+/// runs, standing in the old one's window.
+const SHAPE_SETTLE_MS = 40;
 
 /// A fit finds the window still fullscreen while it is on its way out — the
 /// mirror flips before the transition and the system's answer after it. Asked
@@ -674,28 +700,61 @@ async function adoptShape(shape: Size | null, tries = 0) {
 /// The window, its screen and what is left of one around the other — all in
 /// physical pixels.
 async function measure(win: ReturnType<typeof getCurrentWindow>) {
-  const mon = await currentMonitor();
-  const dpr = await win.scaleFactor();
+  // Together rather than in turn: they are five reads of one window, and the
+  // new picture waits in the old one's shape for as long as they take.
+  const [mon, dpr, outer, inner, at] = await Promise.all([
+    currentMonitor(),
+    win.scaleFactor(),
+    win.outerSize(),
+    win.innerSize(),
+    win.outerPosition(),
+  ]);
   // Our chrome (title bar and OSC are drawn over the video) takes no height,
   // but the window frame does: take outer minus inner size.
-  const outer = await win.outerSize();
-  const inner = await win.innerSize();
   const frame = { w: outer.width - inner.width, h: outer.height - inner.height };
+  const now: Rect = { x: at.x, y: at.y, w: outer.width, h: outer.height };
   // workArea, not size: it already excludes the Dock and the taskbar, whereas
   // the old "95% and 90% of the screen" was eyeballed guesswork — it undershot
   // on a monitor with a Dock on the left and overshot without one.
   const pad = SCREEN_PADDING * dpr;
-  const area = mon?.workArea ?? null;
-  const room = area
-    ? { w: area.size.width - pad * 2 - frame.w, h: area.size.height - pad * 2 - frame.h }
+  const work = mon?.workArea;
+  const area: Rect | null = work
+    ? { x: work.position.x, y: work.position.y, w: work.size.width, h: work.size.height }
     : null;
+  const room = area ? { w: area.w - pad * 2 - frame.w, h: area.h - pad * 2 - frame.h } : null;
   // The lower bound is in PHYSICAL pixels, i.e. the config minimum times the
   // screen scale. Comparing a logical minimum against a physical size directly
   // does not work: on Retina (dpr = 2), "no smaller than 480" became 240
   // logical — half the real minimum — and vertical video at 50% shrank the
   // window until the bottom controls were cut off.
   const min = { w: MIN_WINDOW_W * dpr, h: MIN_WINDOW_H * dpr };
-  return { dpr, inner, frame, pad, area, room, min };
+  return { dpr, inner, now, frame, pad, area, room, min };
+}
+
+/**
+ * Take the window to a frame — position and size as one change, over time.
+ *
+ * Through the window API the two are separate calls, each queued on its own,
+ * and nothing makes them land in one frame: the window grows from its corner
+ * and is then pulled back. `window_frame_glide` sets both in one main-thread
+ * turn per step. Where it cannot (it answers `false` without having been
+ * superseded), the two calls are what is left — a jump, to the right place.
+ */
+async function moveFrame(win: ReturnType<typeof getCurrentWindow>, to: Rect, run: Attempt) {
+  // Somebody who asked the system for less motion did not mean "except here".
+  const calm =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+  const landed = await invoke<boolean>('window_frame_glide', {
+    x: to.x,
+    y: to.y,
+    width: to.w,
+    height: to.h,
+    ms: calm ? 0 : MORPH_MS,
+  }).catch(() => false);
+  if (landed || run.stale) return;
+  await win.setSize(new PhysicalSize(to.w, to.h));
+  await win.setPosition(new PhysicalPosition(to.x, to.y));
 }
 
 /**
@@ -749,7 +808,7 @@ async function fitToShape(shape: Size, scale: number | null, run: Attempt): Prom
   const win = getCurrentWindow();
   try {
     if ((await win.isFullscreen()) || (await win.isMaximized())) return 'away';
-    const { dpr, inner, frame, pad, area, room, min } = await measure(win);
+    const { dpr, inner, now, frame, pad, area, room, min } = await measure(win);
     if (run.stale) return 'stale';
 
     let wanted: number;
@@ -757,15 +816,17 @@ async function fitToShape(shape: Size, scale: number | null, run: Attempt): Prom
       // Same area, new aspect — the window does not jump in size.
       const untouched =
         lastFit !== null &&
-        Math.abs(inner.width - lastFit.w) <= 2 &&
-        Math.abs(inner.height - lastFit.h) <= 2;
+        (fitsInFlight > 0 ||
+          (Math.abs(inner.width - lastFit.w) <= 2 && Math.abs(inner.height - lastFit.h) <= 2));
       wanted = untouched && lastFit ? lastFit.area : inner.width * inner.height;
     } else {
       wanted = shape.w * scale * dpr * (shape.h * scale * dpr);
     }
     const fit = fitWindow({ shape, area: wanted, min, room });
-    const outW = fit.w + frame.w;
-    const outH = fit.h + frame.h;
+    // Around the window's own center, and inside the screen: a window grows
+    // from its top-left corner if it is only told a size, which throws the
+    // picture sideways and, near the right or bottom edge, off the screen.
+    const to = placeAround(now, { w: fit.w + frame.w, h: fit.h + frame.h }, area, pad);
 
     // The minimum is still the previous shape's — 480×853 after an upright
     // clip, which no 16:9 size at this area is over. macOS takes a size under
@@ -778,32 +839,17 @@ async function fitToShape(shape: Size, scale: number | null, run: Attempt): Prom
     holding = '';
     await win.setMinSize(new LogicalSize(MIN_WINDOW_W, MIN_WINDOW_H));
     if (run.stale) return 'stale';
-    await win.setSize(new PhysicalSize(outW, outH));
+    // Written before the window moves, not after it has: a fit that starts
+    // while this one is in the air has to know what it was aiming for.
     lastFit = { w: fit.w, h: fit.h, area: wanted };
     fittedFor = shapeKey(shape);
-
-    // The size changed around the TOP-LEFT corner, so a window near the right
-    // or bottom edge grows outwards. Pull it back into the work area, keeping
-    // the same margins.
-    if (area) {
-      const pos = await win.outerPosition();
-      const minX = area.position.x + pad;
-      const minY = area.position.y + pad;
-      const maxX = area.position.x + area.size.width - pad - outW;
-      const maxY = area.position.y + area.size.height - pad - outH;
-      const centerX = area.position.x + Math.round((area.size.width - outW) / 2);
-      const centerY = area.position.y + Math.round((area.size.height - outH) / 2);
-      // Two different situations:
-      //  • the size was granted as requested — the window stays where it was
-      //    and is only pulled back inside if it overflowed;
-      //  • the size had to be shrunk to fit (or it hit the minimum, in which
-      //    case maxX < minX) — the old position is meaningless, so center it.
-      const x = fit.shrunk || maxX < minX ? centerX : Math.min(Math.max(pos.x, minX), maxX);
-      const y = fit.shrunk || maxY < minY ? centerY : Math.min(Math.max(pos.y, minY), maxY);
-      if (x !== pos.x || y !== pos.y) {
-        await win.setPosition(new PhysicalPosition(x, y));
-      }
+    fitsInFlight++;
+    try {
+      await moveFrame(win, to, run);
+    } finally {
+      fitsInFlight--;
     }
+    if (run.stale) return 'stale';
     void captureGeometry();
     return 'done';
   } catch (e) {
