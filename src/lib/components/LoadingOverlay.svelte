@@ -46,7 +46,7 @@
   });
 </script>
 
-<div class="overlay loading-overlay">
+<div class="overlay loading-overlay afloat">
   <div class="loading-box">
     <span class="loading-spin"></span>
     <!-- The two lines are ONE flex item, not two siblings of the spinner.

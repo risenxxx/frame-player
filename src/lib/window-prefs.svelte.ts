@@ -583,6 +583,15 @@ let fittedFor = '';
 /// film after it opened in the smaller window.
 let lastFit: { w: number; h: number; area: number } | null = null;
 
+class ShapeState {
+  /// The window is on its way to a new frame, moved from here. The shell reads
+  /// it: the bars cannot follow a frame that moves under them — see
+  /// `chrome.unsteady`.
+  gliding = $state(false);
+}
+
+export const shapeState = new ShapeState();
+
 /// How many fits are on their way to the size in `lastFit`. While one is, the
 /// window is between two sizes and is nobody's choice: a fit that starts then
 /// aims for the same area as the one it interrupts.
@@ -602,6 +611,11 @@ export interface ShapeHooks {
   /// The start screen is up (the page's debounced flag, not `!hasFile`, which
   /// blinks between two entries of a playlist).
   resting: () => boolean;
+  /// The picture is in its window, or will be in `ms`: a fit is about to move
+  /// the window and takes that long, or none was needed and it is zero. Said
+  /// whatever the setting is — a picture with the setting off is in its window
+  /// the moment it exists. What lifts the dark between two files.
+  settled?: (ms: number) => void;
 }
 
 let hooks: ShapeHooks = { sizeOwned: () => false, resting: () => true };
@@ -674,23 +688,28 @@ export function scheduleShape() {
     // there is not the picture's: the next file is fitted even at the shape
     // of the last one.
     if (resting) fittedFor = '';
-    void adoptShape(windowPrefs.fitToVideo && !resting ? currentShape() : null);
+    const picture = resting ? null : currentShape();
+    void adoptShape(windowPrefs.fitToVideo ? picture : null, picture !== null);
   }, SHAPE_SETTLE_MS);
 }
 
-async function adoptShape(shape: Size | null, tries = 0) {
+async function adoptShape(shape: Size | null, picture: boolean, tries = 0) {
   const run = shapeRuns.begin();
   try {
+    let moving = false;
     if (shape && shapeKey(shape) !== fittedFor) {
-      const outcome = await fitToShape(shape, null, run);
+      const outcome = await fitToShape(shape, null, run, true);
       if (run.stale) return;
+      moving = outcome === 'done';
       // Stood down with nothing of ours owning the size: a transition is in
       // flight. Anything else that stood it down ends with this effect
       // running again.
       if (outcome === 'away' && !mini.on && !hooks.sizeOwned() && tries < FIT_RETRIES) {
-        shapeTimer = setTimeout(() => void adoptShape(shape, tries + 1), FIT_RETRY_MS);
+        shapeTimer = setTimeout(() => void adoptShape(shape, picture, tries + 1), FIT_RETRY_MS);
       }
     }
+    // A fit that moved the window has said so itself, at the moment it began.
+    if (picture && !moving) hooks.settled?.(0);
     await holdShape(shape, run);
   } catch (e) {
     console.warn('adoptShape failed:', e);
@@ -740,17 +759,21 @@ async function measure(win: ReturnType<typeof getCurrentWindow>) {
  * turn per step. Where it cannot (it answers `false` without having been
  * superseded), the two calls are what is left — a jump, to the right place.
  */
-async function moveFrame(win: ReturnType<typeof getCurrentWindow>, to: Rect, run: Attempt) {
-  // Somebody who asked the system for less motion did not mean "except here".
-  const calm =
+/// Somebody who asked the system for less motion did not mean "except here".
+function calm(): boolean {
+  return (
     typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+  );
+}
+
+async function moveFrame(win: ReturnType<typeof getCurrentWindow>, to: Rect, run: Attempt) {
   const landed = await invoke<boolean>('window_frame_glide', {
     x: to.x,
     y: to.y,
     width: to.w,
     height: to.h,
-    ms: calm ? 0 : MORPH_MS,
+    ms: calm() ? 0 : MORPH_MS,
   }).catch(() => false);
   if (landed || run.stale) return;
   await win.setSize(new PhysicalSize(to.w, to.h));
@@ -802,7 +825,12 @@ type FitOutcome = 'done' | 'away' | 'stale' | 'failed';
  * `scale` is a fraction of the video's natural size (1 = pixel for pixel), or
  * null to keep the window's area and change only the shape.
  */
-async function fitToShape(shape: Size, scale: number | null, run: Attempt): Promise<FitOutcome> {
+async function fitToShape(
+  shape: Size,
+  scale: number | null,
+  run: Attempt,
+  announce = false,
+): Promise<FitOutcome> {
   // Mini is a size the viewer asked for; a new video's aspect must not undo it.
   if (mini.on) return 'away';
   const win = getCurrentWindow();
@@ -844,10 +872,15 @@ async function fitToShape(shape: Size, scale: number | null, run: Attempt): Prom
     lastFit = { w: fit.w, h: fit.h, area: wanted };
     fittedFor = shapeKey(shape);
     fitsInFlight++;
+    shapeState.gliding = true;
+    // Now, not once it has landed: whatever is waiting for the picture to have
+    // its window takes its time from the way there.
+    if (announce) hooks.settled?.(calm() ? 0 : MORPH_MS);
     try {
       await moveFrame(win, to, run);
     } finally {
       fitsInFlight--;
+      if (fitsInFlight === 0) shapeState.gliding = false;
     }
     if (run.stale) return 'stale';
     void captureGeometry();

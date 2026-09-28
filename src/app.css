@@ -787,6 +787,41 @@ button.primary:hover {
 }
 
 
+/* Whatever is drawn over the picture leaves while the window's frame is
+   changing, and comes back when it has stopped: the web content is a frame or
+   two behind the window and pinned to its top-left corner, so for the length
+   of a resize everything floating is drawn somewhere it is not (see
+   `chrome.unsteady`, which is what puts `.unsteady` on the player).
+
+   A class of its own, and here rather than in a component, because it is one
+   rule about surfaces that have nothing else in common — the end screen, the
+   loading plate, the OSD, the skip button, a tooltip, the context menu and the
+   two chips of the top bar — and because the first attempt was the other way
+   round. The two bars were hidden through the state they already read
+   (`chrome.idle`, which the mini player's exit button reads too), and that
+   left every surface which does not read it standing in the middle of the
+   resize: the end screen with its three cards was the one that was seen. A
+   surface added later needs the class and nothing else.
+
+   `!important` three times, each for a reason: the skip button sets its
+   opacity inline and, like the OSD, animates it in; a chip has a transition
+   of its own that is five times too slow; and a surface that is not there
+   must not take the click meant for the picture. What does NOT carry the
+   class is what fills the window — the start screen, the casting screen, a
+   dialog with its backdrop: there is nothing under those to show instead. */
+.player.unsteady .afloat {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 50ms ease !important;
+}
+
+/* …and back at the pace of the bars, which have a transition for it. Most of
+   these surfaces have none, and were whole again in the frame the edge was let
+   go — a quarter of a second ahead of the bars they left with. */
+.player.settling .afloat {
+  transition: opacity 0.25s ease !important;
+}
+
 /* A full-window layer and the centered box inside it.
 
    Drawn by four different things — the mpv-failed message, the start screen,

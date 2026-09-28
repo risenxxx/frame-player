@@ -50,6 +50,8 @@ vi.mock('tauri-plugin-libmpv-api', () => ({
 let canGlide = true;
 /// How long the last glide was asked to take.
 let glided: number | null = null;
+/// What the shell was being told while the window was in the air.
+let saidWhileMoving: boolean | null = null;
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(
@@ -62,6 +64,7 @@ vi.mock('@tauri-apps/api/core', () => ({
         win.x = args.x;
         win.y = args.y;
         glided = args.ms;
+        saidWhileMoving = shapeState.gliding;
         calls.push(`size ${win.w}x${win.h}`);
         return true;
       }
@@ -137,11 +140,14 @@ import {
   initWindowShape,
   loadWindowPrefs,
   scheduleShape,
+  shapeState,
   toggleWindowPref,
   windowPrefs,
 } from './window-prefs.svelte';
 
 const page = { owned: false, resting: false };
+/// What the window said about the picture having its window, in order.
+const settled: number[] = [];
 
 /// What the standing effect does on any change: the tests are compiled the way
 /// a server build is, where an effect is not code at all.
@@ -189,7 +195,11 @@ beforeEach(async () => {
   show('/nothing', 0, 0);
   player.filename = null;
   player.filePath = null;
-  initWindowShape({ sizeOwned: () => page.owned, resting: () => page.resting });
+  initWindowShape({
+    sizeOwned: () => page.owned,
+    resting: () => page.resting,
+    settled: (ms) => settled.push(ms),
+  });
   // The start screen for a moment, which is what empties the record of the
   // last fit — module state that would otherwise run on into the next test.
   page.resting = true;
@@ -197,6 +207,7 @@ beforeEach(async () => {
   page.resting = false;
   await settle();
   calls.length = 0;
+  settled.length = 0;
 });
 
 afterEach(() => {
@@ -348,6 +359,14 @@ describe('how the window gets there', () => {
     expect(calls.filter((c) => c.startsWith('size'))).toHaveLength(1);
   });
 
+  it('says so for as long as the window is in the air, and no longer', async () => {
+    expect(shapeState.gliding).toBe(false);
+    show('/clip.mp4', 1080, 1080);
+    await settle();
+    expect(saidWhileMoving).toBe(true);
+    expect(shapeState.gliding).toBe(false);
+  });
+
   it('still arrives where the frame cannot be moved as one', async () => {
     canGlide = false;
     Object.assign(win, { x: 300, y: 150, w: 1200, h: 600 });
@@ -357,6 +376,63 @@ describe('how the window gets there', () => {
     expect(ratio()).toBeCloseTo(1, 2);
     expect(Math.abs(center().x - before.x)).toBeLessThanOrEqual(1);
     expect(locked).toEqual({ width: 1080, height: 1080 });
+  });
+});
+
+describe('saying when the picture has its window', () => {
+  it('says how long the way there takes, when it starts', async () => {
+    show('/clip.mp4', 1080, 1080);
+    await settle();
+    expect(settled).toHaveLength(1);
+    expect(settled[0]).toBeGreaterThan(0);
+  });
+
+  it('says so at once where the window does not move', async () => {
+    show('/e01.mkv', 1920, 1080);
+    await settle();
+    settled.length = 0;
+    show('/e02.mkv', 1920, 1080);
+    await settle();
+    expect(settled).toEqual([0]);
+  });
+
+  it('says so with the setting off, where a picture is in its window by existing', async () => {
+    toggleWindowPref('fitToVideo');
+    await settle();
+    settled.length = 0;
+    show('/a.mkv', 1920, 1080);
+    await settle();
+    expect(settled).toEqual([0]);
+  });
+
+  it('says so in fullscreen, where no fit is coming', async () => {
+    page.owned = true;
+    win.fullscreen = true;
+    show('/a.mkv', 1920, 1080);
+    await settle();
+    expect(settled).toEqual([0]);
+  });
+
+  it('says nothing for a file with no picture', async () => {
+    show('/album.flac', 960, 540);
+    player.sourceTransfer = null;
+    await settle();
+    expect(settled).toEqual([]);
+  });
+
+  it('says nothing on the start screen', async () => {
+    show('/a.mkv', 1920, 1080);
+    page.resting = true;
+    await settle();
+    expect(settled).toEqual([]);
+  });
+
+  it('keeps the sizes in the menu to themselves', async () => {
+    show('/a.mkv', 1280, 720);
+    await settle();
+    settled.length = 0;
+    await fitWindowToVideo(0.5);
+    expect(settled).toEqual([]);
   });
 });
 

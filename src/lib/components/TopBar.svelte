@@ -201,7 +201,7 @@
      volume change and seek — and it would cover this outright. -->
 {#if torrentChip}
   <div
-    class="torchip"
+    class="torchip afloat"
     class:hidden={idle && !player.stalled}
     class:waiting={player.stalled}
   >
@@ -253,7 +253,7 @@
        opacity and would otherwise be an invisible button swallowing a click on
        the picture, so `pointer-events` goes with the opacity. -->
   <button
-    class="roomchip"
+    class="roomchip afloat"
     class:below={!!torrentChip}
     class:hidden={idle && !alert}
     class:waiting={alert}
@@ -328,7 +328,10 @@
        (.brand/.titlecenter/.chrome) are absolutely positioned within 48px
        anyway, so they do not depend on the bar's height. */
     height: 48px;
-    transition: opacity 0.25s ease;
+    /* `--chrome-fade` is the page's, set while the window moves under the
+       bars: there they have to be gone before the next frame, not in a
+       quarter of a second. */
+    transition: opacity var(--chrome-fade, 0.25s) ease;
   }
 
   .topbar::before {

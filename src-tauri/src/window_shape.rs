@@ -21,7 +21,51 @@
 //! is a shape the viewer asked for by name.
 //!
 //! The other half of the file is how the window *gets* to a new shape
-//! (`window_frame_glide`): the position and the size as one frame, over time.
+//! (`window_frame_glide`): the position and the size as one frame, over time —
+//! and the picture going dark and coming back around it (`window_video_fade`).
+
+// ---- Saying that a resize is under way -----------------------------------
+//
+// The web content is pinned to the window's top-left corner and drawn a frame
+// or two behind the window's frame (measured on a bare web view in a window of
+// its own: what is anchored to the far edge is 14 to 44 px from where it should
+// be, for up to two frames, at every step of a live resize). So for as long as
+// an edge is being dragged the interface is somewhere it should not be, and
+// when the corner itself moves, the part of it that should be standing still
+// is drawn at two places in turn. WebKit cannot be told to pin it elsewhere.
+// The frontend takes the bars away for the length of the resize instead
+// (`chrome.resizing`), and this is how it hears of one: a live resize runs in
+// the system's own loop, and the web view is told about sizes, never about a
+// drag beginning or ending.
+
+/// Where the reports go. Set once, by whichever platform half installs itself.
+#[cfg(any(windows, target_os = "macos"))]
+static FRONTEND: std::sync::OnceLock<tauri::WebviewWindow> = std::sync::OnceLock::new();
+
+/// What the frontend was last told.
+#[cfg(any(windows, target_os = "macos"))]
+static RESIZING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub const RESIZING_EVENT: &str = "frameplayer://window-resizing";
+
+#[cfg(any(windows, target_os = "macos"))]
+pub fn report_to(window: &tauri::WebviewWindow) {
+    let _ = FRONTEND.set(window.clone());
+}
+
+/// A resize by hand has begun to change the window, or has ended. Said once
+/// per change, however many frames the resize sets.
+#[cfg(any(windows, target_os = "macos"))]
+pub fn say_resizing(on: bool) {
+    use tauri::Emitter;
+
+    if RESIZING.swap(on, std::sync::atomic::Ordering::Relaxed) == on {
+        return;
+    }
+    if let Some(window) = FRONTEND.get() {
+        let _ = window.emit(RESIZING_EVENT, on);
+    }
+}
 
 /// A rectangle in screen coordinates, edges as `WM_SIZING` hands them over.
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
@@ -161,6 +205,7 @@ pub fn install(window: &tauri::WebviewWindow) {
     use windows_sys::Win32::UI::Shell::SetWindowSubclass;
 
     let Ok(hwnd) = window.hwnd() else { return };
+    report_to(window);
     let ok = unsafe { SetWindowSubclass(hwnd.0 as _, Some(sizing_proc), SUBCLASS_ID, 0) };
     if ok == 0 {
         eprintln!("[window_shape] could not subclass the window; resizing stays free-form");
@@ -178,10 +223,14 @@ unsafe extern "system" fn sizing_proc(
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_NCDESTROY, WM_SIZING};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_EXITSIZEMOVE, WM_NCDESTROY, WM_SIZING};
 
     match msg {
+        // The loop that sizes the window also moves it, and says which only by
+        // what it sends: a move never sends `WM_SIZING`.
+        WM_EXITSIZEMOVE => say_resizing(false),
         WM_SIZING => {
+            say_resizing(true);
             let ratio = f64::from_bits(RATIO.load(std::sync::atomic::Ordering::Relaxed));
             let rect = lparam as *mut RECT;
             if ratio > 0.0 && !rect.is_null() {
@@ -263,6 +312,90 @@ unsafe fn min_track(hwnd: windows_sys::Win32::Foundation::HWND) -> (i32, i32) {
     let mut info = MINMAXINFO::default();
     unsafe { SendMessageW(hwnd, WM_GETMINMAXINFO, 0, &mut info as *mut MINMAXINFO as _) };
     (info.ptMinTrackSize.x.max(0), info.ptMinTrackSize.y.max(0))
+}
+
+/// A window frame as AppKit has it: the origin is the bottom-left corner and y
+/// grows upwards, so the top edge is `y + h`.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UpFrame {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// Where a frame proposed during a live resize goes, so that the window keeps
+/// its **top-left corner** whenever the edge being dragged allows it.
+///
+/// With a ratio in force AppKit grows the axis that merely follows *around its
+/// center*: drag the right edge and the top and the bottom both move (measured:
+/// +120 across gave +34 up and −34 down), and the same whether the ratio comes
+/// from `contentAspectRatio` or from `windowWillResize:toSize:`. The window's
+/// top-left corner is where the web view's content is pinned, and that content
+/// is a frame or two behind the window — so with the corner moving, every part
+/// of the interface that should be standing still is drawn at two places in
+/// turn. A free window never had this for the right and bottom edges; holding
+/// the ratio gave it to every grip except the bottom-right corner.
+///
+/// An axis the viewer has no hold of is one that follows, and it is put on its
+/// top or left edge; one that is being dragged is left to the drag. Which is
+/// which comes from where the pointer went down (`held_axes`), not from the
+/// proposal: the first frame of a resize has been seen proposed with the
+/// following axis on its *bottom* edge rather than around its center, and
+/// read off the proposal that frame looks like a top edge being dragged — two
+/// points of jump at the start of the drag. Where the pointer's place is not
+/// known, the proposal is what there is: an axis with both of its edges moved
+/// follows. Either way a free window is not touched, since nothing in it
+/// follows.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+pub fn keep_corner(start: UpFrame, proposed: UpFrame, held: Option<Held>) -> UpFrame {
+    const STILL: f64 = 0.5;
+    let moved = |a: f64, b: f64| (a - b).abs() > STILL;
+    let follows_across = match held {
+        Some(held) => !held.across && moved(proposed.w, start.w),
+        None => moved(proposed.x, start.x) && moved(proposed.x + proposed.w, start.x + start.w),
+    };
+    let follows_up = match held {
+        Some(held) => !held.up && moved(proposed.h, start.h),
+        None => moved(proposed.y, start.y) && moved(proposed.y + proposed.h, start.y + start.h),
+    };
+    let mut kept = proposed;
+    if follows_across {
+        kept.x = start.x;
+    }
+    if follows_up {
+        kept.y = start.y + start.h - proposed.h;
+    }
+    kept
+}
+
+/// Which axes the viewer has hold of in a live resize.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Held {
+    /// The left or the right edge.
+    pub across: bool,
+    /// The top or the bottom edge.
+    pub up: bool,
+}
+
+/// What the pointer took hold of, from where in the window it went down.
+///
+/// The band in which a press counts as a corner is wider than any the system
+/// uses, on purpose. The two ways of being wrong are not alike: a corner taken
+/// for an edge pins an axis the viewer is dragging, and the window grows away
+/// from the pointer; an edge taken for a corner leaves the axis that follows
+/// where AppKit puts it, which is what the window did before any of this.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+pub fn held_axes(size: (f64, f64), at: (f64, f64)) -> Held {
+    const CORNER: f64 = 40.0;
+    let across = at.0.min(size.0 - at.0);
+    let up = at.1.min(size.1 - at.1);
+    if across < CORNER && up < CORNER {
+        return Held { across: true, up: true };
+    }
+    Held { across: across <= up, up: up < across }
 }
 
 // ---- Moving the frame as one thing ---------------------------------------
@@ -388,6 +521,79 @@ pub async fn window_frame_glide(
     #[cfg(not(any(windows, target_os = "macos")))]
     {
         false
+    }
+}
+
+/// Which fade of the picture is the newest; see `GLIDE`.
+#[cfg(target_os = "macos")]
+static FADE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// How far a fade has got, `t` of the way through. Going dark it is quick at
+/// first — the frame being replaced is the thing to get off the screen — and
+/// coming back it is slow at first: the bars beside a new picture are widest at
+/// the start of the window's morph, which is the part of it to keep dark.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+pub fn fade_curve(t: f64, lifting: bool) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    if lifting {
+        t * t
+    } else {
+        1.0 - (1.0 - t) * (1.0 - t)
+    }
+}
+
+/// Fade the picture itself to `to` (0 is dark, 1 is whole) over `ms`.
+///
+/// The dark between two files, on macOS. It is the video view's own opacity
+/// rather than a fill in the web view because a fill in the web view is late:
+/// the web content is a frame or two behind the window's frame, so while the
+/// window grows there is a strip along the growing edge that the fill has not
+/// reached yet, and the picture shows through it at full brightness (measured
+/// on a recording; making the fill larger than the window does not help, the
+/// content is clipped to the size it was last laid out at). The video view
+/// resizes with the window, in the same turn.
+///
+/// `Ok(true)` when the picture is at `to`, `Ok(false)` when a newer fade took
+/// over, and an error where there is no such view to fade — on which the
+/// frontend draws the dark itself.
+#[tauri::command]
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+pub async fn window_video_fade(window: tauri::WebviewWindow, to: f64, ms: u32) -> Result<bool, ()> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::sync::atomic::Ordering;
+
+        let mine = FADE.fetch_add(1, Ordering::SeqCst) + 1;
+        let to = to.clamp(0.0, 1.0);
+        let from = on_main(&window, crate::macos_chrome::video_alpha)
+            .await
+            .flatten()
+            .ok_or(())?;
+        let length = f64::from(ms) / 1000.0;
+        let started = std::time::Instant::now();
+        loop {
+            if FADE.load(Ordering::SeqCst) != mine {
+                return Ok(false);
+            }
+            let t = if length > 0.0 {
+                (started.elapsed().as_secs_f64() / length).min(1.0)
+            } else {
+                1.0
+            };
+            let alpha = if t >= 1.0 { to } else { from + (to - from) * fade_curve(t, to > from) };
+            let set = on_main(&window, move |w| crate::macos_chrome::set_video_alpha(w, alpha)).await;
+            if set != Some(true) {
+                return Err(());
+            }
+            if t >= 1.0 {
+                return Ok(true);
+            }
+            tokio::time::sleep(GLIDE_STEP).await;
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(())
     }
 }
 
@@ -586,6 +792,124 @@ mod tests {
             assert_eq!(f.x, f.x.round());
             assert_eq!(f.w, f.w.round());
         }
+    }
+
+    fn up(x: f64, y: f64, w: f64, h: f64) -> UpFrame {
+        UpFrame { x, y, w, h }
+    }
+
+    #[test]
+    fn the_axis_that_follows_is_put_back_on_its_top_or_left_edge() {
+        let start = up(600.0, 450.0, 800.0, 450.0);
+        // The right edge dragged out by 120: AppKit's proposal, as measured.
+        for held in [Some(Held { across: true, up: false }), None] {
+            let kept = keep_corner(start, up(600.0, 416.0, 920.0, 518.0), held);
+            assert_eq!(kept, up(600.0, 382.0, 920.0, 518.0));
+            assert_eq!(kept.y + kept.h, start.y + start.h, "the top edge");
+        }
+        // The bottom edge dragged down by 80.
+        for held in [Some(Held { across: false, up: true }), None] {
+            let kept = keep_corner(start, up(530.0, 371.0, 940.0, 529.0), held);
+            assert_eq!(kept, up(600.0, 371.0, 940.0, 529.0));
+        }
+    }
+
+    #[test]
+    fn the_first_frame_of_a_drag_is_not_taken_for_another_drag() {
+        // As seen in the player: the right edge in hand, and the first proposal
+        // two points taller with the *bottom* where it was. From the proposal
+        // alone that is the top edge being dragged.
+        let start = up(261.0, 282.0, 1206.0, 603.0);
+        let first = up(261.0, 282.0, 1210.0, 605.0);
+        let by_the_right = Some(Held { across: true, up: false });
+        let kept = keep_corner(start, first, by_the_right);
+        assert_eq!(kept.y + kept.h, 885.0);
+        assert_eq!(keep_corner(start, first, None), first);
+    }
+
+    #[test]
+    fn where_the_pointer_went_down_says_what_is_held() {
+        let size = (1200.0, 600.0);
+        assert_eq!(held_axes(size, (1199.0, 300.0)), Held { across: true, up: false });
+        assert_eq!(held_axes(size, (1.0, 300.0)), Held { across: true, up: false });
+        assert_eq!(held_axes(size, (600.0, 1.0)), Held { across: false, up: true });
+        assert_eq!(held_axes(size, (600.0, 599.0)), Held { across: false, up: true });
+        for corner in [(3.0, 3.0), (1197.0, 3.0), (3.0, 597.0), (1197.0, 597.0), (1199.0, 30.0)] {
+            assert_eq!(held_axes(size, corner), Held { across: true, up: true }, "{corner:?}");
+        }
+        // Just outside the window, where the system's own band reaches.
+        assert_eq!(held_axes(size, (1203.0, 300.0)), Held { across: true, up: false });
+    }
+
+    #[test]
+    fn the_edge_that_is_dragged_is_left_to_the_drag() {
+        let start = up(600.0, 450.0, 800.0, 450.0);
+        // The left edge: the right one stays, and the height follows.
+        for held in [Some(Held { across: true, up: false }), None] {
+            let kept = keep_corner(start, up(480.0, 416.0, 920.0, 518.0), held);
+            assert_eq!(kept.x, 480.0);
+            assert_eq!(kept.x + kept.w, 1400.0);
+            assert_eq!(kept.y + kept.h, 900.0);
+        }
+        // The top edge: the bottom stays, and the width follows from the left.
+        for held in [Some(Held { across: false, up: true }), None] {
+            let kept = keep_corner(start, up(530.0, 450.0, 940.0, 529.0), held);
+            assert_eq!(kept, up(600.0, 450.0, 940.0, 529.0));
+        }
+    }
+
+    #[test]
+    fn a_corner_keeps_the_corner_opposite() {
+        let start = up(600.0, 450.0, 800.0, 450.0);
+        // Bottom-left dragged out: the top-right corner is where it was.
+        let proposed = up(564.0, 430.0, 836.0, 470.0);
+        for held in [Some(Held { across: true, up: true }), None] {
+            assert_eq!(keep_corner(start, proposed, held), proposed);
+        }
+    }
+
+    #[test]
+    fn a_free_window_is_not_touched() {
+        let start = up(600.0, 450.0, 800.0, 450.0);
+        // Each edge in turn, with no ratio: only the edge in hand has moved.
+        for (proposed, across, up_held) in [
+            (up(600.0, 450.0, 920.0, 450.0), true, false),
+            (up(600.0, 370.0, 800.0, 530.0), false, true),
+            (up(480.0, 450.0, 920.0, 450.0), true, false),
+            (up(600.0, 450.0, 800.0, 530.0), false, true),
+            (up(480.0, 450.0, 920.0, 530.0), true, true),
+            (start, true, false),
+        ] {
+            assert_eq!(keep_corner(start, proposed, None), proposed);
+            let held = Some(Held { across, up: up_held });
+            assert_eq!(keep_corner(start, proposed, held), proposed, "{held:?}");
+        }
+    }
+
+    #[test]
+    fn a_shrinking_window_keeps_the_same_corner() {
+        let start = up(600.0, 450.0, 800.0, 450.0);
+        for held in [Some(Held { across: true, up: false }), None] {
+            let kept = keep_corner(start, up(600.0, 534.0, 500.0, 281.0), held);
+            assert_eq!(kept.y + kept.h, 900.0);
+            assert_eq!(kept.x, 600.0);
+        }
+    }
+
+    #[test]
+    fn a_fade_goes_dark_fast_and_comes_back_slowly() {
+        for lifting in [true, false] {
+            assert_eq!(fade_curve(0.0, lifting), 0.0);
+            assert_eq!(fade_curve(1.0, lifting), 1.0);
+            let mut last = 0.0;
+            for i in 0..=50 {
+                let k = fade_curve(f64::from(i) / 50.0, lifting);
+                assert!(k >= last);
+                last = k;
+            }
+        }
+        assert!(fade_curve(0.5, false) > 0.7);
+        assert!(fade_curve(0.5, true) < 0.3);
     }
 
     #[test]

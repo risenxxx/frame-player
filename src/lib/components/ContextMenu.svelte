@@ -281,7 +281,7 @@
      parent's guards). Nothing to activate: the rows are buttons. -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
-  class="ctxmenu scrollable"
+  class="ctxmenu scrollable afloat"
   class:masked={ctxDrill && !!ctxSubmenu}
   class:peek={!!peeking}
   bind:this={ctxEl}

@@ -25,6 +25,7 @@
   import StepOverlay from '$lib/components/StepOverlay.svelte';
   import Tooltip from '$lib/components/Tooltip.svelte';
   import Osd from '$lib/components/Osd.svelte';
+  import Curtain from '$lib/components/Curtain.svelte';
   import LoadingOverlay from '$lib/components/LoadingOverlay.svelte';
   import CastScreen from '$lib/components/CastScreen.svelte';
   import SkipButton from '$lib/components/SkipButton.svelte';
@@ -205,10 +206,20 @@
     type ObservedName,
   } from '$lib/player.svelte';
   import {
+    curtain,
+    curtainFileLoaded,
+    curtainFileStarted,
+    curtainSettled,
+    initCurtain,
+    liftCurtain,
+    raiseCurtain,
+  } from '$lib/curtain.svelte';
+  import {
     applyAlwaysOnTop,
     fitWindowToVideo,
     loadWindowPrefs,
     initWindowShape,
+    scheduleShape,
     mini,
     restoreGeometry,
     scheduleGeometrySave,
@@ -319,6 +330,8 @@
   function enterStartScreen() {
     clearTimeout(emptyTimer);
     showEmpty = true;
+    // Nothing is coming that it could be waiting for.
+    liftCurtain(0);
     void loadRecent();
     void refreshTorrents();
     barTitleText = '';
@@ -620,8 +633,11 @@
           opening.busy = isNetworkSource(path);
           // Primes the knob and points mpv's `start` at the resume position,
           // which is why this hook is awaited: `start` is a load-time option and
-          // has to land before `loadfile`.
-          await prepareResume(path);
+          // has to land before `loadfile`. The curtain is awaited beside it for
+          // its own reason — the picture on screen has to be dark before mpv
+          // is handed the file that replaces it — and the two wait together
+          // rather than in turn.
+          await Promise.all([prepareResume(path), raiseCurtain()]);
         },
         property: onPlayerProperty,
         fileLoaded: onFileLoaded,
@@ -635,6 +651,11 @@
         openTorrentFile: (path) => void openTorrent(path),
         playbackRestart: () => {
           armVideoReady();
+          // Frames are being produced, which is the one thing the curtain is
+          // waiting to hear and the picture's own properties may not say: a
+          // file of the same shape as the last can change none of them. The
+          // window looks again and reports (`settled`).
+          if (curtain.on) scheduleShape();
           notePlaybackRestart();
           // The one event that means frames are actually being produced, which
           // is what a room has to be told about — a file mpv has merely been
@@ -887,6 +908,16 @@
     };
     // Trackpad scroll gesture phase (macOS only, see macos_chrome.rs).
     unlisteners.push(
+      await listen<boolean>('frameplayer://window-resizing', (e) => {
+        chrome.resizing = e.payload;
+        // Letting go of the edge counts as a mouse move, which the web view did
+        // not see one of for the whole of the drag: the bars come back, and
+        // from there the "hide the controls" setting has them again — its
+        // timer runs from now, not from before the resize.
+        if (!e.payload) pokeUi();
+      }),
+    );
+    unlisteners.push(
       await listen<boolean>('frameplayer://scroll-phase', (e) => {
         seek.fingersDown = e.payload;
         if (!seek.fingersDown) {
@@ -997,6 +1028,9 @@
         if (player.mediaTitle && player.filePath) rememberTitle(player.filePath, player.mediaTitle);
         break;
       case 'path':
+        // The net under `raiseCurtain`: a file that reached mpv by a way that
+        // does not pass through one of our verbs.
+        if (player.filePath) curtainFileStarted();
         resetSeekProbe();
         resetSkipGuard();
         maybeStartThumbs();
@@ -1014,6 +1048,7 @@
   }
 
   function onFileLoaded() {
+    curtainFileLoaded();
     noteOpened();
     resetZoom(true);
     // Rotation and aspect are global mpv options: a phone clip turned upright
@@ -1063,7 +1098,11 @@
   initWindowShape({
     sizeOwned: () => chrome.fullscreen || chrome.isMaximized,
     resting: () => showEmpty,
+    settled: curtainSettled,
   });
+  // The dark between two pictures. It is told when a load is under way, which
+  // is the one case where staying down past its cap is right.
+  initCurtain({ loading: () => opening.busy });
   // Lifts the subtitles clear of the control bar while it is up. Its own
   // effects rather than the chrome's: what it measures is the bar, but what it
   // writes is an mpv option, and the shell has no business knowing about those.
@@ -1245,11 +1284,14 @@
   class="player"
   class:mini={mini.on}
   class:idle-ui={chrome.idle}
+  class:unsteady={chrome.unsteady}
+  class:settling={chrome.settling}
   class:nocursor={chrome.cursorHidden}
   class:mac={IS_MAC}
   class:no-video={showEmpty}
   class:backdrop={!videoReady}
   style:--veil-color={showEmpty ? '#101016' : '#000'}
+  style:--chrome-fade={chrome.unsteady ? '50ms' : null}
   onmousemove={pokeUi}
   onwheel={onWheel}
   ondblclick={onVideoDblClick}
@@ -1260,6 +1302,7 @@
   onpointerup={onVideoPointerUp}
   role="presentation"
 >
+  <Curtain />
   {#if player.initError}
     <div class="overlay">
       <div class="panel">
@@ -1727,7 +1770,8 @@
     /* Its own stacking context, so that z-index: -1 on ::before lowers the
        gradient under the controls without dropping it behind the whole bar. */
     isolation: isolate;
-    transition: opacity 0.25s ease, transform 0.25s ease;
+    /* `--chrome-fade`: see `.topbar`, and `chrome.unsteady` for why. */
+    transition: opacity var(--chrome-fade, 0.25s) ease, transform var(--chrome-fade, 0.25s) ease;
   }
 
   .osc::before {

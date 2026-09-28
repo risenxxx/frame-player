@@ -31,7 +31,7 @@
      film: previous / replay / next, with the countdown on next. Clicking
      the backdrop cancels the countdown — it is the largest possible target
      for "wait". -->
-<div class="overlay clickthrough-bg endscreen" role="presentation" onclick={oncancel}>
+<div class="overlay clickthrough-bg endscreen afloat" role="presentation" onclick={oncancel}>
   <div class="endrow">
     {#if prev}
       {@render endCard(prev, 'prev')}

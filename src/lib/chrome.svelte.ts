@@ -25,7 +25,7 @@ import { IS_MAC } from './platform';
 import { flushPosition } from './history.svelte';
 import { player } from './player.svelte';
 import { seek } from './seek.svelte';
-import { mini, toggleMini, windowPrefs } from './window-prefs.svelte';
+import { mini, shapeState, toggleMini, windowPrefs } from './window-prefs.svelte';
 
 /// How long the chrome stays up after the pointer stops.
 const UI_HIDE_MS = 1200;
@@ -135,9 +135,39 @@ class Chrome {
   /// else**: the cursor is what drags the slider.
   tuning = $state(false);
 
-  /// The bars are away: the pointer rested and the setting allows it, or a
-  /// picture slider is being worked. Everything that fades reads this.
-  idle = $derived(this.tuning || (this.mayHide && this.pointerIdle));
+  /// The window is being resized by hand. Written by the page from the native
+  /// side's report (`frameplayer://window-resizing`), which is the only place
+  /// that knows: a live resize runs in the system's own loop.
+  resizing = $state(false);
+
+  /// The window's frame is changing under the bars — a resize by hand, or a
+  /// fit taking the window to a new shape — and they cannot follow it. The web
+  /// content is pinned to the window's top-left corner and drawn a frame or
+  /// two behind the window (measured on a bare web view: 14 to 44 px off, for
+  /// up to two frames). By the bottom-right corner that is a bar trailing the
+  /// edge it belongs to; by any grip that moves the top-left corner, whatever
+  /// should be standing still on the screen is drawn in two places in turn,
+  /// which reads as the interface doubled. There is no telling WebKit to pin
+  /// it elsewhere. So the bars are away for as long as it lasts, whichever
+  /// grip it is — one behaviour rather than one per edge — fast, on
+  /// `--chrome-fade`, and whatever the "hide the controls" setting says: that
+  /// setting is about a pointer at rest, and this is the opposite of one. Like
+  /// `tuning` it hides the bars **and nothing else**: the cursor is what is
+  /// doing the dragging.
+  unsteady = $derived(this.resizing || shapeState.gliding);
+
+  /// The window has just come to rest. What left for `unsteady` comes back
+  /// over these `SETTLE_MS` rather than at once: the bars fade in because
+  /// idling always did, and the surfaces that have no transition of their own
+  /// — the end screen was the one measured, at full opacity in the frame the
+  /// edge was let go — would otherwise be there a quarter of a second ahead of
+  /// them.
+  settling = $state(false);
+
+  /// The bars are away: the pointer rested and the setting allows it, a
+  /// picture slider is being worked, or the window is moving under them.
+  /// Everything that fades reads this.
+  idle = $derived(this.tuning || this.unsteady || (this.mayHide && this.pointerIdle));
 }
 
 export const chrome = new Chrome();
@@ -255,10 +285,12 @@ function cursorEffect() {
     // `always` hides on the pointer's own idle, so the cursor can go while a bar
     // the viewer asked to keep stays up; the default follows the chrome.
     const mode = windowPrefs.cursorHide;
-    // `tuning` hides the bars under a pointer that is busy dragging, so it is
-    // taken back out here: that cursor must stay.
+    // `tuning` and `unsteady` hide the bars under a pointer that is busy
+    // dragging, so they are taken back out here: that cursor must stay.
     const rested =
-      mode === 'always' ? chrome.pointerIdle : mode === 'controls' && chrome.idle && !chrome.tuning;
+      mode === 'always'
+        ? chrome.pointerIdle
+        : mode === 'controls' && chrome.idle && !chrome.tuning && !chrome.unsteady;
     if (!rested || chrome.pointerInTitlebar) {
       // Showing it again is never delayed: that half is a response to the
       // pointer moving, and any lag there is felt immediately.
@@ -578,9 +610,31 @@ function barSideEffect() {
  * A block body rather than `const f = () => $effect(…)`: the compiler rejects
  * that outright with "`$effect()` can only be used as an expression statement".
  */
+/// As long as the bars take to fade in, which is what it is matching.
+const SETTLE_MS = 250;
+
+let settleTimer: ReturnType<typeof setTimeout> | undefined;
+let wasUnsteady = false;
+
+function settleEffect() {
+  $effect(() => {
+    const now = chrome.unsteady;
+    if (now) {
+      clearTimeout(settleTimer);
+      chrome.settling = false;
+    } else if (wasUnsteady) {
+      chrome.settling = true;
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => (chrome.settling = false), SETTLE_MS);
+    }
+    wasUnsteady = now;
+  });
+}
+
 export function initChrome() {
   cursorEffect();
   windowButtonsEffect();
   wakeEffect();
   barSideEffect();
+  settleEffect();
 }

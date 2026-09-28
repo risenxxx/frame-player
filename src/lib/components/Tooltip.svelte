@@ -15,7 +15,7 @@
 </script>
 
 <div
-  class="tip"
+  class="tip afloat"
   bind:this={el}
   style={tooltip.pos
     ? `transform: translate3d(${tooltip.pos.x}px, ${tooltip.pos.y}px, 0)`

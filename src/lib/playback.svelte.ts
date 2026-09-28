@@ -63,6 +63,7 @@ import {
   castTogglePause,
 } from './cast.svelte';
 import { publishState, wire } from './sync/wire.svelte';
+import { raiseCurtain } from './curtain.svelte';
 import { formatTime } from './format';
 import { t } from './i18n.svelte';
 import type { ActionId } from './keys.svelte';
@@ -328,7 +329,8 @@ export function advance(dir: 1 | -1) {
     void castAdvance(dir);
     return;
   }
-  void command(dir === 1 ? 'playlist-next' : 'playlist-prev', []);
+  // Dark first, then the command: see curtain.svelte.ts.
+  void raiseCurtain().then(() => command(dir === 1 ? 'playlist-next' : 'playlist-prev', []));
 }
 
 /// Open a specific queue entry — the panel's rows, and Enter on the end screen.

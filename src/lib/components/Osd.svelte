@@ -13,7 +13,7 @@
   let { state, mini }: Props = $props();
 </script>
 
-<div class="osd" class:mini class:with-bar={state.progress !== undefined}>
+<div class="osd afloat" class:mini class:with-bar={state.progress !== undefined}>
   <span class="osd-text">{state.text}</span>
   {#if state.progress !== undefined}
     <div class="osd-bar"><div class="osd-bar-fill" style="width: {state.progress * 100}%"></div></div>

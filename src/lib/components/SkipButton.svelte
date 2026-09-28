@@ -43,7 +43,7 @@
 </script>
 
 <button
-  class="skipbtn" class:mini
+  class="skipbtn afloat" class:mini
   style="--skip-left: {hint.left}; opacity: {hint.fade}"
   onclick={(e) => {
     e.stopPropagation();

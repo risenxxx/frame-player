@@ -74,13 +74,7 @@ pub fn apply(window: &tauri::WebviewWindow) {
     //
     // setOpaque(true) is deliberately avoided: an opaque window loses the
     // system corner rounding and the edge shadow.
-    let bg = objc2_app_kit::NSColor::colorWithSRGBRed_green_blue_alpha(
-        16.0 / 255.0,
-        16.0 / 255.0,
-        22.0 / 255.0,
-        1.0,
-    );
-    ns.setBackgroundColor(Some(&bg));
+    ns.setBackgroundColor(Some(&window_fill()));
 
     // Force the dark appearance instead of following the system. The player's
     // chrome is dark whatever the system theme is, and the frame view draws
@@ -114,6 +108,17 @@ pub fn apply(window: &tauri::WebviewWindow) {
     // by hand.
     install_toolbar(&ns, mtm);
     toolbar_off_in_fullscreen(&ns);
+    keep_corner_in_live_resize(window, &ns);
+}
+
+/// The window's own fill, `#101016` — see `apply`.
+fn window_fill() -> Retained<objc2_app_kit::NSColor> {
+    objc2_app_kit::NSColor::colorWithSRGBRed_green_blue_alpha(
+        16.0 / 255.0,
+        16.0 / 255.0,
+        22.0 / 255.0,
+        1.0,
+    )
 }
 
 /// Grow the title bar so AppKit gives the window buttons a roomier inset.
@@ -497,6 +502,186 @@ pub fn set_shape_lock(window: &tauri::WebviewWindow, shape: Option<(f64, f64)>) 
         Some((w, h)) => ns.setContentAspectRatio(NSSize::new(w, h)),
         None => ns.setResizeIncrements(NSSize::new(1.0, 1.0)),
     }
+}
+
+// ---- Which corner a live resize keeps ------------------------------------
+//
+// What is decided is in `window_shape::keep_corner`; this is how the decision
+// gets in. AppKit's live resize sets every frame through the window's own
+// `setFrame:display:` (measured: twelve calls for twelve drag events, each one
+// proposed afresh from the frame the resize began with), so a frame rewritten
+// there is the frame the window takes, and the next proposal does not argue
+// with it. Tried on a window of our own first and then in the player, with the
+// pointer driven by posted events: by the right edge the top-left corner does
+// not move by a point for the length of the drag, by the left or the top one
+// only the edge in hand does.
+//
+// The method is added to tao's window class rather than the window moved to a
+// subclass of it. `TaoWindow` overrides three methods and this is not one of
+// them, so adding it is an override and nothing of tao's is replaced; changing
+// the object's class instead would be a second user of the trick the mini
+// player already depends on (`set_float_over_fullscreen`), and the two would
+// have to know about each other. It follows that the corner is *not* kept while
+// the mini player is on — the window is an NSPanel then, and this is not in
+// its table.
+
+/// The frame the live resize under way began with, and what the pointer took
+/// hold of where that could be read; `None` between resizes.
+static RESIZE_FROM: std::sync::Mutex<Option<(NSRect, Option<crate::window_shape::Held>)>> =
+    std::sync::Mutex::new(None);
+
+/// The window whose corner is kept: the class has other instances (the veil).
+static KEPT_WINDOW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+type SetFrame =
+    unsafe extern "C-unwind" fn(&NSWindow, objc2::runtime::Sel, NSRect, objc2::runtime::Bool);
+
+/// `NSWindow`'s own `setFrame:display:`, which ours ends in.
+static NEXT_SET_FRAME: std::sync::OnceLock<SetFrame> = std::sync::OnceLock::new();
+
+unsafe extern "C-unwind" fn set_frame_keeping_corner(
+    this: &NSWindow,
+    cmd: objc2::runtime::Sel,
+    frame: NSRect,
+    display: objc2::runtime::Bool,
+) {
+    use crate::window_shape::{keep_corner, UpFrame};
+    use std::sync::atomic::Ordering;
+
+    let mut frame = frame;
+    let ours = KEPT_WINDOW.load(Ordering::Relaxed) == this as *const NSWindow as usize;
+    if ours && this.inLiveResize() {
+        let start = *RESIZE_FROM.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((start, held)) = start {
+            let up = |r: NSRect| UpFrame {
+                x: r.origin.x,
+                y: r.origin.y,
+                w: r.size.width,
+                h: r.size.height,
+            };
+            let kept = keep_corner(up(start), up(frame), held);
+            frame = NSRect::new(NSPoint::new(kept.x, kept.y), NSSize::new(kept.w, kept.h));
+            // Said when the window first changes, not when the button goes
+            // down: a press on an edge that is let go again is not a resize.
+            let changed = (frame.size.width - start.size.width).abs() > 0.5
+                || (frame.size.height - start.size.height).abs() > 0.5;
+            if changed {
+                crate::window_shape::say_resizing(true);
+            }
+        }
+    }
+    if let Some(next) = NEXT_SET_FRAME.get() {
+        unsafe { next(this, cmd, frame, display) };
+    }
+}
+
+fn keep_corner_in_live_resize(window: &tauri::WebviewWindow, ns: &NSWindow) {
+    use block2::RcBlock;
+    use objc2::runtime::AnyObject;
+    use objc2::sel;
+    use objc2_app_kit::{
+        NSWindowDidEndLiveResizeNotification, NSWindowWillStartLiveResizeNotification,
+    };
+    use objc2_foundation::{NSNotification, NSNotificationCenter};
+    use std::sync::atomic::Ordering;
+
+    let class = unsafe { &*(ns as *const NSWindow).cast::<AnyObject>() }.class();
+    let sel = sel!(setFrame:display:);
+    // Whatever the window's class inherits today. If tao comes to define the
+    // method itself, the add below fails and the window resizes as AppKit has
+    // it — a regression in feel, never in function.
+    let Some(method) = class.superclass().and_then(|s| s.instance_method(sel)) else {
+        log_warn("no setFrame:display: to build on; live resize keeps AppKit's corner");
+        return;
+    };
+    let next: SetFrame = unsafe { std::mem::transmute(method.implementation()) };
+    let ours: objc2::runtime::Imp =
+        unsafe { std::mem::transmute(set_frame_keeping_corner as SetFrame) };
+    let added = unsafe {
+        objc2::ffi::class_addMethod(
+            (class as *const objc2::runtime::AnyClass).cast_mut(),
+            sel,
+            ours,
+            objc2::ffi::method_getTypeEncoding(method),
+        )
+    };
+    if !added.as_bool() {
+        log_warn("the window's class has its own setFrame:display:; live resize keeps AppKit's corner");
+        return;
+    }
+    let _ = NEXT_SET_FRAME.set(next);
+    crate::window_shape::report_to(window);
+    KEPT_WINDOW.store(ns as *const NSWindow as usize, Ordering::Relaxed);
+
+    let center = NSNotificationCenter::defaultCenter();
+
+    let win = ns.retain();
+    let starting = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
+        let frame = win.frame();
+        // The press that began it is the event being handled as this is sent.
+        let held = win.currentEvent().map(|press| {
+            let at = press.locationInWindow();
+            crate::window_shape::held_axes((frame.size.width, frame.size.height), (at.x, at.y))
+        });
+        *RESIZE_FROM.lock().unwrap_or_else(|e| e.into_inner()) = Some((frame, held));
+    });
+    let ended = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
+        *RESIZE_FROM.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        crate::window_shape::say_resizing(false);
+    });
+    for (name, block) in [
+        (unsafe { NSWindowWillStartLiveResizeNotification }, &starting),
+        (unsafe { NSWindowDidEndLiveResizeNotification }, &ended),
+    ] {
+        let _ = unsafe {
+            center.addObserverForName_object_queue_usingBlock(Some(name), Some(ns), None, block)
+        };
+    }
+}
+
+// ---- The picture going dark ----------------------------------------------
+
+/// The view mpv draws into: the content view's child that is not the web view.
+/// Found by what it is not, because its own class is the embedder's to name
+/// (`swift.View` today, over a `MetalLayer`) and the web view's is wry's.
+fn video_view(ns: &NSWindow) -> Option<Retained<objc2_app_kit::NSView>> {
+    let content = ns.contentView()?;
+    let found = content
+        .subviews()
+        .iter()
+        .find(|view| !view.class().name().to_string_lossy().contains("WebView"));
+    found
+}
+
+/// How much of the picture is showing, 0 to 1. Main thread only.
+pub fn video_alpha(window: &tauri::WebviewWindow) -> Option<f64> {
+    let ns = ns_window(window)?;
+    Some(video_view(&ns)?.alphaValue())
+}
+
+/// Show that much of the picture; `false` where there is no view to ask. Main
+/// thread only.
+///
+/// What is under the picture while it is less than whole is the window's own
+/// fill, which is `#101016` and not black — the right color for the moment
+/// before the web view's first frame, and a visible gray next to the black of
+/// a letterbox. So the fill is black for as long as the picture is not whole,
+/// and put back the moment it is: by then nothing of it shows.
+pub fn set_video_alpha(window: &tauri::WebviewWindow, alpha: f64) -> bool {
+    let Some(ns) = ns_window(window) else {
+        return false;
+    };
+    let Some(view) = video_view(&ns) else {
+        return false;
+    };
+    let fill = if alpha < 1.0 {
+        objc2_app_kit::NSColor::blackColor()
+    } else {
+        window_fill()
+    };
+    ns.setBackgroundColor(Some(&fill));
+    view.setAlphaValue(alpha);
+    true
 }
 
 // The window's frame in the coordinates the frontend has: top-left origin,
