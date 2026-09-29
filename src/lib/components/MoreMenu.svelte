@@ -18,6 +18,7 @@
   import { hint } from '$lib/keys.svelte';
   import type { OscMenu } from '$lib/overlays.svelte';
   import { LOOP_LABEL, player } from '$lib/player.svelte';
+  import MenuBody from './MenuBody.svelte';
 
   interface Props {
     /// Which tools this file offers. Passed rather than recomputed from
@@ -57,21 +58,23 @@
 {/snippet}
 
 <div class="menu moremenu">
-  <div class="menu-title">{t('osc.more_title')}</div>
-  <!-- The one row that acts in place, exactly as its button does: the label is
-       the current mode, so the row answers "what is the repeat set to" as well
-       as changing it, and the panel stays up to show the new answer. -->
-  <button class="menu-item" onclick={onCycleLoop}>
-    {t(LOOP_LABEL[player.loopMode])} <span class="hint">{hint('loop')}</span>
-  </button>
-  {#if showQueue || showChapters || showAudio || showSubs || showCast}
-    <div class="menu-sep"></div>
-  {/if}
-  {#if showQueue}{@render tool('queue', t('osc.queue'))}{/if}
-  {#if showChapters}{@render tool('chapter', t('osc.chapters'))}{/if}
-  {#if showAudio}{@render tool('audio', t('osc.audio'))}{/if}
-  {#if showSubs}{@render tool('sub', t('osc.subs'))}{/if}
-  {#if showCast}{@render tool('cast', t('cast.tip'))}{/if}
+  <MenuBody>
+    <div class="menu-title">{t('osc.more_title')}</div>
+    <!-- The one row that acts in place, exactly as its button does: the label is
+         the current mode, so the row answers "what is the repeat set to" as well
+         as changing it, and the panel stays up to show the new answer. -->
+    <button class="menu-item" onclick={onCycleLoop}>
+      {t(LOOP_LABEL[player.loopMode])} <span class="hint">{hint('loop')}</span>
+    </button>
+    {#if showQueue || showChapters || showAudio || showSubs || showCast}
+      <div class="menu-sep"></div>
+    {/if}
+    {#if showQueue}{@render tool('queue', t('osc.queue'))}{/if}
+    {#if showChapters}{@render tool('chapter', t('osc.chapters'))}{/if}
+    {#if showAudio}{@render tool('audio', t('osc.audio'))}{/if}
+    {#if showSubs}{@render tool('sub', t('osc.subs'))}{/if}
+    {#if showCast}{@render tool('cast', t('cast.tip'))}{/if}
+  </MenuBody>
 </div>
 
 <style>

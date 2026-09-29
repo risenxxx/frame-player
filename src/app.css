@@ -565,15 +565,25 @@ button.primary:hover {
   /* 300px was written for a full-sized window; in the mini player the whole
      player is shorter than that, and the panel would run off the top edge.
      The subtrahend is the bar plus the gap above it (~110px) plus 32px of
-     clearance from the top of the window, so it moves with `bottom`. */
-  max-height: min(300px, calc(100vh - 142px));
-  overflow-y: auto;
-  /* Same reason as .ctxmenu: sideways is never a direction this scrolls. */
-  overflow-x: hidden;
+     clearance from the top of the window, so it moves with `bottom`.
+     The cap has a name because `MenuBody` asks which of the two terms won: the
+     fades at the ends of the list are drawn only while the panel stands at its
+     full height, and not once the window is what cuts it short. */
+  --menu-cap: 300px;
+  max-height: min(var(--menu-cap), calc(100vh - 142px));
+  /* The panel is the surface and nothing else: what scrolls is the list inside
+     it (`MenuBody`), and the 6px around the rows went in there with them. Two
+     boxes rather than one because the list's edges fade under a mask, and a
+     mask takes the masked element's own background with it — on one box the
+     panel itself would dissolve at both ends. A column, so the cap above is
+     handed down to the list as the height it may shrink to. */
+  display: flex;
+  flex-direction: column;
+  /* The list's corners are square and the panel's are not. */
+  overflow: hidden;
   background: rgba(16, 16, 22, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
-  padding: 6px;
 }
 
 .menu-title {

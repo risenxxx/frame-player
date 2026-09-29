@@ -2468,8 +2468,17 @@
     font-size: 12.5px;
   }
 
-  .adj-reset {
+  /* A control on the sheet, not the action of a dialog: `.btn-outline`'s own
+     9/20 padding and 15px type are sized for a footer, where there is one of
+     them and it is what you came to press. Here it sat under four sliders
+     labelled at 12.5px and outweighed the section it resets. The numbers are
+     `.btn-danger`'s, which is the size every other button on this sheet
+     already is. Two classes, so it beats the shared `button.btn-outline`
+     wherever the two end up in the built stylesheet. */
+  .btn-outline.adj-reset {
     margin-top: 10px;
+    padding: 8px 14px;
+    font-size: 12.5px;
   }
 
   /* While a slider is dragged, only its own row is left, on a backing of its

@@ -23,6 +23,7 @@
   import { t } from '$lib/i18n.svelte';
   import { IS_MAC } from '$lib/platform';
   import MenuBack from './MenuBack.svelte';
+  import MenuBody from './MenuBody.svelte';
 
   interface Props {
     close: () => void;
@@ -55,160 +56,162 @@
   });
 </script>
 
-<div class="menu castmenu scrollable">
-  <MenuBack />
-  <div class="menu-title">{t('cast.title')}</div>
-  {#if cast.active}
-    <div class="cast-current">
-      <span class="cast-name">{cast.deviceName}</span>
-      <span class="cast-state">{castStateLabel()}</span>
-    </div>
-    <button
-      class="menu-item"
-      onclick={() => {
-        close();
-        void disconnectCast();
-      }}
-    >
-      {t('cast.disconnect')}
-    </button>
-  {:else}
-    {#each cast.tvs as device (device.key)}
-      <!-- One row per television, however many protocols reach it. The
-           second line states the consequence for the open file; the gear
-           holds the per-device profile, which is where the protocol names
-           live for whoever came looking for them. -->
-      <div class="tv-row">
-        <button
-          class="menu-item cast-device"
-          onclick={() => {
-            close();
-            void castCurrentFile(device);
-          }}
-        >
-          <span class="cast-name">{device.name}</span>
-          <span class="cast-model">
-            {(cast.profileRevision, deviceSummary(device))}
-          </span>
-        </button>
-        {#if cast.dlnaSweeping && !device.dlna}
-          <div
-            class="tv-sweep"
-            data-tip={t('cast.looking_for_transports')}
-            aria-label={t('cast.looking_for_transports')}
-          ></div>
-        {:else if device.cast && device.dlna}
+<div class="menu castmenu">
+  <MenuBody>
+    <MenuBack />
+    <div class="menu-title">{t('cast.title')}</div>
+    {#if cast.active}
+      <div class="cast-current">
+        <span class="cast-name">{cast.deviceName}</span>
+        <span class="cast-state">{castStateLabel()}</span>
+      </div>
+      <button
+        class="menu-item"
+        onclick={() => {
+          close();
+          void disconnectCast();
+        }}
+      >
+        {t('cast.disconnect')}
+      </button>
+    {:else}
+      {#each cast.tvs as device (device.key)}
+        <!-- One row per television, however many protocols reach it. The
+             second line states the consequence for the open file; the gear
+             holds the per-device profile, which is where the protocol names
+             live for whoever came looking for them. -->
+        <div class="tv-row">
           <button
-            class="tv-gear"
-            class:open={tvSettingsFor === device.key}
-            aria-label={t('cast.transport_settings')}
-            data-tip={t('cast.transport_settings')}
-            onclick={() =>
-              (tvSettingsFor = tvSettingsFor === device.key ? null : device.key)}
+            class="menu-item cast-device"
+            onclick={() => {
+              close();
+              void castCurrentFile(device);
+            }}
           >
-            <svg
-              viewBox="0 0 24 24"
-              width="15"
-              height="15"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.7"
-              stroke-linecap="round"
-              aria-hidden="true"
-            >
-              <path d="M4 8h8.4M17.6 8H20M4 16h4.4M13.6 16H20" />
-              <circle cx="15" cy="8" r="2.6" />
-              <circle cx="11" cy="16" r="2.6" />
-            </svg>
+            <span class="cast-name">{device.name}</span>
+            <span class="cast-model">
+              {(cast.profileRevision, deviceSummary(device))}
+            </span>
           </button>
+          {#if cast.dlnaSweeping && !device.dlna}
+            <div
+              class="tv-sweep"
+              data-tip={t('cast.looking_for_transports')}
+              aria-label={t('cast.looking_for_transports')}
+            ></div>
+          {:else if device.cast && device.dlna}
+            <button
+              class="tv-gear"
+              class:open={tvSettingsFor === device.key}
+              aria-label={t('cast.transport_settings')}
+              data-tip={t('cast.transport_settings')}
+              onclick={() =>
+                (tvSettingsFor = tvSettingsFor === device.key ? null : device.key)}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <path d="M4 8h8.4M17.6 8H20M4 16h4.4M13.6 16H20" />
+                <circle cx="15" cy="8" r="2.6" />
+                <circle cx="11" cy="16" r="2.6" />
+              </svg>
+            </button>
+          {/if}
+        </div>
+        {#if tvSettingsFor === device.key}
+          <!-- Expanded in place rather than in a second floating panel: a
+               panel hoisted out of this one would need the submenu's hover
+               bridge, its click guards and its drill-down fallback for a
+               window too narrow to hold two — all of that for one control. -->
+          <div class="tv-settings">
+            <!-- Two blocks, in the order a person needs them: the choice
+                 with its explanation directly under it, then — behind a
+                 hairline, so it reads as a different subject — the way out
+                 when the choice is not the problem. The check used to sit
+                 between the control and its own hint, which split one
+                 thought in half. -->
+            <div class="tv-block">
+              <div class="tv-settings-label">{t('cast.transport')}</div>
+              <div class="segmented">
+                {#each [['auto', t('cast.transport_auto')], ['dlna', t('cast.transport_dlna')], ['cast', t('cast.transport_cast')]] as [value, label] (value)}
+                  <button
+                    class="segopt"
+                    class:sel={(cast.profileRevision, deviceProfile(device).transport === value)}
+                    onclick={() => setDeviceTransport(device, value as 'auto' | 'cast' | 'dlna')}
+                  >
+                    {label}
+                  </button>
+                {/each}
+              </div>
+              <div class="tv-settings-hint">
+                {#if pinnedUnavailable(device)}
+                  {t('cast.transport_unavailable')}
+                {:else if deviceProfile(device).transport === 'auto'}
+                  {plannedTransport(device) === 'dlna'
+                    ? t('cast.transport_auto_dlna')
+                    : t('cast.transport_auto_cast')}
+                {/if}
+              </div>
+            </div>
+            <!-- The row says what the button is FOR. "Проверить устройство"
+                 on its own is a button whose purpose a viewer has to guess;
+                 the question in front of it is the whole affordance, and the
+                 action shrinks to a link-sized thing beside it. -->
+            <div class="tv-block tv-trouble">
+              <span class="tv-trouble-q">{t('cast.trouble')}</span>
+              <button
+                class="tv-check"
+                disabled={diagBusy === device.key}
+                onclick={() => onDiagnose(device)}
+              >
+                {diagBusy === device.key ? t('cast.diagnosing') : t('cast.diagnose')}
+              </button>
+            </div>
+          </div>
+        {/if}
+      {:else}
+        <!-- **Never a verdict while the search is still running.** The
+             first version said "no devices found" after six seconds, which
+             is exactly when a permission prompt is still on screen waiting
+             to be answered — so the panel announced failure at the moment
+             the viewer was in the middle of fixing it, and the only way
+             forward was to close it and open it again. It now says what is
+             true: still looking, and an allowed prompt will be picked up. -->
+        <div class="cast-empty">
+          <span class="cast-spin"></span>
+          {castSearchLong ? t('cast.still_looking') : t('cast.searching')}
+        </div>
+      {/each}
+      <!-- The number-one cause of "casting doesn't work" is the network,
+           not the code, so the panel says so up front: the Defender prompt
+           before the first cast, and the usual reasons a TV is invisible
+           once the search has clearly come up dry. -->
+      <!-- Three ages of the same panel. Before anything is known: the
+           platform's permission warning, so the prompt is expected rather
+           than a surprise. Once the search has run a while with nothing:
+           what to do about it. Only after discovery has been rebuilt a few
+           times — by then a granted prompt would have taken effect — the
+           reasons a television is genuinely invisible. -->
+      <div class="cast-hint">
+        {#if cast.tvs.length}
+          {IS_MAC ? t('cast.perm_warn_mac') : t('cast.firewall_warn')}
+        {:else if cast.rebuilds >= 2}
+          {t('cast.empty_hint')}
+        {:else if castSearchLong}
+          {IS_MAC ? t('cast.perm_wait_mac') : t('cast.perm_wait_win')}
+        {:else}
+          {IS_MAC ? t('cast.perm_warn_mac') : t('cast.firewall_warn')}
         {/if}
       </div>
-      {#if tvSettingsFor === device.key}
-        <!-- Expanded in place rather than in a second floating panel: a
-             panel hoisted out of this one would need the submenu's hover
-             bridge, its click guards and its drill-down fallback for a
-             window too narrow to hold two — all of that for one control. -->
-        <div class="tv-settings">
-          <!-- Two blocks, in the order a person needs them: the choice
-               with its explanation directly under it, then — behind a
-               hairline, so it reads as a different subject — the way out
-               when the choice is not the problem. The check used to sit
-               between the control and its own hint, which split one
-               thought in half. -->
-          <div class="tv-block">
-            <div class="tv-settings-label">{t('cast.transport')}</div>
-            <div class="segmented">
-              {#each [['auto', t('cast.transport_auto')], ['dlna', t('cast.transport_dlna')], ['cast', t('cast.transport_cast')]] as [value, label] (value)}
-                <button
-                  class="segopt"
-                  class:sel={(cast.profileRevision, deviceProfile(device).transport === value)}
-                  onclick={() => setDeviceTransport(device, value as 'auto' | 'cast' | 'dlna')}
-                >
-                  {label}
-                </button>
-              {/each}
-            </div>
-            <div class="tv-settings-hint">
-              {#if pinnedUnavailable(device)}
-                {t('cast.transport_unavailable')}
-              {:else if deviceProfile(device).transport === 'auto'}
-                {plannedTransport(device) === 'dlna'
-                  ? t('cast.transport_auto_dlna')
-                  : t('cast.transport_auto_cast')}
-              {/if}
-            </div>
-          </div>
-          <!-- The row says what the button is FOR. "Проверить устройство"
-               on its own is a button whose purpose a viewer has to guess;
-               the question in front of it is the whole affordance, and the
-               action shrinks to a link-sized thing beside it. -->
-          <div class="tv-block tv-trouble">
-            <span class="tv-trouble-q">{t('cast.trouble')}</span>
-            <button
-              class="tv-check"
-              disabled={diagBusy === device.key}
-              onclick={() => onDiagnose(device)}
-            >
-              {diagBusy === device.key ? t('cast.diagnosing') : t('cast.diagnose')}
-            </button>
-          </div>
-        </div>
-      {/if}
-    {:else}
-      <!-- **Never a verdict while the search is still running.** The
-           first version said "no devices found" after six seconds, which
-           is exactly when a permission prompt is still on screen waiting
-           to be answered — so the panel announced failure at the moment
-           the viewer was in the middle of fixing it, and the only way
-           forward was to close it and open it again. It now says what is
-           true: still looking, and an allowed prompt will be picked up. -->
-      <div class="cast-empty">
-        <span class="cast-spin"></span>
-        {castSearchLong ? t('cast.still_looking') : t('cast.searching')}
-      </div>
-    {/each}
-    <!-- The number-one cause of "casting doesn't work" is the network,
-         not the code, so the panel says so up front: the Defender prompt
-         before the first cast, and the usual reasons a TV is invisible
-         once the search has clearly come up dry. -->
-    <!-- Three ages of the same panel. Before anything is known: the
-         platform's permission warning, so the prompt is expected rather
-         than a surprise. Once the search has run a while with nothing:
-         what to do about it. Only after discovery has been rebuilt a few
-         times — by then a granted prompt would have taken effect — the
-         reasons a television is genuinely invisible. -->
-    <div class="cast-hint">
-      {#if cast.tvs.length}
-        {IS_MAC ? t('cast.perm_warn_mac') : t('cast.firewall_warn')}
-      {:else if cast.rebuilds >= 2}
-        {t('cast.empty_hint')}
-      {:else if castSearchLong}
-        {IS_MAC ? t('cast.perm_wait_mac') : t('cast.perm_wait_win')}
-      {:else}
-        {IS_MAC ? t('cast.perm_warn_mac') : t('cast.firewall_warn')}
-      {/if}
-    </div>
-  {/if}
+    {/if}
+  </MenuBody>
 </div>
 
 <style>

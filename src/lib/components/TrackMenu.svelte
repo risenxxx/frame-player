@@ -9,6 +9,7 @@
   import { openSubsDialog, removeSubtitle } from '$lib/subs.svelte';
   import { formatFps, presetLabel, setSubSpeedHere, subSpeedLabel } from '$lib/tracks.svelte';
   import MenuBack from './MenuBack.svelte';
+  import MenuBody from './MenuBody.svelte';
 
   /// One press of the stepper. Matches mpv's own default sub-delay granularity.
   const DELAY_STEP = 0.1;
@@ -32,120 +33,122 @@
   }: Props = $props();
 </script>
 
-<div class="menu scrollable">
-  <MenuBack />
-  <div class="menu-title">{t(kind === 'audio' ? 'osc.audio' : 'osc.subs')}</div>
-  <!-- Over DLNA the file went across with all its tracks and the choice
-       belongs to the television — its renderer declares no action for
-       audio at all (it has vendor ones for subtitles and 3D, so the
-       absence is a decision, not a gap). The list would otherwise keep
-       showing this player's selection, which is a claim we cannot back:
-       a switch made on the TV's own remote never reaches us. -->
-  {#if !playback.can.trackChoice}
-    <div class="cast-hint">{t('cast.tracks_on_tv')}</div>
-  {/if}
-  {#each kind === 'audio' ? player.audioTracks : player.subTracks as track (track.id)}
-    <!-- The × appears for external subtitle tracks only. An embedded one
-         cannot be removed without rewriting the video file, and mpv's
-         `sub-remove` refuses it too. -->
-    {#if kind === 'sub' && track.external}
-      <div class="queue-row">
-        <button
-          class="menu-item chapter-item"
-          class:sel={track.selected}
-          data-tip={track.label}
-          onclick={() => onSelect('sub', track)}
-        >
-          <span class="chapter-name">{track.label}</span>
-        </button>
-        <button
-          class="queue-remove"
-          data-tip={t('osc.sub_remove')}
-          aria-label={t('osc.sub_remove')}
-          onclick={() => void removeSubtitle(track)}
-        >
-          <svg viewBox="0 0 10 10" aria-hidden="true">
-            <path stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M1.2 1.2l7.6 7.6M8.8 1.2l-7.6 7.6"/>
-          </svg>
-        </button>
-      </div>
-    {:else}
-      <button class="menu-item" class:sel={track.selected} onclick={() => onSelect(kind!, track)}>
-        {track.label}
-      </button>
+<div class="menu">
+  <MenuBody>
+    <MenuBack />
+    <div class="menu-title">{t(kind === 'audio' ? 'osc.audio' : 'osc.subs')}</div>
+    <!-- Over DLNA the file went across with all its tracks and the choice
+         belongs to the television — its renderer declares no action for
+         audio at all (it has vendor ones for subtitles and 3D, so the
+         absence is a decision, not a gap). The list would otherwise keep
+         showing this player's selection, which is a claim we cannot back:
+         a switch made on the TV's own remote never reaches us. -->
+    {#if !playback.can.trackChoice}
+      <div class="cast-hint">{t('cast.tracks_on_tv')}</div>
     {/if}
-  {/each}
-  {#if kind === 'sub'}
-    <button
-      class="menu-item"
-      class:sel={!player.subTracks.some((track) => track.selected)}
-      onclick={() => onSelect('sub', null)}
-    >
-      {t('osc.subs_off')}
-    </button>
-  {/if}
-  <button class="menu-item" onclick={() => onAddFile(kind!)}>
-    {t('osc.add_file')}
-  </button>
-  {#if kind === 'sub'}
-    <button class="menu-item" onclick={() => { close(); void openSubsDialog(); }}>
-      {t('subs.find')}
-    </button>
-  {/if}
-  <div class="menu-sep"></div>
-  <div class="menu-title">{t('osc.delay')}</div>
-  <!-- Stays open on click: a delay is dialled in by repeated nudges while
-       watching the result, not chosen once from a list. -->
-  <div class="delayrow">
-    <button class="speedopt" aria-label="-0.1" onclick={() => onNudgeDelay(kind!, -DELAY_STEP)}>−</button>
-    <span class="delayval">{formatDelay(kind === 'audio' ? player.audioDelay : player.subDelay)}</span>
-    <button class="speedopt" aria-label="+0.1" onclick={() => onNudgeDelay(kind!, DELAY_STEP)}>+</button>
-    <span class="delaysep"></span>
-    <!-- Always rendered, only disabled: the menu is anchored by its bottom
-         edge, so a control appearing here would move the −/+ row the moment the
-         delay leaves zero — right under the cursor that is clicking it. -->
-    <button
-      class="speedopt delayreset"
-      disabled={delayIsZero(kind === 'audio' ? player.audioDelay : player.subDelay)}
-      onclick={() => onResetDelay(kind!)}
-    >
-      {t('osc.delay_reset')}
-    </button>
-  </div>
-  {#if kind === 'sub'}
-    <!-- The manual half of fitting a subtitle to the video's frame rate, for
-         when nobody told us the subtitle's: an external file, an embedded
-         track. A search result that knows its rate asks by itself (see
-         `fpsOffer`). A list rather than pills: three "25 → 23.976" labels
-         do not fit a 256px row, and a ticked list is how this menu already
-         picks one of several. Stays open, like the delay — the choice is
-         judged by watching the next line land. -->
-    <div class="menu-sep"></div>
-    <div class="menu-title">{t('osc.sub_speed')}</div>
-    <button
-      class="menu-item"
-      class:sel={isUnitSpeed(player.subSpeed)}
-      onclick={() => setSubSpeedHere(1)}
-    >
-      {t('osc.sub_speed_off')}
-    </button>
-    {#each SUB_SPEED_PRESETS as preset (presetFactor(preset))}
+    {#each kind === 'audio' ? player.audioTracks : player.subTracks as track (track.id)}
+      <!-- The × appears for external subtitle tracks only. An embedded one
+           cannot be removed without rewriting the video file, and mpv's
+           `sub-remove` refuses it too. -->
+      {#if kind === 'sub' && track.external}
+        <div class="queue-row">
+          <button
+            class="menu-item chapter-item"
+            class:sel={track.selected}
+            data-tip={track.label}
+            onclick={() => onSelect('sub', track)}
+          >
+            <span class="chapter-name">{track.label}</span>
+          </button>
+          <button
+            class="queue-remove"
+            data-tip={t('osc.sub_remove')}
+            aria-label={t('osc.sub_remove')}
+            onclick={() => void removeSubtitle(track)}
+          >
+            <svg viewBox="0 0 10 10" aria-hidden="true">
+              <path stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M1.2 1.2l7.6 7.6M8.8 1.2l-7.6 7.6"/>
+            </svg>
+          </button>
+        </div>
+      {:else}
+        <button class="menu-item" class:sel={track.selected} onclick={() => onSelect(kind!, track)}>
+          {track.label}
+        </button>
+      {/if}
+    {/each}
+    {#if kind === 'sub'}
       <button
         class="menu-item"
-        class:sel={isPreset(player.subSpeed, preset)}
-        data-tip={t('osc.sub_speed_tip', { from: formatFps(preset.from), to: formatFps(preset.to) })}
-        onclick={() => setSubSpeedHere(presetFactor(preset))}
+        class:sel={!player.subTracks.some((track) => track.selected)}
+        onclick={() => onSelect('sub', null)}
       >
-        {presetLabel(preset)}
+        {t('osc.subs_off')}
       </button>
-    {/each}
-    <!-- A factor that is none of the above — fitted from a search result with
-         an unusual pair, or set in mpv.conf — is still shown, or the list
-         would claim nothing is in force. -->
-    {#if !isUnitSpeed(player.subSpeed) && !SUB_SPEED_PRESETS.some((p) => isPreset(player.subSpeed, p))}
-      <div class="menu-item sel">{subSpeedLabel(player.subSpeed)}</div>
     {/if}
-  {/if}
+    <button class="menu-item" onclick={() => onAddFile(kind!)}>
+      {t('osc.add_file')}
+    </button>
+    {#if kind === 'sub'}
+      <button class="menu-item" onclick={() => { close(); void openSubsDialog(); }}>
+        {t('subs.find')}
+      </button>
+    {/if}
+    <div class="menu-sep"></div>
+    <div class="menu-title">{t('osc.delay')}</div>
+    <!-- Stays open on click: a delay is dialled in by repeated nudges while
+         watching the result, not chosen once from a list. -->
+    <div class="delayrow">
+      <button class="speedopt" aria-label="-0.1" onclick={() => onNudgeDelay(kind!, -DELAY_STEP)}>−</button>
+      <span class="delayval">{formatDelay(kind === 'audio' ? player.audioDelay : player.subDelay)}</span>
+      <button class="speedopt" aria-label="+0.1" onclick={() => onNudgeDelay(kind!, DELAY_STEP)}>+</button>
+      <span class="delaysep"></span>
+      <!-- Always rendered, only disabled: the menu is anchored by its bottom
+           edge, so a control appearing here would move the −/+ row the moment the
+           delay leaves zero — right under the cursor that is clicking it. -->
+      <button
+        class="speedopt delayreset"
+        disabled={delayIsZero(kind === 'audio' ? player.audioDelay : player.subDelay)}
+        onclick={() => onResetDelay(kind!)}
+      >
+        {t('osc.delay_reset')}
+      </button>
+    </div>
+    {#if kind === 'sub'}
+      <!-- The manual half of fitting a subtitle to the video's frame rate, for
+           when nobody told us the subtitle's: an external file, an embedded
+           track. A search result that knows its rate asks by itself (see
+           `fpsOffer`). A list rather than pills: three "25 → 23.976" labels
+           do not fit a 256px row, and a ticked list is how this menu already
+           picks one of several. Stays open, like the delay — the choice is
+           judged by watching the next line land. -->
+      <div class="menu-sep"></div>
+      <div class="menu-title">{t('osc.sub_speed')}</div>
+      <button
+        class="menu-item"
+        class:sel={isUnitSpeed(player.subSpeed)}
+        onclick={() => setSubSpeedHere(1)}
+      >
+        {t('osc.sub_speed_off')}
+      </button>
+      {#each SUB_SPEED_PRESETS as preset (presetFactor(preset))}
+        <button
+          class="menu-item"
+          class:sel={isPreset(player.subSpeed, preset)}
+          data-tip={t('osc.sub_speed_tip', { from: formatFps(preset.from), to: formatFps(preset.to) })}
+          onclick={() => setSubSpeedHere(presetFactor(preset))}
+        >
+          {presetLabel(preset)}
+        </button>
+      {/each}
+      <!-- A factor that is none of the above — fitted from a search result with
+           an unusual pair, or set in mpv.conf — is still shown, or the list
+           would claim nothing is in force. -->
+      {#if !isUnitSpeed(player.subSpeed) && !SUB_SPEED_PRESETS.some((p) => isPreset(player.subSpeed, p))}
+        <div class="menu-item sel">{subSpeedLabel(player.subSpeed)}</div>
+      {/if}
+    {/if}
+  </MenuBody>
 </div>
 
 <style>

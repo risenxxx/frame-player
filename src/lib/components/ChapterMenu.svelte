@@ -7,6 +7,7 @@
   import { jumpToChapter, playback } from '$lib/playback.svelte';
   import { chapterTitle, player } from '$lib/player.svelte';
   import MenuBack from './MenuBack.svelte';
+  import MenuBody from './MenuBody.svelte';
 
   interface Props {
     close: () => void;
@@ -27,20 +28,22 @@
   });
 </script>
 
-<div class="menu chapters scrollable" bind:this={el}>
-  <MenuBack />
-  <div class="menu-title">{t('osc.chapters')}</div>
-  {#each player.chapters as chapter (chapter.index)}
-    <button
-      class="menu-item chapter-item"
-      class:sel={chapter.index === playback.chapterIndex}
-      onclick={() => {
-        close();
-        jumpToChapter(chapter);
-      }}
-    >
-      <span class="chapter-name">{chapterTitle(chapter)}</span>
-      <span class="hint">{formatTime(chapter.time)}</span>
-    </button>
-  {/each}
+<div class="menu chapters" bind:this={el}>
+  <MenuBody>
+    <MenuBack />
+    <div class="menu-title">{t('osc.chapters')}</div>
+    {#each player.chapters as chapter (chapter.index)}
+      <button
+        class="menu-item chapter-item"
+        class:sel={chapter.index === playback.chapterIndex}
+        onclick={() => {
+          close();
+          jumpToChapter(chapter);
+        }}
+      >
+        <span class="chapter-name">{chapterTitle(chapter)}</span>
+        <span class="hint">{formatTime(chapter.time)}</span>
+      </button>
+    {/each}
+  </MenuBody>
 </div>

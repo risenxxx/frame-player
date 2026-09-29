@@ -13,6 +13,7 @@
   import { player } from '$lib/player.svelte';
   import { loadPlaylist, playlist } from '$lib/playlist.svelte';
   import MenuBack from './MenuBack.svelte';
+  import MenuBody from './MenuBody.svelte';
 
   interface Props {
     close: () => void;
@@ -107,47 +108,49 @@ function queueRowShift(index: number): number {
 /// one playing is the only row the viewer has a reference point for.
 </script>
 
-<div class="menu chapters queue scrollable" bind:this={el}>
-  <MenuBack />
-  <div class="menu-title">{t('osc.queue')}</div>
-  {#each playlist.entries as entry (entry.index)}
-    <!-- A row and its remove button, not a button inside a button: nested
-         interactive elements are invalid and the inner one stops being
-         reachable. Same shape as the recents card and its × on the start
-         screen. -->
-    <div
-      class="queue-row"
-      class:dragging={dragArmed && dragFrom === entry.index}
-      style="transform: translateY({queueRowShift(entry.index)}px)"
-    >
-      <button
-        class="menu-item chapter-item"
-        class:sel={entry.index === player.playlistPos}
-        onpointerdown={(e) => onQueueDown(e, entry.index)}
-        onpointermove={onQueueMove}
-        onpointerup={(e) => void onQueueUp(e)}
-        onpointercancel={(e) => void onQueueUp(e)}
-        onclick={() => {
-          // A drag ends with a click on the same element; the guard is
-          // the flag the pointer handlers leave behind.
-          if (dragArmed) return;
-          close();
-          openEntry(entry);
-        }}
+<div class="menu chapters queue" bind:this={el}>
+  <MenuBody>
+    <MenuBack />
+    <div class="menu-title">{t('osc.queue')}</div>
+    {#each playlist.entries as entry (entry.index)}
+      <!-- A row and its remove button, not a button inside a button: nested
+           interactive elements are invalid and the inner one stops being
+           reachable. Same shape as the recents card and its × on the start
+           screen. -->
+      <div
+        class="queue-row"
+        class:dragging={dragArmed && dragFrom === entry.index}
+        style="transform: translateY({queueRowShift(entry.index)}px)"
       >
-        <span class="chapter-name">{entry.title}</span>
-      </button>
-      <button
-        class="queue-remove"
-        aria-label={t('osc.queue_remove')}
-        onclick={() => onRemove(entry.index)}
-      >
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          <path stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M1.2 1.2l7.6 7.6M8.8 1.2l-7.6 7.6"/>
-        </svg>
-      </button>
-    </div>
-  {/each}
+        <button
+          class="menu-item chapter-item"
+          class:sel={entry.index === player.playlistPos}
+          onpointerdown={(e) => onQueueDown(e, entry.index)}
+          onpointermove={onQueueMove}
+          onpointerup={(e) => void onQueueUp(e)}
+          onpointercancel={(e) => void onQueueUp(e)}
+          onclick={() => {
+            // A drag ends with a click on the same element; the guard is
+            // the flag the pointer handlers leave behind.
+            if (dragArmed) return;
+            close();
+            openEntry(entry);
+          }}
+        >
+          <span class="chapter-name">{entry.title}</span>
+        </button>
+        <button
+          class="queue-remove"
+          aria-label={t('osc.queue_remove')}
+          onclick={() => onRemove(entry.index)}
+        >
+          <svg viewBox="0 0 10 10" aria-hidden="true">
+            <path stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M1.2 1.2l7.6 7.6M8.8 1.2l-7.6 7.6"/>
+          </svg>
+        </button>
+      </div>
+    {/each}
+  </MenuBody>
 </div>
 
 <style>
