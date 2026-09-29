@@ -38,7 +38,7 @@ enough to know a rule exists, never enough to change the code under it.
 |---|---|
 | `architecture.md` | Stack decisions, the embedding model and the constraint list — mandatory reading before touching mpv interop, seeking, fullscreen or zoom |
 | `ROADMAP.md` | Shipped, planned and considered features; a comment saying "ROADMAP 21" means a numbered item there |
-| `macos.md` | Why stock `--wid` cannot work on macOS, what the patch does, and the platform's own traps |
+| `macos.md` | Why stock `--wid` cannot work on macOS, what the patch does, the CoreAudio crash the second patch is a backport for (and the one that was measured and not shipped), and the platform's own traps |
 | `sdr-color.md` | SDR against QuickTime, measured: the grey-scale and real-frame numbers, why metadata is not the cause, and which option combinations did and did not reproduce it |
 | `casting.md` | Casting to a television: the two transports, what each can carry, the measured limits and the decision rules |
 | `watch-together.md` | A shared timeline over a small relay: why the wire carries state rather than actions, why drift is corrected with speed rather than a seek, and what a room may know about what you are watching |
@@ -345,6 +345,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 - **Validation before finishing any task**: `npm run gates` (0 errors) and, if Rust/config changed, `cargo check` (isolated target dir if dev is running). If anything under `services/` or `shared/sync-protocol.txt` changed, `go vet frameplayer/... && go test -race frameplayer/...` from the repository root — the Node gates do not reach the Go services, and the protocol contract is checked from both sides. Run sidecar smoke tests when touching step_engine/thumb_service.
 - **The application is GPL-3.0-or-later, and that is the conclusion the LGPL work was for.** Keeping every bundled library strictly LGPL bought exactly one thing: the freedom to make this player closed or paid. → [build-and-release](docs/rules/build-and-release.md)
 - **Licensing is a build output, not a document somebody remembers to update.** The player links libmpv, FFmpeg, libplacebo, GLib, FriBidi, Graphite2 and the gettext runtime — all LGPL-2.1 — which a proprietary application may do … → [build-and-release](docs/rules/build-and-release.md)
+- **The mpv patches are a set, and the set is part of what the macOS libraries are.** Every `patches/mpv-<version>-*.patch` is applied, in sorted order, and hashed into the name of the published set; the unpacked tree keeps a stamp so a patch added later is never skipped; each one is described in `licenses/manifest.json` or the notices refuse to render; a backport's own header says when to delete it. → [build-and-release](docs/rules/build-and-release.md)
 - **Releases**: `npm run set-version 0.21.0` (or `patch`/`minor`/`major`), then push to main. → [build-and-release](docs/rules/build-and-release.md)
 - **Icon**: master is `src-tauri/icons/icon-master.svg` (viewfinder glyph, indigo #6366f1, ~3% inner margin, no tile); regenerate via resvg + `npm run tauri icon`. Keep the title-bar inline SVG in +page.svelte visually in sync (same glyph, rounded triangle).
 - **Accent colors**: indigo `#6366f1` (fills) / `#818cf8` (hover/active/focus); white text on accent surfaces. → [css](docs/rules/css.md)

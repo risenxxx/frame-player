@@ -14,7 +14,7 @@ stays here when its value is saving the next investigation.
 | Document | What it covers |
 |---|---|
 | [architecture.md](architecture.md) | The stack: Tauri 2 + in-process libmpv, video behind a transparent webview, and the constraints that follow from it. Read before touching mpv interop, seeking, fullscreen or zoom. |
-| [macos.md](macos.md) | Why stock mpv cannot embed on macOS, what the patch in [`patches/`](../patches/) changes, and the platform's own traps — window chrome, permissions, bundling. |
+| [macos.md](macos.md) | Why stock mpv cannot embed on macOS, what the patches in [`patches/`](../patches/) change, the CoreAudio crash one of them is a backport for, and the platform's own traps — window chrome, permissions, bundling. |
 | [casting.md](casting.md) | Playing on a television: Google Cast and DLNA, what each transport can carry, and how the player decides between them. |
 | [torrents.md](torrents.md) | Streaming from a swarm: piece priority driven by playback, what a partially downloaded file can and cannot be used for, and casting one to a TV. |
 | [watch-together.md](watch-together.md) | Two or more players holding one timeline: why the wire carries state rather than actions, why drift is corrected with speed rather than a seek, and what a room may know about what you are watching. |

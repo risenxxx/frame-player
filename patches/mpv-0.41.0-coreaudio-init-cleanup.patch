@@ -1,0 +1,76 @@
+Backport of mpv-player/mpv#18383, squashed: "ao_coreaudio: cleanup ao on init
+failure" (af067b5ea8) and "ao_coreaudio: register hotplug after succesful
+audiounit init" (c5d391adba). In mpv's master since 2026-09-01, in no release
+yet. Delete this file with the first mpv release that carries the change.
+
+mpv 0.41.0 registers the CoreAudio device listener, with the ao as its context,
+before the AudioUnit is set up. An init that fails after that point returns
+without removing the listener, and since the driver never reported itself
+initialized, nothing calls its uninit either. The ao is freed, the listener
+stays, and the next change of the device list calls hotplug_cb on freed memory:
+EXC_BAD_ACCESS at 0x0 in mp_msg_va, on the HAL's notification queue.
+
+--- a/audio/out/ao_coreaudio.c
++++ b/audio/out/ao_coreaudio.c
+@@ -141,6 +141,7 @@
+ static void reinit_latency(struct ao *ao);
+ static bool register_hotplug_cb(struct ao *ao);
+ static void unregister_hotplug_cb(struct ao *ao);
++static void uninit(struct ao *ao);
+ 
+ static bool reinit_device(struct ao *ao) {
+     struct priv *p = ao->priv;
+@@ -167,9 +168,6 @@
+     if (!reinit_device(ao))
+         goto coreaudio_error;
+ 
+-    if (!register_hotplug_cb(ao))
+-        goto coreaudio_error;
+-
+     if (p->change_physical_format)
+         init_physical_format(ao);
+ 
+@@ -187,6 +185,9 @@
+     if (!r)
+         goto coreaudio_error;
+ 
++    if (!register_hotplug_cb(ao))
++        goto coreaudio_error;
++
+     reinit_latency(ao);
+     ao->device_buffer = av_rescale(p->hw_latency_ns, ao->samplerate, 1000000000) * 2;
+ 
+@@ -196,6 +197,7 @@
+     return CONTROL_OK;
+ 
+ coreaudio_error:
++    uninit(ao);
+     return CONTROL_ERROR;
+ }
+ 
+@@ -436,14 +438,18 @@
+ {
+     struct priv *p = ao->priv;
+ 
+-    dispatch_sync(p->queue, ^{
+-        cancel_and_release_idle_work(p);
+-    });
+-    dispatch_release(p->queue);
++    if (p->queue) {
++        dispatch_sync(p->queue, ^{
++            cancel_and_release_idle_work(p);
++        });
++        dispatch_release(p->queue);
++    }
+ 
+-    AudioOutputUnitStop(p->audio_unit);
+-    AudioUnitUninitialize(p->audio_unit);
+-    AudioComponentInstanceDispose(p->audio_unit);
++    if (p->audio_unit) {
++        AudioOutputUnitStop(p->audio_unit);
++        AudioUnitUninitialize(p->audio_unit);
++        AudioComponentInstanceDispose(p->audio_unit);
++    }
+ 
+     if (p->original_asbd.mFormatID) {
+         OSStatus err = CA_SET(p->original_asbd_stream,

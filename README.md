@@ -382,7 +382,8 @@ npm run tauri build  # NSIS installer
 
 macOS needs a **patched libmpv**: mpv's macOS backend does not implement `--wid`
 at all, so stock libmpv opens a window of its own instead of rendering into
-ours. The patch is in [patches/](patches/) (+162/−14 across four files).
+ours. The patch is in [patches/](patches/) (+162/−14 across four files), beside
+a backport of an upstream fix that no mpv release carries yet.
 
 The libraries are prebuilt and fetched, the same way Windows fetches its SDKs —
 no Homebrew and no compiler needed to build the app itself:
@@ -465,7 +466,7 @@ go run ./services/relay/cmd/probe -room ABC123 -hold 20s     # hold the room, on
 | `services/tmdb/` | The metadata proxy: holds the TMDB key, caches responses and posters |
 | `src-tauri/src/macos_*.rs` | Native window chrome and menu bar on macOS |
 | `src-tauri/lua/zoompan.lua` | Atomic zoom+pan applied on mpv's core thread |
-| `patches/` | The mpv `--wid` embedding patch for macOS |
+| `patches/` | What the macOS libmpv is built with on top of upstream: the `--wid` embedding patch, and backports of fixes not released yet |
 | `scripts/` | SDK fetching, the macOS libmpv build, dylib bundling, DMG layout |
 | `shared/` | Contracts two languages have to keep, read by both test suites |
 | `docs/` | Design notes: why the architecture, the transports and the shipping story look like this |
@@ -517,9 +518,10 @@ beside the executable (Windows).
 
 Their sources: FFmpeg and mpv upstream at the versions pinned in
 [scripts/build-macos-libs.sh](scripts/build-macos-libs.sh) and
-[scripts/fetch-libs.ps1](scripts/fetch-libs.ps1), plus the one modification this
-project makes — the macOS `--wid` embedding patch in [patches/](patches/), which
-is why libmpv is built here rather than taken as a binary. Neither build enables
+[scripts/fetch-libs.ps1](scripts/fetch-libs.ps1), plus the modifications this
+project makes to mpv on macOS, all of them in [patches/](patches/) — the `--wid`
+embedding patch, which is why libmpv is built here rather than taken as a
+binary, and a backport of an upstream fix. Neither build enables
 the GPL parts: no x264, no x265, no librubberband, and `-Dgpl=false` for mpv.
 [scripts/check-macos-licenses.sh](scripts/check-macos-licenses.sh) is what
 enforces that, and it runs before anything is published.

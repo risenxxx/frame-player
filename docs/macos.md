@@ -67,6 +67,86 @@ HDR tone mapping all behave as they do in mpv proper. What it costs: building
 libmpv from source for macOS releases, and re-applying the patch when mpv is
 updated.
 
+## The CoreAudio backport
+
+Since libmpv is built here anyway, a fix that upstream has merged and not yet
+released can be carried as a second patch. There is one:
+`patches/mpv-<version>-coreaudio-init-cleanup.patch`, which is
+[mpv-player/mpv#18383](https://github.com/mpv-player/mpv/pull/18383) squashed.
+It is to be deleted with the first mpv release that contains it.
+
+**What it fixes.** The player closing by itself, some minutes into a session,
+with nothing on screen to connect it to a cause. The crash report reads
+`EXC_BAD_ACCESS` at `0x0` in `mp_msg_va`, called from `hotplug_cb`, on a CoreAudio
+notification queue, under `HALSystem::ObjectsPublishedAndDied` — an audio device
+appeared or went away. Headphones connecting is enough.
+
+**The mechanism.** mpv 0.41.0 registers its device listener, with the audio
+output object as the listener's context, *before* it sets up the AudioUnit. If
+anything after that point fails, `init` returns an error without removing the
+listener; and because the driver never reported itself initialized, nothing
+calls its `uninit` either. The object is freed and the listener stays. The next
+change of the device list calls it on freed memory, which the system allocator
+has zeroed — hence the address. The upstream fix registers the listener last and
+cleans up on every failed `init`.
+
+**Why it is a macOS 27 crash.** It needs the CoreAudio output to fail to
+initialize, after which mpv carries on with the AVFoundation one and playback
+sounds normal. On macOS 26 it initializes. On macOS 27 upstream reports that it
+does not, on any device: setting the channel map on the AudioUnit returns `-50`,
+which `init_audiounit` treats as fatal
+([mpv-player/mpv#18384](https://github.com/mpv-player/mpv/issues/18384), open
+when this was written). That was not reproduced here — there was no macOS 27 to
+run it on — but the report that started this came from 27.2 and agrees with it:
+its thread list holds AVFoundation's audio threads
+(`com.apple.coremedia.audioqueue.source`, `AQConverterThread`) and no
+`com.apple.audio.IOThread.client`, which a report from a machine where CoreAudio
+came up does have. So on that system every session is one device change away
+from the crash, and the backport is what stands in between. It does not bring
+the CoreAudio output back; until upstream settles the other issue, macOS 27
+plays through AVFoundation.
+
+**Reproduced, not inferred.** A build of 0.41.0 with the `init` failure injected,
+driven by a harness that creates and destroys *private* aggregate devices — which
+makes the system send device-list notifications to that process and to no other —
+dies under AddressSanitizer with the stack of the report, frame for frame down
+to `HALSystem::AudioObjectsPublishedAndDied`, freed by `ao_init`. The same
+harness against the patched build runs clean.
+
+**What was considered and not shipped.** The same signature could in principle
+come from a second direction: a notification already on its way when the
+listener is removed, arriving after the object is freed. At least one report of
+this crash from another project embedding libmpv describes it that way. A patch
+closing it was written — a
+registry of live listener contexts, consulted by each listener before it touches
+its pointer, across all three places mpv hands CoreAudio one — and then measured
+against, on macOS 26.5, with AddressSanitizer:
+
+| Load | Listener calls | Found |
+|---|---|---|
+| The device list re-read 12 793 times while 2 406 devices came and went | 9 540 | nothing |
+| The audio output destroyed and recreated 1 446 times, same churn | 2 997 | nothing |
+| The same two with 3 ms added inside the listener, before its first use of the pointer | 7 528 and 2 154 | nothing |
+| The registry build counting calls that arrived for a context already removed | 9 355 | 0 such calls |
+
+So on that system removing a function-pointer listener is a barrier: nothing is
+delivered afterwards, and the slowed listener suggests the removal waits for one
+that is running — the device-list reads fell from 12 793 to 1 119 in a comparable
+run, which is what waiting on the delivery looks like. The patch stays out: it
+would be a hundred and thirty lines of our own in a third party's audio code,
+holding a lock inside system callbacks, against a fault that could not be
+produced. **This was not measured on macOS 27**, whose notification path differs
+in the report (`HALC_ProxyNotifications`). If the signature comes back from a
+build that has the backport, that is the first thing to measure, and the
+harness is the way: private aggregate devices for the notifications, a sanitizer
+build for the verdict.
+
+**The build applies every patch written for the pinned version**, in the order
+the shell sorts them, and keeps a stamp of the set in the unpacked tree. The
+tree used to be patched only when it was unpacked, so a machine that had built
+before would have skipped a newly added patch in silence and produced the old
+library under the new name.
+
 ## Library loading
 
 The wrapper opens `libmpv.dylib` by bare leaf name, so libmpv has to sit next to

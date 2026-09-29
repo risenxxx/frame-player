@@ -14,9 +14,10 @@
 // here as well rather than only sitting beside the executable: the dialog that
 // shows this file is then the one place that answers every license question.
 //
-// Rendering reads only committed inputs — the manifest, the texts, and the two
-// dependency snapshots — so `--check` runs anywhere, including the Node-only CI
-// job. Talking to cargo and npm is `--refresh`, which a human runs.
+// Rendering reads only committed inputs — the manifest, the texts, the two
+// dependency snapshots and the patches — so `--check` runs anywhere, including
+// the Node-only CI job. Talking to cargo and npm is `--refresh`, which a human
+// runs.
 //
 // The one thing rendering *does* look at, when it happens to be present, is the
 // macOS library set on disk: every dylib there must be covered by the manifest.
@@ -89,6 +90,60 @@ function verifyClosure(projects) {
     process.exit(1);
   }
   return files.length;
+}
+
+/**
+ * Every patch in `patches/` must be described by the manifest, and every patch
+ * the manifest describes must be there.
+ *
+ * The notices said that every component is unmodified upstream code, and that
+ * stopped being true the day libmpv was first built with a patch of our own.
+ * Nothing noticed, because the sentence was a string in this file and the patch
+ * was a file in another directory. The LGPL lets a library be modified and asks
+ * that the modification be stated, so the statement is rendered from the
+ * directory: a patch added without a description fails the gate rather than
+ * shipping under a sentence that denies it.
+ *
+ * Unlike the closure check this one always runs — the patches are committed,
+ * so there is no machine on which they are absent.
+ */
+function verifyPatches(projects) {
+  const patchDir = join(root, 'patches');
+  const onDisk = existsSync(patchDir)
+    ? readdirSync(patchDir).filter((f) => f.endsWith('.patch'))
+    : [];
+  const described = projects.flatMap((p) => (p.patches?.list ?? []).map((x) => x.file));
+
+  const undescribed = onDisk.filter((f) => !described.includes(f));
+  const absent = described.filter((f) => !onDisk.includes(f));
+  const twice = described.filter((f, i) => described.indexOf(f) !== i);
+  if (undescribed.length || absent.length || twice.length) {
+    console.error('\nlicenses/manifest.json and patches/ disagree:\n');
+    for (const f of undescribed) console.error(`  ${f} — in patches/, described nowhere`);
+    for (const f of absent) console.error(`  ${f} — described, not in patches/`);
+    for (const f of twice) console.error(`  ${f} — described more than once`);
+    console.error(
+      '\nA patch is a change to somebody else\'s code, and the notices have to say so.\n' +
+        'Describe each one under `patches.list` of the project it changes, and take\n' +
+        'the entry out again when the patch goes.\n',
+    );
+    process.exit(1);
+  }
+  return onDisk.length;
+}
+
+/** The files a patch changes, in the order it changes them. */
+function patchedFiles(file) {
+  const files = [];
+  for (const line of read(join(root, 'patches', file)).split('\n')) {
+    const m = /^\+\+\+ b\/(\S+)/.exec(line);
+    if (m && !files.includes(m[1])) files.push(m[1]);
+  }
+  if (!files.length) {
+    console.error(`patches/${file} names no file it changes — is it a patch?`);
+    process.exit(1);
+  }
+  return files;
 }
 
 function refresh() {
@@ -170,6 +225,9 @@ function render() {
 
   const count = verifyClosure(projects);
   if (count !== null) console.log(`closure: ${count} shipped libraries, all covered`);
+  const patchCount = verifyPatches(projects);
+  console.log(`patches: ${patchCount}, all described`);
+  const patched = projects.filter((p) => p.patches?.list?.length);
 
   const text = (name) => {
     const p = join(dir, 'text', `${name}.txt`);
@@ -198,12 +256,36 @@ function render() {
   w('live in `lib/` beside the application (inside `Contents/Resources/lib` on');
   w('macOS), and the application loads whatever is there.');
   w();
-  w('**Source code.** Every component below is unmodified upstream code, and the');
+  // The first sentence is conditional rather than reworded once, so that it goes
+  // back to the unqualified claim by itself the day the last patch is deleted.
+  w(
+    patched.length
+      ? `**Source code.** Every component below is unmodified upstream code except ${patched
+          .map((p) => p.name)
+          .join(', ')}, and the`
+      : '**Source code.** Every component below is unmodified upstream code, and the',
+  );
   w('"Source" link for each goes to the project that publishes it. The scripts that');
   w('fetch and build them are part of Frame Player\'s own repository —');
   w('`scripts/build-macos-libs.sh` and `scripts/fetch-libs.ps1` — and record the exact');
   w('versions and configure flags used.');
   w();
+  for (const p of patched) {
+    w(`**Modifications to ${p.name}.** ${p.name} is built from its upstream release with the`);
+    w('changes below applied, in this order. They are published as patches in the');
+    w('`patches/` directory of Frame Player\'s repository,');
+    w('<https://github.com/risenxxx/frame-player>, and the build script applies every');
+    w(`patch found there. ${p.patches.applies}`);
+    w();
+    // In the order the build applies them: the shell's sort of the same names.
+    const list = [...p.patches.list].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+    for (const x of list) {
+      w(`- \`${x.file}\`, changed ${x.date}. ${x.summary} Files changed: ${patchedFiles(x.file)
+        .map((f) => `\`${f}\``)
+        .join(', ')}.`);
+    }
+    w();
+  }
   w('No component is licensed under the GNU General Public License. FFmpeg and mpv');
   w('are built with `--disable-gpl` and `-Dgpl=false` respectively, and');
   w('`scripts/check-macos-licenses.sh` refuses to publish a library set in which a');

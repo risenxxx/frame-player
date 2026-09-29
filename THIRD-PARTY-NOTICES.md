@@ -13,11 +13,20 @@ into the executable, so you may replace any of them with your own build: they
 live in `lib/` beside the application (inside `Contents/Resources/lib` on
 macOS), and the application loads whatever is there.
 
-**Source code.** Every component below is unmodified upstream code, and the
+**Source code.** Every component below is unmodified upstream code except mpv, and the
 "Source" link for each goes to the project that publishes it. The scripts that
 fetch and build them are part of Frame Player's own repository —
 `scripts/build-macos-libs.sh` and `scripts/fetch-libs.ps1` — and record the exact
 versions and configure flags used.
+
+**Modifications to mpv.** mpv is built from its upstream release with the
+changes below applied, in this order. They are published as patches in the
+`patches/` directory of Frame Player's repository,
+<https://github.com/risenxxx/frame-player>, and the build script applies every
+patch found there. This concerns the macOS build only: on Windows mpv is upstream's own build, unmodified.
+
+- `mpv-0.41.0-coreaudio-init-cleanup.patch`, changed 2026-09-29. A fix that mpv has merged and not yet released (mpv-player/mpv#18383). The CoreAudio device listener is registered only once the audio output has initialized, and an initialization that fails releases what it had set up. Files changed: `audio/out/ao_coreaudio.c`.
+- `mpv-0.41.0-macos-wid-embedding.patch`, changed 2026-08-05. The --wid option on macOS, which upstream accepts and ignores there: mpv renders into a view of the host application's window instead of opening a window of its own. Files changed: `DOCS/man/options.rst`, `video/out/mac/common.swift`, `video/out/mac_common.swift`, `video/out/vulkan/context_mac.m`.
 
 No component is licensed under the GNU General Public License. FFmpeg and mpv
 are built with `--disable-gpl` and `-Dgpl=false` respectively, and
@@ -88,7 +97,7 @@ GPL-only component appears.
 
 Notes on individual components:
 
-- **mpv** — Built with -Dgpl=false, which is what makes it LGPL rather than GPL-2.0-or-later. On macOS by scripts/build-macos-libs.sh; on Windows this is upstream's own LGPL build, whose embedded configuration string records the same flag.
+- **mpv** — Built with -Dgpl=false, which is what makes it LGPL rather than GPL-2.0-or-later. On macOS by scripts/build-macos-libs.sh, with the modifications listed above; on Windows this is upstream's own LGPL build, whose embedded configuration string records the same flag.
 - **FFmpeg** — Built with --disable-gpl --disable-version3 --disable-nonfree, so no GPL-only component (libx264, libx265, libxvid, librubberband, libvidstab) is present. scripts/check-macos-licenses.sh enforces that before any set is published.
 - **FreeType** — Dual-licensed FTL or GPL-2.0-or-later; the FreeType License is the option taken.
 - **GNU FriBidi** — The project is distributed as GPL-2.0-or-later AND LGPL-2.1-or-later; the GPL half covers the command-line tool, which is not shipped. The library is LGPL.

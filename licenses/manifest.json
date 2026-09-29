@@ -14,7 +14,13 @@
     "list means the project ships no file of its own: it is statically inside the prebuilt",
     "Windows libmpv-2.dll. Those entries cannot be verified against a closure, so they are",
     "over-inclusive by design — listing a component the current upstream build happens not to",
-    "carry costs nothing, while omitting one that it does carry is the actual violation."
+    "carry costs nothing, while omitting one that it does carry is the actual violation.",
+    "",
+    "`patches` is what we changed in a project's own code. The LGPL allows that and asks that",
+    "it be stated, so every file in patches/ has to be described in one `list` here, and the",
+    "generator refuses to render when one is not — or when one described here is gone. `date`",
+    "is when the change was made, `summary` is what a reader of the notices is told it does,",
+    "and the files it touches are read out of the patch itself rather than written down."
   ],
   "projects": [
     {
@@ -25,7 +31,22 @@
       "url": "https://mpv.io/",
       "source": "https://github.com/mpv-player/mpv",
       "libs": ["libmpv", "libmpv-2"],
-      "note": "Built with -Dgpl=false, which is what makes it LGPL rather than GPL-2.0-or-later. On macOS by scripts/build-macos-libs.sh; on Windows this is upstream's own LGPL build, whose embedded configuration string records the same flag."
+      "note": "Built with -Dgpl=false, which is what makes it LGPL rather than GPL-2.0-or-later. On macOS by scripts/build-macos-libs.sh, with the modifications listed above; on Windows this is upstream's own LGPL build, whose embedded configuration string records the same flag.",
+      "patches": {
+        "applies": "This concerns the macOS build only: on Windows mpv is upstream's own build, unmodified.",
+        "list": [
+          {
+            "file": "mpv-0.41.0-coreaudio-init-cleanup.patch",
+            "date": "2026-09-29",
+            "summary": "A fix that mpv has merged and not yet released (mpv-player/mpv#18383). The CoreAudio device listener is registered only once the audio output has initialized, and an initialization that fails releases what it had set up."
+          },
+          {
+            "file": "mpv-0.41.0-macos-wid-embedding.patch",
+            "date": "2026-08-05",
+            "summary": "The --wid option on macOS, which upstream accepts and ignores there: mpv renders into a view of the host application's window instead of opening a window of its own."
+          }
+        ]
+      }
     },
     {
       "id": "ffmpeg",

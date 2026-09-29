@@ -40,7 +40,16 @@ WRAPPER_VERSION="v0.1.1"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 lib_dir="$repo_root/src-tauri/lib"
-patch_file="$repo_root/patches/mpv-$MPV_VERSION-macos-wid-embedding.patch"
+# Every patch written for this mpv version, in the order the shell sorts them —
+# the same glob, and therefore the same order, `macos-libs-key.sh` hashes. A
+# list of names here instead would be a second place to forget: a patch added
+# to the directory and not to the list changes the name of the published set
+# and nothing inside it.
+mpv_patches=("$repo_root/patches/mpv-$MPV_VERSION-"*.patch)
+if [ ! -f "${mpv_patches[0]}" ]; then
+  echo "FATAL: no patches/mpv-$MPV_VERSION-*.patch — a version bump has to carry its patches along" >&2
+  exit 1
+fi
 work="${TMPDIR:-/tmp}/frameplayer-lgpl-$FFMPEG_VERSION-$MPV_VERSION"
 # FFmpeg is installed into a prefix of its own rather than over Homebrew's:
 # leaving the machine's own ffmpeg alone means this script is safe to run on a
@@ -114,12 +123,27 @@ esac
 # ---------------------------------------------------------------------------
 echo "==> mpv $MPV_VERSION (patched, -Dgpl=false)"
 cd "$work"
+# The tree is patched when it is unpacked and kept between runs, so a tree left
+# by an earlier run carries the patches of *that* run. Without the stamp a new
+# patch was skipped on any machine that had built before, in silence: the build
+# succeeds and the library is the old one.
+patch_stamp="$(cat "${mpv_patches[@]}" | shasum -a 256 | cut -c1-12)"
+if [ -d "mpv-$MPV_VERSION" ] &&
+   [ "$(cat "mpv-$MPV_VERSION/.patch-stamp" 2>/dev/null || true)" != "$patch_stamp" ]; then
+  echo "==> The patch set changed, unpacking a clean tree"
+  rm -rf "mpv-$MPV_VERSION"
+fi
 if [ ! -d "mpv-$MPV_VERSION" ]; then
   curl -sSL -o "mpv-$MPV_VERSION.tar.gz" \
     "https://github.com/mpv-player/mpv/archive/refs/tags/v$MPV_VERSION.tar.gz"
   tar xzf "mpv-$MPV_VERSION.tar.gz"
-  echo "==> Applying $(basename "$patch_file")"
-  ( cd "mpv-$MPV_VERSION" && patch -p1 < "$patch_file" )
+  for patch_file in "${mpv_patches[@]}"; do
+    echo "==> Applying $(basename "$patch_file")"
+    ( cd "mpv-$MPV_VERSION" && patch -p1 < "$patch_file" )
+  done
+  # Last, so that a tree whose patching was interrupted is not taken for a
+  # finished one.
+  echo "$patch_stamp" > "mpv-$MPV_VERSION/.patch-stamp"
 fi
 cd "mpv-$MPV_VERSION"
 if [ ! -d build ]; then
