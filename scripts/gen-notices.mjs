@@ -193,7 +193,7 @@ function refresh() {
     .map((name) => {
       const p = join(root, 'node_modules', name, 'package.json');
       if (!existsSync(p)) {
-        console.error(`node_modules/${name} is not installed — run npm install first`);
+        console.error(`node_modules/${name} is not installed — run bun install first`);
         process.exit(1);
       }
       const m = readJson(p);
@@ -454,7 +454,7 @@ if (argv.includes('--check')) {
   if (current !== rendered) {
     console.error(
       `\nTHIRD-PARTY-NOTICES.md is stale (committed ${digest(current)}, ` +
-        `rendered ${digest(rendered)}).\nRun: npm run notices\n`,
+        `rendered ${digest(rendered)}).\nRun: bun run notices\n`,
     );
     process.exit(1);
   }

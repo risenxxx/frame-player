@@ -345,6 +345,181 @@ pub fn watch_scroll_phase<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     };
 }
 
+// ---- Pinch to resize -------------------------------------------------------
+//
+// What a trackpad pinch does is decided here and nowhere else, because the web
+// view cannot be given the choice. Measured on a bare WKWebView and then with
+// the player's own settings (wry leaves `allowsMagnification` off): for every
+// `NSEventTypeMagnify` the page gets a Safari `gesturechange` *and* a `wheel`
+// with `ctrlKey` whose `deltaY` is −100 × magnification — the ctrl+wheel the
+// zoom already reads — and the modifiers do not survive the trip: with ⌥ held,
+// every one of 69 native events carried it and none of the 222 wheel events on
+// the page did. A local monitor returning nil keeps both from the page; the
+// rotate events that ride along with a pinch still reach it, as a
+// `gesturechange` with a scale of 1 and no wheel, which nothing reads.
+//
+// So the monitor is the switch. The frontend says what a pinch means right now
+// (`set_pinch_mode`: the setting, and whether the window is the picture's — not
+// fullscreen, not maximized, not the mini player, nothing filling the window
+// that a resize around the center would draw twice); ⌥ is read off the event;
+// and the decision is taken once, at `Began`, for the whole gesture. Passed
+// through, the gesture is the zoom it always was.
+//
+// The frame is `window_shape::pinch_frame` of the start frame and the running
+// scale, set in the same main-thread turn the event arrived in — a round trip
+// through the web view for each of 120 events a second is the lag IINA does
+// not have. The bars go away for the length of it (`say_resizing`), the same
+// as for an edge being dragged and for the same reason.
+
+/// The frontend's last word on what a pinch does: the window's size, or
+/// nothing of ours (the gesture goes to the web view, which zooms the picture).
+static PINCH_RESIZES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// How far from the edges of the screen's visible area a pinch stops, in
+/// points — the frontend's `SCREEN_PADDING`, for the same reason (a window
+/// flush with the edge looks cropped) and for one more: a window taken to the
+/// visible area's largest frame of its shape is *zoomed* as far as AppKit is
+/// concerned (`isZoomed`, which tao reports as maximized), and the shell then
+/// refuses to drag it. Found by pinching to the limit: the next pinch zoomed the
+/// picture and the window would not move.
+const PINCH_MARGIN: f64 = 24.0;
+
+/// The gesture under way, decided at its first event. `Theirs` is remembered
+/// so that a modifier let go mid-gesture does not turn a zoom into a resize.
+#[derive(Clone, Copy)]
+enum Pinch {
+    Theirs,
+    Ours {
+        /// The frame the gesture began with; every step is scaled from it.
+        start: NSRect,
+        /// The product of `1 + magnification` over the events so far.
+        scale: f64,
+        /// The window has moved: the bars are away and a glide was superseded.
+        moved: bool,
+    },
+}
+
+static PINCH: std::sync::Mutex<Option<Pinch>> = std::sync::Mutex::new(None);
+
+/// What a pinch means from now on. Any thread.
+pub fn set_pinch_mode(resize: bool) {
+    PINCH_RESIZES.store(resize, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// One magnify event of a gesture that is ours: scale the window about the
+/// center it started with. Main thread only.
+fn pinch_step(window: &tauri::WebviewWindow, pinch: &mut Pinch, magnification: f64, ended: bool) {
+    use crate::window_shape::{pinch_frame, say_resizing, supersede_glide, Frame};
+
+    let Pinch::Ours { start, scale, moved } = pinch else {
+        return;
+    };
+    if magnification.is_finite() {
+        *scale *= 1.0 + magnification;
+    }
+    if let Some(ns) = ns_window(window) {
+        let rect = |r: NSRect| Frame {
+            x: r.origin.x,
+            y: r.origin.y,
+            w: r.size.width,
+            h: r.size.height,
+        };
+        // The screen the window is mostly on, and its area short of the menu
+        // bar, the Dock and the margin — in the coordinates the frame is in.
+        let area = ns
+            .screen()
+            .or_else(|| MainThreadMarker::new().and_then(objc2_app_kit::NSScreen::mainScreen))
+            .map(|s| rect(s.visibleFrame()))
+            .filter(|a| a.w > 2.0 * PINCH_MARGIN && a.h > 2.0 * PINCH_MARGIN)
+            .map(|a| Frame {
+                x: a.x + PINCH_MARGIN,
+                y: a.y + PINCH_MARGIN,
+                w: a.w - 2.0 * PINCH_MARGIN,
+                h: a.h - 2.0 * PINCH_MARGIN,
+            });
+        if let Some(area) = area {
+            let min = ns.minSize();
+            let pinched = pinch_frame(rect(*start), *scale, (min.width, min.height), area);
+            // What the window took, not what was asked: see `Pinched::scale`.
+            *scale = pinched.scale;
+            let to = pinched.frame;
+            let cur = rect(ns.frame());
+            // Whole points against whole points; the window's own frame is one
+            // already, and a frame it is already at is not sent (see
+            // `pinch_frame`).
+            if to != cur {
+                if !*moved {
+                    *moved = true;
+                    supersede_glide();
+                    say_resizing(true);
+                }
+                ns.setFrame_display(
+                    NSRect::new(NSPoint::new(to.x, to.y), NSSize::new(to.w, to.h)),
+                    true,
+                );
+            }
+        }
+    }
+    if ended && *moved {
+        say_resizing(false);
+    }
+}
+
+/// Watch the trackpad for a pinch, and take it when it is ours. Main thread.
+/// Not generic over the runtime like the scroll monitor: this one reaches the
+/// window itself, and `ns_window` is written for the one runtime there is.
+pub fn watch_pinch(app: &tauri::AppHandle) {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags, NSEventPhase};
+    use std::sync::atomic::Ordering;
+    use tauri::Manager;
+
+    let app = app.clone();
+    let handler = RcBlock::new(move |event: core::ptr::NonNull<NSEvent>| -> *mut NSEvent {
+        let e = unsafe { event.as_ref() };
+        let phase = e.phase();
+        let began = phase.contains(NSEventPhase::Began);
+        let ended = phase.contains(NSEventPhase::Ended) || phase.contains(NSEventPhase::Cancelled);
+        let mut pinch = PINCH.lock().unwrap_or_else(|e| e.into_inner());
+        // Decided at the first event of a gesture — `Began`, or whatever
+        // arrives first if that one was missed — and held to its end.
+        if began || pinch.is_none() {
+            let alt = e.modifierFlags().contains(NSEventModifierFlags::Option);
+            // Ours only with a window to scale; without one the gesture is
+            // the web view's, as it is with ⌥ or with the frontend saying so.
+            let start = (PINCH_RESIZES.load(Ordering::Relaxed) && !alt)
+                .then(|| app.get_webview_window("main"))
+                .flatten()
+                .and_then(|win| ns_window(&win))
+                .map(|ns| ns.frame());
+            *pinch = Some(match start {
+                Some(start) => Pinch::Ours { start, scale: 1.0, moved: false },
+                None => Pinch::Theirs,
+            });
+        }
+        let ours = matches!(*pinch, Some(Pinch::Ours { .. }));
+        if ours {
+            if let (Some(p), Some(win)) = (pinch.as_mut(), app.get_webview_window("main")) {
+                pinch_step(&win, p, e.magnification(), ended);
+            }
+        }
+        if ended {
+            *pinch = None;
+        }
+        if ours {
+            // Eaten: the web view never sees it, so nothing zooms.
+            std::ptr::null_mut()
+        } else {
+            event.as_ptr()
+        }
+    });
+
+    // For the life of the process, like the scroll monitor above.
+    let _ = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::Magnify, &handler)
+    };
+}
+
 /// The frontend's last instruction to `set_buttons_visible`, i.e. whether the
 /// UI is meant to be on screen at all. Kept because AppKit's own `isHidden` is
 /// not a record of that: it shows the buttons itself in fullscreen, so anything

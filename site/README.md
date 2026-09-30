@@ -7,11 +7,11 @@ plus 2.3 KB of JavaScript for the theme switch, the header and the scene
 animations.
 
 ```bash
-npm install
-npm run dev        # http://localhost:4321
-npm run build      # → dist/
-npm run typecheck  # astro check
-npm run og         # re-render public/og.png and the touch icon (needs Chrome)
+bun install
+bun run dev        # http://localhost:4321
+bun run build      # → dist/
+bun run typecheck  # astro check
+bun run og         # re-render public/og.png and the touch icon (needs Chrome)
 ```
 
 Deployment is [`.github/workflows/site.yml`](../.github/workflows/site.yml):
@@ -25,7 +25,7 @@ gets its own preview address. It needs the repository secrets
 current installer. They are what goes into catalog listings, articles and
 anything else that is not rebuilt with the site — and what the page's own
 buttons link to, so a link copied off them lasts too (except under
-`npm run dev`, which does not serve `_redirects`). The files carry the version in
+`bun run dev`, which does not serve `_redirects`). The files carry the version in
 their names and old versions are pruned from the bucket, so a direct link dies
 at the next release. `astro.config.ts` writes them into `_redirects` from the
 same `release()` the buttons use, and the release workflow rebuilds the site,
@@ -56,15 +56,15 @@ What a page can put in its text, from `src/components/prose/`:
 
 Markdown tables get readable column widths and scroll sideways when that is wider than the column, with a fade on the side that has more and a thin bar under it (`scripts/pan.ts`, the same arrangement as the architecture figure on risen.dev). Anything wider
 than the 720px text column takes `wide`, up to 1040px. After adding a page, run
-`npm run og` for its link card (`public/og/<id>.png`; without one the page uses
-the site's), and `npm run audit` against it with `AUDIT_URL`.
+`bun run og` for its link card (`public/og/<id>.png`; without one the page uses
+the site's), and `bun run audit` against it with `AUDIT_URL`.
 
 ## Updates
 
 `/updates` lists every release, newest first, and the home page shows the last
 three as cards (`components/Updates.astro`). Both read the `releases` collection,
 which is `changelog/*.md` at the root of the repository — the files
-`npm run set-version` writes out of the changesets, and the same ones the GitHub
+`bun run set-version` writes out of the changesets, and the same ones the GitHub
 release takes its notes from (see `scripts/changelog.mjs`). The site writes none
 of it. Only releases `latest.json` says are out are shown (`src/releases.ts`),
 because the commit that bumps the version rebuilds the site well before its
@@ -119,10 +119,10 @@ Addresses have no trailing slash and no extension: the build writes
 | `src/components/` | One file per section; `mocks/` holds the interface mocks the sections and the guides share — the player window, the title bar every other window carries, and one per section, `prose/` what a guide can use in its text. Each mock is the application's own surface rebuilt in HTML — the control row, the cast panel and the start screen carry the measurements and the glyphs from `src/lib/components/` rather than a screenshot |
 | `src/scripts/` | `theme.ts` (system/light/dark, two switches, one state), `nav.ts` (the header's backdrop, driven by an observer on a 1 px marker rather than a scroll handler), `motion.ts` (`--p` from 0 to 1 per scene, once, when the section is properly in view) |
 | `assets/img/` | One source per frame, committed and **never published**. They are the final frames, not stand-ins for screenshots — see below |
-| `public/gen/` | What `npm run images` makes from them: three formats, a handful of widths, hashed names. Generated locally and **committed** — CI never encodes |
+| `public/gen/` | What `bun run images` makes from them: three formats, a handful of widths, hashed names. Generated locally and **committed** — CI never encodes |
 | `scripts/images.mjs` | The generator, and the width ladders it uses |
 | `tools/og.mjs` | Renders the link card, and one per guide page from its frontmatter, with the local browser. Run by hand when the design changes or a page is added; the result is committed |
-| `tools/audit.mjs` | `npm run audit` — axe-core against a running `npm run preview`, in both themes, in a real browser. The file says which two ways a headless check of this page lies |
+| `tools/audit.mjs` | `bun run audit` — axe-core against a running `bun run preview`, in both themes, in a real browser. The file says which two ways a headless check of this page lies |
 
 ## The frames
 
@@ -133,7 +133,7 @@ line, and nothing here is share-alike — no frame drags a licence onto the page
 around it.
 
 Nothing in that directory is published. [`scripts/images.mjs`](scripts/images.mjs)
-(`npm run images`, and in front of `dev`) writes AVIF, WebP and JPEG into
+(`bun run images`, and in front of `dev`) writes AVIF, WebP and JPEG into
 `public/gen`, and a manifest that
 [`Frame.astro`](src/components/Frame.astro) reads at build time. The widths come
 from the page itself: the script finds every `<Frame>` that uses a
@@ -149,7 +149,7 @@ a rebuild re-encodes only what changed. Measured on the whole page at 1440px:
 
 Both the files and the manifest are **committed**, because a clean encode is
 minutes of AVIF and the Site workflow gives up at ten. So a changed picture, a
-new `<Frame>` or a changed slot means `npm run images` and a commit of
+new `<Frame>` or a changed slot means `bun run images` and a commit of
 `public/gen` and `src/img-manifest.json` with it. `typecheck` and `build` run
 the script with `--check`, which encodes nothing and fails — locally and in CI —
 if a file is missing, a stale one is left, or the manifest is not the one the

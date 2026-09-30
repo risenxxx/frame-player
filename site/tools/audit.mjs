@@ -17,7 +17,7 @@
   Lighthouse gatherer takes its own. Text that is still hidden (a section that
   has not been scrolled to) is skipped by axe exactly as it is by a reader.
 
-  Run it against `npm run preview`, or point AUDIT_URL somewhere else.
+  Run it against `bun run preview`, or point AUDIT_URL somewhere else.
 */
 import { readFileSync } from 'node:fs'
 import puppeteer from 'puppeteer-core'

@@ -6,9 +6,9 @@ name: Site
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'changelog/**', '.github/workflows/site.yml']
+    paths: ['site/**', 'changelog/**', '.prototools', '.github/workflows/site.yml']
   pull_request:
-    paths: ['site/**', 'changelog/**', '.github/workflows/site.yml']
+    paths: ['site/**', 'changelog/**', '.prototools', '.github/workflows/site.yml']
   workflow_dispatch:
 
 concurrency:
@@ -31,20 +31,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Wrangler 4 requires Node 22.19 or newer; Astro is happy either way.
-      - uses: actions/setup-node@v4
+      # Wrangler 4 requires Node 22.19 or newer. This directory has no
+      # `.prototools` of its own: proto walks up to the repository root's.
+      - uses: moonrepo/setup-toolchain@v0
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: site/package-lock.json
+          # Node and bun at exactly the versions `.prototools` pins — the file
+          # proto reads on a developer's machine, so CI cannot drift from it.
+          auto-install: true
 
-      - run: npm ci
+      - run: bun install --frozen-lockfile
 
       # No image encoding here: public/gen is committed, and `typecheck` only
       # checks that it matches the sources (scripts/images.mjs --check). A clean
       # encode is longer than this job's timeout.
       - name: Type check
-        run: npm run typecheck
+        run: bun run typecheck
 
       - name: Build
         env:
@@ -56,7 +57,7 @@ jobs:
           # download buttons hand over the installer itself, named with the
           # version; without it they fall back to the GitHub release page.
           UPDATES_ORIGIN: ${{ vars.R2_PUBLIC_URL_UPDATES }}
-        run: npm run build
+        run: bun run build
 
       # Prints which account the token can see and which permissions it carries.
       # A deploy that fails with "No access to the specified resource" says
@@ -66,7 +67,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler whoami
+        run: bun run wrangler whoami
 
       - name: Deploy
         if: github.event_name != 'pull_request'
@@ -75,6 +76,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: site
+          packageManager: bun
           command: deploy
 
       # Forks do not get the secrets, so they build and stop there.
@@ -86,6 +88,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: site
+          packageManager: bun
           command: versions upload
 
       - name: Comment the preview address

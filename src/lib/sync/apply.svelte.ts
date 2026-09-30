@@ -6,7 +6,7 @@
  * `wire.svelte.ts` is a leaf so that `playback` and `seek` can publish into it;
  * applying has to reach in the opposite direction — mpv, the torrent client, the
  * queue — so it lives here, and the two halves meet only through the callbacks
- * `initSync` registers. That is what keeps `npm run check-imports` quiet, and
+ * `initSync` registers. That is what keeps `bun run check-imports` quiet, and
  * the cycle it prevents is the silent kind: a bundler resolves it and leaves a
  * module-evaluation order nobody chose.
  *
@@ -132,7 +132,7 @@ let correctedSpeed = 0;
  *
  * Called from the page, never at this module's top level: a `$effect` written
  * there throws `effect_orphan` the moment the module is imported, and for a
- * module the page imports that is a window which never paints. `npm run
+ * module the page imports that is a window which never paints. `bun run
  * check-runes` is the gate that says so.
  */
 export function initSync() {

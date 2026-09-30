@@ -9,7 +9,7 @@
  * **Two kinds of file, and the second is the record.**
  *
  * `.changeset/*.md` is one change a viewer will notice, written when the change
- * is made, in the format of the `changesets` tool so its CLI (`npx changeset`)
+ * is made, in the format of the `changesets` tool so its CLI (`bunx changeset`)
  * can write one too:
  *
  *     ---
@@ -32,7 +32,7 @@
  * diffs.
  *
  * `changeset version` itself is deliberately not used: it would bump one of the
- * five files that carry the version (see set-version.mjs) and write a
+ * four files that carry the version (see set-version.mjs) and write a
  * CHANGELOG.md with neither dates nor summaries, which is what the site needs.
  */
 
@@ -44,7 +44,7 @@ import { createRequire } from 'node:module';
 
 /*
   Loaded on first use rather than imported: the release workflow's publish job
-  runs `notes` with the runner's own Node and no `npm ci`, and reading a
+  runs `notes` with the runner's own Node and no `bun install`, and reading a
   published release needs no changeset parser.
 */
 const parse = (text) => createRequire(import.meta.url)('@changesets/parse').default(text);
@@ -256,7 +256,7 @@ function check() {
   // come from this file: a version without one would go out with no notes.
   const current = currentVersion();
   if (!existsSync(join(RELEASES, `${current}.md`))) {
-    problems.push(`changelog/${current}.md is missing — the version was set without "npm run set-version", which writes it`);
+    problems.push(`changelog/${current}.md is missing — the version was set without "bun run set-version", which writes it`);
   }
   if (problems.length) {
     console.error(`Release notes:\n  ${problems.join('\n  ')}`);

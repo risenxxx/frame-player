@@ -5,7 +5,7 @@
 //
 // ## 1. A `$effect` at the top level of a `.svelte.ts` module
 //
-// It compiles, `svelte-check` reports nothing, `npm run build` succeeds — and
+// It compiles, `svelte-check` reports nothing, `bun run build` succeeds — and
 // the app throws `effect_orphan` the instant the module is imported, which for
 // a state module imported by the page means a window that never paints. Nothing
 // in the toolchain says a word about it, because the mistake is only a mistake

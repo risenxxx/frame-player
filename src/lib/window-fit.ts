@@ -147,3 +147,56 @@ function keepInside(at: number, length: number, start: number, extent: number, p
   if (last < first) return start + Math.round((extent - length) / 2);
   return Math.min(Math.max(at, first), last);
 }
+
+// ---- What a pinch does -----------------------------------------------------
+
+/**
+ * What a trackpad pinch does — the viewer's setting, not the answer for any
+ * one moment (that is `pinchResizes`).
+ *
+ * `resize` is the default: with the window in the picture's shape the window
+ * *is* the picture, and "bigger" by pinching loses nothing of the frame, where
+ * a zoom crops it. It is also what is asked for many times in a session, while
+ * a look into one corner of the picture is rare — and that one keeps ⌥+pinch
+ * and Ctrl+wheel whatever the setting says.
+ */
+export type PinchAction = 'resize' | 'zoom';
+export const PINCH_CHOICES: PinchAction[] = ['resize', 'zoom'];
+
+export interface PinchMoment {
+  setting: PinchAction;
+  /**
+   * Fullscreen: the window cannot grow. Deliberately not "or maximized" — on
+   * macOS that is not a mode but a frame (`isZoomed`: the window happens to
+   * have the zoomed size), which a pinch reaches by itself and may leave
+   * again; read as a mode, the pinch that took the window to the limit was
+   * the last one that resized it.
+   */
+  fullscreen: boolean;
+  /** The start screen is up, and the window is nobody's. */
+  resting: boolean;
+  /** The mini player: a size the viewer asked for, held to a corner. */
+  mini: boolean;
+  /**
+   * Something fills the window that a resize around the center would draw
+   * twice — a dialog with its backdrop, the casting screen (the web content is
+   * pinned to the window's top-left corner and a frame or two behind it; what
+   * floats over the picture is taken away for a resize, but these cannot be).
+   */
+  covered: boolean;
+}
+
+/**
+ * Whether a pinch, right now, is the window's size rather than the picture's
+ * zoom. The native side asks nothing: it is told this once per change and reads
+ * ⌥ off the event itself.
+ *
+ * Every `false` here is a `true` for the zoom the gesture used to be, which is
+ * the right answer wherever the window cannot grow: fullscreen, the mini
+ * player. On the start screen and under a dialog the zoom has nothing to
+ * act on either, and the gesture does nothing — better than a resize that
+ * doubles what is on the screen.
+ */
+export function pinchResizes(now: PinchMoment): boolean {
+  return now.setting === 'resize' && !now.fullscreen && !now.resting && !now.mini && !now.covered;
+}

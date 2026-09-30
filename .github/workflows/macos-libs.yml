@@ -76,7 +76,7 @@ jobs:
       # did get in is attributed. It belongs here rather than only in the Node
       # checks job, because that job has no library set to compare against — the
       # coverage check is inert wherever src-tauri/lib does not exist. Needs no
-      # `npm ci`: rendering reads committed files and nothing else.
+      # `bun install`: rendering reads committed files and nothing else.
       - name: Notices cover the set
         run: node scripts/gen-notices.mjs --check
 

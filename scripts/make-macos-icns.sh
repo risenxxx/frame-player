@@ -3,7 +3,7 @@
 #
 # Touches ONLY the .icns, which is used by the macOS bundle alone. The Windows
 # icon (icon.ico) and the PNG set are left untouched — which is why
-# `npm run tauri icon` is not usable here: it would regenerate the whole set
+# `bun run tauri icon` is not usable here: it would regenerate the whole set
 # from a single source.
 #
 # Requires: resvg (brew install resvg) and iconutil (part of macOS).

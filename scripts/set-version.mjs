@@ -16,15 +16,17 @@
  * that really changes nothing a viewer would notice. A version that already
  * has notes (the files were set by hand, or this is being re-run) keeps them.
  *
- * **Five files carry the version, and there is no way to collapse them into
+ * **Four files carry the version, and there is no way to collapse them into
  * one.** `tauri.conf.json` can be pointed at a package.json instead of holding
  * a literal, but the release workflow reads that literal (`jq -r '.version'`)
  * to decide whether a push is a release at all — so making it indirect would
  * mean the gate no longer sees a version to compare. Cargo cannot read a
  * version from JSON in any form. So they are written, not derived, and this
- * script is what keeps that from being five manual edits.
+ * script is what keeps that from being four manual edits. (The JavaScript
+ * lockfile used to be a fifth; `bun.lock` does not record the root package's
+ * version, so there is nothing in it to drift.)
  *
- * Drift here is silent, which is the reason to have this at all: `package-lock`
+ * Drift here is silent, which is the reason to have this at all: npm's lockfile
  * had been sitting at **0.1.0** since the first commit, because nothing ever
  * reads it out loud. Hence the no-argument mode, which is a check rather than a
  * write and is worth running before a release.
@@ -58,14 +60,6 @@ const TARGETS = [
     pattern: /^(\s*"version":\s*")([^"]+)(")/m,
   },
   {
-    file: 'package-lock.json',
-    // Anchored on the name above it, twice: npm writes the root version and
-    // the one inside `packages[""]`, and everything after them belongs to a
-    // dependency. Without the anchor this would be two of some 2000 matches.
-    pattern: /("name":\s*"frameplayer",\s*\n\s*"version":\s*")([^"]+)(")/,
-    all: true,
-  },
-  {
     file: 'src-tauri/tauri.conf.json',
     pattern: /^(\s*"version":\s*")([^"]+)(")/m,
   },
@@ -90,10 +84,9 @@ function read(target) {
   const path = join(root, target.file);
   const text = readFileSync(path, 'utf8');
   const matches = [...text.matchAll(new RegExp(target.pattern, target.pattern.flags + 'g'))];
-  const wanted = target.all ? 2 : 1;
-  if (matches.length !== wanted) {
+  if (matches.length !== 1) {
     throw new Error(
-      `${target.file}: expected ${wanted} version line(s), found ${matches.length}. ` +
+      `${target.file}: expected 1 version line, found ${matches.length}. ` +
         `The file's shape changed — fix the pattern in scripts/set-version.mjs rather ` +
         `than letting a release go out with this file left behind.`,
     );
@@ -127,10 +120,10 @@ if (!arg) {
     console.log(`${mark} ${s.versions.join(', ').padEnd(10)} ${s.target.file}`);
   }
   if (disagree) {
-    console.error(`\nVersions disagree. Run: npm run set-version ${current}`);
+    console.error(`\nVersions disagree. Run: bun run set-version ${current}`);
     process.exit(1);
   }
-  console.log(`\nAll five agree on ${current}.`);
+  console.log(`\nAll ${states.length} agree on ${current}.`);
   const { changes } = readChangesets();
   if (changes.length) console.log(`${changes.length} pending changeset(s) call for a ${bumpFor(changes)} bump.`);
   process.exit(0);

@@ -96,8 +96,9 @@ fn copy_lua_scripts() {
 /// dylibs from src-tauri/lib are laid out in target/<profile>/lib.
 /// The wrapper itself dlopens "libmpv.dylib" by short name, so libmpv.dylib has
 /// to be in that same src-tauri/lib: dyld tries that directory through the
-/// wrapper's @loader_path rpath. DYLD_LIBRARY_PATH does not work here — npm
-/// runs through the SIP-protected /bin/sh, which strips every DYLD_*. Details
+/// wrapper's @loader_path rpath. DYLD_LIBRARY_PATH is not a dependable way
+/// around it — npm, which ran the scripts before bun, went through the
+/// SIP-protected /bin/sh, which strips every DYLD_*. Details
 /// in docs/macos.md.
 #[cfg(target_os = "macos")]
 fn copy_wrapper_dylib() {

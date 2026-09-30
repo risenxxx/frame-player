@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The macOS bundle build — `npm run tauri:macos:build`.
+# The macOS bundle build — `bun run tauri:macos:build`.
 #
 # A wrapper rather than a line in package.json because one decision has to be
 # made before the build starts: **the hardened runtime is only turned on when
@@ -69,7 +69,7 @@ export LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib
 # the build simply does not run, and every check afterwards then reads the
 # artefacts of the previous build and reports on those.
 if [ ${#args[@]} -gt 0 ]; then
-  exec npx tauri build "${args[@]}" "$@"
+  exec bun run tauri build "${args[@]}" "$@"
 else
-  exec npx tauri build "$@"
+  exec bun run tauri build "$@"
 fi

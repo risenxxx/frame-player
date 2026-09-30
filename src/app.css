@@ -166,7 +166,7 @@ input {
    file it ends up in. And a *lone* modifier class of equal weight does not win
    on anything but source order, which is how the queue rows lost `display:
    flex` and the torrent list's delete button flew to the corner of the window;
-   `npm run css-diff` reports such a flip, but writing the two-class selector is
+   `bun run css-diff` reports such a flip, but writing the two-class selector is
    what prevents it.
    ───────────────────────────────────────────────────────────────────────── */
 
@@ -720,7 +720,7 @@ button.primary:hover {
    one and rewrites the `animation` shorthand that uses it — but only inside the
    same component, so leaving this behind in a page whose spinner had moved out
    left the rule pointing at a name that no longer existed and the spinner
-   simply stopped turning. Caught by `npm run css-diff`, which saw the compiled
+   simply stopped turning. Caught by `bun run css-diff`, which saw the compiled
    `animation: svelte-<hash>-spin` become a bare `animation: spin`. */
 @keyframes spin {
   to {

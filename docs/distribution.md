@@ -206,7 +206,7 @@ system is virtualised. It is a project, not a checkbox.
 
 ## Releases
 
-The version lives in **five files** — the package manifest and its lockfile, the
+The version lives in **four files** — the package manifest, the
 bundler configuration, the crate manifest and its lockfile — and they cannot be
 collapsed into one. The bundler's version field accepts a path to a package
 manifest instead of a literal, but the release pipeline reads that literal to
@@ -214,7 +214,7 @@ decide whether a push *is* a release, so making it indirect would leave the gate
 with nothing to compare; and the crate manifest cannot read a version out of
 JSON.
 
-A script writes all five, with one anchored line per file rather than a
+A script writes all four, with one anchored line per file rather than a
 structured round-trip (which reformats hand-written inline arrays), and **every
 anchor must match exactly once** — a bump that silently skipped a file is the
 whole failure being prevented. Run with no argument it reports instead of

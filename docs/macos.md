@@ -151,9 +151,9 @@ library under the new name.
 
 The wrapper opens `libmpv.dylib` by bare leaf name, so libmpv has to sit next to
 it: the dynamic loader probes that directory through the wrapper's own
-`@loader_path` search path. `DYLD_LIBRARY_PATH` is not a way around it —
-`npm` execs through a system-protected shell, which strips every `DYLD_*`
-variable.
+`@loader_path` search path. `DYLD_LIBRARY_PATH` is not a dependable way around it —
+`npm`, which ran the scripts before bun, execs through a system-protected shell,
+which strips every `DYLD_*` variable.
 
 The bundled set (libmpv, the wrapper, FFmpeg, libass, libplacebo, MoltenVK, Lua
 and the rest of the closure — around 50 libraries) is made self-contained by
@@ -260,12 +260,39 @@ found nothing and showed no prompt, the second showed one, and by the time it
 was granted the panel had already said "no devices found" — the only visible way
 forward being to close it and open it again.
 
+## A trackpad pinch without a trackpad
+
+A pinch can be driven from inside the process, which is how the pinch-to-resize
+crash was replayed until it was understood and how it can be tested again
+without anybody at the machine (the rule itself is in `rules/window.md`).
+
+- A `CGEvent` of the private gesture type — `type = 29`, integer field `110`
+  set to `8` (the HID zoom type), double field `113` the magnification, integer
+  field `132` the phase (`1` began, `2` changed, `4` ended), `flags` for the
+  modifiers — turned into an `NSEvent` with `eventWithCGEvent:` comes out as a
+  genuine `NSEventTypeMagnify` with the right `magnification`, `phase` and
+  `modifierFlags`.
+- Posted with `postEvent:atStart:` it reaches a local monitor, but it has **no
+  window** and AppKit drops it after the monitor; the monitor has to hand it to
+  the window itself (`sendEvent:`) and return nil. A window-less event's
+  `locationInWindow` is the CG point flipped by the main display's height and
+  the window then reads it as its own coordinates, so to land on window point
+  (400, 250) the CG point is `(400, displayHeight − 250)`; a point in the title
+  bar reaches no DOM node and the page sees nothing.
+- `CGEventPost` to the HID tap delivers nothing without Accessibility, and
+  `beginGesture`/`endGesture` events never arrive on current macOS.
+- What the web view makes of a real one, and the AppKit frame trap the replays
+  could not reproduce, are in the pinch rule; the lldb recipe that finally read
+  the NaN off the registers was a batch run with breakpoints whose commands
+  `script print` `d0`–`d3` (an Objective-C method's `NSRect` argument) and
+  `continue`, and at the trap the callee-saved `d8`/`d9` were the offset.
+
 ## Testing
 
 A test binary in a custom target directory cannot find the bundled libraries
 (the loader resolves relative to the binary, which is not where the build script
 copied them), so test runs need the library directory added to the fallback
 search path. The repository's Cargo configuration points at Windows SDK paths,
-so macOS builds override the FFmpeg and libclang locations; the npm scripts do
+so macOS builds override the FFmpeg and libclang locations; the package scripts do
 this for the normal build and the README states the form for a bare `cargo`
 invocation.

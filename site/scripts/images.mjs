@@ -16,7 +16,7 @@
   The derivatives and the manifest are committed, so pictures are encoded once,
   on the machine where they changed, and never in CI — a clean run is a lot of
   AVIF (see `AVIF` below), and an image job in CI is one more thing to time out.
-  `npm run images` (and `dev`, which runs it first) encodes whatever is missing
+  `bun run images` (and `dev`, which runs it first) encodes whatever is missing
   and prunes what is no longer named. `--check` is what `typecheck` and `build`
   run instead: it encodes nothing and writes nothing, and fails if a file is
   missing, a stale one is still there, or the manifest is not the one this
@@ -282,7 +282,7 @@ async function main() {
       /* A changed setting renames every file; the first few say enough. */
       console.error(problems.slice(0, 12).join('\n'))
       if (problems.length > 12) console.error(`…and ${problems.length - 12} more`)
-      console.error('\nimages: out of date — run `npm run images` and commit public/gen and src/img-manifest.json')
+      console.error('\nimages: out of date — run `bun run images` and commit public/gen and src/img-manifest.json')
       process.exit(1)
     }
     console.log(`images: ${files.length} sources, ${keep.size} files, up to date`)

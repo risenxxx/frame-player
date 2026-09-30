@@ -313,7 +313,7 @@ would be a seek on somebody else's machine. The two places a gesture ends —
 
 ### Why the module is in three pieces
 
-`npm run check-imports` forbids cycles in `src/`, and a cycle here would be the
+`bun run check-imports` forbids cycles in `src/`, and a cycle here would be the
 silent kind: the bundler resolves it and leaves a module-evaluation order nobody
 chose. `playback` and `seek` already sit high in the graph (one reaches `cast`,
 the other `thumbs`), so:
@@ -405,7 +405,7 @@ is an otherwise pointless-looking environment variable at the top of it.
 
 ## Testing it without a second computer
 
-The player is single-instance, so a second `npm run tauri dev` signals the first
+The player is single-instance, so a second `bun run tauri dev` signals the first
 rather than starting one — which would make "does this still sync" cost a second
 machine, and in practice mean it never gets checked. `services/relay/cmd/probe` is the
 other end of a room: it joins, follows the timeline, and prints once a second

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fitWindow, floorForShape, pictureShape, placeAround, shapeFits, shapeKey } from './window-fit';
+import { fitWindow, floorForShape, pictureShape, pinchResizes, placeAround, shapeFits, shapeKey } from './window-fit';
 
 const MIN = { w: 480, h: 320 };
 const HD = { w: 1920, h: 1080 };
@@ -163,5 +163,27 @@ describe('placeAround', () => {
   it('keeps the center where the screen is not known', () => {
     const clip = placeAround({ x: 100, y: 100, w: 1414, h: 707 }, { w: 1000, h: 1000 }, null, 48);
     expect(clip).toEqual({ x: 307, y: -46, w: 1000, h: 1000 });
+  });
+});
+
+describe('pinchResizes', () => {
+  const plain = { setting: 'resize' as const, fullscreen: false, resting: false, mini: false, covered: false };
+
+  it('is the window over a picture in a window', () => {
+    expect(pinchResizes(plain)).toBe(true);
+  });
+
+  it('is the zoom wherever the window cannot grow', () => {
+    expect(pinchResizes({ ...plain, fullscreen: true })).toBe(false);
+    expect(pinchResizes({ ...plain, mini: true })).toBe(false);
+  });
+
+  it('stands down where a resize would draw the screen twice', () => {
+    expect(pinchResizes({ ...plain, resting: true })).toBe(false);
+    expect(pinchResizes({ ...plain, covered: true })).toBe(false);
+  });
+
+  it('is the setting first', () => {
+    expect(pinchResizes({ ...plain, setting: 'zoom' })).toBe(false);
   });
 });

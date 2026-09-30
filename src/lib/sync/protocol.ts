@@ -11,7 +11,7 @@
  * The lists at the bottom are what makes that check possible from here: TypeScript
  * interfaces are erased at runtime, so a test cannot enumerate their fields. They
  * are written out once and the compiler is made to prove they are complete —
- * add a field to `Timeline` without adding it there and `npm run check` fails on
+ * add a field to `Timeline` without adding it there and `bun run check` fails on
  * the line that says so.
  *
  * **A leaf module.** It imports nothing, which is what lets `playback` and `seek`

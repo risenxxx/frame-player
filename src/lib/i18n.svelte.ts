@@ -656,6 +656,11 @@ const ru = {
   'set.cursor_hide_never': 'Никогда',
   'set.cursor_hide_hint':
     '«Всегда» прячет курсор через секунду покоя, даже если панель остаётся на экране. Над панелью и в диалогах он не пропадает.',
+  'set.pinch': 'Щипок на трекпаде',
+  'set.pinch_resize': 'Размер окна',
+  'set.pinch_zoom': 'Масштаб кадра',
+  'set.pinch_hint':
+    'Окно меняет размер вокруг своего центра. В полноэкранном режиме и в мини-плеере щипок всегда меняет масштаб кадра; ⌥ + щипок — масштаб при любой настройке.',
   'set.hdr_unsupported': 'Монитор не поддерживает HDR — всегда тонмаппинг в SDR',
   'set.hdr_off_mac':
     'Сейчас нет запаса яркости (EDR) — действует тонмаппинг в SDR; убавьте яркость SDR или включите HDR в «Мониторах»',
@@ -1600,6 +1605,11 @@ const en: Record<MessageKey, string> = {
   'set.cursor_hide_never': 'Never',
   'set.cursor_hide_hint':
     '“Always” hides the cursor after a second of rest even while the controls stay on screen. It never hides over the controls or in a dialog.',
+  'set.pinch': 'Trackpad pinch',
+  'set.pinch_resize': 'Window size',
+  'set.pinch_zoom': 'Picture zoom',
+  'set.pinch_hint':
+    'The window scales around its own center. In fullscreen and in the mini player a pinch always zooms the picture; ⌥ + pinch zooms whatever the setting.',
   'set.hdr_unsupported': 'This display has no HDR — always tone-mapped to SDR',
   'set.hdr_off_mac':
     'No brightness headroom (EDR) right now — tone-mapping to SDR; lower SDR brightness or enable HDR in Displays',

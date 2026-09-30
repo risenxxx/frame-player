@@ -26,7 +26,7 @@
 //! resolution of relative control URLs are all negotiated or derived from what
 //! the device said, not assumed.
 //!
-//! Run it against the LAN with `FP_DLNA_PROBE=1 npm run tauri:macos` — it has to
+//! Run it against the LAN with `FP_DLNA_PROBE=1 bun run tauri:macos` — it has to
 //! run inside the app rather than from `cargo test`, because on macOS 15+ a
 //! process without Local Network permission has its multicast silently dropped
 //! and every answer here would be a false negative.

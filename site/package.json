@@ -9,7 +9,7 @@
     "preview": "astro preview",
     "typecheck": "node scripts/images.mjs --check && astro check",
     "og": "node tools/og.mjs",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "bun run build && wrangler deploy",
     "images": "node scripts/images.mjs",
     "audit": "node tools/audit.mjs"
   },

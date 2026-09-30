@@ -4,7 +4,7 @@
   by hand when the design changes — never in CI, where there is no browser and
   no reason to re-render a file that did not change.
 
-  Usage: npm run og
+  Usage: bun run og
 */
 import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises'

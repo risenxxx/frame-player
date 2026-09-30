@@ -462,10 +462,118 @@ pub fn between(from: Frame, to: Frame, k: f64) -> Frame {
     Frame { x: (cx - w / 2.0).round(), y: (cy - h / 2.0).round(), w, h }
 }
 
+// ---- Pinch to resize -------------------------------------------------------
+//
+// A trackpad pinch scales the window about its own center, one frame per
+// magnify event, from the frame the gesture began with (`macos_chrome::
+// watch_pinch` is where the events come in; this is the arithmetic). Each step
+// is computed from the start frame and the scale the gesture has accumulated,
+// never from the previous step: spread and brought back, the fingers put the
+// window exactly where it was, and a step lost to a busy main thread costs
+// nothing.
+//
+// Whole points, and the frame is not sent at all when it is the one the window
+// already has — measured, not a nicety: on macOS 26.5 a fractional frame whose
+// other axis matched the current size exactly (1500.75 wide at the height the
+// window already had, pinned against the screen) came out of AppKit's own
+// `_setFrameCommon:` as a frame with `y` and `height` NaN and tripped a Swift
+// `isFinite` precondition in the code that moves the needs-display region — a
+// silent `brk`, nothing in any log. Three crashes on real pinches, none once
+// the frames were whole and the no-ops skipped, over a dozen gestures.
+
+/// Where a pinch has taken the window, and how far it really went.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pinched {
+    pub frame: Frame,
+    /// The scale the window took — `scale` as asked, or where the floor or
+    /// the ceiling stopped it, before rounding. **The gesture has to carry this
+    /// one on, not the one it asked for**: at the limit the fingers keep
+    /// spreading and the window stands still, and if that surplus is banked,
+    /// closing them again first pays it back, invisibly, before the window
+    /// moves at all (reported exactly so). Before rounding, or a slow pinch
+    /// under half a point a step would be thrown away at every step and never
+    /// add up.
+    pub scale: f64,
+}
+
+/// Where a pinch has taken the window: `start` scaled about its own center by
+/// `scale`, in `start`'s shape, no smaller than `min` (as a size of that shape,
+/// not per axis), no larger than `area` and inside it, on whole units.
+///
+/// The area is at least where the window already is: one the viewer put past
+/// the margin — zoomed with the green button, dragged to the edge — is not
+/// pulled back by a pinch, it only ever grows from there or shrinks in place.
+/// The area wins over the minimum where the two disagree: a shape that cannot
+/// be had on this screen at the minimum is the fit's problem (`shapeFits`),
+/// and a window held to a size larger than its screen would be no answer here.
+/// Anything meaningless — a scale that is not a positive finite number — leaves
+/// the window where the gesture found it.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+pub fn pinch_frame(start: Frame, scale: f64, min: (f64, f64), area: Frame) -> Pinched {
+    if !scale.is_finite() || scale <= 0.0 || start.w <= 0.0 || start.h <= 0.0 {
+        return Pinched { frame: start, scale: 1.0 };
+    }
+    let area = {
+        let x = area.x.min(start.x);
+        let y = area.y.min(start.y);
+        Frame {
+            x,
+            y,
+            w: (area.x + area.w).max(start.x + start.w) - x,
+            h: (area.y + area.h).max(start.y + start.h) - y,
+        }
+    };
+    let mut scale = scale;
+    let floor = f64::max(
+        if min.0 > 0.0 { min.0 / (start.w * scale) } else { 0.0 },
+        if min.1 > 0.0 { min.1 / (start.h * scale) } else { 0.0 },
+    );
+    if floor > 1.0 {
+        scale *= floor;
+    }
+    let ceiling = f64::min(area.w / (start.w * scale), area.h / (start.h * scale));
+    if ceiling < 1.0 && ceiling > 0.0 {
+        scale *= ceiling;
+    }
+    let w = start.w * scale;
+    let h = start.h * scale;
+    // The size first and the corner from the center it keeps, each rounded on
+    // its own — rounding four edges lets a size and a corner round apart and a
+    // still edge tick (see `between`).
+    let w = w.round();
+    let h = h.round();
+    let mut x = (start.x + start.w / 2.0 - w / 2.0).round();
+    let mut y = (start.y + start.h / 2.0 - h / 2.0).round();
+    // Inside the area, the far edge first and the near one last: where the
+    // window is wider than the area by a rounding, the near edge is the one to
+    // keep.
+    if x + w > area.x + area.w {
+        x = area.x + area.w - w;
+    }
+    if y + h > area.y + area.h {
+        y = area.y + area.h - h;
+    }
+    if x < area.x {
+        x = area.x;
+    }
+    if y < area.y {
+        y = area.y;
+    }
+    Pinched { frame: Frame { x, y, w, h }, scale }
+}
+
 /// Which glide is the newest. One that finds a newer number has been
 /// superseded and stops where it is: the newer one starts from there.
 #[cfg(any(windows, target_os = "macos"))]
 static GLIDE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Something other than a glide has taken hold of the frame — a pinch — and
+/// whatever glide is in flight stops where it is.
+#[cfg(target_os = "macos")]
+pub fn supersede_glide() {
+    GLIDE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
 
 /// Between two steps. Shorter than a frame of any display this runs on; the
 /// steps that land inside one frame cost a main-thread turn each and nothing
@@ -475,9 +583,13 @@ const GLIDE_STEP: std::time::Duration = std::time::Duration::from_millis(8);
 
 /// Take the window to a frame over `ms` milliseconds, or at once for zero.
 ///
-/// Answers `true` when the window is at that frame, `false` when it is not —
-/// superseded by a newer glide, or on a platform with no way to do it, where
-/// the frontend falls back to the two calls it used to make.
+/// Answers `true` when the window is at that frame or something newer has taken
+/// the frame over on the way — a later glide, or a pinch, either of which is
+/// now the one deciding where the window goes — and `false` on a platform with
+/// no way to do it, or with no window to do it to, where the frontend falls
+/// back to the two calls it used to make. A superseded glide used to answer
+/// `false` too, which sent the frontend's fallback after the window a pinch had
+/// just taken hold of.
 #[tauri::command]
 #[cfg_attr(not(any(windows, target_os = "macos")), allow(unused_variables))]
 pub async fn window_frame_glide(
@@ -501,7 +613,7 @@ pub async fn window_frame_glide(
         let started = std::time::Instant::now();
         loop {
             if GLIDE.load(Ordering::SeqCst) != mine {
-                return false;
+                return true;
             }
             let t = if length > 0.0 {
                 (started.elapsed().as_secs_f64() / length).min(1.0)
@@ -918,5 +1030,123 @@ mod tests {
         for ratio in [0.0, -1.0, f64::NAN, f64::INFINITY] {
             assert_eq!(hold_shape(drag, Grip::Right, ratio, NO_FRAME, NO_MIN), drag);
         }
+    }
+
+    // ---- pinch_frame ----
+
+    fn frame(x: f64, y: f64, w: f64, h: f64) -> Frame {
+        Frame { x, y, w, h }
+    }
+
+    /// A 1728×997 work area starting 87 up, as a laptop with its Dock reports it.
+    const DESK: Frame = Frame { x: 0.0, y: 87.0, w: 1728.0, h: 997.0 };
+    const NO_FLOOR: (f64, f64) = (0.0, 0.0);
+
+    #[test]
+    fn a_pinch_scales_about_the_center() {
+        let start = frame(400.0, 300.0, 800.0, 450.0);
+        let out = pinch_frame(start, 1.5, NO_FLOOR, DESK).frame;
+        // 1200×675 around the center (800, 525): y wants 187.5 and rounds up.
+        assert_eq!(out, frame(200.0, 188.0, 1200.0, 675.0));
+        assert_eq!(out.x + out.w / 2.0, start.x + start.w / 2.0);
+        assert!((out.y + out.h / 2.0 - (start.y + start.h / 2.0)).abs() <= 0.5);
+    }
+
+    #[test]
+    fn brought_back_to_one_the_window_is_where_it_started() {
+        let start = frame(535.0, 443.0, 429.0, 285.0);
+        assert_eq!(pinch_frame(start, 1.0, NO_FLOOR, DESK).frame, start);
+        // Scaled up and down again, the same — from the start frame, not from
+        // the last step.
+        assert_eq!(pinch_frame(start, 3.0 / 3.0, NO_FLOOR, DESK).frame, start);
+    }
+
+    #[test]
+    fn every_edge_lands_on_a_whole_unit() {
+        let start = frame(100.5, 100.0, 801.0, 450.0);
+        for scale in [0.77, 1.1, 1.3333, 2.4142] {
+            let out = pinch_frame(start, scale, NO_FLOOR, DESK).frame;
+            for v in [out.x, out.y, out.w, out.h] {
+                assert_eq!(v, v.round(), "scale {scale}: {out:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_floor_is_a_size_of_the_shape() {
+        // 800×450 pinched down to a tenth; the minimum is 480×320, which is
+        // not 16:9 — the smallest window of this shape that covers both is
+        // 569×320, exactly `floorForShape`'s answer.
+        let out = pinch_frame(frame(400.0, 300.0, 800.0, 450.0), 0.1, (480.0, 320.0), DESK);
+        assert_eq!((out.frame.w, out.frame.h), (569.0, 320.0));
+        // And the scale the window took is the floor's, not the tenth asked.
+        assert!((out.scale - 320.0 / 450.0).abs() < 1e-9, "{}", out.scale);
+    }
+
+    #[test]
+    fn the_ceiling_is_the_axis_that_hits_first_and_the_shape_is_kept() {
+        let out = pinch_frame(frame(400.0, 300.0, 800.0, 450.0), 3.0, NO_FLOOR, DESK);
+        // 2400×1350 wanted; the width runs out first at 1728, and the height
+        // follows the shape (972) rather than filling the 997.
+        assert_eq!((out.frame.w, out.frame.h), (1728.0, 972.0));
+        assert_eq!(out.scale, 1728.0 / 800.0);
+        let out = out.frame;
+        assert!(out.y >= DESK.y && out.y + out.h <= DESK.y + DESK.h, "{out:?}");
+        // A taller shape runs out of height first and keeps its width short
+        // (a start inside the area: one past it widens the area, see below).
+        let tall = pinch_frame(frame(400.0, 200.0, 450.0, 800.0), 3.0, NO_FLOOR, DESK).frame;
+        assert_eq!((tall.w, tall.h), ((997.0 * 450.0 / 800.0f64).round(), 997.0));
+    }
+
+    #[test]
+    fn the_window_stays_inside_the_area_when_its_center_is_near_an_edge() {
+        let out = pinch_frame(frame(1500.0, 800.0, 200.0, 112.0), 3.0, NO_FLOOR, DESK).frame;
+        assert!(out.x >= DESK.x && out.x + out.w <= DESK.x + DESK.w, "{out:?}");
+        assert!(out.y >= DESK.y && out.y + out.h <= DESK.y + DESK.h, "{out:?}");
+        assert_eq!((out.w, out.h), (600.0, 336.0));
+    }
+
+    #[test]
+    fn a_window_already_past_the_margin_is_not_pulled_back() {
+        // Zoomed with the green button: flush with the screen, past the area
+        // a pinch keeps to. Spread further, it stays; brought in, it shrinks
+        // in place.
+        let zoomed = frame(0.0, 87.0, 1728.0, 997.0);
+        let margin = frame(24.0, 111.0, 1680.0, 949.0);
+        assert_eq!(pinch_frame(zoomed, 1.0, NO_FLOOR, margin).frame, zoomed);
+        assert_eq!(pinch_frame(zoomed, 1.3, NO_FLOOR, margin).frame, zoomed);
+        let smaller = pinch_frame(zoomed, 0.9, NO_FLOOR, margin).frame;
+        assert_eq!((smaller.w, smaller.h), (1555.0, 897.0));
+        assert!((smaller.x + smaller.w / 2.0 - 864.0).abs() <= 0.5, "{smaller:?}");
+    }
+
+    #[test]
+    fn the_area_wins_over_a_minimum_that_does_not_fit_it() {
+        let small = frame(0.0, 0.0, 500.0, 300.0);
+        let out = pinch_frame(frame(10.0, 10.0, 400.0, 240.0), 0.5, (800.0, 480.0), small).frame;
+        assert!(out.w <= small.w && out.h <= small.h, "{out:?}");
+        assert!(out.x >= 0.0 && out.y >= 0.0);
+    }
+
+    #[test]
+    fn a_scale_that_means_nothing_leaves_the_window_alone() {
+        let start = frame(100.0, 100.0, 800.0, 450.0);
+        for scale in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(pinch_frame(start, scale, NO_FLOOR, DESK), Pinched { frame: start, scale: 1.0 });
+        }
+    }
+
+    #[test]
+    fn spreading_past_the_limit_banks_nothing() {
+        // At the ceiling the fingers keep spreading: the scale the gesture
+        // carries on is the ceiling's, so the first step back in moves the
+        // window at once rather than paying off what was never shown.
+        let start = frame(400.0, 300.0, 800.0, 450.0);
+        let at_limit = pinch_frame(start, 3.0, NO_FLOOR, DESK);
+        let further = pinch_frame(start, at_limit.scale * 1.05, NO_FLOOR, DESK);
+        assert_eq!(further.frame, at_limit.frame);
+        assert_eq!(further.scale, at_limit.scale);
+        let back = pinch_frame(start, further.scale * 0.95, NO_FLOOR, DESK).frame;
+        assert!(back.w < at_limit.frame.w, "{back:?} vs {:?}", at_limit.frame);
     }
 }

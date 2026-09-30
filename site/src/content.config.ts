@@ -26,7 +26,7 @@ const pages = defineCollection({
     /** The page's own headline, which can be longer than the title. */
     heading: z.string(),
     lede: z.string(),
-    /** The kicker on the page's link card (`npm run og`). Not printed on the
+    /** The kicker on the page's link card (`bun run og`). Not printed on the
         page itself, where the breadcrumbs already say the same thing. */
     eyebrow: z.string(),
     /** What the page is called wherever it is a link: the footer, "Read next". */
@@ -45,7 +45,7 @@ const pages = defineCollection({
 
 /*
   Every release of the player, from `changelog/<version>.md` at the root of the
-  repository — the files `npm run set-version` writes out of the changesets,
+  repository — the files `bun run set-version` writes out of the changesets,
   and the same ones the GitHub release is given as its notes (see
   scripts/changelog.mjs). They live outside the site because the player's
   release is what writes them; the site only reads.

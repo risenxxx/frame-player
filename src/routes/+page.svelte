@@ -1099,6 +1099,12 @@
     sizeOwned: () => chrome.fullscreen || chrome.isMaximized,
     resting: () => showEmpty,
     settled: curtainSettled,
+    // For the pinch: fullscreen only — "maximized" is any window at the
+    // zoomed frame on macOS, and a pinch has to be able to bring one back.
+    fullscreen: () => chrome.fullscreen,
+    // What a pinch may not resize under: a dialog (ours or the system's) and
+    // the casting screen, which fill the window and would be drawn twice.
+    covered: () => chrome.sheetOpen || chrome.fileDialogOpen || cast.remote,
   });
   // The dark between two pictures. It is told when a load is under way, which
   // is the one case where staying down past its cap is right.

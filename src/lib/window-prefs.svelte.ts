@@ -20,13 +20,18 @@ import { player } from './player.svelte';
 import {
   fitWindow,
   floorForShape,
+  PINCH_CHOICES,
   pictureShape,
+  pinchResizes,
   placeAround,
   shapeFits,
   shapeKey,
+  type PinchAction,
   type Rect,
   type Size,
 } from './window-fit';
+
+export { PINCH_CHOICES, type PinchAction };
 
 /// Minimum window size in LOGICAL pixels. Duplicates minWidth/minHeight from
 /// tauri.conf.json: there is no way to read them back from the window, and
@@ -99,6 +104,8 @@ class WindowPrefs {
   autoHide = $state<AutoHide>('always');
   /// When the cursor hides — see `CursorHide`.
   cursorHide = $state<CursorHide>('controls');
+  /// What a trackpad pinch does (macOS) — see `PinchAction` in window-fit.
+  pinch = $state<PinchAction>('resize');
   geometry = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 }
 
@@ -397,6 +404,7 @@ export function loadWindowPrefs() {
     if (saved.cursorHide && CURSOR_HIDE_CHOICES.includes(saved.cursorHide)) {
       windowPrefs.cursorHide = saved.cursorHide;
     }
+    if (saved.pinch && PINCH_CHOICES.includes(saved.pinch)) windowPrefs.pinch = saved.pinch;
     if (saved.geometry) windowPrefs.geometry = saved.geometry;
   } catch {
     // corrupt entry — the defaults stay
@@ -415,6 +423,7 @@ function saveWindowPrefs() {
         snapMini: windowPrefs.snapMini,
         autoHide: windowPrefs.autoHide,
         cursorHide: windowPrefs.cursorHide,
+        pinch: windowPrefs.pinch,
         geometry: windowPrefs.geometry,
       }),
     );
@@ -611,6 +620,15 @@ export interface ShapeHooks {
   /// The start screen is up (the page's debounced flag, not `!hasFile`, which
   /// blinks between two entries of a playlist).
   resting: () => boolean;
+  /// Fullscreen alone, for the pinch: `sizeOwned` also counts a maximized
+  /// window, which on macOS is any window at the zoomed frame — one a pinch
+  /// reaches by itself and has to be able to leave (see `PinchMoment`).
+  fullscreen?: () => boolean;
+  /// Something fills the window that cannot be taken away for a resize — a
+  /// dialog with its backdrop, the casting screen. Read by the pinch alone:
+  /// a fit happens under those too, since a new picture has to have its
+  /// window whatever is over it.
+  covered?: () => boolean;
   /// The picture is in its window, or will be in `ms`: a fit is about to move
   /// the window and takes that long, or none was needed and it is zero. Said
   /// whatever the setting is — a picture with the setting off is in its window
@@ -669,6 +687,22 @@ export function initWindowShape(page: ShapeHooks) {
     void mini.on;
     scheduleShape();
     return () => clearTimeout(shapeTimer);
+  });
+  // What a pinch does, told to the native side whenever the answer changes.
+  // Decided here rather than in the monitor that takes the gesture because
+  // half of the answer is the shell's — the setting, the two modes, the start
+  // screen, a dialog — and the other half (⌥ on the event) is read there.
+  // macOS only: nowhere else does anything native see a pinch as a pinch.
+  $effect(() => {
+    if (!IS_MAC) return;
+    const resize = pinchResizes({
+      setting: windowPrefs.pinch,
+      fullscreen: page.fullscreen?.() ?? page.sizeOwned(),
+      resting: page.resting(),
+      mini: mini.on,
+      covered: page.covered?.() ?? false,
+    });
+    void invoke('window_pinch_mode', { resize }).catch(() => {});
   });
 }
 
@@ -756,8 +790,11 @@ async function measure(win: ReturnType<typeof getCurrentWindow>) {
  * Through the window API the two are separate calls, each queued on its own,
  * and nothing makes them land in one frame: the window grows from its corner
  * and is then pulled back. `window_frame_glide` sets both in one main-thread
- * turn per step. Where it cannot (it answers `false` without having been
- * superseded), the two calls are what is left — a jump, to the right place.
+ * turn per step. Where it cannot (it answers `false`: no way to on this
+ * platform, or no window), the two calls are what is left — a jump, to the
+ * right place. A glide that something newer took over — a later glide, a
+ * pinch — answers `true`: the window is that one's to finish, and sending the
+ * two calls after it would pull the window out of the viewer's fingers.
  */
 /// Somebody who asked the system for less motion did not mean "except here".
 function calm(): boolean {
@@ -923,6 +960,11 @@ export function setAutoHide(v: AutoHide) {
 
 export function setCursorHide(v: CursorHide) {
   windowPrefs.cursorHide = v;
+  saveWindowPrefs();
+}
+
+export function setPinch(v: PinchAction) {
+  windowPrefs.pinch = v;
   saveWindowPrefs();
 }
 

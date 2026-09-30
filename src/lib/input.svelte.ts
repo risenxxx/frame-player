@@ -53,6 +53,7 @@ import { trashCurrentFile } from './trash';
 import { nudgeDelayHere } from './tracks.svelte';
 import { mini, toggleMini } from './window-prefs.svelte';
 import { isZoomed, panBy, resetZoom, zoomAt } from './zoom.svelte';
+import { zoomStep } from './zoom-step';
 import { IS_MAC } from './platform';
 
 /// Set once from the system rather than guessed: the cast click path waits it
@@ -295,11 +296,15 @@ export function onWheel(e: WheelEvent) {
     // Ctrl+wheel zooms the video around the point under the cursor. On a
     // trackpad this is the pinch gesture, whose sign the device sets itself —
     // "natural scrolling" does not flip it, so there is nothing to invert.
-    // preventDefault regardless of where the pointer is: without it the
-    // webview zooms the whole UI, which there is no way back from.
+    // On macOS a pinch only gets here when it is the zoom's: the native side
+    // takes it for the window's size otherwise (`window_pinch_mode`), and ⌥
+    // held is how a viewer asks for the zoom regardless — read there, since
+    // WebKit drops the modifiers on the way (measured). preventDefault
+    // regardless of where the pointer is: without it the webview zooms the
+    // whole UI, which there is no way back from.
     e.preventDefault();
     if (player.hasFile && !onSurface && playback.can.zoom) {
-      zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 0.1 : -0.1);
+      zoomAt(e.clientX, e.clientY, zoomStep(e.deltaY, e.deltaMode));
     }
     return;
   }

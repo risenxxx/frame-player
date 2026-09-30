@@ -72,11 +72,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup toolchain
+        uses: moonrepo/setup-toolchain@v0
         with:
-          node-version: 22
-          cache: npm
+          # Node and bun at exactly the versions `.prototools` pins — the file
+          # proto reads on a developer's machine, so CI cannot drift from it.
+          auto-install: true
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -162,7 +163,7 @@ jobs:
           fi
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       # The last point at which a shipped library can still be caught without an
       # attribution. On macOS the set is on disk by now, so this compares the
@@ -190,7 +191,7 @@ jobs:
       # their terms rather than caution.
       - name: Build Tauri app (Windows)
         if: runner.os == 'Windows'
-        run: npm run tauri build
+        run: bun run tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
@@ -240,7 +241,7 @@ jobs:
       # cache can be wrong, and the fix is to push a commit rather than re-run.
       - name: Build Tauri app (macOS)
         if: runner.os == 'macOS' && steps.app-cache.outputs.cache-hit != 'true'
-        run: npm run tauri:macos:build
+        run: bun run tauri:macos:build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""

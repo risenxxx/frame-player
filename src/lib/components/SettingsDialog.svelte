@@ -83,8 +83,10 @@
   import {
     AUTO_HIDE_CHOICES,
     CURSOR_HIDE_CHOICES,
+    PINCH_CHOICES,
     setAutoHide,
     setCursorHide,
+    setPinch,
     syncMenuChecks,
     windowPrefs,
   } from '$lib/window-prefs.svelte';
@@ -970,6 +972,23 @@
       </div>
       <div class="setting-hint">{t('set.cursor_hide_hint')}</div>
     </div>
+
+    <!-- macOS only: nowhere else does anything native see a pinch as a pinch
+         rather than as Ctrl+wheel. Two named things the gesture can be, so a
+         pill; the zoom keeps ⌥+pinch and Ctrl+wheel either way. -->
+    {#if IS_MAC}
+      <div class="setting">
+        <div class="setting-label">{t('set.pinch')}</div>
+        <div class="segmented">
+          {#each PINCH_CHOICES as v (v)}
+            <button class="segopt" class:sel={windowPrefs.pinch === v} onclick={() => setPinch(v)}>
+              {t(`set.pinch_${v}`)}
+            </button>
+          {/each}
+        </div>
+        <div class="setting-hint">{t('set.pinch_hint')}</div>
+      </div>
+    {/if}
 
     <!-- Watching together needs a server both ends agree on, and this is where
          it lives rather than in the room dialog: practically nobody runs their

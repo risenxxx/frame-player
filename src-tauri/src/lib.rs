@@ -916,6 +916,20 @@ fn window_float_over_fullscreen(window: tauri::WebviewWindow, on: bool) {
     }
 }
 
+/// What a trackpad pinch does from now on: the window's size, or nothing of
+/// ours — the gesture then reaches the web view as the ctrl+wheel that zooms
+/// the picture (macOS; see `macos_chrome::watch_pinch`). The frontend decides,
+/// because half of the answer is the shell's: the setting, and whether the
+/// window is the picture's right now. A no-op elsewhere: on Windows a precision
+/// touchpad's pinch arrives as ctrl+wheel and nothing native tells it from a
+/// mouse.
+#[tauri::command]
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+fn window_pinch_mode(resize: bool) {
+    #[cfg(target_os = "macos")]
+    macos_chrome::set_pinch_mode(resize);
+}
+
 /// The engine under the UI: the WebView2 runtime on Windows (Evergreen, so
 /// Microsoft updates it on its own schedule, and a preview channel shows up as
 /// a suffix such as "beta"), the system WebKit build on macOS. Shown in the
@@ -1125,6 +1139,7 @@ pub fn run() {
             window_enter_fullscreen,
             window_fullscreen_mask,
             window_float_over_fullscreen,
+            window_pinch_mode,
             window_shape::window_shape_lock,
             window_shape::window_frame_glide,
             window_shape::window_video_fade,
@@ -1277,6 +1292,7 @@ pub fn run() {
                 {
                     macos_chrome::apply(&win);
                     macos_chrome::watch_scroll_phase(app.handle());
+                    macos_chrome::watch_pinch(app.handle());
                     // English first; the frontend owns the language choice and
                     // corrects the menu from `onMount`, before the window is
                     // shown and long before the menu bar is ever drawn.

@@ -8,7 +8,7 @@
  * reaches `thumbs`. If the bus reached back for `player` or `cast` to *apply*
  * what arrives, that would be a cycle, and a cycle here costs no error and no
  * warning: the bundler resolves it and leaves a module-evaluation order nobody
- * chose (`npm run check-imports` is what says so out loud). So the bus is cut in
+ * chose (`bun run check-imports` is what says so out loud). So the bus is cut in
  * two along that line — publishing goes *down* into this leaf, and applying goes
  * *up*, in `apply.svelte.ts`, which is above everything and is reached only
  * through the callbacks registered here.

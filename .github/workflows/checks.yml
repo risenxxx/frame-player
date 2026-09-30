@@ -31,20 +31,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup toolchain
+        uses: moonrepo/setup-toolchain@v0
         with:
-          node-version: 22
-          cache: npm
+          # Node and bun at exactly the versions `.prototools` pins — the file
+          # proto reads on a developer's machine, so CI cannot drift from it.
+          auto-install: true
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       # svelte-check, then the three things it cannot see: a `$effect` at a
       # module's top level (throws on import, builds clean), an import cycle, and
       # a CSS rule whose markup went to another component. Then the unit tests.
       - name: Gates
-        run: npm run gates
+        run: bun run gates
 
   services:
     runs-on: ubuntu-latest
