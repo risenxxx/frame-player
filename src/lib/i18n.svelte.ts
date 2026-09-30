@@ -656,6 +656,12 @@ const ru = {
   'set.cursor_hide_never': 'Никогда',
   'set.cursor_hide_hint':
     '«Всегда» прячет курсор через секунду покоя, даже если панель остаётся на экране. Над панелью и в диалогах он не пропадает.',
+  'set.video_click': 'Клик по кадру',
+  'set.video_click_both': 'Пауза и полный экран',
+  'set.video_click_fullscreen': 'Только полный экран',
+  'set.video_click_pause': 'Только пауза',
+  'set.video_click_hint':
+    'Одиночный клик ставит на паузу, двойной переключает полный экран. «Только полный экран» оставляет паузу пробелу и панели; «Только пауза» оставляет полный экран клавише и кнопке.',
   'set.pinch': 'Щипок на трекпаде',
   'set.pinch_resize': 'Размер окна',
   'set.pinch_zoom': 'Масштаб кадра',
@@ -1605,6 +1611,12 @@ const en: Record<MessageKey, string> = {
   'set.cursor_hide_never': 'Never',
   'set.cursor_hide_hint':
     '“Always” hides the cursor after a second of rest even while the controls stay on screen. It never hides over the controls or in a dialog.',
+  'set.video_click': 'Click on the picture',
+  'set.video_click_both': 'Pause and fullscreen',
+  'set.video_click_fullscreen': 'Fullscreen only',
+  'set.video_click_pause': 'Pause only',
+  'set.video_click_hint':
+    'A click pauses, a double click goes fullscreen. “Fullscreen only” leaves pausing to Space and the controls; “Pause only” leaves fullscreen to its key and its button.',
   'set.pinch': 'Trackpad pinch',
   'set.pinch_resize': 'Window size',
   'set.pinch_zoom': 'Picture zoom',

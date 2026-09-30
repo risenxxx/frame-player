@@ -140,6 +140,7 @@
     clearCastClick,
     clearClickSuppression,
     armClickSuppression,
+    initInput,
     loadDoubleClickInterval,
     onCastScreenClick,
     onContextMenu,
@@ -536,6 +537,9 @@
     // awaited and not on the critical path: the module's 500 ms default is right
     // on both platforms if the call is slow or fails.
     void loadDoubleClickInterval();
+    // When the window was activated, for the click that did it (see
+    // `activation` in input.svelte.ts).
+    unlisteners.push(initInput());
     // Invitations to a shared viewing. Not awaited, for the same reason: a link
     // that opened the player is picked up by `getCurrent` inside, and the
     // dialog it raises is a decision the viewer has to make anyway — nothing

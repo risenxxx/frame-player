@@ -24,6 +24,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
+import { ActivationGate } from './activation';
 import { chrome, exitFullscreen, pokeUi, toggleFullscreen } from './chrome.svelte';
 import { inTextField } from './dom';
 import { cancelAdvance, endOfFile, takeSkip } from './endscreen.svelte';
@@ -51,7 +52,7 @@ import { ADJUST_KEY_STEP, nudgeAdjust, resetAdjust } from './picture-adjust.svel
 import { stepBy } from './step-engine.svelte';
 import { trashCurrentFile } from './trash';
 import { nudgeDelayHere } from './tracks.svelte';
-import { mini, toggleMini } from './window-prefs.svelte';
+import { mini, toggleMini, windowPrefs } from './window-prefs.svelte';
 import { isZoomed, panBy, resetZoom, zoomAt } from './zoom.svelte';
 import { zoomStep } from './zoom-step';
 import { IS_MAC } from './platform';
@@ -64,6 +65,52 @@ let doubleClickMs = 500;
 export async function loadDoubleClickInterval() {
   const ms = await invoke<number>('double_click_time').catch(() => 0);
   if (ms > 0) doubleClickMs = ms;
+}
+
+/**
+ * When the window was last brought forward by a click, so that the click is
+ * not also taken as a command.
+ *
+ * On macOS a click on an inactive window normally only activates it, and the
+ * window's `acceptFirstMouse` turns that off — deliberately, because every way
+ * of moving this window goes through the webview (`data-tauri-drag-region` on
+ * the bar, `startDragging` from the picture; `movableByWindowBackground` is off
+ * in macos_chrome.rs), so without it the first press on an inactive window was
+ * simply lost and the window could not be dragged until it had been clicked
+ * once. Worst in the mini player, which spends its life next to another app.
+ *
+ * But the convention behind the default is right about one thing: the click
+ * that brings a window forward is not a request to pause. Pausing on it is a
+ * surprise every time, and a double click meant as "fullscreen" ended paused
+ * whenever one of its two clicks was the activating one. So a click on the
+ * picture is a command only once the window has been the active one for the
+ * system's double-click interval — the same span the double click needs, which
+ * is how a double click on an inactive window goes straight to fullscreen with
+ * no pause in between. To pause an inactive player, click it and click again.
+ *
+ * Two signals, because the order WebKit delivers them in is not one to rely
+ * on. Read from WebKit's source rather than measured: the activating click
+ * reaches the page *before* the page is told it is focused — the activity-state
+ * change is dispatched at the end of the run-loop turn, the mouse event inside
+ * it — so at that click `document.hasFocus()` is still false, and that is the
+ * one moment it is. The `focus` event covers the other order, should that be
+ * the one that holds, and activation by other means; its cost, a click within
+ * half a second of ⌘-Tab doing nothing, is visible and repeatable, which a
+ * pause on the activating click was not.
+ *
+ * macOS only. Windows delivers the activating click to the application, and
+ * the player has always acted on it there.
+ */
+const activation = new ActivationGate(IS_MAC);
+
+export function initInput(): () => void {
+  const onFocus = () => activation.activated(performance.now());
+  window.addEventListener('focus', onFocus);
+  return () => window.removeEventListener('focus', onFocus);
+}
+
+function clickActivatesWindow(): boolean {
+  return activation.swallows(performance.now(), document.hasFocus(), doubleClickMs);
 }
 
 /// A drag or a pan just ended, so the click that follows is its tail rather than
@@ -161,6 +208,11 @@ export function onVideoClick(e: MouseEvent) {
   // click was for.
   if (dismissTopmostOnClick()) return;
   if (e.target !== e.currentTarget) return;
+  // The viewer who gave the click to the double click alone — see `VideoClick`.
+  if (windowPrefs.videoClick === 'fullscreen') return;
+  // The click that brought the window forward, or the second half of a double
+  // click on it: not a command. See `activation`.
+  if (clickActivatesWindow()) return;
   // Pause fires immediately, without waiting to see whether this is a double
   // click. Waiting for anything is not an option: the macOS double-click
   // threshold defaults to 500 ms, and any delay within it is exactly that
@@ -208,6 +260,8 @@ export function onVideoClick(e: MouseEvent) {
 /// picture" as far as the gesture is concerned).
 export function onCastScreenClick() {
   if (dismissTopmostOnClick()) return;
+  if (windowPrefs.videoClick === 'fullscreen') return;
+  if (clickActivatesWindow()) return;
   clearCastClick();
   castClickTimer = setTimeout(() => {
     castClickTimer = null;
@@ -245,6 +299,10 @@ export function onContextMenu(e: MouseEvent) {
 }
 
 export function onVideoDblClick() {
+  // "Pause only": the double click has no meaning of its own. Its two clicks
+  // have already paused and resumed, or, casting, left one pause pending —
+  // which must then go through, so the cancel below is skipped as well.
+  if (windowPrefs.videoClick === 'pause') return;
   // The pause was already undone by the second click — fullscreen only here.
   // Casting is the exception: there the first click is still pending, and
   // this is what stops it reaching the television at all.

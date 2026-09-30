@@ -89,6 +89,22 @@ export const AUTO_HIDE_CHOICES: AutoHide[] = ['always', 'fullscreen', 'never'];
 export type CursorHide = 'controls' | 'always' | 'never';
 export const CURSOR_HIDE_CHOICES: CursorHide[] = ['controls', 'always', 'never'];
 
+/**
+ * What a click on the picture does.
+ *
+ * - `both` — the default: a click pauses, a double click goes fullscreen. The
+ *   two are told apart without waiting (see `onVideoClick`), and the price of
+ *   that is a pause that blinks under a double click.
+ * - `fullscreen` — only the double click means anything; pausing is left to
+ *   Space and the controls. Asked for by a viewer whose double clicks kept
+ *   landing as pauses, and the honest answer to anyone who finds the blink
+ *   under a double click too much.
+ * - `pause` — only the click means anything; fullscreen is left to its key and
+ *   its button.
+ */
+export type VideoClick = 'both' | 'fullscreen' | 'pause';
+export const VIDEO_CLICK_CHOICES: VideoClick[] = ['both', 'fullscreen', 'pause'];
+
 class WindowPrefs {
   /// Remember the geometry between runs. Off by default while restore is buggy.
   remember = $state(false);
@@ -106,6 +122,8 @@ class WindowPrefs {
   cursorHide = $state<CursorHide>('controls');
   /// What a trackpad pinch does (macOS) — see `PinchAction` in window-fit.
   pinch = $state<PinchAction>('resize');
+  /// What a click on the picture does — see `VideoClick`.
+  videoClick = $state<VideoClick>('both');
   geometry = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 }
 
@@ -405,6 +423,9 @@ export function loadWindowPrefs() {
       windowPrefs.cursorHide = saved.cursorHide;
     }
     if (saved.pinch && PINCH_CHOICES.includes(saved.pinch)) windowPrefs.pinch = saved.pinch;
+    if (saved.videoClick && VIDEO_CLICK_CHOICES.includes(saved.videoClick)) {
+      windowPrefs.videoClick = saved.videoClick;
+    }
     if (saved.geometry) windowPrefs.geometry = saved.geometry;
   } catch {
     // corrupt entry — the defaults stay
@@ -424,6 +445,7 @@ function saveWindowPrefs() {
         autoHide: windowPrefs.autoHide,
         cursorHide: windowPrefs.cursorHide,
         pinch: windowPrefs.pinch,
+        videoClick: windowPrefs.videoClick,
         geometry: windowPrefs.geometry,
       }),
     );
@@ -965,6 +987,11 @@ export function setCursorHide(v: CursorHide) {
 
 export function setPinch(v: PinchAction) {
   windowPrefs.pinch = v;
+  saveWindowPrefs();
+}
+
+export function setVideoClick(v: VideoClick) {
+  windowPrefs.videoClick = v;
   saveWindowPrefs();
 }
 

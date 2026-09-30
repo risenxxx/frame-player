@@ -83,9 +83,11 @@
   import {
     AUTO_HIDE_CHOICES,
     CURSOR_HIDE_CHOICES,
+    VIDEO_CLICK_CHOICES,
     PINCH_CHOICES,
     setAutoHide,
     setCursorHide,
+    setVideoClick,
     setPinch,
     syncMenuChecks,
     windowPrefs,
@@ -971,6 +973,23 @@
         {/each}
       </div>
       <div class="setting-hint">{t('set.cursor_hide_hint')}</div>
+    </div>
+
+    <!-- Three named things a click on the picture can mean, so a pill. The
+         default tells a click from a double click without waiting, and the
+         two others are for whoever would rather not pay for that: the
+         blink of a pause under a double click, or a pause where a double
+         click was meant. -->
+    <div class="setting">
+      <div class="setting-label">{t('set.video_click')}</div>
+      <div class="segmented">
+        {#each VIDEO_CLICK_CHOICES as v (v)}
+          <button class="segopt" class:sel={windowPrefs.videoClick === v} onclick={() => setVideoClick(v)}>
+            {t(`set.video_click_${v}`)}
+          </button>
+        {/each}
+      </div>
+      <div class="setting-hint">{t('set.video_click_hint')}</div>
     </div>
 
     <!-- macOS only: nowhere else does anything native see a pinch as a pinch

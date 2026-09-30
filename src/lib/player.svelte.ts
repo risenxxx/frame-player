@@ -748,6 +748,7 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
   applyLoopMode(player.loopMode);
   applyNormalize(loadNormalize());
   applySdrColor(loadSdrColor());
+  bindRemoteKeys();
 
   unlisteners.push(
     await observeProperties(OBSERVED, (ev) => {
@@ -944,6 +945,40 @@ function loopOptions(mode: LoopMode): { 'loop-file': string; 'loop-playlist': st
     'loop-file': mode === 'one' ? 'inf' : 'no',
     'loop-playlist': mode === 'all' ? 'inf' : 'no',
   };
+}
+
+/**
+ * The system's media commands, bound to what they mean.
+ *
+ * On macOS they arrive as *keys*: AirPods taken out of the ears, ⏯ on the
+ * keyboard, the Now Playing widget and the Touch Bar all reach mpv through its
+ * remote command center (`osdep/mac/remote_command_center.swift`), which
+ * translates each into a key press — `PAUSEONLY`, `PLAYONLY`, `PLAY` — and a
+ * key press means nothing without a binding. `input-default-bindings=no` in
+ * `initialOptions` took every default binding away for the sake of our own
+ * hotkeys, and with them these three: measured with mpv itself, a `PAUSEONLY`
+ * under that option leaves `pause` at `no`, and does not once the key is bound.
+ * So the player kept playing in AirPods that had just been taken out, which
+ * every other player on the system answers with a pause.
+ *
+ * Bound to the commands the defaults use, so the mirrors follow through the
+ * observers exactly as for a hotkey. Windows is not involved: its media
+ * controls set the properties directly. Next and previous stay unbound on
+ * purpose — `advance` darkens the picture before it switches files, and a raw
+ * `playlist-next` from a binding would skip that; they need a route into the
+ * page, and until they have one the widget's arrows do nothing, as before.
+ */
+const REMOTE_KEY_BINDINGS: [key: string, cmd: string][] = [
+  ['PAUSEONLY', 'set pause yes'],
+  ['PLAYONLY', 'set pause no'],
+  ['PLAY', 'cycle pause'],
+  ['STOP', 'set pause yes'],
+];
+
+function bindRemoteKeys() {
+  for (const [key, cmd] of REMOTE_KEY_BINDINGS) {
+    void command('keybind', [key, cmd]).catch((e) => console.warn(`keybind ${key} failed:`, e));
+  }
 }
 
 export function applyLoopMode(mode: LoopMode) {
