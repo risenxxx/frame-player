@@ -425,10 +425,18 @@ async function hideShutter() {
   }
 }
 
-// The veil and shutter exist for DWM composition artifacts — on macOS the
-// system animates the fullscreen transition and there is nothing to hide.
+// The veil and shutter exist for DWM composition artifacts. macOS has its own
+// reason and its own mask: AppKit animates snapshots of the window, which catch
+// mpv's view and the web view mid-change (a stretched picture, the title bar
+// twice), so the native side takes the whole content off the screen before the
+// transition and brings it back after — see "Masking the fullscreen transition"
+// in macos_chrome.rs. Masking here, rather than leaving it to the native
+// `toggleFullScreen:` override, saves that one deferral.
 async function maskFullscreenTransition() {
-  if (IS_MAC) return;
+  if (IS_MAC) {
+    await invoke('window_fullscreen_mask').catch(() => {});
+    return;
+  }
   // The shutter color must match the veil (the release relies on an
   // invisible seam between them) — announce it before show().
   await emitTo('veil', 'veil-color', chrome.startScreen ? '#101016' : '#000').catch(() => {});

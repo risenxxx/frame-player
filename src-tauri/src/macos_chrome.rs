@@ -108,6 +108,7 @@ pub fn apply(window: &tauri::WebviewWindow) {
     // by hand.
     install_toolbar(&ns, mtm);
     toolbar_off_in_fullscreen(&ns);
+    mask_fullscreen_transitions(window, &ns);
     keep_corner_in_live_resize(window, &ns);
 }
 
@@ -674,14 +675,316 @@ pub fn set_video_alpha(window: &tauri::WebviewWindow, alpha: f64) -> bool {
     let Some(view) = video_view(&ns) else {
         return false;
     };
-    let fill = if alpha < 1.0 {
+    view.setAlphaValue(alpha);
+    // Under the fullscreen mask the fill stays black whatever the picture
+    // does; the mask puts the right one back when it lifts.
+    if !TRANSITION_MASKED.load(std::sync::atomic::Ordering::Relaxed) {
+        restore_fill(&ns);
+    }
+    true
+}
+
+/// The fill for what the picture is doing: black while it is less than whole,
+/// the window's own color once it is — see `set_video_alpha`.
+fn restore_fill(ns: &NSWindow) {
+    let dark = video_view(ns).is_some_and(|v| v.alphaValue() < 1.0);
+    let fill = if dark {
         objc2_app_kit::NSColor::blackColor()
     } else {
         window_fill()
     };
     ns.setBackgroundColor(Some(&fill));
-    view.setAlphaValue(alpha);
+}
+
+// ---- Masking the fullscreen transition -----------------------------------
+//
+// AppKit does not animate the window into fullscreen, it animates pictures of
+// it: a snapshot of the window as it was, stretched towards the screen, and one
+// of the window as it will be, cross-faded in over it. Our window is two
+// surfaces that paint on their own schedules — mpv's view underneath, the web
+// view over it, each a frame or two behind the window's frame in its own way —
+// so the snapshots catch them mid-change. Reported, depending on where the
+// window stood before: the picture stretched tall for a moment, and the title
+// bar twice, once at the top of the screen and once in the middle of it (the
+// "before" picture at the window's old place, the "after" one at the screen's).
+//
+// Nothing about the snapshots can be steered, so the window gives them nothing
+// to catch: the content view (the picture and the web view together) goes to
+// alpha 0 over a black window fill *before* the transition starts, and comes
+// back after `Did{Enter,Exit}FullScreen`, once both surfaces have had time to
+// take the new size. The transition is then a black rectangle growing into the
+// screen, which is also what the Windows side does with its veil and shutter.
+//
+// "Before it starts" is the part that needs care, because the "before" picture
+// is taken from what is on the screen, and a change made in the same main-
+// thread turn as `toggleFullScreen:` has not reached the screen yet. So:
+//
+// * the frontend masks first (`window_fullscreen_mask`, which waits for the
+//   black to be on screen) and only then asks for fullscreen;
+// * every other way in — ⌃⌘F, the menu, tao's `setFullscreen` — reaches
+//   `toggleFullScreen:`, which is overridden on tao's window class the way
+//   `setFrame:display:` is (see "Which corner a live resize keeps"): when the
+//   window is not masked yet it masks and sends the toggle on `MASK_LEAD`
+//   later instead;
+// * whatever still gets past both (a system path that does not go through
+//   `toggleFullScreen:`) is masked on `WillEnter`/`WillExit`, late for the
+//   "before" picture but in time for the rest of it.
+//
+// It must not be able to stay on. A transition that fails says so only to the
+// window's delegate (`windowDidFailToEnterFullScreen:` has no notification),
+// and the delegate is tao's, so `MASK_CEILING` is what lifts the mask when no
+// `Did…` arrives — whether the transition failed or was never started.
+
+/// The mask is down, or on its way down.
+static TRANSITION_MASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A toggle was deferred behind the mask and has not been sent yet; further
+/// toggles until then are the same request again.
+static TOGGLE_DEFERRED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Which mask is the newest, so a fade-in finishing late does not put the
+/// window's fill back under a mask that came down after it started.
+static MASK_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Which scheduled lift is the newest: a later one replaces an earlier one
+/// (the settle after `Did…` replaces the ceiling armed by the mask).
+static LIFT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The window that is masked: tao's class has other instances (the veil).
+static MASKED_WINDOW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The same window as Tauri has it, which is what the timers below come back
+/// through. Deliberately not a selector sent to the window with
+/// `performSelector:afterDelay:` — tried first, and neither the deferred toggle
+/// nor the lift ever arrived, which left the window black for good.
+static MASK_HANDLE: std::sync::OnceLock<tauri::WebviewWindow> = std::sync::OnceLock::new();
+
+/// How long the black is given to reach the screen before the transition is
+/// started: three frames at 60 Hz, which is a commit plus a composite with a
+/// frame to spare.
+pub const MASK_LEAD: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// After `Did{Enter,Exit}FullScreen`: the web view relays out a frame or two
+/// behind the window and mpv reconfigures its surface for the new size.
+const MASK_SETTLE: std::time::Duration = std::time::Duration::from_millis(120);
+
+/// The fade back in, in seconds.
+const MASK_FADE: f64 = 0.15;
+
+/// The last way back.
+const MASK_CEILING: std::time::Duration = std::time::Duration::from_secs(3);
+
+type ToggleImp =
+    unsafe extern "C-unwind" fn(&NSWindow, objc2::runtime::Sel, *mut objc2::runtime::AnyObject);
+
+/// `NSWindow`'s own `toggleFullScreen:`.
+static NEXT_TOGGLE: std::sync::OnceLock<ToggleImp> = std::sync::OnceLock::new();
+
+fn is_masked_window(ns: &NSWindow) -> bool {
+    MASKED_WINDOW.load(std::sync::atomic::Ordering::Relaxed) == ns as *const NSWindow as usize
+}
+
+/// What the mask did, on the dev build's stderr — a transition cannot be
+/// stepped through in a debugger, and this one has already failed once in a
+/// way only its order of events could explain.
+fn mask_trace(what: &str) {
+    if cfg!(debug_assertions) {
+        eprintln!("[macos_chrome] fullscreen mask: {what}");
+    }
+}
+
+/// Run `f` on the main thread with the window, `delay` from now.
+fn on_main_after(delay: std::time::Duration, f: impl FnOnce(&NSWindow) + Send + 'static) {
+    let Some(window) = MASK_HANDLE.get().cloned() else {
+        return;
+    };
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(delay).await;
+        let win = window.clone();
+        let sent = window.run_on_main_thread(move || {
+            if let Some(ns) = ns_window(&win) {
+                f(&ns);
+            }
+        });
+        if sent.is_err() {
+            mask_trace("could not reach the main thread");
+        }
+    });
+}
+
+/// Lift the mask `delay` from now, unless another lift is scheduled after this.
+fn lift_after(delay: std::time::Duration) {
+    use std::sync::atomic::Ordering;
+
+    let mine = LIFT_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    on_main_after(delay, move |ns| {
+        if LIFT_GEN.load(Ordering::SeqCst) == mine {
+            lift_transition_mask(ns);
+        }
+    });
+}
+
+/// Take the window's content off the screen. Main thread only.
+fn mask_transition(ns: &NSWindow) {
+    use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext};
+    use std::sync::atomic::Ordering;
+
+    mask_trace("down");
+    MASK_GEN.fetch_add(1, Ordering::SeqCst);
+    TRANSITION_MASKED.store(true, Ordering::Relaxed);
+    ns.setBackgroundColor(Some(&objc2_app_kit::NSColor::blackColor()));
+    if let Some(content) = ns.contentView() {
+        // Through the animator with no duration, so a fade-in still running
+        // from the previous transition is replaced rather than left to finish
+        // over the black.
+        let changes = block2::RcBlock::new(move |ctx: core::ptr::NonNull<NSAnimationContext>| {
+            unsafe { ctx.as_ref() }.setDuration(0.0);
+            content.animator().setAlphaValue(0.0);
+        });
+        NSAnimationContext::runAnimationGroup(&changes);
+    }
+    lift_after(MASK_CEILING);
+}
+
+/// Put the content back, fading. Main thread only.
+fn lift_transition_mask(ns: &NSWindow) {
+    use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext};
+    use std::sync::atomic::Ordering;
+
+    if !TRANSITION_MASKED.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    mask_trace("up");
+    let Some(content) = ns.contentView() else {
+        restore_fill(ns);
+        return;
+    };
+    let mask = MASK_GEN.load(Ordering::SeqCst);
+    let changes = block2::RcBlock::new(move |ctx: core::ptr::NonNull<NSAnimationContext>| {
+        unsafe { ctx.as_ref() }.setDuration(MASK_FADE);
+        content.animator().setAlphaValue(1.0);
+    });
+    let win = ns.retain();
+    let done = block2::RcBlock::new(move || {
+        if MASK_GEN.load(Ordering::SeqCst) == mask && !TRANSITION_MASKED.load(Ordering::Relaxed) {
+            restore_fill(&win);
+        }
+    });
+    NSAnimationContext::runAnimationGroup_completionHandler(&changes, Some(&done));
+}
+
+/// Mask ahead of a transition the caller is about to start, for the
+/// `window_fullscreen_mask` command. `true` when it came down now and the
+/// caller has to give it `MASK_LEAD` to reach the screen. Main thread only.
+pub fn mask_fullscreen_transition(window: &tauri::WebviewWindow) -> bool {
+    use std::sync::atomic::Ordering;
+
+    let Some(ns) = ns_window(window) else {
+        return false;
+    };
+    if !is_masked_window(&ns) || TRANSITION_MASKED.load(Ordering::Relaxed) {
+        return false;
+    }
+    mask_transition(&ns);
     true
+}
+
+unsafe extern "C-unwind" fn toggle_behind_mask(
+    this: &NSWindow,
+    cmd: objc2::runtime::Sel,
+    sender: *mut objc2::runtime::AnyObject,
+) {
+    use std::sync::atomic::Ordering;
+
+    let Some(next) = NEXT_TOGGLE.get() else {
+        return;
+    };
+    if !is_masked_window(this) || TRANSITION_MASKED.load(Ordering::Relaxed) {
+        if is_masked_window(this) {
+            mask_trace("toggle");
+        }
+        unsafe { next(this, cmd, sender) };
+        return;
+    }
+    if TOGGLE_DEFERRED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    mask_trace("toggle deferred behind the mask");
+    mask_transition(this);
+    on_main_after(MASK_LEAD, |ns| {
+        if TOGGLE_DEFERRED.swap(false, Ordering::Relaxed) {
+            // Through the override again, which the mask now lets pass — and
+            // which is a plain `toggleFullScreen:` if the window has changed
+            // its class meanwhile (the mini player's NSPanel).
+            ns.toggleFullScreen(None);
+        }
+    });
+}
+
+fn mask_fullscreen_transitions(window: &tauri::WebviewWindow, ns: &NSWindow) {
+    use block2::RcBlock;
+    use objc2::runtime::AnyObject;
+    use objc2::sel;
+    use objc2_app_kit::{
+        NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification,
+        NSWindowWillEnterFullScreenNotification, NSWindowWillExitFullScreenNotification,
+    };
+    use objc2_foundation::{NSNotification, NSNotificationCenter};
+    use std::sync::atomic::Ordering;
+
+    if MASK_HANDLE.set(window.clone()).is_err() {
+        return;
+    }
+    MASKED_WINDOW.store(ns as *const NSWindow as usize, Ordering::Relaxed);
+
+    let class = unsafe { &*(ns as *const NSWindow).cast::<AnyObject>() }.class();
+    let toggle = sel!(toggleFullScreen:);
+    match class.superclass().and_then(|s| s.instance_method(toggle)) {
+        Some(method) => {
+            let next: ToggleImp = unsafe { std::mem::transmute(method.implementation()) };
+            let _ = NEXT_TOGGLE.set(next);
+            let ours: objc2::runtime::Imp =
+                unsafe { std::mem::transmute(toggle_behind_mask as ToggleImp) };
+            let added = unsafe {
+                objc2::ffi::class_addMethod(
+                    (class as *const objc2::runtime::AnyClass).cast_mut(),
+                    toggle,
+                    ours,
+                    objc2::ffi::method_getTypeEncoding(method),
+                )
+            };
+            if !added.as_bool() {
+                // tao has come to define it itself: the notifications below
+                // still mask, only later.
+                log_warn("the window's class has its own toggleFullScreen:; masking from WillEnter only");
+            }
+        }
+        None => log_warn("no toggleFullScreen: to build on; masking from WillEnter only"),
+    }
+
+    let center = NSNotificationCenter::defaultCenter();
+
+    let win = ns.retain();
+    let starting = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
+        mask_trace("will change");
+        if !TRANSITION_MASKED.load(Ordering::Relaxed) {
+            mask_transition(&win);
+        }
+    });
+    let finished = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
+        mask_trace("did change");
+        lift_after(MASK_SETTLE);
+    });
+    for (name, block) in [
+        (unsafe { NSWindowWillEnterFullScreenNotification }, &starting),
+        (unsafe { NSWindowWillExitFullScreenNotification }, &starting),
+        (unsafe { NSWindowDidEnterFullScreenNotification }, &finished),
+        (unsafe { NSWindowDidExitFullScreenNotification }, &finished),
+    ] {
+        let _ = unsafe {
+            center.addObserverForName_object_queue_usingBlock(Some(name), Some(ns), None, block)
+        };
+    }
 }
 
 // The window's frame in the coordinates the frontend has: top-left origin,

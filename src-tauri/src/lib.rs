@@ -874,6 +874,31 @@ async fn window_enter_fullscreen(window: tauri::WebviewWindow) -> bool {
     }
 }
 
+/// Take the window's content off the screen ahead of a fullscreen transition
+/// the caller is about to start, and answer once the black is on screen — see
+/// "Masking the fullscreen transition" in macos_chrome.rs. It lifts itself when
+/// the transition ends. A no-op elsewhere: Windows has the veil and shutter.
+#[tauri::command]
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+async fn window_fullscreen_mask(window: tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    {
+        let (tx, mut rx) = tauri::async_runtime::channel::<bool>(1);
+        let win = window.clone();
+        if window
+            .run_on_main_thread(move || {
+                let _ = tx.try_send(macos_chrome::mask_fullscreen_transition(&win));
+            })
+            .is_err()
+        {
+            return;
+        }
+        if rx.recv().await.unwrap_or(false) {
+            tokio::time::sleep(macos_chrome::MASK_LEAD).await;
+        }
+    }
+}
+
 /// Let the window float over *other applications'* fullscreen spaces, for the
 /// mini player (macOS). A no-op elsewhere: on Windows an always-on-top window is
 /// already as high as a Win32 window goes, and there is no system compact-overlay
@@ -1098,6 +1123,7 @@ pub fn run() {
             hdr_status,
             window_buttons,
             window_enter_fullscreen,
+            window_fullscreen_mask,
             window_float_over_fullscreen,
             window_shape::window_shape_lock,
             window_shape::window_frame_glide,
