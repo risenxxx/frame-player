@@ -53,7 +53,7 @@ pub fn report_to(window: &tauri::WebviewWindow) {
     let _ = FRONTEND.set(window.clone());
 }
 
-/// A resize by hand has begun to change the window, or has ended. Said once
+/// A resize by hand has begun (the button is down on an edge), or has ended. Said once
 /// per change, however many frames the resize sets.
 #[cfg(any(windows, target_os = "macos"))]
 pub fn say_resizing(on: bool) {
@@ -223,9 +223,23 @@ unsafe extern "system" fn sizing_proc(
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_EXITSIZEMOVE, WM_NCDESTROY, WM_SIZING};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        HTBOTTOMRIGHT, HTLEFT, WM_EXITSIZEMOVE, WM_NCDESTROY, WM_NCLBUTTONDOWN, WM_SIZING,
+    };
 
     match msg {
+        // A press on a sizing edge (HTLEFT..=HTBOTTOMRIGHT), before the window
+        // has changed: both resize paths arrive here, the HTML strips and the
+        // border helper alike. The default handler runs the whole sizing loop
+        // and returns on release, so the resize is over once it does — which
+        // also covers a press let go without a drag, whether or not the loop
+        // sends `WM_EXITSIZEMOVE` for one.
+        WM_NCLBUTTONDOWN if (HTLEFT as usize..=HTBOTTOMRIGHT as usize).contains(&wparam) => {
+            say_resizing(true);
+            let result = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
+            say_resizing(false);
+            return result;
+        }
         // The loop that sizes the window also moves it, and says which only by
         // what it sends: a move never sends `WM_SIZING`.
         WM_EXITSIZEMOVE => say_resizing(false),

@@ -741,18 +741,76 @@ unsafe extern "C-unwind" fn set_frame_keeping_corner(
             };
             let kept = keep_corner(up(start), up(frame), held);
             frame = NSRect::new(NSPoint::new(kept.x, kept.y), NSSize::new(kept.w, kept.h));
-            // Said when the window first changes, not when the button goes
-            // down: a press on an edge that is let go again is not a resize.
-            let changed = (frame.size.width - start.size.width).abs() > 0.5
-                || (frame.size.height - start.size.height).abs() > 0.5;
-            if changed {
-                crate::window_shape::say_resizing(true);
-            }
         }
     }
     if let Some(next) = NEXT_SET_FRAME.get() {
         unsafe { next(this, cmd, frame, display) };
     }
+}
+
+/// How far either side of an edge AppKit takes a press for a resize, and how
+/// far into the window a corner reaches. Measured on macOS 26 with events
+/// posted to a bare titled, resizable window: a drag resized from 2 pt inside
+/// to 2 pt outside an edge (not from 4), and from a corner inset up to 8 pt
+/// (not 12). Kept a point wider each: a press taken for a resize that is not
+/// one costs the bars a blink, since its mouse-up comes back through the
+/// monitor.
+const EDGE_BAND: f64 = 3.0;
+const CORNER_BAND: f64 = 10.0;
+
+/// Tell the frontend a resize is under way the moment the button goes down on
+/// an edge. `WillStartLiveResize` is too late for that: AppKit posts it with the
+/// event *after* the press — the first drag, or the release — so a press held
+/// still said nothing. The press itself does reach a local monitor at once, and
+/// whether it lands on an edge is geometry, as there is no asking AppKit.
+fn say_resizing_on_press() {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventType, NSWindowStyleMask};
+    use std::sync::atomic::Ordering;
+
+    let handler = RcBlock::new(move |event: core::ptr::NonNull<NSEvent>| -> *mut NSEvent {
+        let e = unsafe { event.as_ref() };
+        // A local monitor runs on the main thread, inside the event loop.
+        let window = e.window(unsafe { MainThreadMarker::new_unchecked() });
+        let ours = window.as_deref().is_some_and(|w| {
+            KEPT_WINDOW.load(Ordering::Relaxed) == w as *const NSWindow as usize
+        });
+        if !ours {
+            return event.as_ptr();
+        }
+        if e.r#type() == NSEventType::LeftMouseUp {
+            // A resize swallows its own mouse-up, and `DidEndLiveResize` says
+            // it is over; one that arrives here was a press on the picture.
+            crate::window_shape::say_resizing(false);
+            return event.as_ptr();
+        }
+        let window = window.unwrap();
+        let mask = window.styleMask();
+        if !mask.contains(NSWindowStyleMask::Resizable)
+            || mask.contains(NSWindowStyleMask::FullScreen)
+            || FS_TRANSITION.load(Ordering::Relaxed)
+        {
+            return event.as_ptr();
+        }
+        let size = window.frame().size;
+        let at = e.locationInWindow();
+        let (dx, dy) = (at.x.min(size.width - at.x), at.y.min(size.height - at.y));
+        let near_edge = |d: f64| d.abs() <= EDGE_BAND;
+        let within = |d: f64| d >= -EDGE_BAND;
+        let edge = (near_edge(dx) && within(dy)) || (near_edge(dy) && within(dx));
+        let corner = (0.0..=CORNER_BAND).contains(&dx) && (0.0..=CORNER_BAND).contains(&dy);
+        if edge || corner {
+            crate::window_shape::say_resizing(true);
+        }
+        event.as_ptr()
+    });
+    // For the life of the process, like the other monitors.
+    let _ = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(
+            NSEventMask::LeftMouseDown | NSEventMask::LeftMouseUp,
+            &handler,
+        )
+    };
 }
 
 fn keep_corner_in_live_resize(window: &tauri::WebviewWindow, ns: &NSWindow) {
@@ -794,6 +852,7 @@ fn keep_corner_in_live_resize(window: &tauri::WebviewWindow, ns: &NSWindow) {
     let _ = NEXT_SET_FRAME.set(next);
     crate::window_shape::report_to(window);
     KEPT_WINDOW.store(ns as *const NSWindow as usize, Ordering::Relaxed);
+    say_resizing_on_press();
 
     let center = NSNotificationCenter::defaultCenter();
 
@@ -821,6 +880,11 @@ fn keep_corner_in_live_resize(window: &tauri::WebviewWindow, ns: &NSWindow) {
             (at.x, at.y),
         ));
         *RESIZE_FROM.lock().unwrap_or_else(|e| e.into_inner()) = Some((frame, held));
+        // Said when the button goes down on the edge, before the window has
+        // changed: the first frames of a drag are the ones the bars trail
+        // worst. A press let go without a drag hides them for as long as it
+        // was held, and `ended` brings them straight back.
+        crate::window_shape::say_resizing(true);
     });
     let ended = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
         *RESIZE_FROM.lock().unwrap_or_else(|e| e.into_inner()) = None;
