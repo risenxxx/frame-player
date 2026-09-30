@@ -10,7 +10,7 @@
  * one state: applying a choice updates every group, not the one that was
  * clicked.
  */
-const KEY = 'fp-theme'
+export const KEY = 'fp-theme'
 
 type Choice = 'system' | 'light' | 'dark'
 

@@ -7,13 +7,30 @@
     `text/markdown` with the page's Markdown twin (worker/index.ts). Everything
     with an extension — the hashed bundles, the pictures, the manifests — is
     served straight from the CDN and never wakes it.
+
+    Its other job is `/s/*`, the page counter's own address (src/analytics.ts).
+    `/s/script.js` has an extension, and a negative pattern wins over a positive
+    one, so the exclusions name the extensions the site serves (`.js` lives only
+    under `/_astro`) rather than `!/*.*`, which would hand the counter's script
+    to the CDN as a 404.
   */
   "main": "worker/index.ts",
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/*", "!/_astro/*", "!/gen/*", "!/og/*", "!/*.*"]
+    "run_worker_first": [
+      "/*",
+      "!/_astro/*",
+      "!/gen/*",
+      "!/og/*",
+      "!/*.html",
+      "!/*.md",
+      "!/*.txt",
+      "!/*.xml",
+      "!/*.png",
+      "!/*.svg"
+    ]
   },
   "routes": [{ "pattern": "frameplayer.app", "custom_domain": true }],
   "workers_dev": false,

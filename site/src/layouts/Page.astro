@@ -1,6 +1,7 @@
 ---
 import onestLatin from '@fontsource-variable/onest/files/onest-latin-wght-normal.woff2?url'
 import { getCollection } from 'astro:content'
+import Analytics from '../components/Analytics.astro'
 import { downloads } from '../release.ts'
 import '@fontsource-variable/onest'
 import '@fontsource-variable/jetbrains-mono'
@@ -178,6 +179,7 @@ const jsonLd = { '@context': 'https://schema.org', '@graph': [website, app, ...s
       } catch {}
     </script>
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <Analytics />
   </head>
   <body>
     <slot />

@@ -1,7 +1,7 @@
 # The landing page
 
 The landing page and the guides behind it, built with Astro and served by
-Cloudflare Workers static assets. No framework runtime, no external scripts: the
+Cloudflare Workers static assets. No framework runtime, no third-party hosts: the
 home page is 92 KB of HTML with the stylesheet inlined — 24.6 KB over the wire —
 plus 2.3 KB of JavaScript for the theme switch, the header and the scene
 animations.
@@ -90,6 +90,16 @@ the site rather than converted at the edge, so what an agent reads is the
 page's own source. `run_worker_first` in `wrangler.jsonc` keeps everything with
 an extension — the hashed bundles, the pictures — on the CDN, where the worker
 never sees it.
+
+The same worker is the page counter's address. Visits are counted by
+[Rybbit](https://rybbit.com) — no cookies, nothing written to the device — and
+the script and its events go through `/s/*` on this domain rather than to
+Rybbit's host: `src/analytics.ts` holds the site id, `Analytics.astro` puts the
+tag in production builds only (not `dev`, not a pull request's preview), and
+the worker forwards a closed list of three endpoints with the click ids cut out
+of the query and the referrer cut to its origin. The site's settings in Rybbit
+need **First-Party Proxy** switched on, or every visitor is counted from the
+worker's address.
 
 ```bash
 curl -H 'Accept: text/markdown' https://frameplayer.app/torrent-streaming

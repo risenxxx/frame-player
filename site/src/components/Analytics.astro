@@ -1,0 +1,40 @@
+---
+/*
+  The page counter (src/analytics.ts), and the one promise it must not break.
+
+  Rybbit sets no cookie, but its script can write a `rybbit-visitor-id` to
+  localStorage — a persistent device identifier (today only while feature flags
+  are on, which they are not; the next version of the script is not ours to
+  read in advance). ePrivacy art. 5(3) and TDDDG §25 cover *any* write to the
+  device, so rather than rely on a setting, the write is made impossible:
+  `setItem` lets through exactly the keys this site writes itself — the theme
+  choice, the user-input customisation the law exempts. A list of our keys,
+  not a ban on theirs: a ban on a prefix would stop working silently the day
+  the prefix changes. The script wraps its storage calls in `try` and falls
+  back to an identifier that lives for one page load.
+
+  Only in a production build: a dev server and a pull request's preview are
+  not visitors, and without the counter there is nothing to lock.
+*/
+import { ANALYTICS_SRC } from '../analytics.ts'
+import { KEY as THEME_KEY } from '../scripts/theme.ts'
+
+const enabled = import.meta.env.PROD && process.env.SITE_PREVIEW !== '1'
+const allowed = JSON.stringify([THEME_KEY])
+---
+
+{
+  enabled && (
+    <Fragment>
+      <script is:inline set:html={`(function () {
+  var allowed = ${allowed}
+  var write = Storage.prototype.setItem
+  Storage.prototype.setItem = function (key, value) {
+    if (allowed.indexOf(String(key)) === -1) throw new Error('site: storage is not allowed')
+    return write.call(this, key, value)
+  }
+})()`} />
+      <script is:inline defer src={ANALYTICS_SRC} />
+    </Fragment>
+  )
+}
