@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro'
 import { getCollection } from 'astro:content'
+import { publishedReleases } from '../releases.ts'
 
 /*
   The home page and every guide, written out rather than pulled from an
@@ -10,12 +11,15 @@ import { getCollection } from 'astro:content'
 */
 export const GET: APIRoute = async ({ site }) => {
   const pages = (await getCollection('pages')).sort((a, b) => a.data.order - b.data.order)
+  // `/updates` changes when a release goes out, so that is its date.
+  const [latest] = await publishedReleases()
   const url = (path: string, extra = '') =>
     `  <url><loc>${new URL(path, site).href}</loc>${extra}</url>`
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${[
   url('/'),
+  url('/updates', latest ? `<lastmod>${latest.data.date.toISOString().slice(0, 10)}</lastmod>` : ''),
   ...pages.map((p) => url(`/${p.id}`, `<lastmod>${p.data.updated.toISOString().slice(0, 10)}</lastmod>`)),
 ].join('\n')}
 </urlset>

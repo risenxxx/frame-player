@@ -378,6 +378,8 @@ const ru = {
   'bar.fullscreen_exit': 'Выйти из полноэкранного режима',
   'bar.update': 'Обновление {version}',
   'bar.downloading': 'Загрузка {percent}%',
+  'bar.update_notes': 'Что нового в {version}',
+  'bar.update_more': 'и ещё {n}',
 
   'step.badge': 'Покадрово',
 
@@ -1334,6 +1336,8 @@ const en: Record<MessageKey, string> = {
   'bar.fullscreen_exit': 'Exit fullscreen',
   'bar.update': 'Update {version}',
   'bar.downloading': 'Downloading {percent}%',
+  'bar.update_notes': 'What’s new in {version}',
+  'bar.update_more': 'and {n} more',
 
   'step.badge': 'Frame step',
 

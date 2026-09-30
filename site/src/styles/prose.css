@@ -218,6 +218,57 @@
 .faq-item h3 { margin-top: 0; font-size: 17px; }
 .faq-item p { margin-top: 6px; font-size: 16px; }
 
+/* ── /updates ────────────────────────────────────────────────────────────── */
+
+/*
+  A release is a row of two columns: its version and date on the left, where a
+  scanning eye runs down them, and the notes in a reading column on the right.
+  As wide as a wide figure, like "Read next".
+*/
+/* The header spans the list's width rather than the text column's, so the
+   headline starts where the versions do. */
+.art-head-in.upd-head { max-width: calc(1040px + 2 * var(--gut)); }
+.upd-feed { color: var(--fg2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line3); }
+.upd-feed:hover { color: var(--fg); }
+
+.upd-list { max-width: calc(1040px + 2 * var(--gut)); padding-block: 56px 24px; }
+
+.upd-rel {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 720px);
+  gap: 8px 40px;
+  padding-block: 36px;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 88px;
+}
+
+.upd-rel:first-child { border-top: 0; padding-top: 0; }
+
+.upd-meta { display: flex; flex-direction: column; gap: 6px; }
+.upd-meta h2 { font: 500 20px/1.2 var(--mono); letter-spacing: -0.02em; }
+.upd-meta h2 a { color: var(--fg); }
+.upd-meta h2 a:hover { color: var(--acc); }
+.upd-meta time { font-size: 13.5px; color: var(--fg3); }
+
+.upd-body { font-size: 16px; line-height: 1.65; color: var(--fg2); }
+.upd-body .upd-sum { font-size: 18px; line-height: 1.5; color: var(--fg); letter-spacing: -0.01em; }
+.upd-body h3 {
+  margin-top: 26px;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.upd-body ul { margin-top: 10px; padding-left: 1.1em; list-style: disc; display: flex; flex-direction: column; gap: 8px; }
+.upd-body li::marker { color: var(--fg3); }
+.upd-body strong { color: var(--fg); font-weight: 600; }
+
+@media (max-width: 760px) {
+  .upd-rel { grid-template-columns: minmax(0, 1fr); }
+  .upd-meta { flex-direction: row; align-items: baseline; gap: 14px; }
+}
+
 /* ── read next ────────────────────────────────────────────────────────────── */
 
 /* As wide as a wide figure, so the cards line up with the text above them. */

@@ -1,0 +1,43 @@
+---
+/*
+  The last three releases, on the home page: what each was about in a
+  sentence, and its headlines under it. The whole list is `/updates`.
+*/
+import { publishedReleases, anchor, shortDate, headlines } from '../releases.ts'
+
+const recent = (await publishedReleases()).slice(0, 3)
+---
+
+{recent.length > 0 && (
+  <section class="updates" id="updates">
+    <div class="wrap">
+      <div class="sec-h" data-reveal>
+        <h2>Recently changed</h2>
+        <p class="lede">Releases come often and install themselves. This is what the last few brought.</p>
+      </div>
+      <ol class="upd-cards" data-reveal style="--dl:1">
+        {recent.map((r) => {
+          const items = headlines(r)
+          return (
+            <li>
+              <a class="upd-card" href={`/updates#${anchor(r.data.version)}`}>
+                <span class="upd-k">
+                  <span class="upd-v">{r.data.version}</span>
+                  <time datetime={r.data.date.toISOString().slice(0, 10)}>{shortDate(r.data.date)}</time>
+                </span>
+                <span class="upd-t">{r.data.summary}</span>
+                {items.length > 0 && (
+                  <span class="upd-h">
+                    {items.slice(0, 3).map((h) => <span>{h}</span>)}
+                    {items.length > 3 && <span class="upd-more">and {items.length - 3} more</span>}
+                  </span>
+                )}
+              </a>
+            </li>
+          )
+        })}
+      </ol>
+      <a class="more-link" href="/updates" data-reveal style="--dl:2">Every release</a>
+    </div>
+  </section>
+)}

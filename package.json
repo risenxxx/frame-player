@@ -1,6 +1,6 @@
 {
   "name": "frameplayer",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "description": "A video player for Windows and macOS built on Tauri 2 and libmpv: local files, links and live torrent streaming in one window, frame-accurate seeking, and an unusual amount of attention to detail",
   "type": "module",
   "private": true,
@@ -15,9 +15,11 @@
     "check-imports": "node scripts/check-imports.mjs",
     "notices": "node scripts/gen-notices.mjs",
     "notices:check": "node scripts/gen-notices.mjs --check",
+    "changelog:check": "node scripts/changelog.mjs check",
+    "changelog:preview": "node scripts/changelog.mjs preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gates": "npm run check && npm run check-runes && npm run check-imports && npm run css-orphans && npm run notices:check && npm run test",
+    "gates": "npm run check && npm run check-runes && npm run check-imports && npm run css-orphans && npm run notices:check && npm run changelog:check && npm run test",
     "tauri": "tauri",
     "set-version": "node scripts/set-version.mjs",
     "tauri:macos": "env FFMPEG_DIR=\"$PWD/src-tauri/ffmpeg-macos\" LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib tauri dev",
@@ -36,6 +38,8 @@
     "tauri-plugin-libmpv-api": "^0.3.2"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.1",
+    "@changesets/parse": "^0.4.3",
     "@sveltejs/adapter-static": "^3.0.6",
     "@sveltejs/kit": "^2.9.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",

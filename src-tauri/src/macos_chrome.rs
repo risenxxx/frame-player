@@ -531,6 +531,10 @@ pub fn set_shape_lock(window: &tauri::WebviewWindow, shape: Option<(f64, f64)>) 
 static RESIZE_FROM: std::sync::Mutex<Option<(NSRect, Option<crate::window_shape::Held>)>> =
     std::sync::Mutex::new(None);
 
+/// A fullscreen transition is under way, which AppKit also reports as a live
+/// resize; see the `WillStartLiveResize` handler.
+static FS_TRANSITION: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// The window whose corner is kept: the class has other instances (the veil).
 static KEPT_WINDOW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -581,7 +585,9 @@ fn keep_corner_in_live_resize(window: &tauri::WebviewWindow, ns: &NSWindow) {
     use objc2::runtime::AnyObject;
     use objc2::sel;
     use objc2_app_kit::{
-        NSWindowDidEndLiveResizeNotification, NSWindowWillStartLiveResizeNotification,
+        NSEventType, NSWindowDidEndLiveResizeNotification, NSWindowDidEnterFullScreenNotification,
+        NSWindowDidExitFullScreenNotification, NSWindowWillEnterFullScreenNotification,
+        NSWindowWillExitFullScreenNotification, NSWindowWillStartLiveResizeNotification,
     };
     use objc2_foundation::{NSNotification, NSNotificationCenter};
     use std::sync::atomic::Ordering;
@@ -618,18 +624,49 @@ fn keep_corner_in_live_resize(window: &tauri::WebviewWindow, ns: &NSWindow) {
 
     let win = ns.retain();
     let starting = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
+        // Only a resize the pointer is doing. AppKit also calls a fullscreen
+        // transition a live resize, and there the event at hand is whatever
+        // came last — the mouse-up of the double click that asked for it, a
+        // key, a message — so the corner "held" was read off a click in the
+        // middle of the picture, and leaving fullscreen put the window back
+        // with its left edge at the screen's. Measured: a window entering
+        // from x = 700 came back at x = 0, from every position tried.
+        let press = win.currentEvent().filter(|e| {
+            matches!(e.r#type(), NSEventType::LeftMouseDown | NSEventType::LeftMouseDragged)
+        });
+        let Some(press) = press.filter(|_| !FS_TRANSITION.load(Ordering::Relaxed)) else {
+            *RESIZE_FROM.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            return;
+        };
         let frame = win.frame();
         // The press that began it is the event being handled as this is sent.
-        let held = win.currentEvent().map(|press| {
-            let at = press.locationInWindow();
-            crate::window_shape::held_axes((frame.size.width, frame.size.height), (at.x, at.y))
-        });
+        let at = press.locationInWindow();
+        let held = Some(crate::window_shape::held_axes(
+            (frame.size.width, frame.size.height),
+            (at.x, at.y),
+        ));
         *RESIZE_FROM.lock().unwrap_or_else(|e| e.into_inner()) = Some((frame, held));
     });
     let ended = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
         *RESIZE_FROM.lock().unwrap_or_else(|e| e.into_inner()) = None;
         crate::window_shape::say_resizing(false);
     });
+    let transition = RcBlock::new(|_: core::ptr::NonNull<NSNotification>| {
+        FS_TRANSITION.store(true, Ordering::Relaxed);
+    });
+    let settled = RcBlock::new(|_: core::ptr::NonNull<NSNotification>| {
+        FS_TRANSITION.store(false, Ordering::Relaxed);
+    });
+    for (name, block) in [
+        (unsafe { NSWindowWillEnterFullScreenNotification }, &transition),
+        (unsafe { NSWindowWillExitFullScreenNotification }, &transition),
+        (unsafe { NSWindowDidEnterFullScreenNotification }, &settled),
+        (unsafe { NSWindowDidExitFullScreenNotification }, &settled),
+    ] {
+        let _ = unsafe {
+            center.addObserverForName_object_queue_usingBlock(Some(name), Some(ns), None, block)
+        };
+    }
     for (name, block) in [
         (unsafe { NSWindowWillStartLiveResizeNotification }, &starting),
         (unsafe { NSWindowDidEndLiveResizeNotification }, &ended),
@@ -843,7 +880,45 @@ fn mask_transition(ns: &NSWindow) {
         });
         NSAnimationContext::runAnimationGroup(&changes);
     }
+    frame_chrome_shown(ns, false);
     lift_after(MASK_CEILING);
+}
+
+/// The part of the window AppKit draws itself, which the content view's alpha
+/// does not reach and the transition's snapshots carry: the title bar with the
+/// traffic lights (seen in the zoom as a strip wider than the window, and as
+/// buttons on the black), and the light rim along the window's edge, which is
+/// drawn with its shadow. Main thread only.
+///
+/// The title bar goes by its container's alpha, not by hiding the buttons: the
+/// buttons' `isHidden` is already three people's business (`enter_fullscreen`,
+/// the fullscreen notifications and `set_buttons_visible`), and an alpha on
+/// the view above them leaves every one of those as it was.
+fn frame_chrome_shown(ns: &NSWindow, shown: bool) {
+    let alpha = if shown { 1.0 } else { 0.0 };
+    if let Some(bar) = titlebar_container(ns) {
+        bar.setAlphaValue(alpha);
+    }
+    ns.setHasShadow(shown);
+}
+
+/// The view holding the title bar and its buttons: `NSTitlebarContainerView`,
+/// two levels above the close button. Found through the button because it is
+/// AppKit's private view, and checked by name so a different hierarchy in a
+/// later macOS hides nothing rather than the wrong thing.
+fn titlebar_container(ns: &NSWindow) -> Option<Retained<objc2_app_kit::NSView>> {
+    let button = ns.standardWindowButton(NSWindowButton::CloseButton)?;
+    // `superview` is unsafe because the view does not retain its superview;
+    // the window's own hierarchy keeps every one of these alive, and each is
+    // retained as it is handed back.
+    let mut view = unsafe { button.superview() };
+    while let Some(v) = view {
+        if v.class().name().to_string_lossy().contains("TitlebarContainer") {
+            return Some(v);
+        }
+        view = unsafe { v.superview() };
+    }
+    None
 }
 
 /// Put the content back, fading. Main thread only.
@@ -855,6 +930,7 @@ fn lift_transition_mask(ns: &NSWindow) {
         return;
     }
     mask_trace("up");
+    frame_chrome_shown(ns, true);
     let Some(content) = ns.contentView() else {
         restore_fill(ns);
         return;

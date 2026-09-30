@@ -1,0 +1,95 @@
+---
+/*
+  Every release, newest first, from `changelog/*.md` (see src/releases.ts for
+  which of them count as out). One page rather than one per release: most
+  releases are two or three lines, and a page each would be a site of stubs.
+  Each has an anchor, `#v1.18.0`, which is what the home page's cards and the
+  GitHub release link to.
+*/
+import { render } from 'astro:content'
+import Page from '../layouts/Page.astro'
+import Icons from '../components/Icons.astro'
+import Nav from '../components/Nav.astro'
+import Footer from '../components/Footer.astro'
+import FinalCta from '../components/FinalCta.astro'
+import { publishedReleases, anchor, longDate } from '../releases.ts'
+
+const releases = await publishedReleases()
+const rendered = await Promise.all(releases.map(async (r) => ({ entry: r, ...(await render(r)) })))
+const latest = releases[0]
+
+const url = new URL('/updates', Astro.site).href
+const home = new URL('/', Astro.site).href
+const schema = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Frame Player', item: home },
+      { '@type': 'ListItem', position: 2, name: 'Updates', item: url },
+    ],
+  },
+]
+---
+
+<Page
+  title="Updates — every Frame Player release"
+  description="What each version of Frame Player changed, newest first: new features, improvements and fixes for Windows and macOS."
+  schema={schema}
+  markdown="/updates.md"
+  feed={{ href: '/updates.xml', title: 'Frame Player updates' }}
+>
+  <Icons />
+  <Nav />
+  <main id="top">
+    <header class="art-head">
+      <div class="hero-light" aria-hidden="true"></div>
+      <div class="wrap art-head-in upd-head">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/">Frame Player</a><span class="slash" aria-hidden="true">/</span><span aria-current="page">Updates</span>
+        </nav>
+        <h1>Updates</h1>
+        <p class="lede">What every version changed, newest first. The player installs updates by itself, so this is mostly a record of what arrived.</p>
+        {latest && (
+          <p class="fine art-meta">
+            Latest: {latest.data.version}, <time datetime={latest.data.date.toISOString().slice(0, 10)}>{longDate(latest.data.date)}</time>
+            <span aria-hidden="true"> · </span><a class="upd-feed" href="/updates.xml">Atom feed</a>
+          </p>
+        )}
+      </div>
+    </header>
+
+    <div class="wrap upd-list">
+      {rendered.map(({ entry, Content }) => (
+        <article class="upd-rel" id={anchor(entry.data.version)} aria-labelledby={`${anchor(entry.data.version)}-h`}>
+          <div class="upd-meta">
+            <h2 id={`${anchor(entry.data.version)}-h`}>
+              <a href={`#${anchor(entry.data.version)}`}>{entry.data.version}</a>
+            </h2>
+            <time datetime={entry.data.date.toISOString().slice(0, 10)}>{longDate(entry.data.date)}</time>
+          </div>
+          <div class="upd-body">
+            <p class="upd-sum">{entry.data.summary}</p>
+            <Content />
+          </div>
+        </article>
+      ))}
+    </div>
+
+    <div id="download">
+      <FinalCta />
+    </div>
+  </main>
+  <Footer />
+
+  <script>
+    import { initTheme } from '../scripts/theme.ts'
+    import { initMotion } from '../scripts/motion.ts'
+    import { initNav } from '../scripts/nav.ts'
+    import { initPointer } from '../scripts/pointer.ts'
+
+    initTheme()
+    initNav()
+    initPointer()
+    initMotion()
+  </script>
+</Page>

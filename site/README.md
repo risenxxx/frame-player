@@ -59,6 +59,19 @@ than the 720px text column takes `wide`, up to 1040px. After adding a page, run
 `npm run og` for its link card (`public/og/<id>.png`; without one the page uses
 the site's), and `npm run audit` against it with `AUDIT_URL`.
 
+## Updates
+
+`/updates` lists every release, newest first, and the home page shows the last
+three as cards (`components/Updates.astro`). Both read the `releases` collection,
+which is `changelog/*.md` at the root of the repository — the files
+`npm run set-version` writes out of the changesets, and the same ones the GitHub
+release takes its notes from (see `scripts/changelog.mjs`). The site writes none
+of it. Only releases `latest.json` says are out are shown (`src/releases.ts`),
+because the commit that bumps the version rebuilds the site well before its
+installers exist. Beside the page are its Markdown twin (`/updates.md`) and an
+Atom feed of the last twenty (`/updates.xml`). A push that edits `changelog/`
+redeploys the site, so a note corrected after its release is corrected here too.
+
 ## What an agent reads
 
 Every guide is also built as Markdown, at its own address plus `.md`

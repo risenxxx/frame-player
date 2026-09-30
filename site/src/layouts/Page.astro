@@ -26,6 +26,8 @@ interface Props {
   schema?: Record<string, unknown>[]
   /** The page's Markdown twin, for anything that would rather read than render. */
   markdown?: string
+  /** An Atom feed of what this page lists, for a reader that would rather be told. */
+  feed?: { href: string; title: string }
   /** The 404: no canonical address, and nothing for a search engine to keep. */
   noindex?: boolean
 }
@@ -40,6 +42,7 @@ const {
   imageAlt = 'Frame Player: files, links, magnets. One player that gets them right.',
   schema = [],
   markdown,
+  feed,
   noindex = false,
 } = Astro.props
 
@@ -120,6 +123,7 @@ const jsonLd = { '@context': 'https://schema.org', '@graph': [website, app, ...s
         {/* Nothing withheld from a snippet: a page that means to be quoted says so. */}
         <meta name="robots" content="max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
         {markdown && <link rel="alternate" type="text/markdown" href={new URL(markdown, Astro.site)} />}
+        {feed && <link rel="alternate" type="application/atom+xml" title={feed.title} href={new URL(feed.href, Astro.site)} />}
       </>
     )}
 

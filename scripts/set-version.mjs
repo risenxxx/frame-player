@@ -6,6 +6,15 @@
  *   node scripts/set-version.mjs patch      # 0.20.0 -> 0.20.1
  *   node scripts/set-version.mjs minor      # 0.20.0 -> 0.21.0
  *   node scripts/set-version.mjs major      # 0.20.0 -> 1.0.0
+ *   node scripts/set-version.mjs release    # whatever the pending changesets call for
+ *
+ * **Setting a version publishes the pending changesets.** Every write turns
+ * `.changeset/*.md` into `changelog/<version>.md` and deletes them (see
+ * changelog.mjs), because the release that push produces takes its notes from
+ * that file. With nothing pending it refuses: a release with no notes is
+ * almost always a forgotten changeset, and `--allow-empty` is for the rare one
+ * that really changes nothing a viewer would notice. A version that already
+ * has notes (the files were set by hand, or this is being re-run) keeps them.
  *
  * **Five files carry the version, and there is no way to collapse them into
  * one.** `tauri.conf.json` can be pointed at a package.json instead of holding
@@ -29,9 +38,10 @@
  * that quietly skipped a file is precisely the bug this exists to end.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readChangesets, bumpFor, renderRelease, RELEASES } from './changelog.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -99,7 +109,9 @@ function bump(current, kind) {
   return `${major}.${minor}.${patch + 1}`;
 }
 
-const arg = process.argv[2];
+const args = process.argv.slice(2);
+const allowEmpty = args.includes('--allow-empty');
+const arg = args.find((a) => !a.startsWith('--'));
 const states = TARGETS.map((target) => ({ target, ...read(target) }));
 
 // `tauri.conf.json` is the authority, because it is what the release workflow
@@ -119,13 +131,44 @@ if (!arg) {
     process.exit(1);
   }
   console.log(`\nAll five agree on ${current}.`);
+  const { changes } = readChangesets();
+  if (changes.length) console.log(`${changes.length} pending changeset(s) call for a ${bumpFor(changes)} bump.`);
   process.exit(0);
 }
 
-const next = ['major', 'minor', 'patch'].includes(arg) ? bump(current, arg) : arg;
-if (!SEMVER.test(next)) {
-  console.error(`"${arg}" is neither a version like 1.2.3 nor major/minor/patch.`);
+let pending;
+try {
+  pending = readChangesets();
+} catch (error) {
+  console.error(`The changesets need fixing first:\n  ${error.message.split('\n').join('\n  ')}`);
   process.exit(1);
+}
+const needed = bumpFor(pending.changes);
+
+if (arg === 'release' && !needed) {
+  console.error('"release" bumps by the pending changesets, and there are none.');
+  process.exit(1);
+}
+const kind = arg === 'release' ? needed : arg;
+const next = ['major', 'minor', 'patch'].includes(kind) ? bump(current, kind) : kind;
+if (!SEMVER.test(next)) {
+  console.error(`"${arg}" is neither a version like 1.2.3 nor major/minor/patch/release.`);
+  process.exit(1);
+}
+
+const notesPath = join(RELEASES, `${next}.md`);
+const hasNotes = existsSync(notesPath);
+if (!hasNotes && !needed && !allowEmpty) {
+  console.error(
+    `No changesets in .changeset/, so ${next} would be released with no notes.\n` +
+      `Write one for each change a viewer will notice, or pass --allow-empty ` +
+      `if this release really changes nothing they would.`,
+  );
+  process.exit(1);
+}
+const RANK = { patch: 0, minor: 1, major: 2 };
+if (needed && ['major', 'minor', 'patch'].includes(kind) && RANK[kind] < RANK[needed]) {
+  console.warn(`Note: the changesets call for a ${needed} bump, and this is a ${kind} one.`);
 }
 
 for (const { target, path, text, matches } of states) {
@@ -137,6 +180,19 @@ for (const { target, path, text, matches } of states) {
   }
   if (out !== text) writeFileSync(path, out);
   console.log(`${matches[0][2]} -> ${next}  ${target.file}`);
+}
+
+if (hasNotes && pending.changes.length) {
+  console.warn(`\nchangelog/${next}.md already exists, so the pending changesets were left where they are.`);
+} else if (!hasNotes) {
+  mkdirSync(RELEASES, { recursive: true });
+  const date = new Date().toISOString().slice(0, 10);
+  writeFileSync(notesPath, renderRelease({ version: next, date, ...pending }));
+  for (const file of pending.files) unlinkSync(file);
+  console.log(`\nWrote changelog/${next}.md from ${pending.changes.length} changeset(s), and removed them.`);
+  if (pending.changes.length && !pending.summary) {
+    console.log(`No summary changeset was written, so the summary is the first change's first sentence — worth a look.`);
+  }
 }
 
 console.log(

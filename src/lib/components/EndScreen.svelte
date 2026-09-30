@@ -7,6 +7,7 @@
   /// cancels the countdown: it is the largest possible target for "wait".
   import type { Snippet } from 'svelte';
   import { t } from '$lib/i18n.svelte';
+  import { clickEndsDrag } from '$lib/input.svelte';
   import { isNetworkSource } from '$lib/player.svelte';
   import { ADVANCE_MS, playEntry, playlist, type PlaylistEntry } from '$lib/playlist.svelte';
 
@@ -31,8 +32,17 @@
      film: previous / replay / next, with the countdown on next. Clicking
      the backdrop cancels the countdown — it is the largest possible target
      for "wait". -->
-<div class="overlay clickthrough-bg endscreen afloat" role="presentation" onclick={oncancel}>
-  <div class="endrow">
+<div
+  class="overlay clickthrough-bg endscreen afloat"
+  role="presentation"
+  data-drag-surface
+  onclick={() => {
+    // The backdrop moves the window as the picture under it would, and the
+    // click a drag ends with is not a "wait".
+    if (!clickEndsDrag()) oncancel();
+  }}
+>
+  <div class="endrow" data-drag-surface>
     {#if prev}
       {@render endCard(prev, 'prev')}
     {/if}

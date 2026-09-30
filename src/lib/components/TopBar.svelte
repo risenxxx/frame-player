@@ -11,6 +11,7 @@
   import { t } from '$lib/i18n.svelte';
   import { withKey } from '$lib/keys.svelte';
   import { IS_MAC } from '$lib/platform';
+  import { notesTip, parseReleaseNotes } from '$lib/release-notes';
   import { player } from '$lib/player.svelte';
   import { sync } from '$lib/sync/apply.svelte';
   import { formatCode } from '$lib/sync/protocol';
@@ -30,7 +31,9 @@
     titleSlide: string;
     brandEl: HTMLElement | null;
     chromeEl: HTMLElement | null;
-    updateAvail: { version: string } | null;
+    /// `body` is the release's notes from `latest.json`, shown as the button's
+    /// tooltip; absent for a release published before they existed.
+    updateAvail: { version: string; body?: string } | null;
     updatePct: number | null;
     torrentChip: TorrentStatus | null;
     torrentLabel: string | null;
@@ -75,6 +78,16 @@
     onOpenRoom,
     onChipHover,
   }: Props = $props();
+
+  /// What the waiting release changed, on hover: the summary and the headlines
+  /// (see release-notes.ts). No notes, no tip — the label already says which
+  /// version it is.
+  const updateTip = $derived.by(() => {
+    if (!updateAvail) return undefined;
+    const notes = parseReleaseNotes(updateAvail.body);
+    if (!notes) return undefined;
+    return notesTip(t('bar.update_notes', { version: updateAvail.version }), notes, (n) => t('bar.update_more', { n }));
+  });
 
   // ---- the room indicator ----
 
@@ -151,6 +164,8 @@
   {#if updateAvail}
     <button
       class="updbtn"
+      data-tip={updatePct === null ? updateTip : undefined}
+      data-tip-below
       class:progressing={updatePct !== null}
       style="--pct: {updatePct ?? 0}%"
       onclick={onInstallUpdate}

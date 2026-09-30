@@ -47,6 +47,11 @@
        each edge and, as a content width, kept 6px. */
     max-width: min(380px, calc(100vw - 32px));
     overflow-wrap: anywhere;
+    /* A tip is one line almost everywhere; the update button's is several —
+       a heading, the release's summary, a line per change (release-notes.ts).
+       `pre-line` keeps those breaks and still collapses every other run of
+       whitespace, so a one-line tip renders exactly as before. */
+    white-space: pre-line;
     background: rgba(14, 14, 20, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: 7px;

@@ -79,6 +79,15 @@ export function clearClickSuppression() {
   suppressNextClick = false;
 }
 
+/// Whether the click being handled is the tail of a drag. For a surface over
+/// the video whose own click means something — the end screen's backdrop
+/// cancels the countdown — and which would otherwise act on the click a
+/// window drag ends with. Reads the flag without clearing it: the click goes
+/// on to `onVideoClick`, which does.
+export function clickEndsDrag(): boolean {
+  return suppressNextClick;
+}
+
 // Dragging the video area: without zoom it moves the window (5 px threshold, so
 // a click stays a click); zoomed in, it pans the magnified region.
 let videoDragStart: { x: number; y: number } | null = null;
@@ -91,7 +100,11 @@ let castClickTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function onVideoPointerDown(e: PointerEvent) {
   if (e.button !== 0 || !player.hasFile) return;
-  if (e.target !== e.currentTarget) return;
+  // The picture itself, or a surface over it that stands in for the picture
+  // (`data-drag-surface`: the end screen's backdrop, which covers all of it —
+  // without it the window could not be moved once a file had ended).
+  const target = e.target as HTMLElement | null;
+  if (target !== e.currentTarget && target?.dataset.dragSurface === undefined) return;
   if (isZoomed()) {
     panning = true;
     panMoved = false;

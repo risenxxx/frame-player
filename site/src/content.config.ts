@@ -43,4 +43,28 @@ const pages = defineCollection({
   }),
 })
 
-export const collections = { pages }
+/*
+  Every release of the player, from `changelog/<version>.md` at the root of the
+  repository — the files `npm run set-version` writes out of the changesets,
+  and the same ones the GitHub release is given as its notes (see
+  scripts/changelog.mjs). They live outside the site because the player's
+  release is what writes them; the site only reads.
+
+  The id is the version itself: the default would slugify `1.18.0` into
+  `1180`, which is a different version.
+*/
+const releases = defineCollection({
+  loader: glob({
+    pattern: '*.md',
+    base: '../changelog',
+    generateId: ({ entry }) => entry.replace(/\.md$/, ''),
+  }),
+  schema: z.object({
+    version: z.string().regex(/^\d+\.\d+\.\d+$/),
+    date: z.coerce.date(),
+    /** The sentence a card on the home page prints. */
+    summary: z.string().max(200),
+  }),
+})
+
+export const collections = { pages, releases }

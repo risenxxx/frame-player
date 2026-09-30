@@ -421,6 +421,49 @@ jobs:
           pattern: dist-*
           merge-multiple: true
 
+      # What changed comes from `changelog/<version>.md`, which `set-version`
+      # wrote out of the changesets — the same file the site's /updates page is
+      # built from, so the two cannot say different things. `changelog:check`
+      # (a gate on every push) refuses a version without one, so the fallback
+      # below is for a release pushed past the gates, and says so rather than
+      # publishing a page with nothing on it.
+      #
+      # Two outputs: `changes.md` is the notes alone, which also go into
+      # `latest.json` as `notes` — the player shows them in the tooltip of its
+      # update button — and `notes.md` is those plus the installation table,
+      # for the GitHub release. Before the manifest, which needs the first.
+      - name: Release notes
+        run: |
+          set -euo pipefail
+          version="${{ needs.check-version.outputs.version }}"
+          changes="$RUNNER_TEMP/changes.md"
+          notes="$RUNNER_TEMP/notes.md"
+          if [ -f "changelog/$version.md" ]; then
+            node scripts/changelog.mjs notes "$version" > "$changes"
+          else
+            echo "::warning::changelog/$version.md is missing; the release goes out without notes"
+            : > "$changes"
+          fi
+          if [ -s "$changes" ]; then cp "$changes" "$notes"; else echo "No notes were written for this version." > "$notes"; fi
+          cat >> "$notes" <<'EOF'
+
+          ### Installation
+
+          | File | Description |
+          |------|-------------|
+          | `FramePlayer_*_x64-setup.exe` | Installer (Windows 10/11 x64) |
+          | `FramePlayer_*_aarch64.dmg` | Disk image (macOS, Apple Silicon) |
+
+          The player updates automatically: when a new version is released,
+          an update button appears in the app.
+
+          The macOS build is signed with an Apple Developer ID and notarised,
+          so it opens the way any other application does.
+
+          Every release, on one page: https://frameplayer.app/updates
+          EOF
+          cat "$notes"
+
       - name: Build update manifest
         run: |
           set -euo pipefail
@@ -428,11 +471,14 @@ jobs:
           version="${{ needs.check-version.outputs.version }}"
           # The per-platform fragments merge into a single platforms object.
           jq -s 'add' dist/platform-*.json > platforms.json
+          # `notes` is what the updater hands the player as `Update.body`: the
+          # release's notes as Markdown, empty when none were written.
           jq -n \
             --arg v "$version" \
             --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --rawfile n "$RUNNER_TEMP/changes.md" \
             --slurpfile p platforms.json \
-            '{version: $v, pub_date: $d, platforms: $p[0]}' > dist/latest.json
+            '{version: $v, notes: $n, pub_date: $d, platforms: $p[0]}' > dist/latest.json
           rm dist/platform-*.json
           cat dist/latest.json
 
@@ -475,20 +521,10 @@ jobs:
         with:
           tag_name: v${{ needs.check-version.outputs.version }}
           name: Frame Player v${{ needs.check-version.outputs.version }}
+          # Adds only the "Full Changelog" compare link below the notes: there
+          # are no pull requests for it to list.
           generate_release_notes: true
-          body: |
-            ### Installation
-
-            | File | Description |
-            |------|-------------|
-            | `FramePlayer_*_x64-setup.exe` | Installer (Windows 10/11 x64) |
-            | `FramePlayer_*_aarch64.dmg` | Disk image (macOS, Apple Silicon) |
-
-            The player updates automatically: when a new version is released,
-            an update button appears in the app.
-
-            The macOS build is signed with an Apple Developer ID and notarised,
-            so it opens the way any other application does.
+          body_path: ${{ runner.temp }}/notes.md
           files: |
             dist/*.exe
             dist/*.dmg
