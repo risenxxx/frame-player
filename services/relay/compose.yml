@@ -1,0 +1,27 @@
+# Your own watch-together relay. Put it behind something that terminates TLS —
+# the player refuses a plaintext `ws://` address that is not on loopback — and
+# enter `wss://<your domain>` in the player's settings.
+#
+#   docker compose up -d
+#
+# In Dokploy (or Coolify) create a Compose service from this file, attach the
+# domain to port 8080 and delete the `ports:` block: their proxy reaches the
+# container over its own network, and the domain gets its certificate there.
+services:
+  relay:
+    image: ghcr.io/risenxxx/frameplayer-relay:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # What the invitation page at /j/<code> shows as the address to share.
+      RELAY_PUBLIC_URL: https://relay.example.com
+      # Behind a reverse proxy: key the join rate limit on the viewer's address
+      # (X-Forwarded-For) rather than on the proxy's. Remove when exposed directly.
+      RELAY_TRUST_PROXY: "1"
+      # The rest of the variables, with their defaults, are in the README.
+    # The relay keeps no state and writes no files, so it can lose everything
+    # a container is otherwise given.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]

@@ -31,6 +31,13 @@ takes to run your own instead: the address is a field in the player's settings
 not a fork. Leaving it empty restores the default rather than turning the
 feature off.
 
+The quickest way is the published image — `ghcr.io/risenxxx/frameplayer-relay`,
+amd64 and arm64, `latest` plus a `sha-<commit>` tag per build for pinning.
+`compose.yml` here is a ready service for `docker compose up -d`, and the same
+file goes into Dokploy or Coolify as a Compose service. The image is rebuilt
+only when this directory changes (`.github/workflows/relay-image.yml`), not with
+every release of the player — the two are versioned apart.
+
 `Dockerfile` builds the same binary onto `scratch`;
 `frameplayer-relay.service` runs it under systemd with everything locked down
 that a process keeping no state can afford to lose.

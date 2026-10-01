@@ -1,0 +1,83 @@
+# The relay's container image, for anybody who would rather run their own than
+# use the default one: `docker compose up` with `services/relay/compose.yml`, or
+# the same image in Dokploy, Coolify or anything else that takes one.
+#
+# Published to the GitHub Container Registry, which is free for a public image —
+# storage and pulls alike — and needs no secret beyond the workflow's own token.
+#
+# Built only when the relay changes, not on every release of the player: the two
+# are versioned apart on purpose (the content a room carries is opaque to the
+# relay, so a new player almost never needs a new relay), and an image rebuilt
+# from identical sources would still be a new digest, which tells everybody
+# running `:latest` behind an auto-updater to restart for nothing.
+#
+# Tags: `latest`, and `sha-<commit>` for pinning or rolling back.
+name: Relay image
+
+on:
+  push:
+    branches: [main]
+    paths: ['services/relay/**', '.github/workflows/relay-image.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: relay-image
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/frameplayer-relay
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same tests `checks.yml` runs, again here because that workflow does
+      # not gate this one — an image is what people deploy, so it is published
+      # only from a tree whose tests pass.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: services/relay/go.sum
+      - name: Test
+        run: |
+          go vet frameplayer/relay/...
+          go test -race -count=1 frameplayer/relay/...
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=Frame Player relay
+            org.opencontainers.image.description=Watch-together relay for Frame Player: rooms and a shared timeline, no media, no storage
+            org.opencontainers.image.licenses=GPL-3.0-or-later
+
+      # amd64 for an ordinary VPS, arm64 for the ARM ones and a Raspberry Pi.
+      # Both are cross-compiled natively (see the Dockerfile), no emulation.
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/relay
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

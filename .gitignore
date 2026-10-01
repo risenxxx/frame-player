@@ -41,5 +41,7 @@ server/relay
 services/relay/relay
 
 # The compiled service binaries from `go build`, which land in the repo root.
-tmdb
-relay
+# Anchored: a bare `relay` also matched the directory services/relay/, so any
+# file added there was ignored without a word.
+/tmdb
+/relay
