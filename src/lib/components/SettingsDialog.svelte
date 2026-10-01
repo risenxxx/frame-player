@@ -94,11 +94,13 @@
   } from '$lib/window-prefs.svelte';
   import { DEFAULT_RELAY, relayUrl, setRelayUrl } from '$lib/sync/wire.svelte';
   import {
-    DEFAULT_INDEXER,
     DEFAULT_TMDB,
+    INDEXER_EXAMPLE,
     catalog,
+    indexerApiKey,
     indexerUrl,
     setCatalogEnabled,
+    setIndexerApiKey,
     setIndexerUrl,
     setTmdbUrl,
     tmdbUrl,
@@ -120,6 +122,8 @@
     /// callback rather than reaching for `overlays`: no component in this
     /// project opens a dialog by itself — the page owns the surface stack.
     onLicenses: () => void;
+    /// The section to open on, when the viewer was sent here for one setting.
+    initialTab?: string | null;
   }
 
   let {
@@ -131,6 +135,7 @@
     onSetRoute,
     onClearTorrentCache,
     onLicenses,
+    initialTab = null,
   }: Props =
     $props();
 
@@ -438,7 +443,11 @@
   /// searched by. What the boundary still owns is the footer: it now names mpv's
   /// settings rather than claiming everything on the page is one of them.
   type SettingsTab = 'general' | 'video' | 'playback' | 'audio' | 'subs' | 'torrents' | 'tv' | 'keys';
-  let settingsTab = $state<SettingsTab>('general');
+  const TABS: readonly SettingsTab[] = ['general', 'video', 'playback', 'audio', 'subs', 'torrents', 'tv', 'keys'];
+  // Read once, on the way in: the tab is the viewer's from then on.
+  let settingsTab = $state<SettingsTab>(
+    TABS.find((tab) => tab === initialTab) ?? 'general',
+  );
 
   /// The picture slider being dragged, which turns the sheet see-through (see
   /// `peek` on Dialog). The control bar is kept away from the first touch until
@@ -532,11 +541,17 @@
   // what was typed — an empty entry falls back to the default rather than
   // turning the feature off, which is what the switch beside it is for.
   let indexerVal = $state(indexerUrl());
+  let indexerKeyVal = $state(indexerApiKey());
   let tmdbVal = $state(tmdbUrl());
 
   function saveIndexer(next: string) {
     setIndexerUrl(next);
     indexerVal = indexerUrl();
+  }
+
+  function saveIndexerKey(next: string) {
+    setIndexerApiKey(next);
+    indexerKeyVal = indexerApiKey();
   }
 
   function saveTmdb(next: string) {
@@ -1164,19 +1179,30 @@
         <div class="setting-label">{t('catalog.indexer_label')}</div>
         <div class="setting-hint">{t('catalog.indexer_hint')}</div>
         <!-- The placeholder is whatever is *actually* being used when the
-             viewer has set nothing — the service's suggestion, which is not a
-             constant and may be withdrawn. Showing it here is the only place
-             the effective value is visible, and an empty box with no
-             placeholder would read as "nothing configured" while the catalog
-             plainly works. -->
+             viewer has set nothing — the service's suggestion, when there is
+             one — and otherwise the shape of the address to paste, which is
+             the one thing the hint cannot show as well as an example can. -->
         <input
           class="link-input"
           value={indexerVal}
-          placeholder={catalog.suggested || DEFAULT_INDEXER}
+          placeholder={catalog.suggested || INDEXER_EXAMPLE}
           spellcheck="false"
           autocapitalize="off"
           aria-label={t('catalog.indexer_label')}
           onchange={(e) => saveIndexer(e.currentTarget.value)}
+        />
+        <!-- Its own field because that is where both servers show it: the
+             feed link in one place, the key on the dashboard or in the
+             settings. A key left inside the pasted address works as well. -->
+        <input
+          class="link-input indexer-key"
+          value={indexerKeyVal}
+          placeholder={t('catalog.indexer_key')}
+          spellcheck="false"
+          autocapitalize="off"
+          autocomplete="off"
+          aria-label={t('catalog.indexer_key')}
+          onchange={(e) => saveIndexerKey(e.currentTarget.value)}
         />
       </div>
     {/if}
@@ -1911,6 +1937,11 @@
 </Dialog>
 
 <style>
+  /* The key sits under the address as the second half of one setting. */
+  .indexer-key {
+    margin-top: 8px;
+  }
+
   /* Written to beat `.settings-foot` in app.css rather than left to whichever
      stylesheet lands later — two bugs in this project came from a lone modifier
      class of equal weight losing that race. */

@@ -196,8 +196,8 @@ Settings → Privacy & Security* — the path that has a way out, as opposed to 
   series and pick a release for it: quality, dynamic range, size, dubs and
   seeders side by side, best copy first. Descriptions and posters come from
   TMDB through a proxy of the project's own, so the player carries no API key;
-  the release list comes from a Torznab-compatible indexer whose address
-  is a setting. On by default, and switchable off — it is the one surface here
+  the release list comes from a Torznab server of your own (Jackett,
+  Prowlarr) whose address is a setting — the player ships with none. On by default, and switchable off — it is the one surface here
   that tells a third party what you are *looking for*.
 - **Links** — anything yt-dlp resolves, plus direct stream URLs.
 - **Torrent streaming** — a magnet link becomes a playable queue served from a
@@ -321,9 +321,10 @@ preserved, and changes apply live. The bottom of the dialog links to the file
 itself, and reports which decoder is actually in use, so a silent fallback to
 software decoding is visible.
 
-Three addresses are settings rather than build-time constants, each with a
-sensible default and each empty-means-default: the watch-together relay, the
-catalog's metadata proxy and its release indexer. Self-hosting any of them is a
+Three addresses are settings rather than build-time constants: the
+watch-together relay and the catalog's metadata proxy, each with a sensible
+default that an empty field restores, and the catalog's release search server,
+which has none. Self-hosting any of them is a
 setting, not a fork — see [services/](services/).
 
 ## Hotkeys

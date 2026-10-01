@@ -6,7 +6,7 @@
   /// a second backdrop over the first would make going back look like leaving.
   ///
   /// Everything that *acts* lives in `catalog.svelte.ts`; this file draws.
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
 
   // `base` rather than a bare `/tmdb.svg`: SvelteKit resolves static assets
   // against it, and the app is served from a custom protocol in the packaged
@@ -23,7 +23,9 @@
     pickTitle,
     posterUrl,
     playRelease,
+    releaseKey,
     releaseTags,
+    reloadReleases,
     runSearch,
     setHideDead,
     setQualityFloor,
@@ -35,9 +37,21 @@
 
   interface Props {
     onclose: () => void;
+    /// Sends the viewer to the release server's address. The page's to do, as
+    /// every surface change is.
+    onSettings: () => void;
   }
 
-  let { onclose }: Props = $props();
+  let { onclose, onSettings }: Props = $props();
+
+  /// Back from the settings with an address in the field: ask for the page
+  /// that was waiting on it. `idle` with a title open happens only when there
+  /// was nowhere to ask (`loadReleases`).
+  $effect(() => {
+    if (catalog.hasIndexer && catalog.picked && catalog.releasePhase === 'idle') {
+      void untrack(() => reloadReleases());
+    }
+  });
 
   let inputEl = $state<HTMLInputElement | undefined>();
 
@@ -120,6 +134,13 @@
         if (e.key === 'Enter') onSubmit();
       }}
     />
+
+    {#if catalog.hasMeta && !catalog.hasIndexer}
+      <!-- Said before a title is picked, not only after: browsing a grid that
+           can never lead to a release and finding out on the last step is the
+           one order this must not happen in. -->
+      <div class="cat-note">{t('catalog.no_source_note')}</div>
+    {/if}
 
     {#if !catalog.hasMeta}
       <!-- No metadata service answering. Said once, at the top, rather than as
@@ -354,7 +375,14 @@
 {/snippet}
 
 {#snippet releaseList()}
-  {#if catalog.releasePhase === 'loading'}
+  {#if !catalog.hasIndexer}
+    <!-- Nowhere to look is not an error: nothing failed, there is one setting
+         to fill in, and the button goes straight to it. -->
+    <div class="cat-empty cat-nosource">
+      <p>{t('catalog.no_source')}</p>
+      <button class="btn-outline" onclick={onSettings}>{t('catalog.no_source_btn')}</button>
+    </div>
+  {:else if catalog.releasePhase === 'loading'}
     {@render sortRow(t('catalog.releases_loading'))}
     {@render skeletonReleases()}
   {:else if catalog.releasePhase === 'failed'}
@@ -371,7 +399,7 @@
       <div class="cat-empty">{t('catalog.all_filtered', { count: catalog.filteredOut })}</div>
     {/if}
     <div class="cat-releases">
-      {#each catalog.sortedReleases as r (r.magnet)}
+      {#each catalog.sortedReleases as r (releaseKey(r))}
         <button
           class="rel"
           disabled={catalog.starting !== null}
@@ -451,6 +479,11 @@
   .cat-empty {
     padding: 26px 2px;
     text-align: center;
+  }
+
+  .cat-nosource p {
+    margin: 0 auto 14px;
+    max-width: 420px;
   }
 
   .cat-section {

@@ -2,8 +2,11 @@
  * The catalog: finding something to watch, and the release that carries it.
  *
  * Two questions with two answers, and keeping them apart is the design. TMDB
- * says *what* — posters, localised titles, how many seasons — and an indexer
- * says *where from*: trackers, quality, dubs, seeders, a magnet. Both calls are
+ * says *what* — posters, localised titles, how many seasons — and a release
+ * search server says *where from*: trackers, quality, seeders, a magnet. That
+ * server is the viewer's own — a Jackett or a Prowlarr, spoken to in Torznab —
+ * and **the player ships with none**: until one is named, the panel is a
+ * catalog of descriptions that says where the releases would come from. Both calls are
  * made in Rust (`catalog.rs`), for the `User-Agent` and to keep an arbitrary
  * user-supplied host out of the webview's fetch surface.
  *
@@ -17,10 +20,9 @@
  * with its resolve, its file picker, its history and its queue. Nothing here
  * touches the torrent client.
  *
- * Both addresses are settings rather than constants for the same reason the
- * relay's is: running your own is a setting, not a fork. Empty means the
- * default, so clearing a field restores it instead of turning the feature off —
- * there is a separate switch for that.
+ * Both addresses are settings. The metadata proxy's has a default, and
+ * clearing it restores that default rather than turning the feature off —
+ * there is a separate switch for that. The release server's has none.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -31,10 +33,16 @@ import { latest } from './latest';
 import { openUpdateDialog, opening, openTorrent } from './open.svelte';
 import type { RememberedTorrent } from './torrent.svelte';
 import { player } from './player.svelte';
+import { magnetFor } from './source';
 
 /// No indexer is compiled in. Where the catalog looks when the viewer has named
 /// nowhere is asked for at runtime — see `suggested` and `catalog_config`.
 export const DEFAULT_INDEXER = '';
+
+/// What the empty field shows: the shape of a Torznab address, on this machine.
+/// An example of *where to paste from* — Jackett's own aggregate endpoint at its
+/// default port — and deliberately not an address anybody runs for others.
+export const INDEXER_EXAMPLE = 'http://localhost:9117/api/v2.0/indexers/all/results/torznab';
 
 /**
  * The configuration document, beside `latest.json` on the update host.
@@ -77,6 +85,10 @@ const TMDB_CDN = 'https://image.tmdb.org/t/p';
 const POSTER_SIZE = 'w342';
 
 const INDEXER_KEY = 'frameplayer.indexer';
+/// The Torznab server's API key. Beside the address rather than inside it,
+/// because that is how both Jackett and Prowlarr show it: the feed link in one
+/// place, the key at the top of the dashboard or in the settings.
+const INDEXER_APIKEY = 'frameplayer.indexerApiKey';
 const TMDB_KEY = 'frameplayer.tmdb';
 const ENABLED_KEY = 'frameplayer.catalog';
 /// Whether TMDB's CDN was reachable last time. Remembered so a viewer behind a
@@ -121,7 +133,11 @@ export interface Release {
   video_type: string;
   voices: string[];
   seasons: number[];
+  /// Empty when the server named no hash; `torrent` is the way in then.
   magnet: string;
+  /// A `.torrent` link from a Torznab server. May carry its key, so it is
+  /// fetched once (`releaseSource`) and never stored.
+  torrent: string;
   created: string;
   url: string;
 }
@@ -255,6 +271,14 @@ class Catalog {
    * replaced, reintroduced by the client.
    */
   suggested = $state('');
+
+  /// The viewer's own address, mirrored so the panel can tell "nothing to ask"
+  /// apart from "asked and found nothing" without a request — and notice the
+  /// moment the settings sheet above it fills the field in.
+  ownIndexer = $state(indexerUrl());
+
+  /// Whether there is anywhere to look for releases at all.
+  hasIndexer = $derived(Boolean(this.ownIndexer || this.suggested));
 
   /// The service reports the catalog as unavailable, with an optional sentence
   /// saying why. One level above the address: an instance may need the panel to
@@ -398,16 +422,35 @@ export function indexerUrl(): string {
  * who chose their own indexer.
  */
 export function effectiveIndexer(): string {
-  return indexerUrl() || catalog.suggested;
+  return catalog.ownIndexer || catalog.suggested;
 }
 
 export function setIndexerUrl(url: string) {
+  const clean = url.trim().replace(/\/+$/, '');
+  catalog.ownIndexer = clean;
   try {
-    const clean = url.trim().replace(/\/+$/, '');
     if (clean) localStorage.setItem(INDEXER_KEY, clean);
     else localStorage.removeItem(INDEXER_KEY);
   } catch {
     // not critical: the address simply will not survive a restart
+  }
+}
+
+export function indexerApiKey(): string {
+  try {
+    return localStorage.getItem(INDEXER_APIKEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function setIndexerApiKey(key: string) {
+  try {
+    const clean = key.trim();
+    if (clean) localStorage.setItem(INDEXER_APIKEY, clean);
+    else localStorage.removeItem(INDEXER_APIKEY);
+  } catch {
+    // not critical
   }
 }
 
@@ -695,11 +738,20 @@ async function loadReleases(args: {
   season: number | null;
 }) {
   const run = releaseReads.begin();
-  catalog.releasePhase = 'loading';
   catalog.releaseError = null;
+  // Nowhere to ask is not a failed search: the panel says what to set instead
+  // (`hasIndexer`), and a request that can only come back `no_indexer` would
+  // put an error where an explanation belongs.
+  if (!catalog.hasIndexer) {
+    catalog.releases = [];
+    catalog.releasePhase = 'idle';
+    return;
+  }
+  catalog.releasePhase = 'loading';
   try {
     const list = await invoke<Release[]>('catalog_releases', {
       base: effectiveIndexer(),
+      key: indexerApiKey(),
       title: args.title,
       originalTitle: args.original,
       year: args.year,
@@ -714,6 +766,20 @@ async function loadReleases(args: {
     catalog.releasePhase = 'failed';
     catalog.releaseError = describe(e);
   }
+}
+
+/**
+ * Ask again for the page that is open — after the release server's address
+ * was set from the settings sheet the panel sent the viewer to.
+ */
+export async function reloadReleases() {
+  const picked = catalog.picked;
+  if (picked) {
+    await chooseSeason(catalog.season);
+    return;
+  }
+  // The no-metadata mode searches releases straight from the field.
+  if (!catalog.hasMeta && catalog.query.trim()) await runSearch();
 }
 
 /**
@@ -745,8 +811,17 @@ export function closeTitle() {
  */
 export async function playRelease(release: Release, close: () => void) {
   if (catalog.starting) return;
-  catalog.starting = release.magnet;
+  catalog.starting = releaseKey(release);
   try {
+    // Before the panel closes, so a link that fails leaves the viewer on the
+    // list with the row still there to pick another.
+    let source: string;
+    try {
+      source = await releaseSource(release);
+    } catch (e) {
+      showOsd(t('catalog.torrent_failed'), { sub: describe(e) });
+      return;
+    }
     close();
     // **Raised before the magnet is handed over, not after.** Closing the panel
     // leaves the start screen with nothing happening on it, while resolving a
@@ -762,7 +837,7 @@ export async function playRelease(release: Release, close: () => void) {
     // What makes this torrent updatable later without anybody pasting a link.
     // Only the catalog can supply it, which is why it travels with the open
     // rather than being looked up afterwards.
-    await openTorrent(release.magnet, {
+    await openTorrent(source, {
       url: release.url,
       title: catalog.picked?.title ?? catalog.query,
       original: catalog.picked?.original_title ?? catalog.query,
@@ -809,6 +884,7 @@ export async function findTorrentUpdate(known: RememberedTorrent): Promise<Relea
   if (!origin) return null;
   return await invoke<Release | null>('catalog_find_update', {
     base: effectiveIndexer(),
+    key: indexerApiKey(),
     title: origin.title,
     originalTitle: origin.original,
     year: origin.year,
@@ -841,7 +917,7 @@ export async function checkTorrentUpdate(known: RememberedTorrent) {
     const found = await findTorrentUpdate(known);
     if (found) {
       showOsd(t('torrent.update_found'));
-      openUpdateDialog(known, found.magnet);
+      openUpdateDialog(known, await releaseSource(found));
       return;
     }
     // Told apart on purpose: a torrent with no catalog origin was never
@@ -856,16 +932,56 @@ export async function checkTorrentUpdate(known: RememberedTorrent) {
   openUpdateDialog(known);
 }
 
+/// A release's identity in the list, whichever link it came with.
+export function releaseKey(r: Release): string {
+  return r.magnet || r.torrent;
+}
+
+/**
+ * The magnet a release opens with.
+ *
+ * A `.torrent` link is preferred even beside a magnet, for the reason
+ * `resolveFeedItem` gives: fetching it puts the metadata where `torrent_add`
+ * looks first, so the magnet built from its hash opens with no DHT lookup —
+ * and for a private tracker, where the DHT is off, it is the only way in. The
+ * link carries the server's key, which is why it is resolved here and the
+ * magnet is what travels on.
+ */
+async function releaseSource(r: Release): Promise<string> {
+  if (r.torrent) {
+    try {
+      const got = await invoke<{
+        magnet: string | null;
+        info_hash: string | null;
+        name: string | null;
+      }>('catalog_torrent', { url: r.torrent });
+      if (got.magnet) return got.magnet;
+      if (got.info_hash) return magnetFor(got.info_hash, got.name ?? r.title);
+    } catch (e) {
+      // With a magnet still in hand, a dead download link is not the end of it.
+      if (!r.magnet) throw e;
+      console.warn('[catalog] .torrent download failed, using the magnet:', e);
+    }
+  }
+  if (!r.magnet) throw new Error('no_source');
+  return r.magnet;
+}
+
 /**
  * Turn a Rust error into a sentence.
  *
- * The three that are worth telling apart: no indexer configured, the indexer
- * unreachable, and this build having no TMDB key. Everything else is the
+ * The ones worth telling apart are the ones the viewer can act on: no release
+ * server set, an address that is not one, a key it refused, a server that is
+ * not answering — and the metadata proxy's own three. Everything else is the
  * network, and repeating a status code at somebody helps nobody.
  */
 function describe(e: unknown): string {
   const raw = String(e);
   if (raw.includes('no_indexer')) return t('catalog.no_indexer');
+  if (raw.includes('bad_indexer')) return t('catalog.bad_indexer');
+  if (raw.includes('indexer_key')) return t('catalog.key_refused');
+  if (raw.includes('indexer_not_found')) return t('catalog.indexer_not_found');
+  if (raw.includes('indexer_unreachable')) return t('catalog.unreachable');
   if (raw.includes('no_proxy')) return t('catalog.no_proxy');
   // Two different mistakes in the same field, and telling them apart is the
   // difference between "fix the address" and "this address cannot be used".

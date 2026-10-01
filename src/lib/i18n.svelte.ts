@@ -44,7 +44,15 @@ const ru = {
   'catalog.season': 'Сезон {number}',
   'catalog.runtime': '{minutes} мин',
   'catalog.back': 'Назад',
-  'catalog.no_indexer': 'Не указан адрес поиска раздач — задайте его в настройках',
+  'catalog.no_indexer': 'Не указан адрес сервера поиска раздач — задайте его в настройках',
+  'catalog.bad_indexer': 'Адрес сервера поиска раздач неверен — нужен полный адрес, начиная с http:// или https://',
+  'catalog.key_refused': 'Сервер поиска раздач не принял ключ API — проверьте его в настройках',
+  'catalog.indexer_not_found': 'По этому адресу нет сервера поиска раздач — проверьте адрес и ключ API в настройках',
+  'catalog.torrent_failed': 'Не удалось получить торрент раздачи',
+  'catalog.no_source':
+    'Сервер поиска раздач не задан. Укажите в настройках адрес своего Torznab-сервера — например, Jackett или Prowlarr. Frame Player не поставляется с источниками раздач.',
+  'catalog.no_source_btn': 'Открыть настройки',
+  'catalog.no_source_note': 'Сервер поиска раздач не задан — каталог показывает только описания.',
   'catalog.unavailable': 'Каталог сейчас недоступен',
   'catalog.no_proxy': 'Не указан адрес сервиса описаний — задайте его в настройках',
   'catalog.bad_proxy': 'Адрес сервиса описаний неверен',
@@ -61,13 +69,14 @@ const ru = {
     'This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.',
   'catalog.setting': 'Каталог фильмов и сериалов',
   'catalog.setting_hint':
-    'Кнопка «Каталог» на стартовом экране: описания и постеры берутся с TMDB, список раздач — с указанного ниже сервиса. Оба узнают, что вы ищете — выключите, если это нежелательно.',
+    'Кнопка «Каталог» на стартовом экране: описания и постеры берутся с TMDB, раздачи — с вашего сервера поиска, если он указан ниже. Оба узнают, что вы ищете — выключите, если это нежелательно.',
   'catalog.tmdb_label': 'Сервис описаний',
   'catalog.tmdb_hint':
     'Через него идут постеры и описания с TMDB — ключ хранится там, а не в плеере. Сами постеры грузятся напрямую с TMDB, а через сервис только если TMDB недоступен. Пустое поле возвращает адрес по умолчанию.',
-  'catalog.indexer_label': 'Сервис поиска раздач',
+  'catalog.indexer_label': 'Сервер поиска раздач',
   'catalog.indexer_hint':
-    'Совместимый с Torznab индексатор. По умолчанию — публичный: он видит ваши запросы. Свой экземпляр можно поднять на синхронизации с чужой базой, без аккаунтов на трекерах. Пустое поле возвращает адрес по умолчанию.',
+    'Адрес Torznab-сервера, например своего Jackett или Prowlarr: в Jackett — ссылка «Copy Torznab Feed», в Prowlarr — адрес индексатора вида http://localhost:9696/1/. Ключ API — в их настройках. Плеер не поставляется с источниками раздач и не предлагает их; сервер видит, что вы ищете. За то, что вы ищете и скачиваете, отвечаете вы.',
+  'catalog.indexer_key': 'Ключ API',
 
   'error.mpv': 'Не удалось запустить mpv',
   'error.mpv_hint':
@@ -1018,7 +1027,15 @@ const en: Record<MessageKey, string> = {
   'catalog.season': 'Season {number}',
   'catalog.runtime': '{minutes} min',
   'catalog.back': 'Back',
-  'catalog.no_indexer': 'No release-search address is set — add one in the settings',
+  'catalog.no_indexer': 'No release search server is set — add one in the settings',
+  'catalog.bad_indexer': 'The release search server address is not valid — it needs the whole address, starting with http:// or https://',
+  'catalog.key_refused': 'The release search server refused the API key — check it in the settings',
+  'catalog.indexer_not_found': 'There is no release search server at this address — check the address and the API key in the settings',
+  'catalog.torrent_failed': 'Could not fetch the release’s torrent',
+  'catalog.no_source':
+    'No release search server is set. Add the address of your own Torznab server — Jackett or Prowlarr, for example — in the settings. Frame Player ships with no release sources.',
+  'catalog.no_source_btn': 'Open settings',
+  'catalog.no_source_note': 'No release search server is set — the catalog shows descriptions only.',
   'catalog.unavailable': 'The catalog is unavailable right now',
   'catalog.no_proxy': 'No metadata service address is set — add one in the settings',
   'catalog.bad_proxy': 'The metadata service address is not a valid URL',
@@ -1032,13 +1049,14 @@ const en: Record<MessageKey, string> = {
     'This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.',
   'catalog.setting': 'Film and series catalog',
   'catalog.setting_hint':
-    'The «Catalog» button on the start screen: descriptions and posters come from TMDB, the release list from the service below. Both learn what you are looking for — turn this off if that is unwelcome.',
+    'The «Catalog» button on the start screen: descriptions and posters come from TMDB, releases from your own search server, if you set one below. Both learn what you are looking for — turn this off if that is unwelcome.',
   'catalog.tmdb_label': 'Metadata service',
   'catalog.tmdb_hint':
     'Posters and descriptions from TMDB come through it — the key lives there rather than in the player. Posters themselves load straight from TMDB, and through the service only where TMDB is unreachable. An empty field restores the default.',
-  'catalog.indexer_label': 'Release search service',
+  'catalog.indexer_label': 'Release search server',
   'catalog.indexer_hint':
-    'A Torznab-compatible indexer. The default is a public one, and it sees your queries. Your own instance can run on a sync of somebody else’s database, with no tracker accounts. An empty field restores the default.',
+    'The address of a Torznab server, such as your own Jackett or Prowlarr: in Jackett, the «Copy Torznab Feed» link; in Prowlarr, an indexer’s address like http://localhost:9696/1/. The API key is in their settings. The player ships with no release sources and suggests none; the server sees what you search for. What you search for and download is your responsibility.',
+  'catalog.indexer_key': 'API key',
 
   'error.mpv': 'Could not start mpv',
   'error.mpv_hint':

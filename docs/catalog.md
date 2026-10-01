@@ -24,9 +24,52 @@ release names — precisely the experience a catalog exists to replace. A metada
 service knows nothing about what is available.
 
 The bridge between them is a text search by title and year, and it is the part
-that would have been most expensive to build. It turned out not to need
-building: the indexer already parses release names into a local name, an
-original name, a year, a quality, a dynamic range, a dub list and a season list.
+that would have been most expensive to build. Against the jacred-format API it
+turned out not to need building: that API already parses release names into a
+local name, an original name, a year, a quality, a dynamic range, a dub list and
+a season list. Against Torznab it did — see below.
+
+## No source ships with the player
+
+The release server is the viewer's own, and the interface names software, never
+a server: Torznab, Jackett, Prowlarr — the same names the *arr applications have
+made ordinary. The player carries no address, suggests none and does not say
+where one might be found; `catalog.json` can still supply one, and is kept
+empty. With nothing set the panel still browses, says so above the grid, and a
+title's page explains the one missing setting with a button to it, rather than
+failing a search that was never possible.
+
+## Two dialects
+
+The catalog was written against the jacred-format JSON API
+(`/api/v1.0/torrents?search=`), while everything around it — the settings hint,
+the README — said "Torznab". A Jackett or Prowlarr address pasted in answered
+404, and the panel read that as "the service is not answering". Both are spoken
+now, and which one is decided from the address alone (`indexer()` in
+`catalog.rs`): Jackett and Prowlarr both refuse a search without a key, so a key
+— in its own field or in the query — says Torznab, as does a `torznab` path or
+an `/api` endpoint. Probing would cost a request per search to learn what the
+address already says.
+
+What a Torznab answer lacks is the parse. An item is a release name, a size,
+seeders, a hash or a link, and the tracker's page — no separate title, year,
+quality or season. So those are read out of the name, in its two common shapes:
+the scene's `Title.2024.2160p.WEB-DL…` and the forum tracker's
+`Название / Title (Director) [2024, Country, WEB-DL 1080p]`. The rule the jacred
+path keeps by comparing the API's own fields carries over unchanged: **whole
+names, folded, never a substring**. A name offers each of its ` / `-parts and,
+because where a title stops is exactly what a name does not mark, the prefix
+before every year, height, season or source word — `Blade Runner` as well as
+`Blade Runner 2049` from `Blade.Runner.2049.2017.1080p`. The extra prefix is
+harmless because the year test sees *every* year the name mentions, and 2049
+and 2017 are neither of them 1982. The dub list is not guessed at all.
+
+Two details that follow from Torznab's shape. A tracker without magnets — every
+private one — is offered as a `.torrent` link through the server, which carries
+the server's key: it is fetched once into the metadata cache, and the magnet
+built from its hash is what is opened and remembered. And an aggregate search
+waits for its slowest tracker, so the two spellings of a title are asked at
+once and the timeout is longer than any other request here.
 
 ## Why there is no TMDB key in the player
 

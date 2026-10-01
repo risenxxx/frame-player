@@ -154,8 +154,10 @@
     resetWheelGesture,
   } from '$lib/input.svelte';
   import {
+    closeSettings,
     dismissOnOutsideClick,
     initOverlays,
+    openSettingsAt,
     overlays,
     toggleInfo,
     toggleMenu,
@@ -1540,7 +1542,13 @@
          `playRelease` shuts this before handing the magnet over, so the torrent
          picker that follows never has to sit on top of it. -->
     {#if catalog.open}
-      <CatalogDialog onclose={closeCatalog} />
+      <CatalogDialog
+        onclose={closeCatalog}
+        onSettings={() => {
+          closeCatalog();
+          openSettingsAt('torrents');
+        }}
+      />
     {/if}
 
     {#if subs.open}
@@ -1559,7 +1567,8 @@
 
   {#if overlays.settings}
     <SettingsDialog
-      onclose={() => (overlays.settings = false)}
+      initialTab={overlays.settingsTab}
+      onclose={closeSettings}
       onToggleSeeding={() => void toggleSeeding()}
       onTogglePortForward={() => void togglePortForward()}
       onSetProxy={(url) => void applyProxy(url)}

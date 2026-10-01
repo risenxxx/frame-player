@@ -1228,6 +1228,7 @@ pub fn run() {
             catalog::catalog_details,
             catalog::catalog_releases,
             catalog::catalog_find_update,
+            catalog::catalog_torrent,
             feed::feed_read,
             feed::feed_torrent,
             opensubtitles::subs_search,

@@ -1,5 +1,5 @@
-//! The catalog: **what** to watch (TMDB) and **where to get it** (a
-//! Torznab-compatible indexer).
+//! The catalog: **what** to watch (TMDB) and **where to get it** (a release
+//! search server the viewer names — Torznab, or the jacred-format API).
 //!
 //! Two services and the split between them is the whole design. TMDB answers
 //! "which film is this" — posters, localised titles, descriptions, how many
@@ -151,7 +151,13 @@ pub struct Release {
     pub video_type: String,
     pub voices: Vec<String>,
     pub seasons: Vec<i32>,
+    /// Empty when the server named no hash — then `torrent` is the way in.
     pub magnet: String,
+    /// A `.torrent` download link, which Torznab gives where a tracker has no
+    /// magnet (and where it is private, the only link that works). Empty from
+    /// the jacred API. May carry the server's key, so it is used once to fetch
+    /// the file and never remembered.
+    pub torrent: String,
     pub created: String,
     /// The tracker's own page for this release. **Measured unique and stable**:
     /// 768 distinct URLs across 768 rows, so it is the indexer's identity for a
@@ -466,12 +472,12 @@ fn fold(s: &str) -> String {
         .collect()
 }
 
-/// One row of the indexer's `/api/v1.0/torrents`.
+/// One row of the jacred-format API's `/api/v1.0/torrents`.
 ///
-/// The field names are the indexer's, typo included — `relased` is what the API
-/// answers and renaming it here would only move the surprise. Everything is
-/// optional because instances differ in what they fill in, and a row missing a
-/// dub list must not cost the whole response.
+/// The field names are the API's, typo included — `relased` is what it answers
+/// and renaming it here would only move the surprise. Everything is optional
+/// because instances differ in what they fill in, and a row missing a dub list
+/// must not cost the whole response.
 #[derive(serde::Deserialize, Default)]
 struct IndexerRow {
     #[serde(default)]
@@ -506,114 +512,136 @@ struct IndexerRow {
     create_time: String,
 }
 
-async fn ask_indexer(base: &str, query: &str) -> Result<Vec<IndexerRow>, String> {
-    let base = base.trim().trim_end_matches('/');
+/// How long a Torznab search may take. Longer than everything else here on
+/// purpose: Jackett's `all` and a Prowlarr in front of several trackers answer
+/// only once the slowest tracker behind them has, and that is routinely more
+/// than the fifteen seconds a single service gets.
+const TORZNAB_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// Which of the two dialects an address speaks.
+///
+/// **Torznab is the one the interface names**; it is what Jackett and Prowlarr
+/// serve, and what the *arr applications have taught people to look for. The
+/// jacred-format JSON API is the one this catalog was first written against,
+/// and it stays working for anybody who already has such an address set — it
+/// is simply not advertised.
+enum Indexer {
+    /// The base address, without a trailing slash.
+    Jacred(String),
+    /// The full Torznab endpoint, `/api` included, the key already in its query.
+    Torznab(reqwest::Url),
+}
+
+/// Read the address the viewer gave, and the key beside it.
+///
+/// **Torznab is told apart by what a Torznab address always has**: a key (both
+/// Jackett and Prowlarr refuse a search without one), a `torznab` in Jackett's
+/// path, or the `/api` endpoint itself. Anything else is the jacred base it
+/// always was. Asking the server instead would cost a round trip on every
+/// search to learn something the address already says.
+///
+/// What people copy is not always the endpoint: Jackett's "Copy Torznab Feed"
+/// ends in `/torznab/` and Prowlarr's indexer address in `/<id>/`, and the *arr
+/// applications append `/api` themselves. So does this — and any `t` or `q` a
+/// pasted search URL still carries is dropped, since those are ours to set.
+///
+/// Plaintext is **not** refused here, unlike the metadata proxy's address: a
+/// Jackett or Prowlarr lives on this machine or on a NAS in the same flat, and
+/// is served over `http://` there almost without exception.
+fn indexer(base: &str, key: &str) -> Result<Indexer, String> {
+    let base = base.trim();
+    if base.is_empty() {
+        return Err("no_indexer".into());
+    }
+    let mut url = reqwest::Url::parse(base).map_err(|_| "bad_indexer".to_string())?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("bad_indexer".into());
+    }
+    let key = key.trim();
+    let path = url.path().trim_end_matches('/').to_string();
+    let lower = path.to_ascii_lowercase();
+    let key_in_query = url.query_pairs().any(|(k, _)| k.eq_ignore_ascii_case("apikey"));
+    if key.is_empty() && !key_in_query && !lower.contains("torznab") && !lower.ends_with("/api") {
+        return Ok(Indexer::Jacred(base.trim_end_matches('/').to_string()));
+    }
+    if !lower.ends_with("/api") {
+        url.set_path(&format!("{path}/api"));
+    }
+    let kept: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(k, _)| {
+            let k = k.to_ascii_lowercase();
+            // The field's key wins over one left in the address.
+            k != "t" && k != "q" && (k != "apikey" || key.is_empty())
+        })
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    url.set_query(None);
+    if !kept.is_empty() || !key.is_empty() {
+        let mut q = url.query_pairs_mut();
+        for (k, v) in &kept {
+            q.append_pair(k, v);
+        }
+        if !key.is_empty() {
+            q.append_pair("apikey", key);
+        }
+    }
+    Ok(Indexer::Torznab(url))
+}
+
+/// One release as either dialect answered it, before the filters.
+///
+/// The filters need two things the frontend does not: the names to compare
+/// against what was searched for, and every year the release mentions.
+struct Candidate {
+    release: Release,
+    names: Vec<String>,
+    years: Vec<i32>,
+}
+
+/// Turn a transport failure into the three answers the panel tells apart.
+fn indexer_status(status: reqwest::StatusCode) -> Result<(), String> {
+    match status.as_u16() {
+        200..=299 => Ok(()),
+        401 | 403 => Err("indexer_key".into()),
+        404 => Err("indexer_not_found".into()),
+        n => Err(format!("http_{n}")),
+    }
+}
+
+async fn ask_jacred(base: &str, query: &str) -> Result<Vec<Candidate>, String> {
     let url = reqwest::Url::parse_with_params(
         &format!("{base}/api/v1.0/torrents"),
         &[("search", query), ("apikey", "null")],
     )
-    .map_err(|e| e.to_string())?;
-    let response = http().get(url).send().await.map_err(|e| e.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("http_{}", response.status().as_u16()));
-    }
+    .map_err(|_| "bad_indexer".to_string())?;
+    let response = http()
+        .get(url)
+        .send()
+        .await
+        .map_err(|_| "indexer_unreachable".to_string())?;
+    indexer_status(response.status())?;
     // Tolerant on purpose: an instance that adds a field must not break the
     // whole search, and one row that will not parse must not take the rest with
     // it — which is the failure the librqbit tracker client already paid for,
     // where a strict parser silently discarded every peer in a valid response.
-    let rows: Vec<serde_json::Value> = response.json().await.map_err(|e| e.to_string())?;
+    // A body that is not a JSON list at all is a server that is not this API.
+    let rows: Vec<serde_json::Value> = response
+        .json()
+        .await
+        .map_err(|_| "indexer_not_found".to_string())?;
     Ok(rows
         .into_iter()
         .filter_map(|v| serde_json::from_value::<IndexerRow>(v).ok())
-        .collect())
-}
-
-/// Find the releases for one title.
-///
-/// **Searched by the original name first.** A Russian tracker files a foreign
-/// film under both names, and the original is the one that survives translation
-/// — TMDB's localised title is one of several possible renderings, while the
-/// original is what the uploader typed. The localised one is the fallback and
-/// the extra query, not the first guess.
-///
-/// Filtering happens here rather than in the query, because which parameters an
-/// instance honours varies and a self-hosted one is not guaranteed to be the
-/// same build as the public one. `search` is the one parameter every version
-/// has; year and season are matched against the fields that come back.
-#[tauri::command]
-pub async fn catalog_releases(
-    base: String,
-    title: String,
-    original_title: String,
-    year: Option<i32>,
-    season: Option<i32>,
-) -> Result<Vec<Release>, String> {
-    if base.trim().is_empty() {
-        return Err("no_indexer".into());
-    }
-    let mut queries: Vec<String> = Vec::new();
-    for q in [original_title.trim(), title.trim()] {
-        if !q.is_empty() && !queries.iter().any(|had| fold(had) == fold(q)) {
-            queries.push(q.to_string());
-        }
-    }
-    if queries.is_empty() {
-        return Err("no_query".into());
-    }
-
-    let wanted: Vec<String> = queries.iter().map(|q| fold(q)).collect();
-    let mut out: Vec<Release> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    for query in &queries {
-        let rows = match ask_indexer(&base, query).await {
-            Ok(rows) => rows,
-            // The first query failing is the indexer being unreachable and is
-            // worth reporting; a later one failing after results are already in
-            // hand is not worth losing them over.
-            Err(e) if out.is_empty() && query == &queries[0] => return Err(e),
-            Err(_) => continue,
-        };
-        for row in rows {
-            if row.magnet.is_empty() {
-                continue;
-            }
-            // The indexer's own parse of the release name is what is compared,
+        .filter(|row| !row.magnet.is_empty())
+        .map(|row| Candidate {
+            // The API's own parse of the release name is what is compared,
             // never the raw tracker title: that string carries the year, the
             // codec and the dub list, so a substring test against it matches
             // anything that merely mentions the film.
-            let matches_name = [row.name.as_str(), row.originalname.as_str()]
-                .iter()
-                .filter(|n| !n.is_empty())
-                .any(|n| wanted.contains(&fold(n)));
-            if !matches_name {
-                continue;
-            }
-            // A year off by one is routine — a festival run, a national release
-            // date, an indexer reading it out of the file name — so the window
-            // is ±1 rather than exact, and a row with no year at all is kept:
-            // refusing it would drop releases whose name matched exactly.
-            if let (Some(want), true) = (year, row.relased > 0) {
-                if (row.relased - want).abs() > 1 {
-                    continue;
-                }
-            }
-            // A season filter only applies to rows that declare seasons. A film
-            // release inside a series' results has an empty list, and so does a
-            // complete-series pack on some trackers — dropping those would hide
-            // exactly the release a viewer starting a series wants.
-            if let (Some(want), false) = (season, row.seasons.is_empty()) {
-                if !row.seasons.contains(&want) {
-                    continue;
-                }
-            }
-            // The same release is on several trackers and cross-posted within
-            // one; the info hash is what says they are the same bytes.
-            let hash = magnet_hash(&row.magnet);
-            if !seen.insert(hash) {
-                continue;
-            }
-            out.push(Release {
+            names: vec![row.name, row.originalname],
+            years: (row.relased > 0).then_some(row.relased).into_iter().collect(),
+            release: Release {
                 title: row.title,
                 tracker: row.tracker,
                 size: row.size,
@@ -624,9 +652,465 @@ pub async fn catalog_releases(
                 voices: row.voices,
                 seasons: row.seasons,
                 magnet: row.magnet,
+                torrent: String::new(),
                 created: row.create_time,
                 url: row.url,
-            });
+            },
+        })
+        .collect())
+}
+
+/// The error a Torznab server answers with instead of a feed, as its code.
+///
+/// The spec's `<error code="…" description="…"/>` arrives with a 200 from some
+/// servers and with a 4xx from others, so the body is read either way. `0`
+/// when the element is there and its code is not.
+fn torznab_error(text: &str) -> Option<u32> {
+    let mut head = text.trim_start();
+    if head.starts_with("<?xml") {
+        head = head.split_once("?>").map(|(_, rest)| rest.trim_start()).unwrap_or(head);
+    }
+    let rest = head.strip_prefix("<error")?;
+    let tag = rest.split('>').next().unwrap_or(rest);
+    let code = tag
+        .split_once("code=")
+        .map(|(_, v)| {
+            v.trim_start_matches(['"', '\''])
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+        })
+        .and_then(|digits| digits.parse().ok());
+    Some(code.unwrap_or(0))
+}
+
+async fn ask_torznab(endpoint: &reqwest::Url, query: &str) -> Result<Vec<Candidate>, String> {
+    let mut url = endpoint.clone();
+    // `search` rather than `movie`/`tvsearch`: it is the one function every
+    // server and every indexer behind it implements, and the filtering below is
+    // ours anyway — the same reasoning that sends the jacred API `search` alone.
+    url.query_pairs_mut()
+        .append_pair("t", "search")
+        .append_pair("q", query);
+    let response = http()
+        .get(url)
+        .timeout(TORZNAB_TIMEOUT)
+        .send()
+        .await
+        .map_err(|_| "indexer_unreachable".to_string())?;
+    let status = response.status();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|_| "indexer_unreachable".to_string())?;
+    let text = crate::feed::decode_body(&bytes);
+    if let Some(code) = torznab_error(&text) {
+        // 100–102 are the spec's three ways of saying the key is wrong.
+        return Err(if (100..=102).contains(&code) {
+            "indexer_key".into()
+        } else {
+            "indexer_error".into()
+        });
+    }
+    indexer_status(status)?;
+    let feed = crate::feed::parse_feed(&text).map_err(|_| "indexer_not_found".to_string())?;
+    Ok(feed.items.into_iter().filter_map(torznab_candidate).collect())
+}
+
+fn torznab_candidate(item: crate::feed::FeedItem) -> Option<Candidate> {
+    // A magnet only when it names the hash the item reports, so that one
+    // release is one hash everywhere downstream — a base32 magnet beside a hex
+    // hash would otherwise read as two torrents to the update check.
+    let magnet = match (&item.info_hash, item.magnet) {
+        (Some(hash), Some(m)) if m.to_ascii_lowercase().contains(hash.as_str()) => m,
+        (Some(hash), _) => format!("magnet:?xt=urn:btih:{hash}"),
+        (None, Some(m)) => m,
+        (None, None) => String::new(),
+    };
+    let torrent = item.torrent_url.unwrap_or_default();
+    if magnet.is_empty() && torrent.is_empty() {
+        return None;
+    }
+    let title = item.title;
+    let mut years = title_years(&title);
+    years.extend(item.year);
+    Some(Candidate {
+        names: title_names(&title),
+        years,
+        release: Release {
+            quality: title_quality(&title),
+            video_type: title_dynamic(&title).to_string(),
+            seasons: title_seasons(&title),
+            // A dub list is the one field there is no honest way to read out of
+            // a release name across trackers, so it is left absent rather than
+            // guessed — the panel already draws a row without one.
+            voices: Vec::new(),
+            tracker: item.source.unwrap_or_default(),
+            size: item.size.unwrap_or(0),
+            seeders: item.seeders.unwrap_or(0),
+            peers: item.peers.unwrap_or(0),
+            magnet,
+            torrent,
+            created: item.published.map(iso_time).unwrap_or_default(),
+            url: item.page.unwrap_or_default(),
+            title,
+        },
+    })
+}
+
+async fn ask(indexer: &Indexer, query: &str) -> Result<Vec<Candidate>, String> {
+    match indexer {
+        Indexer::Jacred(base) => ask_jacred(base, query).await,
+        Indexer::Torznab(endpoint) => ask_torznab(endpoint, query).await,
+    }
+}
+
+// ---- Reading a release name --------------------------------------------------
+//
+// The jacred API hands back its own parse of every release name; Torznab hands
+// back the name and nothing else. So for Torznab the quality, the dynamic
+// range, the seasons, the years and the title itself are read here, out of the
+// two shapes release names come in: the scene's `Title.2024.2160p.WEB-DL…` and
+// the forum tracker's `Название / Title (Director) [2024, Country, WEB-DL 1080p]`.
+
+/// The alphanumeric runs of a name, lower-cased, each with the text before it.
+fn words(s: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut sep = String::new();
+    let mut word = String::new();
+    for c in s.chars() {
+        if c.is_alphanumeric() {
+            word.extend(c.to_lowercase());
+        } else {
+            if !word.is_empty() {
+                out.push((std::mem::take(&mut sep), std::mem::take(&mut word)));
+            }
+            sep.push(c);
+        }
+    }
+    if !word.is_empty() {
+        out.push((sep, word));
+    }
+    out
+}
+
+/// `1080p` → 1080. Only the `p`/`i` spellings: a bare number is never a height.
+fn height(word: &str) -> Option<i64> {
+    let digits = word.strip_suffix('p').or_else(|| word.strip_suffix('i'))?;
+    let n: i64 = digits.parse().ok()?;
+    matches!(n, 360 | 480 | 540 | 576 | 720 | 1080 | 1440 | 2160 | 4320).then_some(n)
+}
+
+/// 480/720/1080/2160, or 0 when the name does not say.
+///
+/// A written height wins over `4K`/`UHD`, because those also appear in names
+/// as a claim about the source ("4K Remaster") on a 1080p rip.
+fn title_quality(title: &str) -> i64 {
+    let w = words(title);
+    if let Some(h) = w.iter().filter_map(|(_, x)| height(x)).max() {
+        return h;
+    }
+    if w.iter().any(|(_, x)| x == "4k" || x == "uhd") {
+        2160
+    } else {
+        0
+    }
+}
+
+/// `dv`, `hdr` or empty, which is all `dynamic_rank` and the tags distinguish.
+fn title_dynamic(title: &str) -> &'static str {
+    let w = words(title);
+    let has = |want: &str| w.iter().any(|(_, x)| x == want);
+    if has("dv") || has("dovi") || w.windows(2).any(|p| p[0].1 == "dolby" && p[1].1 == "vision") {
+        return "dv";
+    }
+    if w.iter().any(|(_, x)| matches!(x.as_str(), "hdr" | "hdr10" | "hdr10plus" | "hlg")) {
+        "hdr"
+    } else {
+        ""
+    }
+}
+
+/// Every four-digit year a name mentions.
+///
+/// All of them rather than one, because which one is the release year is not
+/// knowable from the name: `Blade Runner 2049 (2017)`, `1917 (2019)`, and a
+/// series' `[2019-2024]`. The filter then asks whether *any* of them fits.
+fn title_years(title: &str) -> Vec<i32> {
+    words(title)
+        .iter()
+        .filter(|(_, w)| w.len() == 4)
+        .filter_map(|(_, w)| w.parse::<i32>().ok())
+        .filter(|y| (1900..=2100).contains(y))
+        .collect()
+}
+
+const SEASON_WORDS: [&str; 6] = ["season", "seasons", "сезон", "сезоны", "сезона", "сезонов"];
+
+/// `s01`, `s1`, `s01e05` → the season.
+fn tagged_season(word: &str) -> Option<i32> {
+    let rest = word.strip_prefix('s')?;
+    let digits = rest.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digits == 0 || digits > 2 {
+        return None;
+    }
+    let tail = &rest[digits..];
+    let episode = tail
+        .strip_prefix('e')
+        .is_some_and(|e| !e.is_empty() && e.chars().all(|c| c.is_ascii_digit()));
+    if !tail.is_empty() && !episode {
+        return None;
+    }
+    rest[..digits].parse().ok().filter(|&n| n > 0)
+}
+
+fn small_number(word: &str) -> Option<i32> {
+    (word.len() <= 2 && word.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| word.parse().ok())
+        .flatten()
+        .filter(|&n| n > 0)
+}
+
+/// The seasons a name says it holds: `S02`, `S01-S03`, `S01E05`, `Season 2`,
+/// `Сезон: 1`, `Сезоны 1-4`, `3 сезон`.
+///
+/// Empty when it says nothing, and that is common: a film, a complete-series
+/// pack, a tracker that writes the season only on the page. The season filter
+/// keeps such rows rather than guessing, exactly as it does for the jacred API.
+fn title_seasons(title: &str) -> Vec<i32> {
+    let w = words(title);
+    let is_range = |sep: &str| sep.contains('-') || sep.contains('–');
+    let mut out: Vec<i32> = Vec::new();
+    for i in 0..w.len() {
+        let word = w[i].1.as_str();
+        // Where the first number is, and the index of the word holding it.
+        let start = if let Some(n) = tagged_season(word) {
+            Some((n, i))
+        } else if SEASON_WORDS.contains(&word) {
+            match w.get(i + 1).and_then(|(_, x)| small_number(x)) {
+                Some(n) => Some((n, i + 1)),
+                // "3 сезон", "1-3 сезон": the number came first.
+                None if i > 0 => small_number(&w[i - 1].1).map(|n| {
+                    match (i > 1 && is_range(&w[i - 1].0)).then(|| small_number(&w[i - 2].1)) {
+                        Some(Some(first)) if first <= n => {
+                            out.extend(first..n);
+                            (n, i)
+                        }
+                        _ => (n, i),
+                    }
+                }),
+                None => None,
+            }
+        } else {
+            None
+        };
+        let Some((first, at)) = start else { continue };
+        let last = w
+            .get(at + 1)
+            .filter(|(sep, _)| is_range(sep))
+            .and_then(|(_, x)| tagged_season(x).or_else(|| small_number(x)))
+            .filter(|&n| n >= first && n - first <= 40)
+            .unwrap_or(first);
+        out.extend(first..=last);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// A word that ends a title inside a release name.
+fn ends_title(word: &str) -> bool {
+    (word.len() == 4 && word.parse::<i32>().is_ok_and(|y| (1900..=2100).contains(&y)))
+        || height(word).is_some()
+        || tagged_season(word).is_some()
+        || SEASON_WORDS.contains(&word)
+        || matches!(
+            word,
+            "4k" | "uhd"
+                | "web" | "webrip" | "webdl" | "webdlrip"
+                | "bdrip" | "bdremux" | "remux" | "bluray" | "blu"
+                | "hdtv" | "hdtvrip" | "hdrip" | "dvdrip" | "dvd"
+                | "x264" | "x265" | "h264" | "h265" | "hevc" | "avc"
+                | "complete" | "серии" | "серия"
+        )
+}
+
+/// The names a release could be filed under, for an exact comparison.
+///
+/// **Whole names, compared after `fold`, never a substring of the title** —
+/// the rule the jacred path keeps by comparing the API's own parse, and the
+/// reason that path never matched anything that merely mentioned the film. A
+/// forum name is split on ` / ` into its local and original names; a scene name
+/// has its dots turned back into spaces; and each part also offers its prefix
+/// before every word that ends a title (a year, a height, a season, a source),
+/// since where the title stops is exactly what a name does not mark. That makes
+/// `Blade Runner` a candidate of `Blade.Runner.2049.2017.1080p` as well as
+/// `Blade Runner 2049` — harmless, because the year filter then sees 2049 and
+/// 2017 and neither is 1982.
+fn title_names(title: &str) -> Vec<String> {
+    let mut s = title.trim();
+    // A leading release group, `[Group] Name - 05 (1080p)`.
+    while let Some(rest) = s
+        .strip_prefix('[')
+        .and_then(|r| r.split_once(']'))
+        .map(|(_, r)| r.trim_start())
+    {
+        s = rest;
+    }
+    let head = s.split(['(', '[', '|']).next().unwrap_or(s);
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |name: String| {
+        if !name.is_empty() && !out.contains(&name) {
+            out.push(name);
+        }
+    };
+    for part in head.split(" / ") {
+        let part = if part.trim().contains(' ') {
+            part.to_string()
+        } else {
+            part.replace(['.', '_'], " ")
+        };
+        let mut so_far = String::new();
+        for (i, (sep, word)) in words(&part).iter().enumerate() {
+            if i > 0 && ends_title(word) {
+                push(so_far.clone());
+            }
+            // An episode's ` - 05` ends the title as well.
+            if i > 0 && (sep.contains(" - ") || sep.contains(" – ")) {
+                push(so_far.clone());
+            }
+            if !so_far.is_empty() {
+                so_far.push(' ');
+            }
+            so_far.push_str(word);
+        }
+        push(so_far);
+    }
+    out
+}
+
+/// Seconds since the epoch as `YYYY-MM-DDTHH:MM:SSZ`, which sorts as text —
+/// `created` is only ever compared, by `catalog_find_update`.
+fn iso_time(secs: i64) -> String {
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    // Howard Hinnant's civil_from_days, the inverse of `feed::epoch`.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        rem / 60 % 60,
+        rem % 60
+    )
+}
+
+/// Find the releases for one title.
+///
+/// **Searched by the original name first.** A Russian tracker files a foreign
+/// film under both names, and the original is the one that survives translation
+/// — TMDB's localised title is one of several possible renderings, while the
+/// original is what the uploader typed. The localised one is the fallback and
+/// the extra query, not the first guess. The two are asked at once: a Torznab
+/// aggregator answers only when its slowest tracker has, and two of those in a
+/// row is a wait nobody should sit through.
+///
+/// Filtering happens here rather than in the query, because which parameters a
+/// server honours varies — by dialect, by version, and for Torznab by every
+/// tracker behind it. A plain search is the one thing all of them do; year and
+/// season are matched against what comes back.
+#[tauri::command]
+pub async fn catalog_releases(
+    base: String,
+    key: Option<String>,
+    title: String,
+    original_title: String,
+    year: Option<i32>,
+    season: Option<i32>,
+) -> Result<Vec<Release>, String> {
+    let indexer = indexer(&base, key.as_deref().unwrap_or(""))?;
+    let mut queries: Vec<String> = Vec::new();
+    for q in [original_title.trim(), title.trim()] {
+        if !q.is_empty() && !queries.iter().any(|had| fold(had) == fold(q)) {
+            queries.push(q.to_string());
+        }
+    }
+    if queries.is_empty() {
+        return Err("no_query".into());
+    }
+
+    let (first, second) = tokio::join!(ask(&indexer, &queries[0]), async {
+        match queries.get(1) {
+            Some(q) => Some(ask(&indexer, q).await),
+            None => None,
+        }
+    });
+    // The first query failing is the indexer being unreachable and is worth
+    // reporting — but only when the other one did not answer either: results in
+    // hand are not worth losing over one failed spelling.
+    let answers: Vec<Vec<Candidate>> = match (first, second) {
+        (Err(e), None | Some(Err(_))) => return Err(e),
+        (a, b) => a.into_iter().chain(b.and_then(Result::ok)).collect(),
+    };
+
+    let wanted: Vec<String> = queries.iter().map(|q| fold(q)).collect();
+    let mut out: Vec<Release> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for rows in answers {
+        for c in rows {
+            let matches_name = c
+                .names
+                .iter()
+                .filter(|n| !n.is_empty())
+                .any(|n| wanted.contains(&fold(n)));
+            if !matches_name {
+                continue;
+            }
+            // A year off by one is routine — a festival run, a national release
+            // date, an indexer reading it out of the file name — so the window
+            // is ±1 rather than exact, and a row with no year at all is kept:
+            // refusing it would drop releases whose name matched exactly. With
+            // a season asked for, a later year is fine too: TMDB's year is the
+            // series' first, and season three came out years after it.
+            if let (Some(want), false) = (year, c.years.is_empty()) {
+                let fits = |y: &i32| {
+                    (y - want).abs() <= 1 || (season.is_some_and(|s| s > 1) && *y > want)
+                };
+                if !c.years.iter().any(fits) {
+                    continue;
+                }
+            }
+            let row = c.release;
+            // A season filter only applies to rows that declare seasons. A film
+            // release inside a series' results has an empty list, and so does a
+            // complete-series pack on some trackers — dropping those would hide
+            // exactly the release a viewer starting a series wants.
+            if let (Some(want), false) = (season, row.seasons.is_empty()) {
+                if !row.seasons.contains(&want) {
+                    continue;
+                }
+            }
+            // The same release is on several trackers and cross-posted within
+            // one; the info hash is what says they are the same bytes. A row
+            // with only a `.torrent` link has no hash to compare, so its link
+            // stands in for one.
+            let identity = if row.magnet.is_empty() {
+                row.torrent.clone()
+            } else {
+                magnet_hash(&row.magnet)
+            };
+            if !seen.insert(identity) {
+                continue;
+            }
+            out.push(row);
         }
         // Enough to choose from. A second query on top of a full first one adds
         // duplicates of what is already there far more often than it adds a
@@ -639,6 +1123,89 @@ pub async fn catalog_releases(
     sort_releases(&mut out);
     out.truncate(MAX_RELEASES);
     Ok(out)
+}
+
+/// What a release's `.torrent` link turned out to be.
+#[derive(Serialize)]
+pub struct ReleaseSource {
+    pub magnet: Option<String>,
+    pub info_hash: Option<String>,
+    pub name: Option<String>,
+}
+
+/// A season's `.torrent` is a few hundred kilobytes; past this it is a page.
+const MAX_TORRENT_BYTES: usize = 32 * 1024 * 1024;
+
+/// Fetch a release's `.torrent` from the server that listed it, and put the
+/// metadata where `torrent_add` looks first.
+///
+/// The same move as `feed_torrent`, for the same reason: a magnet built from
+/// the hash then opens without a DHT lookup — and on a private tracker, where
+/// the DHT is off, the `.torrent` is the only way in at all. Two differences.
+/// It goes **direct**, like every other request to the indexer, rather than
+/// through the torrent proxy: the link points at the same Jackett or Prowlarr
+/// the search just reached, often on this machine. And it does not follow
+/// redirects blindly, because for a tracker that only has magnets both of them
+/// answer the download link with a redirect *to* the magnet.
+#[tauri::command]
+pub async fn catalog_torrent(app: tauri::AppHandle, url: String) -> Result<ReleaseSource, String> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let client = CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent(format!("FramePlayer/{}", env!("CARGO_PKG_VERSION")))
+            .timeout(TORZNAB_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap_or_default()
+    });
+    let mut next = reqwest::Url::parse(url.trim()).map_err(|_| "bad_url".to_string())?;
+    for _ in 0..5 {
+        if !matches!(next.scheme(), "http" | "https") {
+            return Err("bad_url".into());
+        }
+        let response = client
+            .get(next.clone())
+            .send()
+            .await
+            .map_err(|_| "indexer_unreachable".to_string())?;
+        if response.status().is_redirection() {
+            let location = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or("bad_url")?;
+            if location.starts_with("magnet:") {
+                return Ok(ReleaseSource {
+                    magnet: Some(location.to_string()),
+                    info_hash: None,
+                    name: None,
+                });
+            }
+            next = next.join(location).map_err(|_| "bad_url".to_string())?;
+            continue;
+        }
+        indexer_status(response.status())?;
+        if response
+            .content_length()
+            .is_some_and(|n| n as usize > MAX_TORRENT_BYTES)
+        {
+            return Err("too_large".into());
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|_| "indexer_unreachable".to_string())?;
+        if bytes.len() > MAX_TORRENT_BYTES {
+            return Err("too_large".into());
+        }
+        let (info_hash, name) = crate::torrent::cache_metadata(&app, &bytes)?;
+        return Ok(ReleaseSource {
+            magnet: None,
+            info_hash: Some(info_hash),
+            name,
+        });
+    }
+    Err("bad_url".into())
 }
 
 /// Where a release's dynamic range puts it: 1 for anything the indexer flagged
@@ -717,6 +1284,7 @@ fn sort_releases(out: &mut [Release]) {
 #[tauri::command]
 pub async fn catalog_find_update(
     base: String,
+    key: Option<String>,
     title: String,
     original_title: String,
     year: Option<i32>,
@@ -726,7 +1294,12 @@ pub async fn catalog_find_update(
     known_name: String,
     known_quality: i64,
 ) -> Result<Option<Release>, String> {
-    let releases = catalog_releases(base, title, original_title, year, season).await?;
+    let mut releases = catalog_releases(base, key, title, original_title, year, season).await?;
+    // **Only a release whose hash is known can be an update.** Both paths below
+    // decide "different torrent" by comparing hashes, and a Torznab row that
+    // carries nothing but a `.torrent` link has none — so it would differ from
+    // every torrent, including the one already on disk.
+    releases.retain(|r| !r.magnet.is_empty());
     let known_hash = known_hash.to_lowercase();
     let known_url = known_url.trim();
 
@@ -861,6 +1434,7 @@ mod tests {
             voices: vec![],
             seasons: vec![],
             magnet: format!("magnet:?xt=urn:btih:{quality}{video_type}{seeders}{size}"),
+            torrent: String::new(),
             created: String::new(),
             url: String::new(),
         }
@@ -967,6 +1541,146 @@ mod tests {
         // Too little to judge is a refusal, not a guess: two short names would
         // otherwise match on one shared word.
         assert!(!looks_like_same_release("Show", "Show"));
+    }
+
+    fn torznab_url(base: &str, key: &str) -> String {
+        match indexer(base, key).unwrap() {
+            Indexer::Torznab(url) => url.to_string(),
+            Indexer::Jacred(base) => panic!("{base} read as the jacred API"),
+        }
+    }
+
+    #[test]
+    fn an_address_says_which_dialect_it_speaks() {
+        // What Jackett's "Copy Torznab Feed" puts on the clipboard, with the
+        // key from its dashboard in the field beside it.
+        assert_eq!(
+            torznab_url("http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/", "K"),
+            "http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/api?apikey=K"
+        );
+        // Prowlarr's per-indexer address is recognisable only by the key.
+        assert_eq!(torznab_url("http://nas.local:9696/3/", "K"), "http://nas.local:9696/3/api?apikey=K");
+        // The whole endpoint pasted, key included: kept as it is, and a search
+        // the URL still carried is dropped, since `t` and `q` are ours to set.
+        assert_eq!(
+            torznab_url("http://h:9696/3/api?apikey=K&t=search&q=dune", ""),
+            "http://h:9696/3/api?apikey=K"
+        );
+        // The field's key beats one left in the address.
+        assert_eq!(torznab_url("http://h/3/api?apikey=OLD", "NEW"), "http://h/3/api?apikey=NEW");
+        // A bare base with no key is the jacred API it always was.
+        assert!(matches!(indexer("https://example.org/", ""), Ok(Indexer::Jacred(b)) if b == "https://example.org"));
+        // And the three ways of not being an address at all.
+        assert_eq!(indexer("  ", "K").err().as_deref(), Some("no_indexer"));
+        assert_eq!(indexer("localhost:9117", "").err().as_deref(), Some("bad_indexer"));
+        assert_eq!(indexer("not a url", "").err().as_deref(), Some("bad_indexer"));
+    }
+
+    #[test]
+    fn torznab_errors_are_read_out_of_the_body() {
+        assert_eq!(
+            torznab_error(r#"<?xml version="1.0" encoding="UTF-8"?><error code="100" description="Invalid API Key" />"#),
+            Some(100)
+        );
+        assert_eq!(torznab_error("<error description=\"x\"/>"), Some(0));
+        assert_eq!(torznab_error("<rss><channel></channel></rss>"), None);
+        // An item that merely mentions an error is not one.
+        assert_eq!(torznab_error("<rss><item><title><error></title></item></rss>"), None);
+    }
+
+    #[test]
+    fn a_name_offers_its_titles_and_not_its_mentions() {
+        let forum = "Дюна: Часть вторая / Dune: Part Two (Дени Вильнёв / Denis Villeneuve) [2024, США, фантастика, WEB-DL 2160p, HDR10] Dub + Original";
+        let names: Vec<String> = title_names(forum).iter().map(|n| fold(n)).collect();
+        assert!(names.contains(&fold("Dune: Part Two")));
+        assert!(names.contains(&fold("Дюна: Часть вторая")));
+        // The director in the parentheses is not a title.
+        assert!(!names.contains(&fold("Denis Villeneuve")));
+
+        let scene = "Blade.Runner.2049.2017.1080p.BluRay.x264-GRP";
+        let names: Vec<String> = title_names(scene).iter().map(|n| fold(n)).collect();
+        assert!(names.contains(&fold("Blade Runner 2049")));
+        // A prefix offered too — which is why the year filter has to see 2017.
+        assert!(names.contains(&fold("Blade Runner")));
+        assert_eq!(title_years(scene), vec![2049, 2017]);
+
+        let anime = "[Group] Sousou no Frieren - 05 (1080p) [ABCD1234]";
+        let names: Vec<String> = title_names(anime).iter().map(|n| fold(n)).collect();
+        assert!(names.contains(&fold("Sousou no Frieren")));
+
+        // And a different film that contains the title is not the title.
+        let sequel = "Dune.Part.Three.2026.2160p.WEB-DL";
+        assert!(!title_names(sequel).iter().any(|n| fold(n) == fold("Dune: Part Two")));
+    }
+
+    #[test]
+    fn quality_and_dynamic_range_from_a_name() {
+        assert_eq!(title_quality("Film.2024.2160p.WEB-DL.DV.HDR"), 2160);
+        assert_eq!(title_quality("Фильм [2024, BDRip 1080p]"), 1080);
+        // A written height beats a "4K" that describes the source.
+        assert_eq!(title_quality("Film 4K Remaster 1080p"), 1080);
+        assert_eq!(title_quality("Film UHD BDRemux"), 2160);
+        assert_eq!(title_quality("Film DVDRip"), 0);
+        assert_eq!(title_dynamic("Film.2160p.DV.HDR10"), "dv");
+        assert_eq!(title_dynamic("Film 2160p Dolby Vision"), "dv");
+        assert_eq!(title_dynamic("Film [WEB-DL 2160p, HDR10+]"), "hdr");
+        // HDRip and DVDRip are rips, not dynamic range.
+        assert_eq!(title_dynamic("Film HDRip DVDRip"), "");
+    }
+
+    #[test]
+    fn seasons_from_a_name() {
+        assert_eq!(title_seasons("Show.S02E05.1080p"), vec![2]);
+        assert_eq!(title_seasons("Show S01-S03 Complete"), vec![1, 2, 3]);
+        assert_eq!(title_seasons("Show.S01-03.1080p"), vec![1, 2, 3]);
+        assert_eq!(title_seasons("Сериал / Show / Сезон: 2 / Серии: 1-8 из 8 [2024]"), vec![2]);
+        assert_eq!(title_seasons("Сериал (Сезоны 1-4) [2019-2024]"), vec![1, 2, 3, 4]);
+        assert_eq!(title_seasons("Сериал 3 сезон"), vec![3]);
+        assert_eq!(title_seasons("Show Season 2 1080p"), vec![2]);
+        // An episode range is not a season range.
+        assert_eq!(title_seasons("Show.S01E01-E05"), vec![1]);
+        // A film says nothing, and nothing is what comes back.
+        assert!(title_seasons("Film.2024.1080p.WEB-DL").is_empty());
+        assert!(title_seasons("Seven Samurai 1954").is_empty());
+    }
+
+    #[test]
+    fn a_jackett_item_becomes_a_release() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel>
+  <item>
+    <title>Film.2024.2160p.WEB-DL.DV.HDR</title>
+    <guid>https://tracker.example/details/1</guid>
+    <jackettindexer id="t">Tracker</jackettindexer>
+    <comments>https://tracker.example/details/1</comments>
+    <pubDate>Tue, 15 Sep 2026 12:50:59 +0000</pubDate>
+    <size>1000</size>
+    <link>http://127.0.0.1:9117/dl/t/?jackett_apikey=K&amp;path=x</link>
+    <enclosure url="http://127.0.0.1:9117/dl/t/?jackett_apikey=K&amp;path=x" length="1000" type="application/x-bittorrent" />
+    <torznab:attr name="seeders" value="12" />
+    <torznab:attr name="peers" value="15" />
+    <torznab:attr name="infohash" value="0123456789ABCDEF0123456789ABCDEF01234567" />
+  </item>
+  <item><title>Nothing to open</title><guid>https://tracker.example/details/2</guid></item>
+</channel></rss>"#;
+        let feed = crate::feed::parse_feed(xml).unwrap();
+        let rows: Vec<Candidate> = feed.items.into_iter().filter_map(torznab_candidate).collect();
+        assert_eq!(rows.len(), 1, "an item with nothing to open is not a release");
+        let r = &rows[0].release;
+        assert_eq!((r.quality, r.video_type.as_str(), r.seeders, r.size), (2160, "dv", 12, 1000));
+        assert_eq!(r.tracker, "Tracker");
+        assert_eq!(r.url, "https://tracker.example/details/1");
+        assert_eq!(r.magnet, "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567");
+        assert_eq!(r.torrent, "http://127.0.0.1:9117/dl/t/?jackett_apikey=K&path=x");
+        assert_eq!(r.created, "2026-09-15T12:50:59Z");
+        assert_eq!(rows[0].years, vec![2024]);
+    }
+
+    #[test]
+    fn iso_time_inverts_the_feed_epoch() {
+        assert_eq!(iso_time(0), "1970-01-01T00:00:00Z");
+        assert_eq!(iso_time(1_789_476_659), "2026-09-15T12:50:59Z");
+        assert_eq!(iso_time(951_782_400), "2000-02-29T00:00:00Z");
     }
 
     #[test]

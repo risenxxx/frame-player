@@ -69,6 +69,21 @@ pub struct FeedItem {
     pub size: Option<u64>,
     /// Seconds since the epoch.
     pub published: Option<i64>,
+    /// What a Torznab *search* answer carries and a release feed does not:
+    /// the swarm, the tracker's page about the release, which indexer found it
+    /// and the year it reports. Read here because this is where the item is
+    /// parsed; only the catalog uses them, so they stay out of what the
+    /// frontend's feed dialog is sent.
+    #[serde(skip)]
+    pub seeders: Option<i64>,
+    #[serde(skip)]
+    pub peers: Option<i64>,
+    #[serde(skip)]
+    pub page: Option<String>,
+    #[serde(skip)]
+    pub source: Option<String>,
+    #[serde(skip)]
+    pub year: Option<i32>,
 }
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
@@ -133,7 +148,7 @@ async fn fetch(url: &str, proxy: &str, limit: usize) -> Result<Vec<u8>, String> 
 /// that grew up on windows-1251 still publish in it. The HTTP charset is not
 /// consulted because a feed served as `application/xml` often carries none,
 /// while the declaration is what an XML reader is required to honour anyway.
-fn decode_body(bytes: &[u8]) -> String {
+pub(crate) fn decode_body(bytes: &[u8]) -> String {
     if let Ok(s) = std::str::from_utf8(bytes) {
         return s.trim_start_matches('\u{feff}').to_string();
     }
@@ -274,6 +289,11 @@ struct Draft {
     magnet: Option<String>,
     size: Option<u64>,
     published: Option<i64>,
+    seeders: Option<i64>,
+    peers: Option<i64>,
+    comments: Option<String>,
+    source: Option<String>,
+    year: Option<i32>,
 }
 
 impl Draft {
@@ -320,6 +340,14 @@ impl Draft {
                     .and_then(hash_from)
             });
 
+        // The release's page: RSS's own `<comments>`, else a guid that is a
+        // web address — which is what Jackett and Prowlarr both put there.
+        let page = self.comments.or_else(|| {
+            self.guid
+                .clone()
+                .filter(|g| g.starts_with("http://") || g.starts_with("https://"))
+        });
+
         FeedItem {
             title: self.title.split_whitespace().collect::<Vec<_>>().join(" "),
             info_hash,
@@ -327,6 +355,11 @@ impl Draft {
             torrent_url,
             size: size.filter(|&n| n > 0),
             published: self.published,
+            seeders: self.seeders,
+            peers: self.peers,
+            page,
+            source: self.source,
+            year: self.year,
         }
     }
 }
@@ -480,6 +513,9 @@ fn push_torznab(d: &mut Draft, e: &BytesStart) {
             d.magnet.get_or_insert(value);
         }
         "size" => d.size = d.size.or_else(|| value.trim().parse().ok()),
+        "seeders" => d.seeders = value.trim().parse().ok(),
+        "peers" => d.peers = value.trim().parse().ok(),
+        "year" => d.year = value.trim().parse().ok().filter(|&y: &i32| y > 0),
         _ => {}
     }
 }
@@ -491,6 +527,12 @@ fn take_text(d: &mut Draft, name: &str, text: String) {
     match name {
         "title" => d.title = text,
         "guid" | "id" => d.guid = Some(text),
+        "comments" if text.starts_with("http://") || text.starts_with("https://") => {
+            d.comments = Some(text)
+        }
+        // Which indexer behind the aggregator found the release: Jackett and
+        // Prowlarr each name the element after themselves.
+        "jackettindexer" | "prowlarrindexer" | "indexer" => d.source = Some(text),
         "link" => d.links.push(text),
         "infohash" | "info_hash" => d.hash = Some(text),
         "magneturi" | "magnet" => {

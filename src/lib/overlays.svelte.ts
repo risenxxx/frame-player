@@ -38,6 +38,9 @@ class Overlays {
   /// `sub` opens a submenu with it: the picture panel's key.
   ctxAt = $state<{ x: number; y: number; sub?: 'picture' } | null>(null);
   settings = $state(false);
+  /// The settings section to open on, when a surface sends the viewer to one
+  /// setting rather than to the sheet. Cleared when the sheet closes.
+  settingsTab = $state<string | null>(null);
   info = $state(false);
   /// Watching together: getting into a room, and the room you are in. A sheet
   /// like the settings rather than an OSC menu, because it is read rather than
@@ -97,6 +100,18 @@ export function initOverlays() {
  * an effect, so its cleanup covers every way the panel closes (Escape, a click
  * outside, a session starting) and not only this one.
  */
+/// Open the settings sheet on one section — for a surface whose problem is a
+/// setting, so the viewer lands on the field instead of hunting for its tab.
+export function openSettingsAt(tab: string) {
+  overlays.settingsTab = tab;
+  overlays.settings = true;
+}
+
+export function closeSettings() {
+  overlays.settings = false;
+  overlays.settingsTab = null;
+}
+
 export function toggleMenu(kind: OscMenu) {
   overlays.menu = overlays.menu === kind ? null : kind;
   if (overlays.menu === 'chapter') void loadChapters();
@@ -162,7 +177,7 @@ export function closeTopmost() {
     return;
   }
   if (overlays.settings) {
-    overlays.settings = false;
+    closeSettings();
     return;
   }
   if (overlays.ctxAt) {
