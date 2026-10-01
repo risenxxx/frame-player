@@ -505,7 +505,7 @@ function takeOffer(e: KeyboardEvent) {
   if (endOfFile.hint) {
     e.preventDefault();
     takeSkip();
-  } else if (endOfFile.ended && endOfFile.next) {
+  } else if (endOfFile.shown && endOfFile.next) {
     e.preventDefault();
     cancelAdvance();
     openEntry(endOfFile.next);

@@ -16,6 +16,7 @@
 
 import { catalog, closeCatalog, closeTitle } from './catalog.svelte';
 import { chrome, exitFullscreen } from './chrome.svelte';
+import { dismissEnd, endOfFile } from './endscreen.svelte';
 import { opening } from './open.svelte';
 import { loadChapters, loadTracks } from './player.svelte';
 import { ensureQueueTitles, loadPlaylist } from './playlist.svelte';
@@ -186,6 +187,13 @@ export function closeTopmost() {
   }
   if (overlays.menu) {
     overlays.menu = null;
+    return;
+  }
+  // The end screen is a layer over the picture like the rest, and the last
+  // one before the window itself: in fullscreen the first Escape uncovers the
+  // final frame and only the second leaves.
+  if (endOfFile.shown) {
+    dismissEnd();
     return;
   }
   void exitFullscreen();

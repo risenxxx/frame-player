@@ -27,9 +27,6 @@ import { player } from './player.svelte';
 import { seek } from './seek.svelte';
 import { mini, shapeState, toggleMini, windowPrefs } from './window-prefs.svelte';
 
-/// How long the chrome stays up after the pointer stops.
-const UI_HIDE_MS = 1200;
-
 // Title bar height, and the width of the macOS traffic lights within it.
 //
 // The cursor is kept visible over that corner and nowhere else. Hovering the
@@ -53,6 +50,14 @@ const UI_HIDE_MS = 1200;
 // through the corner on its way out of the window left the arrow on screen for
 // good.
 const TITLEBAR_STRIP = 48;
+
+/// The shortest rest that counts as the pointer having stopped, which is what
+/// the "at once" hide delay (`0`) really means. A literal zero timer would hide
+/// the bars between two mousemoves, and a hidden bar takes no pointer events —
+/// so the pointer could never land on it, `oscHover` would never latch, and the
+/// controls would be unreachable. Longer than the gap between moves of a
+/// slowly travelling pointer, short of anything that reads as a wait.
+const STOP_MS = 200;
 const MAC_BUTTONS_WIDTH = 110;
 
 class Chrome {
@@ -512,7 +517,9 @@ export function pokeUi(e?: MouseEvent) {
   }
   chrome.uiVisible = true;
   clearTimeout(hideTimer);
-  hideTimer = setTimeout(() => (chrome.uiVisible = false), UI_HIDE_MS);
+  // The viewer's choice (`HideDelay`), read per poke so a change in the
+  // settings applies from the next mouse move without a restart.
+  hideTimer = setTimeout(() => (chrome.uiVisible = false), Math.max(windowPrefs.hideDelay, STOP_MS));
 }
 
 /**
@@ -527,8 +534,8 @@ export function pokeUi(e?: MouseEvent) {
  * cursor update while the pointer stands still (it is how the cursor comes to
  * be hidden at all).
  *
- * The visible cost is the bars appearing for `UI_HIDE_MS` when you switch to
- * the player, which is the same thing that happens when you touch the mouse.
+ * The visible cost is the bars appearing for `windowPrefs.hideDelay` when you
+ * switch to the player, which is the same thing that happens when you touch the mouse.
  */
 function wakeEffect() {
   $effect(() => {

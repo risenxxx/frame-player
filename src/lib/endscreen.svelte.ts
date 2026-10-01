@@ -60,7 +60,15 @@ class EndOfFile {
   /// coming back to an opening on purpose has to offer the button again.
   skipUsed = $state(-1);
 
+  /// The viewer put the end screen away to look at the last frame. Lasts until
+  /// this ending is over — a rewind out of it or the next file (`resetEnd`) —
+  /// so the next ending offers the cards again.
+  dismissed = $state(false);
+
   ended = $derived(player.hasFile && player.eofReached);
+  /// The cards are on screen. `ended` stays the fact about the file: the
+  /// controls still treat a dismissed ending as an ending.
+  shown = $derived(this.ended && !this.dismissed);
   next = $derived(this.ended ? neighbour(1) : null);
   prev = $derived(this.ended ? neighbour(-1) : null);
 
@@ -156,6 +164,13 @@ export function cancelAdvance() {
   endOfFile.advancing = false;
 }
 
+/// Put the end screen away and leave the last frame in view. A countdown would
+/// take the frame away again in a few seconds, so it goes too.
+export function dismissEnd() {
+  cancelAdvance();
+  endOfFile.dismissed = true;
+}
+
 /// The file ended. Decide between waiting and rolling on, and get the cards
 /// something to show either way.
 export function onReachedEnd() {
@@ -186,6 +201,7 @@ export function onReachedEnd() {
 /// been handled yet.
 export function resetEnd() {
   endHandled = false;
+  endOfFile.dismissed = false;
   cancelAdvance();
 }
 

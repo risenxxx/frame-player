@@ -74,6 +74,20 @@ export type AutoHide = 'always' | 'fullscreen' | 'never';
 export const AUTO_HIDE_CHOICES: AutoHide[] = ['always', 'fullscreen', 'never'];
 
 /**
+ * How long the pointer has to rest before the controls (and, with them, the
+ * cursor) go, in milliseconds. Named values rather than a slider, as with the
+ * seek steps: nobody is after 1.7 s, and five pills are quicker to hit. 1.2 s
+ * is the player's own long-standing value and stays the default; the short end
+ * is for a picture watched with the mouse in hand, the long end for somebody
+ * who reads the readouts.
+ *
+ * `0` is "at once": the controls are up while the mouse moves and go the moment
+ * it stops. It is not a zero timer — `pokeUi` floors it, see `STOP_MS` there.
+ */
+export const HIDE_DELAY_CHOICES = [0, 800, 1200, 2000, 3000, 5000] as const;
+export type HideDelay = (typeof HIDE_DELAY_CHOICES)[number];
+
+/**
  * When the cursor hides, asked separately from the controls because the two
  * answers are wanted apart: a bar that stays in the window (`AutoHide` at
  * `never` or `fullscreen`) over a picture the pointer should still get off.
@@ -118,6 +132,8 @@ class WindowPrefs {
   snapMini = $state(true);
   /// When the chrome may fade out on its own — see `AutoHide`.
   autoHide = $state<AutoHide>('always');
+  /// How long the pointer rests before they do — see `HideDelay`.
+  hideDelay = $state<HideDelay>(1200);
   /// When the cursor hides — see `CursorHide`.
   cursorHide = $state<CursorHide>('controls');
   /// What a trackpad pinch does (macOS) — see `PinchAction` in window-fit.
@@ -419,6 +435,9 @@ export function loadWindowPrefs() {
     if (typeof saved.alwaysOnTop === 'boolean') windowPrefs.alwaysOnTop = saved.alwaysOnTop;
     if (typeof saved.snapMini === 'boolean') windowPrefs.snapMini = saved.snapMini;
     if (saved.autoHide && AUTO_HIDE_CHOICES.includes(saved.autoHide)) windowPrefs.autoHide = saved.autoHide;
+    const delay = HIDE_DELAY_CHOICES.find((d) => d === saved.hideDelay);
+    // `!== undefined`, not truthiness: 0 is one of the choices.
+    if (delay !== undefined) windowPrefs.hideDelay = delay;
     if (saved.cursorHide && CURSOR_HIDE_CHOICES.includes(saved.cursorHide)) {
       windowPrefs.cursorHide = saved.cursorHide;
     }
@@ -443,6 +462,7 @@ function saveWindowPrefs() {
         alwaysOnTop: windowPrefs.alwaysOnTop,
         snapMini: windowPrefs.snapMini,
         autoHide: windowPrefs.autoHide,
+        hideDelay: windowPrefs.hideDelay,
         cursorHide: windowPrefs.cursorHide,
         pinch: windowPrefs.pinch,
         videoClick: windowPrefs.videoClick,
@@ -977,6 +997,11 @@ export async function applyAlwaysOnTop() {
 
 export function setAutoHide(v: AutoHide) {
   windowPrefs.autoHide = v;
+  saveWindowPrefs();
+}
+
+export function setHideDelay(v: HideDelay) {
+  windowPrefs.hideDelay = v;
   saveWindowPrefs();
 }
 

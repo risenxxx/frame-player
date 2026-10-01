@@ -8,6 +8,7 @@
   import type { Snippet } from 'svelte';
   import { t } from '$lib/i18n.svelte';
   import { clickEndsDrag } from '$lib/input.svelte';
+  import { keyLabel } from '$lib/keys.svelte';
   import { isNetworkSource } from '$lib/player.svelte';
   import { ADVANCE_MS, playEntry, playlist, type PlaylistEntry } from '$lib/playlist.svelte';
 
@@ -22,9 +23,14 @@
     seq: number;
     oncancel: () => void;
     onreplay: () => void;
+    /// Put the screen away to look at the last frame.
+    onhide: () => void;
   }
 
-  let { prev, next, counting, seq, oncancel, onreplay }: Props = $props();
+  let { prev, next, counting, seq, oncancel, onreplay, onhide }: Props = $props();
+  // Escape is reserved rather than bindable, so the key is spelled out here
+  // instead of coming from `hint()`.
+  const hideTip = $derived(t('osc.with_key', { label: t('end.hide_tip'), key: keyLabel('Escape') }));
 </script>
 
 <!-- keep-open=always parks mpv on the last frame of EVERY entry, not only
@@ -53,9 +59,23 @@
       {@render endCard(next, 'next')}
     {/if}
   </div>
-  {#if counting}
-    <button class="endcancel" onclick={oncancel}>{t('end.cancel')}</button>
-  {/if}
+  <!-- Hiding is always on offer, not only while counting: the last frame is
+       worth seeing whether or not anything is about to replace it. Beside the
+       cancel rather than in a corner, where the window's own buttons are. -->
+  <div class="endactions">
+    {#if counting}
+      <button class="endpill" onclick={oncancel}>{t('end.cancel')}</button>
+    {/if}
+    <button
+      class="endpill"
+      data-tip={hideTip}
+      aria-label={hideTip}
+      onclick={(e) => {
+        e.stopPropagation();
+        onhide();
+      }}>{t('end.hide')}</button
+    >
+  </div>
 </div>
 
   {#snippet endCard(entry: PlaylistEntry, side: 'prev' | 'next')}
@@ -125,6 +145,34 @@
   .endcard:hover .card-poster {
     outline: 2px solid #818cf8;
     outline-offset: 1px;
+  }
+
+  /* These lie over an arbitrary final frame, and that frame is as often black
+     as anything — where the start screen's 0.07 hairline and a recess darker
+     than its surroundings vanish together, and a poster that is itself a dark
+     frame has no edge at all. So the end screen's cards always carry a frame
+     that reads on both extremes: a light hairline drawn *over* the picture
+     (on `::after`, since an inset shadow on the box itself is painted under
+     the <img>), and a dark ring plus a soft shadow outside it for a bright
+     frame. The empty state takes the replay button's surface instead of the
+     recess, so the three read as one set either side of the middle. */
+  .endcard .card-poster {
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.4),
+      0 6px 24px rgba(0, 0, 0, 0.45);
+  }
+
+  .endcard .card-poster::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+    pointer-events: none;
+  }
+
+  .endcard .card-poster.empty {
+    background: rgba(20, 20, 28, 0.75);
   }
 
   /* End of an entry: previous / replay / next. The cards are a fixed width, so
@@ -203,7 +251,12 @@
     animation: end-advance var(--advance) linear forwards;
   }
 
-  .endcancel {
+  .endactions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .endpill {
     padding: 8px 18px;
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 999px;
@@ -213,7 +266,7 @@
     cursor: pointer;
   }
 
-  .endcancel:hover {
+  .endpill:hover {
     background: rgba(32, 32, 42, 0.94);
     border-color: rgba(255, 255, 255, 0.24);
   }

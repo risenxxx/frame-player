@@ -82,11 +82,13 @@
   import { showOsd } from '$lib/osd.svelte';
   import {
     AUTO_HIDE_CHOICES,
+    HIDE_DELAY_CHOICES,
     CURSOR_HIDE_CHOICES,
     VIDEO_CLICK_CHOICES,
     PINCH_CHOICES,
     setAutoHide,
     setCursorHide,
+    setHideDelay,
     setVideoClick,
     setPinch,
     syncMenuChecks,
@@ -976,6 +978,21 @@
         {/each}
       </div>
       <div class="setting-hint">{t('set.autohide_hint')}</div>
+    </div>
+
+    <!-- One delay for the bars and the cursor, because it is one timer: the
+         pointer resting. Kept on screen under `never` rather than removed — the
+         cursor still reads it there. -->
+    <div class="setting">
+      <div class="setting-label">{t('set.hide_delay')}</div>
+      <div class="segmented">
+        {#each HIDE_DELAY_CHOICES as v (v)}
+          <button class="segopt" class:sel={windowPrefs.hideDelay === v} onclick={() => setHideDelay(v)}>
+            {v === 0 ? t('set.hide_delay_now') : t('set.seek_sec', { s: (v / 1000).toLocaleString(locale()) })}
+          </button>
+        {/each}
+      </div>
+      <div class="setting-hint">{t('set.hide_delay_hint')}</div>
     </div>
 
     <div class="setting">

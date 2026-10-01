@@ -81,6 +81,7 @@
   import { initSubShift, subShift } from '$lib/sub-shift.svelte';
   import {
     cancelAdvance,
+    dismissEnd,
     endOfFile,
     initEndScreen,
     noteLocalPosition,
@@ -1349,7 +1350,7 @@
       onDeleteTorrent={(row) => void deleteTorrent(row)}
       onDeleteWatched={(row) => void deleteWatchedFiles(row)}
     />
-  {:else if endOfFile.ended}
+  {:else if endOfFile.shown}
     <EndScreen
       prev={endOfFile.prev}
       next={endOfFile.next}
@@ -1357,6 +1358,7 @@
       seq={endOfFile.seq}
       oncancel={cancelAdvance}
       onreplay={togglePlayback}
+      onhide={dismissEnd}
     />
   {/if}
 
