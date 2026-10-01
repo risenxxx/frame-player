@@ -930,6 +930,65 @@ fn video_view(ns: &NSWindow) -> Option<Retained<objc2_app_kit::NSView>> {
     found
 }
 
+/// The view the keys are for: the content view's child that is wry's.
+fn web_view(ns: &NSWindow) -> Option<Retained<objc2_app_kit::NSView>> {
+    let content = ns.contentView()?;
+    let found = content
+        .subviews()
+        .iter()
+        .find(|view| view.class().name().to_string_lossy().contains("WebView"));
+    found
+}
+
+/// Give the keyboard back to the web view once a fullscreen transition is over.
+///
+/// tao answers `windowDidExitFullScreen:` by putting the saved style mask back,
+/// and the helper it does that with ends on `makeFirstResponder(view)` with
+/// *its own* content view — "if we don't do this, key handling will break", in
+/// the words of the winit code it came from, where the content view is the one
+/// that wants the keys. Here it is tao's, and the keys are wanted by the web
+/// view inside it: from that moment every key goes to a view that forwards
+/// none of them, until a click on the picture makes the web view first
+/// responder again. Reported as Space doing nothing after a double click out of
+/// fullscreen; the click that then "fixes" it is that click.
+///
+/// Only when the responder is where tao's reset leaves it — the content view,
+/// or nothing — so that a responder somebody chose on purpose is left alone.
+/// And only while the window is key: a window that lost the keyboard to
+/// another during the transition does not take it back.
+///
+/// Called `MASK_SETTLE` after `Did…`, never from the notification itself: tao's
+/// reset is dispatched asynchronously out of its delegate method, so one made
+/// in the notification handler would be undone by it a moment later. Main
+/// thread only.
+fn refocus_web_view(ns: &NSWindow) {
+    if !ns.isKeyWindow() {
+        return;
+    }
+    let Some(content) = ns.contentView() else {
+        return;
+    };
+    let at_reset = match ns.firstResponder() {
+        None => true,
+        Some(responder) => {
+            let responder = &*responder as *const objc2_app_kit::NSResponder as *const core::ffi::c_void;
+            let content_ptr = &*content as *const objc2_app_kit::NSView as *const core::ffi::c_void;
+            let window_ptr = ns as *const NSWindow as *const core::ffi::c_void;
+            responder == content_ptr || responder == window_ptr
+        }
+    };
+    if !at_reset {
+        return;
+    }
+    let Some(web) = web_view(ns) else {
+        return;
+    };
+    mask_trace("keyboard back to the web view");
+    if !ns.makeFirstResponder(Some(&web)) {
+        log_warn("the web view declined to become first responder after fullscreen");
+    }
+}
+
 /// How much of the picture is showing, 0 to 1. Main thread only.
 pub fn video_alpha(window: &tauri::WebviewWindow) -> Option<f64> {
     let ns = ns_window(window)?;
@@ -1289,6 +1348,9 @@ fn mask_fullscreen_transitions(window: &tauri::WebviewWindow, ns: &NSWindow) {
     let finished = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
         mask_trace("did change");
         lift_after(MASK_SETTLE);
+        // Not in this handler: tao's reset of the first responder is dispatched
+        // from its delegate method and lands after it (see `refocus_web_view`).
+        on_main_after(MASK_SETTLE, refocus_web_view);
     });
     for (name, block) in [
         (unsafe { NSWindowWillEnterFullScreenNotification }, &starting),

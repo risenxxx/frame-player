@@ -188,6 +188,7 @@
     maybeRecordPosition,
     type RecentItem,
   } from '$lib/history.svelte';
+  import { initNowPlaying } from '$lib/now-playing.svelte';
   import { IS_MAC } from '$lib/platform';
   import {
     chapterAt,
@@ -1095,6 +1096,9 @@
   // lights, and the title bar's side measurement. Started from here rather than
   // left at the module's top level: see the note on `initChrome`.
   initChrome();
+  // Now Playing on macOS: what Control Center shows, and where the AirPods'
+  // pause goes. Started here for the same reason as the chrome's effects.
+  initNowPlaying();
   // Keeps the window in the picture's shape while "match video aspect ratio"
   // is on. It is told when the shell owns the window's size, because a fit
   // that stood down for fullscreen has to be given its turn afterwards, and

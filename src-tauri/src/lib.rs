@@ -15,6 +15,7 @@ mod dlna;
 mod feed;
 mod lan_sweep;
 mod net_route;
+mod now_playing;
 mod opensubtitles;
 mod power;
 mod screenshot;
@@ -1140,6 +1141,8 @@ pub fn run() {
             window_fullscreen_mask,
             window_float_over_fullscreen,
             window_pinch_mode,
+            now_playing::now_playing_start,
+            now_playing::now_playing_set,
             window_shape::window_shape_lock,
             window_shape::window_frame_glide,
             window_shape::window_video_fade,
