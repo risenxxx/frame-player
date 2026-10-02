@@ -23,21 +23,6 @@
         "decorations": false,
         "acceptFirstMouse": true,
         "visible": false
-      },
-      {
-        "label": "veil",
-        "title": "",
-        "url": "veil",
-        "width": 320,
-        "height": 200,
-        "visible": false,
-        "decorations": false,
-        "shadow": false,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "focus": false,
-        "focusable": false,
-        "resizable": false
       }
     ],
     "security": {

@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  backBufferFor,
   isLocalFile,
   isMagnet,
   isTorrentLink,
@@ -73,6 +74,21 @@ describe('sourceId', () => {
 
   it('falls back to the trimmed input rather than throwing', () => {
     expect(sourceId('  http://[not a url  ')).toBe('http://[not a url');
+  });
+});
+
+describe('backBufferFor', () => {
+  it('keeps the large buffer for a stream that really comes from elsewhere', () => {
+    expect(backBufferFor('https://www.youtube.com/watch?v=abc')).toBe('512MiB');
+  });
+
+  it("gives a torrent mpv's default, since its bytes are on disk already", () => {
+    expect(backBufferFor(`http://127.0.0.1:51413/t/${HASH}/0/a.mkv`)).toBe('50MiB');
+  });
+
+  it("gives a local file and no file at all mpv's default", () => {
+    expect(backBufferFor('/Users/x/Films/a.mkv')).toBe('50MiB');
+    expect(backBufferFor(null)).toBe('50MiB');
   });
 });
 

@@ -875,6 +875,34 @@ async fn window_enter_fullscreen(window: tauri::WebviewWindow) -> bool {
     }
 }
 
+/// The shutter window for fullscreen transitions (`showShutter` in
+/// chrome.svelte.ts): a black, monitor-sized, always-on-top window that covers
+/// the last DWM composition frames the main window cannot hide from inside.
+///
+/// Built here rather than declared in tauri.conf.json, because only Windows
+/// has a use for it — macOS masks the transition natively
+/// (`window_fullscreen_mask`) and never shows it — and a declared window is
+/// created on every platform. Hidden or not, it is a web view, so on macOS it
+/// cost a WebKit content process of its own (14–19 MB measured) for nothing.
+#[cfg(not(target_os = "macos"))]
+fn create_veil(app: &tauri::App) {
+    let built = tauri::WebviewWindowBuilder::new(app, "veil", tauri::WebviewUrl::App("veil".into()))
+        .title("")
+        .inner_size(320.0, 200.0)
+        .visible(false)
+        .decorations(false)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .focusable(false)
+        .resizable(false)
+        .build();
+    if let Err(e) = built {
+        eprintln!("[veil] could not create the shutter window: {e}");
+    }
+}
+
 /// Take the window's content off the screen ahead of a fullscreen transition
 /// the caller is about to start, and answer once the black is on screen — see
 /// "Masking the fullscreen transition" in macos_chrome.rs. It lifts itself when
@@ -1247,10 +1275,11 @@ pub fn run() {
             macos_menu::set_menu_locale,
         ])
         .on_window_event(|window, event| {
-            // The hidden `veil` shutter window keeps the app alive, so "exit
-            // when all windows are closed" never fires on its own: without an
-            // explicit exit, closing the player left a zombie process behind
-            // (and single-instance forwarded files from Explorer into nowhere).
+            // The hidden `veil` shutter window (Windows only — `create_veil`)
+            // keeps the app alive, so "exit when all windows are closed" never
+            // fires on its own: without an explicit exit, closing the player
+            // left a zombie process behind (and single-instance forwarded files
+            // from Explorer into nowhere).
             if window.label() == "main" {
                 match event {
                     tauri::WindowEvent::Destroyed => window.app_handle().exit(0),
@@ -1291,6 +1320,8 @@ pub fn run() {
             // dev console. Errors still get through; warnings about a file we
             // are only sampling frames from are not ours to report.
             ffmpeg_the_third::util::log::set_level(ffmpeg_the_third::util::log::Level::Error);
+            #[cfg(not(target_os = "macos"))]
+            create_veil(app);
             if let Some(win) = app.get_webview_window("main") {
                 #[cfg(target_os = "macos")]
                 {

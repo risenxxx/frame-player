@@ -10,6 +10,7 @@
   import type { Snippet } from 'svelte';
   import { t } from '$lib/i18n.svelte';
   import { withKey } from '$lib/keys.svelte';
+  import { faded } from '$lib/faded.svelte';
   import { IS_MAC } from '$lib/platform';
   import { notesTip, parseReleaseNotes } from '$lib/release-notes';
   import { player } from '$lib/player.svelte';
@@ -122,6 +123,11 @@
     wire.waiting.length > 0 || sync.opening || sync.failed || shownEvent !== null,
   );
 
+  /// Off the page once faded, not only transparent — `faded` says why.
+  const barGone = faded(() => idle);
+  const torGone = faded(() => idle && !player.stalled);
+  const roomGone = faded(() => idle && !alert);
+
   function eventText(e: RoomEvent): string {
     const name = e.name || t('sync.anon');
     if (e.kind === 'joined') return t('sync.ev_joined', { name });
@@ -138,6 +144,7 @@
 <div
   class="topbar"
   class:hidden={idle}
+  class:gone={barGone.on}
   class:mini
   class:no-video={noVideo}
   style="--bar-side: {barSide}px"
@@ -218,6 +225,7 @@
   <div
     class="torchip afloat"
     class:hidden={idle && !player.stalled}
+    class:gone={torGone.on}
     class:waiting={player.stalled}
   >
     <div class="torchip-line">
@@ -271,6 +279,7 @@
     class="roomchip afloat"
     class:below={!!torrentChip}
     class:hidden={idle && !alert}
+    class:gone={roomGone.on}
     class:waiting={alert}
     data-tip={t('sync.chip_tip')}
     aria-label={t('sync.chip_tip')}
@@ -412,6 +421,14 @@
   .topbar.hidden {
     opacity: 0;
     pointer-events: none;
+  }
+
+  /* Faded out and taken off the page: a transparent layer is still painted,
+     and the title and the chips under it change while it is. See `faded`. */
+  .topbar.gone,
+  .torchip.gone,
+  .roomchip.gone {
+    visibility: hidden;
   }
 
   /* **Right**, and that is not a preference: `.osd` — the popup every volume

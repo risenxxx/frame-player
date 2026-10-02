@@ -630,7 +630,6 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
     ...(IS_MAC ? { 'input-media-keys': 'no' } : {}),
     'osc': 'no',
     'hr-seek': 'yes',
-    'demuxer-max-back-bytes': '512MiB',
     'media-controls': 'yes',
     // Closed captions (eia_608/708) are decoded incrementally — roll-up and
     // paint-on modes build the on-screen text over many packets — so a seek

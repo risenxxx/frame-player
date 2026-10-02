@@ -12,7 +12,7 @@
   import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
   import { relaunch } from '@tauri-apps/plugin-process';
   import { check, type Update } from '@tauri-apps/plugin-updater';
-  import { command, destroy } from 'tauri-plugin-libmpv-api';
+  import { command, destroy, setProperty } from 'tauri-plugin-libmpv-api';
   import Dialog from '$lib/components/Dialog.svelte';
   import MediaInfoDialog from '$lib/components/MediaInfoDialog.svelte';
   import SubsDialog from '$lib/components/SubsDialog.svelte';
@@ -77,6 +77,7 @@
     startResize,
     toggleFullscreen,
   } from '$lib/chrome.svelte';
+  import { faded } from '$lib/faded.svelte';
   import { initStallWatch } from '$lib/stall.svelte';
   import { initSubShift, subShift } from '$lib/sub-shift.svelte';
   import {
@@ -267,7 +268,7 @@
     castFollowing,
     endCast,
   } from '$lib/cast.svelte';
-  import { parseTorrentUrl } from '$lib/source';
+  import { backBufferFor, parseTorrentUrl } from '$lib/source';
   import { maybeStartThumbs, requestThumb, thumbs } from '$lib/thumbs.svelte';
   import { isZoomed, markZoomLuaLoaded, panBy, reclampPan, resetZoom, zoomAt } from '$lib/zoom.svelte';
 
@@ -1039,6 +1040,9 @@
         // The net under `raiseCurtain`: a file that reached mpv by a way that
         // does not pass through one of our verbs.
         if (player.filePath) curtainFileStarted();
+        // The seek-back buffer for where this file's bytes come from — see
+        // `backBufferFor`.
+        void setProperty('demuxer-max-back-bytes', backBufferFor(player.filePath)).catch(() => {});
         resetSeekProbe();
         resetSkipGuard();
         maybeStartThumbs();
@@ -1099,6 +1103,8 @@
   // lights, and the title bar's side measurement. Started from here rather than
   // left at the module's top level: see the note on `initChrome`.
   initChrome();
+  // The control bar, off the page once it has faded out — see `faded`.
+  const oscGone = faded(() => chrome.idle);
   // Now Playing on macOS: what Control Center shows, and where the AirPods'
   // pause goes. Started here for the same reason as the chrome's effects.
   initNowPlaying();
@@ -1643,6 +1649,7 @@
   <div
     class="osc"
     class:hidden={chrome.idle}
+    class:gone={oscGone.on}
     bind:this={subShift.oscEl}
     role="toolbar"
     tabindex="-1"
@@ -1822,6 +1829,12 @@
     opacity: 0;
     transform: translateY(10px);
     pointer-events: none;
+  }
+
+  /* Faded out and taken off the page: the seekbar under a transparent bar is
+     still written on every video frame, and still painted. See `faded`. */
+  .osc.gone {
+    visibility: hidden;
   }
 
   .player.mini .osc {

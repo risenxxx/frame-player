@@ -150,6 +150,29 @@ export function parseTorrentUrl(src: string): { infoHash: string; index: number 
   return { infoHash: match[1].toLowerCase(), index: Number(match[2]) };
 }
 
+/**
+ * How much of what has already played mpv keeps in memory for seeking back,
+ * by where the bytes come from (`demuxer-max-back-bytes`).
+ *
+ * The buffer only exists while mpv's demuxer cache is on, which it is for a
+ * network source and not for a local file — and a torrent is a network source
+ * to mpv, because it reads one from our loopback server. Measured on a 4K
+ * stream at 17.8 Mbit/s over loopback HTTP: 512 MiB here put **~580 MB** on the
+ * player within five minutes of playback (mpv alone: 1287 → 1865 MB), all of it
+ * bytes that a torrent already has on disk, so seeking back over them costs a
+ * local read. Only a stream that really comes from elsewhere — a link, a page
+ * yt-dlp resolves — is worth the memory, since seeking back there downloads
+ * again. Everything else gets mpv's own default.
+ *
+ * Applied on every `path` change rather than once per verb, because mpv takes
+ * a new value **live**, against the demuxer already running (measured: 278 →
+ * 207 MB of cache within the next second of setting it), so the playlist
+ * advancing by itself is covered by the same line.
+ */
+export function backBufferFor(path: string | null): string {
+  return isNetworkSource(path) && !parseTorrentUrl(path ?? '') ? '512MiB' : '50MiB';
+}
+
 /** `torrent:<infohash>/<index>` — see `parseTorrentUrl`. */
 export function torrentId(infoHash: string, index: number): string {
   return `torrent:${infoHash.toLowerCase()}/${index}`;
