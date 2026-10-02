@@ -67,6 +67,14 @@ class Curtain {
   /// The web view draws it — everywhere but macOS, and on macOS for a dark the
   /// native fade could not make.
   drawn = $state(!IS_MAC);
+  /// Came down over no picture — opening from the start screen — and nothing
+  /// has been put up over it since. The window has no shape for what is coming
+  /// and will move to one the moment it is known, so anything floating that
+  /// appeared now would be on screen for a frame or two and then taken away
+  /// for the move (`chrome.unsteady`). It waits for the window instead: the
+  /// control bar and the "resuming" note came up, went at once and faded back
+  /// in, which read as a blink on every open from "continue watching".
+  bare = $state(false);
 }
 
 export const curtain = new Curtain();
@@ -139,6 +147,7 @@ function lower() {
   const showing = pictureShowing();
   curtain.ms = showing ? RAISE_MS : 0;
   curtain.on = true;
+  curtain.bare = !showing;
   present();
   return showing;
 }
@@ -183,6 +192,13 @@ export function curtainFileLoaded() {
   pictureTimer = setTimeout(() => liftCurtain(), NO_PICTURE_MS);
 }
 
+/// Something stands over the dark — the loading plate, for a source that takes
+/// its time. Waiting for the window is then no longer worth more than saying
+/// what is happening, and what comes up next comes up beside it.
+export function curtainCovered() {
+  curtain.bare = false;
+}
+
 /// The picture is in its window, or will be in `ms` — the window's own report.
 export function curtainSettled(ms: number) {
   if (!curtain.on || !armed) return;
@@ -193,6 +209,7 @@ export function liftCurtain(ms = LIFT_MS) {
   clearTimeout(capTimer);
   clearTimeout(pictureTimer);
   armed = false;
+  curtain.bare = false;
   if (!curtain.on) return;
   curtain.ms = ms;
   curtain.on = false;

@@ -22,6 +22,7 @@ import { tick } from 'svelte';
 
 import { playback } from './playback.svelte';
 import { IS_MAC } from './platform';
+import { curtain } from './curtain.svelte';
 import { flushPosition } from './history.svelte';
 import { player } from './player.svelte';
 import { seek } from './seek.svelte';
@@ -159,7 +160,13 @@ class Chrome {
   /// setting is about a pointer at rest, and this is the opposite of one. Like
   /// `tuning` it hides the bars **and nothing else**: the cursor is what is
   /// doing the dragging.
-  unsteady = $derived(this.resizing || shapeState.gliding);
+  ///
+  /// It also covers the moment *before* such a move, when one is certain and
+  /// only its size is not: a file opened over no picture (`curtain.bare`).
+  /// There is nothing up yet to take away, so what this does there is keep
+  /// the bars from arriving early — they come in once, after the move, rather
+  /// than up, gone and back.
+  unsteady = $derived(this.resizing || shapeState.gliding || curtain.bare);
 
   /// The window has just come to rest. What left for `unsteady` comes back
   /// over these `SETTLE_MS` rather than at once: the bars fade in because

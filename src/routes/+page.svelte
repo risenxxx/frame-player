@@ -214,6 +214,7 @@
   } from '$lib/player.svelte';
   import {
     curtain,
+    curtainCovered,
     curtainFileLoaded,
     curtainFileStarted,
     curtainSettled,
@@ -1130,6 +1131,12 @@
   // The dark between two pictures. It is told when a load is under way, which
   // is the one case where staying down past its cap is right.
   initCurtain({ loading: () => opening.busy });
+  // The loading plate is up: from here the bars come up beside it, as they
+  // always did — a slow source is not kept waiting for a window move that
+  // may be many seconds off. See `curtain.bare`.
+  $effect(() => {
+    if (opening.busy || (sync.opening && !player.hasFile)) curtainCovered();
+  });
   // Lifts the subtitles clear of the control bar while it is up. Its own
   // effects rather than the chrome's: what it measures is the bar, but what it
   // writes is an mpv option, and the shell has no business knowing about those.

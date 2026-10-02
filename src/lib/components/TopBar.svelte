@@ -404,6 +404,10 @@
     font-weight: 500;
     letter-spacing: 0.02em;
     text-shadow: var(--ui-shadow);
+    /* One word as far as layout goes. Its box is shrink-to-fit (`.chrome` is
+       absolute with only `right`), and a width measured against the wrong font
+       is kept after the right one arrives — see +layout.ts. */
+    white-space: nowrap;
   }
 
   .titlecenter {

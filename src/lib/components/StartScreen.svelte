@@ -786,6 +786,16 @@
        the bars' scrim gradients already carry. Only the hairline is painted, so
        nothing covers the label; this is belt and braces for the click. */
     pointer-events: none;
+    /* **`visible`, or the right and bottom edges are half a line.** An `<svg>`
+       clips its content to its own box, and that clip is snapped to device
+       pixels while the stroke is not — so whenever the button lands on a
+       fraction of a device pixel, the far edge of the clip rounds inward and
+       cuts into the stroke's outer half. The button lands on one routinely:
+       `.start-actions` centres a wrapping row of text-sized buttons, and in
+       Russian the catalog sits at x = 490.66 — screenshot at ratio 2, the
+       right side drawn at half the width of the left. The stroke is already
+       inside the box by construction, so nothing is lost by not clipping. */
+    overflow: visible;
   }
 
   /* **The half pixel lives here, in SVG user space, and not in the element's

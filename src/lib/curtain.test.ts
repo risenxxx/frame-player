@@ -36,6 +36,7 @@ import {
   NO_PICTURE_MS,
   RAISE_MS,
   curtain,
+  curtainCovered,
   curtainFileLoaded,
   curtainFileStarted,
   curtainSettled,
@@ -271,5 +272,45 @@ describe('ways back', () => {
     liftCurtain(0);
     expect(curtain.on).toBe(false);
     expect(curtain.ms).toBe(0);
+  });
+});
+
+// Opening from the start screen: the window is about to move to a shape nobody
+// knows yet, and what floats over the picture waits for it. A `bare` that
+// outlives its curtain hides the control bar for the rest of the session, so
+// every way back has to end it.
+describe('over no picture', () => {
+  it('is bare only when there was nothing to cover', async () => {
+    await down();
+    expect(curtain.bare).toBe(false);
+    liftCurtain(0);
+    nothing();
+    void raiseCurtain();
+    expect(curtain.bare).toBe(true);
+  });
+
+  it('stops being bare when the curtain lifts, by any way back', async () => {
+    nothing();
+    void raiseCurtain();
+    curtainFileLoaded();
+    curtainSettled(240);
+    expect(curtain.bare).toBe(false);
+
+    void raiseCurtain();
+    curtainFileLoaded();
+    await vi.advanceTimersByTimeAsync(NO_PICTURE_MS + 10);
+    expect(curtain.bare).toBe(false);
+
+    void raiseCurtain();
+    await vi.advanceTimersByTimeAsync(CAP_MS + 10);
+    expect(curtain.bare).toBe(false);
+  });
+
+  it('stops being bare once the loading plate stands over it, curtain or not', () => {
+    nothing();
+    void raiseCurtain();
+    curtainCovered();
+    expect(curtain.bare).toBe(false);
+    expect(curtain.on).toBe(true);
   });
 });
