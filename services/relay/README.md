@@ -13,6 +13,69 @@ go run ./services/relay                 # :8080
 go test -race frameplayer/relay/...
 ```
 
+## Run your own with Docker
+
+The image is `ghcr.io/risenxxx/frameplayer-relay` — public, amd64 and arm64,
+about 8 MB. `latest` is the newest build; every build is also tagged
+`sha-<commit>`, for pinning a version or going back to one. It is rebuilt only
+when this directory changes (`.github/workflows/relay-image.yml`), not with
+every release of the player: the two are versioned apart, and since content
+is opaque to the relay a new player rarely needs a new one.
+
+What you need: a server with Docker, and a domain (a subdomain is fine) whose
+DNS `A` record points at it. The player only talks to a relay over `https`, so
+the domain is not optional.
+
+### On a bare server
+
+`compose.caddy.yml` runs the relay with [Caddy](https://caddyserver.com) in
+front, which gets a Let's Encrypt certificate for the domain and renews it.
+Ports 80 and 443 must be open.
+
+```bash
+mkdir frameplayer-relay && cd frameplayer-relay
+curl -fsSLo compose.yml \
+  https://raw.githubusercontent.com/risenxxx/frame-player/main/services/relay/compose.caddy.yml
+echo "RELAY_DOMAIN=relay.example.com" > .env
+docker compose up -d
+```
+
+The first start takes a few seconds longer while the certificate is issued
+(`docker compose logs caddy` shows it). Don't use this file next to another
+reverse proxy — two of them cannot both have ports 80 and 443.
+
+### In Dokploy, Coolify or behind your own proxy
+
+Use `compose.yml`, which is the relay alone:
+
+1. Create a **Compose** service and paste `compose.yml` into it (or point it at
+   this repository with the path `services/relay/compose.yml`).
+2. Set `RELAY_PUBLIC_URL` to `https://<your domain>`.
+3. Delete the `ports:` block — the platform's proxy reaches the container over
+   its own network, and publishing 8080 would also expose the relay without TLS.
+4. Attach the domain to the `relay` service, port **8080**, with HTTPS on.
+   Websockets need no extra setting in either of them.
+
+Behind nginx or anything else of your own: keep `ports:` (or bind it to
+`127.0.0.1:8080:8080`), proxy the domain to that port with the websocket
+`Upgrade`/`Connection` headers passed through, and keep `RELAY_TRUST_PROXY`.
+
+### Check it and use it
+
+```bash
+curl https://relay.example.com/healthz     # → ok
+```
+
+Then in the player: **Settings → General → Room server**, enter the domain
+(`relay.example.com` is enough). Everybody in a room has to use the same
+server — a room exists on one relay only, so send the address along with the
+code. Clearing the field goes back to the default server.
+
+To update: `docker compose pull && docker compose up -d`. Rooms live in memory,
+so a restart ends the ones in progress and they have to be made again — update
+when nobody is watching. Any other variable from the table below goes into
+`environment:`.
+
 ## Running it
 
 ```bash
@@ -30,13 +93,6 @@ takes to run your own instead: the address is a field in the player's settings
 («Основные») rather than a build-time constant, so self-hosting is a setting and
 not a fork. Leaving it empty restores the default rather than turning the
 feature off.
-
-The quickest way is the published image — `ghcr.io/risenxxx/frameplayer-relay`,
-amd64 and arm64, `latest` plus a `sha-<commit>` tag per build for pinning.
-`compose.yml` here is a ready service for `docker compose up -d`, and the same
-file goes into Dokploy or Coolify as a Compose service. The image is rebuilt
-only when this directory changes (`.github/workflows/relay-image.yml`), not with
-every release of the player — the two are versioned apart.
 
 `Dockerfile` builds the same binary onto `scratch`;
 `frameplayer-relay.service` runs it under systemd with everything locked down

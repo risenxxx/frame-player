@@ -1,0 +1,43 @@
+# Your own watch-together relay on a bare server, certificate included: Caddy
+# in front gets one from Let's Encrypt for your domain and renews it by itself.
+#
+#   RELAY_DOMAIN=relay.example.com docker compose -f compose.caddy.yml up -d
+#
+# (or put `RELAY_DOMAIN=relay.example.com` into a `.env` file beside this one).
+# The domain's DNS record must already point at this server, and ports 80 and
+# 443 must be open — Let's Encrypt checks the domain over them.
+#
+# Already running Dokploy, Coolify or another proxy? Use `compose.yml` instead:
+# a second proxy would fight the first one for ports 80 and 443.
+services:
+  relay:
+    image: ghcr.io/risenxxx/frameplayer-relay:latest
+    restart: unless-stopped
+    # No `ports:` — only Caddy reaches it, over the compose network.
+    environment:
+      RELAY_PUBLIC_URL: https://${RELAY_DOMAIN:?set RELAY_DOMAIN to your domain}
+      # Caddy sets X-Forwarded-For; without this every viewer would share the
+      # proxy's address and with it one join rate limit.
+      RELAY_TRUST_PROXY: "1"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    # Caddy's one-line reverse proxy: HTTPS on, HTTP redirected to it,
+    # websockets passed through. No Caddyfile to keep.
+    command: caddy reverse-proxy --from ${RELAY_DOMAIN} --to relay:8080
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # The certificate and its account. Keep it: without it every restart asks
+      # Let's Encrypt for a new one, and they limit how often that may happen.
+      - caddy-data:/data
+    depends_on: [relay]
+
+volumes:
+  caddy-data:

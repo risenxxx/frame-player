@@ -1,6 +1,8 @@
-# Your own watch-together relay. Put it behind something that terminates TLS —
-# the player refuses a plaintext `ws://` address that is not on loopback — and
-# enter `wss://<your domain>` in the player's settings.
+# Your own watch-together relay, for a server that already has a reverse proxy
+# terminating TLS (Dokploy, Coolify, nginx, Traefik) — the player refuses a
+# plaintext `ws://` address that is not on loopback. On a bare server use
+# `compose.caddy.yml`, which brings its own. Either way, the domain then goes
+# into the player's Settings → General → Room server.
 #
 #   docker compose up -d
 #
