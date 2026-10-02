@@ -327,6 +327,9 @@ let wheelSeekAccum = 0;
 let wheelAxis: 'x' | 'y' | null = null;
 let wheelAxisTimer: ReturnType<typeof setTimeout> | undefined;
 const WHEEL_AXIS_RESET_MS = 400;
+// Whether the lock above came from Shift rather than from the event's own
+// deltas (see `onWheel`), so that letting Shift go can unlock it again.
+let wheelAxisShifted = false;
 
 /// Surfaces that own their own wheel: menus, panels, dialogs and the start
 /// and end screens. The player reads a vertical wheel as volume and a
@@ -344,6 +347,7 @@ const WHEEL_SURFACES = '.ctxmenu, .menu, .settings, .settings-backdrop, .overlay
  */
 export function resetWheelGesture() {
   wheelAxis = null;
+  wheelAxisShifted = false;
   wheelAccum = 0;
   wheelSeekAccum = 0;
 }
@@ -380,13 +384,37 @@ export function onWheel(e: WheelEvent) {
   // units where the local path moves one and where both key steps move five —
   // a scale nobody chose, arrived at by writing the same gesture twice.
   if (!playback.remote) {
+    // A mouse has one wheel, so Shift+wheel is its horizontal scroll — and it
+    // does not arrive as one. Both engines report it as `deltaY` with
+    // `shiftKey` set and do the remap further down their own scrolling code,
+    // which never runs over the video, because nothing there scrolls. So the
+    // remap is ours, in the browsers' own direction — down becomes right,
+    // hence forward in time — and *without* the inversion `deltaX` needs
+    // below: `deltaY > 0` means "down" on both platforms whatever "natural
+    // scrolling" is set to, so this needs no platform branch. Only when the
+    // event brings no horizontal delta of its own, since a tilt wheel, a
+    // Windows precision touchpad's two-finger swipe and a mac trackpad are
+    // all already right, and Shift is routinely held while scrolling one.
+    const shifted = e.shiftKey && Math.abs(e.deltaY) > Math.abs(e.deltaX);
     // The axis is picked once at the start of the gesture and held to its end.
     clearTimeout(wheelAxisTimer);
     wheelAxisTimer = setTimeout(() => {
       wheelAxis = null;
+      wheelAxisShifted = false;
       wheelAccum = 0;
       wheelSeekAccum = 0;
     }, WHEEL_AXIS_RESET_MS);
+    // Shift going down — or coming back up — part-way through a gesture is an
+    // explicit ask rather than the diagonal noise the lock exists for, so it
+    // re-decides the axis instead of waiting the gesture out. Both
+    // accumulators go with it, or the fraction of a second already collected
+    // lands as volume, and the other way round.
+    if (shifted !== wheelAxisShifted) {
+      wheelAxisShifted = shifted;
+      wheelAxis = shifted ? 'x' : null;
+      wheelAccum = 0;
+      wheelSeekAccum = 0;
+    }
     if (wheelAxis === null) {
       const ax = Math.abs(e.deltaX);
       const ay = Math.abs(e.deltaY);
@@ -398,10 +426,11 @@ export function onWheel(e: WheelEvent) {
 
     if (wheelAxis === 'x') {
       if (!player.hasFile || player.duration <= 0) return;
-      // On macOS the sign is inverted for the same reason as for volume: the
-      // system already applied "natural scrolling" to the event, so a rightward
-      // gesture arrives as deltaX < 0 while it feels like "forward".
-      wheelSeekAccum += IS_MAC ? -e.deltaX * scale : e.deltaX * scale;
+      // On macOS the sign of a *real* horizontal delta is inverted for the
+      // same reason as for volume: the system already applied "natural
+      // scrolling" to the event, so a rightward gesture arrives as deltaX < 0
+      // while it feels like "forward".
+      wheelSeekAccum += (shifted ? e.deltaY : IS_MAC ? -e.deltaX : e.deltaX) * scale;
       const secs = Math.trunc(wheelSeekAccum / PX_PER_SEEK_SECOND);
       if (!secs) return;
       wheelSeekAccum -= secs * PX_PER_SEEK_SECOND;
