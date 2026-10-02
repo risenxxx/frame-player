@@ -12,6 +12,7 @@ mod color;
 mod crop;
 mod catalog;
 mod dlna;
+mod external_dirs;
 mod feed;
 mod lan_sweep;
 mod net_route;
@@ -1197,6 +1198,7 @@ pub fn run() {
             thumb_service::set_private_paths,
             thumb_service::forget_thumbs,
             trash::trash_file,
+            external_dirs::external_track_dirs,
             thumb_service::forget_thumbs_under,
             thumb_service::clear_thumb_cache,
             torrent::torrent_add,

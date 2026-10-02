@@ -199,6 +199,7 @@
     cycleAbLoop,
     ytdlp,
     initPlayer,
+    pointAtExternalTracks,
     isNetworkSource,
     notePlaybackRestart,
     jumpChapter,
@@ -269,7 +270,7 @@
     endCast,
   } from '$lib/cast.svelte';
   import { backBufferFor, parseTorrentUrl } from '$lib/source';
-  import { maybeStartThumbs, requestThumb, thumbs } from '$lib/thumbs.svelte';
+  import { loadThumbPrefs, maybeStartThumbs, requestThumb, thumbs } from '$lib/thumbs.svelte';
   import { isZoomed, markZoomLuaLoaded, panBy, reclampPan, resetZoom, zoomAt } from '$lib/zoom.svelte';
 
   // Sidecar frame stepping (StepEngine) is off: mpv's native steps give the
@@ -582,6 +583,7 @@
     loadHistoryPrefs();
     loadPlaylistPrefs();
     loadSeekSteps();
+    loadThumbPrefs();
     loadTorrentPrefs();
     // **Awaited**, unlike everything else started here, and both are cheap: the
     // recents list settles after one batched `stat` (its posters keep filling in
@@ -646,7 +648,9 @@
           // its own reason — the picture on screen has to be dark before mpv
           // is handed the file that replaces it — and the two wait together
           // rather than in turn.
-          await Promise.all([prepareResume(path), raiseCurtain()]);
+          // The external-track folders join them: `sub-file-paths` and
+          // `audio-file-paths` are read when the file opens, like `start`.
+          await Promise.all([prepareResume(path), raiseCurtain(), pointAtExternalTracks(path)]);
         },
         property: onPlayerProperty,
         fileLoaded: onFileLoaded,

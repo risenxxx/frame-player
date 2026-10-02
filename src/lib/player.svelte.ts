@@ -27,6 +27,7 @@ import {
   type MpvObservableProperty,
 } from 'tauri-plugin-libmpv-api';
 
+import { externalTrackName } from './external-title';
 import { baseName, displayName, extensionOf, formatTime } from './format';
 import { t } from './i18n.svelte';
 import { LANG_ALIASES } from './languages';
@@ -74,6 +75,37 @@ const NETWORK_SCHEME = /^(?:https?|rtmps?|rtsp|srt|udp|mmsh?|magnet):/i;
 
 export function isNetworkSource(path: string | null): boolean {
   return !!path && NETWORK_SCHEME.test(path.trim());
+}
+
+/// The subtitle folders mpv always looks in, whatever is found on disk.
+const SUB_DIRS = ['Subs', 'subs', 'Subtitles', 'subtitles'];
+const PATH_LIST_SEP = IS_MAC ? ':' : ';';
+
+/**
+ * Point mpv's own search for external tracks at the folders this release keeps
+ * them in, before the file is opened.
+ *
+ * mpv looks beside the video and in the folders `sub-file-paths` and
+ * `audio-file-paths` name, without descending — and releases nest, one folder
+ * per studio or group (`RUS Sound/<studio>/`). So the folders that exist are
+ * read off the disk (external_dirs.rs) and handed over as those lists. Through
+ * mpv's search rather than a `sub-add` afterwards, because a track mpv finds
+ * itself is given a language from its file name and takes part in `alang`/
+ * `slang` selection; one added after the load does neither.
+ *
+ * The answer belongs to the folder, not to the episode, so a queue moving on
+ * inside one folder needs no new answer — which is why advancing the queue
+ * does not wait for this. Names are relative to the video's folder, so a stale
+ * list for another folder is harmless: mpv skips a directory that is not there.
+ */
+export async function pointAtExternalTracks(path: string) {
+  if (isNetworkSource(path)) return;
+  const found = await invoke<{ subs: string[]; audio: string[] }>('external_track_dirs', { path }).catch(
+    () => null,
+  );
+  const subs = [...new Set([...(found?.subs ?? []), ...SUB_DIRS])];
+  await command('set', ['sub-file-paths', subs.join(PATH_LIST_SEP)]).catch(() => {});
+  await command('set', ['audio-file-paths', (found?.audio ?? []).join(PATH_LIST_SEP)]).catch(() => {});
 }
 
 export interface Track {
@@ -644,8 +676,14 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
     // the video. Releases that keep subtitles in a `Subs/` subfolder, or name
     // them `<movie>.rus.srt`, therefore showed none at all.
     'sub-auto': 'fuzzy',
-    // A path list, so the separator is the platform's own.
-    'sub-file-paths': ['Subs', 'subs', 'Subtitles', 'subtitles'].join(IS_MAC ? ':' : ';'),
+    // A path list, so the separator is the platform's own. Only the floor:
+    // `pointAtExternalTracks` widens it per folder before each file opens.
+    'sub-file-paths': SUB_DIRS.join(PATH_LIST_SEP),
+    // External dubs, the same way: mpv's default is `no`, so a release that
+    // ships its dub as `<episode>.mka` beside the video had to be added by hand
+    // every episode. `fuzzy` for the reason `sub-auto` is: the file is named
+    // after the episode, with a studio or a language after it.
+    'audio-file-auto': 'fuzzy',
     // mpv's own default is 130; quiet films regularly need more than that.
     'volume-max': VOLUME_MAX,
     // mpv defaults to zlib level 7, which is a size-first choice that buys
@@ -1084,23 +1122,29 @@ export async function loadTracks() {
       if (type !== 'audio' && type !== 'sub') continue;
       const id = (await getProperty(`${base}/id`, 'int64').catch(() => null)) ?? 0;
       const selected = (await getProperty(`${base}/selected`, 'flag').catch(() => false)) ?? false;
-      const title = await getProperty(`${base}/title`, 'string').catch(() => null);
-      const lang = await getProperty(`${base}/lang`, 'string').catch(() => null);
+      const rawTitle = await getProperty(`${base}/title`, 'string').catch(() => null);
+      const rawLang = await getProperty(`${base}/lang`, 'string').catch(() => null);
       // Closed captions carry no title and no language, so they used to show up
       // as a bare "Track 1" — with no hint that picking it means captions
       // positioned on a 32-column grid (hence the off-center, indented text)
       // that also smear across seeks. Naming them is the honest minimum.
       const codec = await getProperty(`${base}/codec`, 'string').catch(() => null);
       const forced = (await getProperty(`${base}/forced`, 'flag').catch(() => false)) ?? false;
+      const external = (await getProperty(`${base}/external`, 'flag').catch(() => false)) ?? false;
+      const path = external
+        ? await getProperty(`${base}/external-filename`, 'string').catch(() => null)
+        : null;
+      // A dub or subtitle from a release's subfolder is named after the folder
+      // rather than "mka" — see external-title.ts. Written over the raw fields,
+      // not only the label, because the remembered choice is matched on them.
+      const better = path && player.filePath ? externalTrackName(path, player.filePath, rawTitle, rawLang) : null;
+      const title = better ? better.title : rawTitle;
+      const lang = better ? better.lang : rawLang;
       const named = [title, lang].filter(Boolean);
       const label =
         codec === 'eia_608' || codec === 'eia_708'
           ? [t('track.cc'), ...named].join(' · ')
           : named.join(' · ') || t('track.generic', { id });
-      const external = (await getProperty(`${base}/external`, 'flag').catch(() => false)) ?? false;
-      const path = external
-        ? await getProperty(`${base}/external-filename`, 'string').catch(() => null)
-        : null;
       const channels =
         type === 'audio'
           ? await getProperty(`${base}/demux-channel-count`, 'int64').catch(() => null)

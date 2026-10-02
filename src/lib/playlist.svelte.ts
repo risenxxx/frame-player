@@ -21,7 +21,7 @@ import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 import { raiseCurtain } from './curtain.svelte';
 import { baseName, displayName, extensionOf, samePath } from './format';
 import { latest } from './latest';
-import { VIDEO_EXTENSIONS, isNetworkSource, player, readList } from './player.svelte';
+import { VIDEO_EXTENSIONS, isNetworkSource, player, pointAtExternalTracks, readList } from './player.svelte';
 
 export interface PlaylistEntry {
   index: number;
@@ -216,7 +216,9 @@ export function neighbour(offset: number): PlaylistEntry | null {
 export async function playEntry(entry: PlaylistEntry) {
   // The previous picture goes dark before mpv is told, not while it is
   // already opening the next one — see curtain.svelte.ts.
-  await raiseCurtain();
+  // A queue built from one folder shares one answer, but a selection dropped
+  // from several does not — so the entry's own folder is asked for alongside.
+  await Promise.all([raiseCurtain(), pointAtExternalTracks(entry.path)]);
   await command('playlist-play-index', [String(entry.index)]).catch(() => {});
   // `keep-open` paused us at the end of the previous file, and pause survives a
   // file change — without this the next episode opens on a still frame.

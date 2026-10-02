@@ -7,7 +7,15 @@
   import { delayIsZero, formatDelay, player, type Track } from '$lib/player.svelte';
   import { SUB_SPEED_PRESETS, isPreset, isUnitSpeed, presetFactor } from '$lib/sub-speed';
   import { openSubsDialog, removeSubtitle } from '$lib/subs.svelte';
-  import { formatFps, presetLabel, setSubSpeedHere, subSpeedLabel } from '$lib/tracks.svelte';
+  import {
+    audioMix,
+    formatFps,
+    presetLabel,
+    setAudioMulti,
+    setSubSpeedHere,
+    subSpeedLabel,
+    toggleMixTrack,
+  } from '$lib/tracks.svelte';
   import MenuBack from './MenuBack.svelte';
   import MenuBody from './MenuBody.svelte';
 
@@ -31,12 +39,27 @@
     onNudgeDelay,
     onResetDelay,
   }: Props = $props();
+
+  /// Several audio tracks can play at once — see "Several audio tracks at once"
+  /// in tracks.svelte.ts. The switch is offered only where there is something
+  /// to mix and something to mix it with.
+  const canMulti = $derived(kind === 'audio' && player.audioTracks.length > 1 && playback.can.audioMix);
+  /// Ticks instead of a single choice. The ticks are ours rather than mpv's
+  /// `selected`: with every track in the graph, mpv calls all of them
+  /// selected (see tracks.svelte.ts).
+  const multi = $derived(kind === 'audio' && audioMix.multi);
+  const mixCount = $derived(multi ? audioMix.ticked.length : 0);
 </script>
 
 <div class="menu">
   <MenuBody>
     <MenuBack />
-    <div class="menu-title">{t(kind === 'audio' ? 'osc.audio' : 'osc.subs')}</div>
+    <div class="menu-title" class:counted={mixCount > 1}>
+      <span>{t(kind === 'audio' ? 'osc.audio' : 'osc.subs')}</span>
+      {#if mixCount > 1}
+        <span class="mix-count">{t('osc.audio_count', { n: mixCount, total: player.audioTracks.length })}</span>
+      {/if}
+    </div>
     <!-- Over DLNA the file went across with all its tracks and the choice
          belongs to the television — its renderer declares no action for
          audio at all (it has vendor ones for subtitles and 3D, so the
@@ -71,6 +94,22 @@
             </svg>
           </button>
         </div>
+      {:else if multi}
+        <!-- Stays open on click, like the delay: a mix is put together by
+             ticking several rows while listening to the result. -->
+        {@const heard = audioMix.ticked.includes(track.id)}
+        <button
+          class="menu-item mix-item"
+          class:sel={heard}
+          role="menuitemcheckbox"
+          aria-checked={heard}
+          onclick={() => void toggleMixTrack(track)}
+        >
+          <span class="mix-check" class:on={heard} aria-hidden="true">
+            <svg viewBox="0 0 10 10"><path d="M1.8 5.2l2.2 2.2 4.2-4.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="mix-name">{track.label}</span>
+        </button>
       {:else}
         <button class="menu-item" class:sel={track.selected} onclick={() => onSelect(kind!, track)}>
           {track.label}
@@ -89,6 +128,24 @@
     <button class="menu-item" onclick={() => onAddFile(kind!)}>
       {t('osc.add_file')}
     </button>
+    {#if canMulti}
+      <div class="menu-sep"></div>
+      <!-- A mode, not an action: it changes what a click on a track does and
+           nothing that is heard, so it stays open and is drawn as a switch.
+           No hint line under it: the menu is anchored by its bottom edge, and
+           a line appearing below the switch would move it out from under the
+           cursor that just clicked it (the delay reset's rule). The ticks and
+           the count in the title say what the mode is. -->
+      <button
+        class="menu-item multi-row"
+        role="menuitemcheckbox"
+        aria-checked={multi}
+        onclick={() => void setAudioMulti(!multi)}
+      >
+        <span class="mix-name">{t('osc.audio_multi')}</span>
+        <span class="mini-switch" class:on={multi} aria-hidden="true"></span>
+      </button>
+    {/if}
     {#if kind === 'sub'}
       <button class="menu-item" onclick={() => { close(); void openSubsDialog(); }}>
         {t('subs.find')}
@@ -163,6 +220,110 @@
      setting. In the row it is a fourth cell of the same control, and the
      divider is what says it belongs to the group without belonging to the
      stepper. */
+  .menu-title.counted {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  /* Not uppercase: it is a reading, not a heading, and the accent says it is
+     the state of the list below rather than a label for it. */
+  .mix-count {
+    text-transform: none;
+    letter-spacing: 0;
+    color: #818cf8;
+  }
+
+  /* Two classes against `.menu-item`'s one, so its `display: block` cannot win
+     by source order (the queue rows lost theirs that way). */
+  .menu-item.mix-item,
+  .menu-item.multi-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mix-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Both the box and the switch are taller than a 13px line, and a row that
+     grows by their difference moved the whole list the moment the mode came
+     on. The negative margins hand the difference back: they are drawn at
+     their size and laid out at the text's. */
+  .mix-check {
+    margin-block: -4px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid rgba(255, 255, 255, 0.35);
+    border-radius: 4px;
+    color: #fff;
+  }
+
+  .mix-check svg {
+    width: 10px;
+    height: 10px;
+    opacity: 0;
+  }
+
+  .mix-check.on {
+    background: #6366f1;
+    border-color: #6366f1;
+  }
+
+  .mix-check.on svg {
+    opacity: 1;
+  }
+
+  .mix-item:hover .mix-check:not(.on) {
+    border-color: rgba(255, 255, 255, 0.6);
+  }
+
+  /* The settings sheet's switch at menu-row size: 30×18 against 38×22, so it
+     sits inside a 13px row without making it taller. */
+  .mini-switch {
+    margin-block: -4px;
+    flex: none;
+    position: relative;
+    width: 30px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .mini-switch.on {
+    background: #6366f1;
+  }
+
+  .mini-switch::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.15s ease;
+  }
+
+  .mini-switch.on::after {
+    transform: translateX(12px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mini-switch::after {
+      transition: none;
+    }
+  }
+
   .delayrow {
     display: flex;
     align-items: center;

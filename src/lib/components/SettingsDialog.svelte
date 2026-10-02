@@ -52,6 +52,7 @@
   import { applyNormalize, applySdrColor, player, readList } from '$lib/player.svelte';
   import { playlist, setPlaylistPref } from '$lib/playlist.svelte';
   import { LONG_STEPS, SHORT_STEPS, seekSteps, setSeekStep } from '$lib/seek-steps.svelte';
+  import { setExactThumbs, thumbs } from '$lib/thumbs.svelte';
   import {
     ADJUST_PARAMS,
     adjust,
@@ -92,6 +93,7 @@
     setVideoClick,
     setPinch,
     syncMenuChecks,
+    toggleWindowPref,
     windowPrefs,
   } from '$lib/window-prefs.svelte';
   import { DEFAULT_RELAY, relayUrl, setRelayUrl } from '$lib/sync/wire.svelte';
@@ -151,6 +153,8 @@
   interface SettingBase {
     /// Which section it appears in. Only the three that hold mpv settings.
     tab: 'video' | 'audio' | 'subs';
+    /// The section inside the tab — see the `set-group` headings.
+    group: 'picture' | 'decode' | 'online' | 'audio' | 'choice' | 'look';
     key: string;
     label: string;
     hint?: string;
@@ -196,6 +200,8 @@
       kind: 'segmented',
       tab: 'video',
       key: 'target-colorspace-hint',
+
+      group: 'picture',
       label: t('vset.hdr'),
       liveDefault: 'no',
       options: [
@@ -208,6 +214,8 @@
       kind: 'segmented',
       tab: 'video',
       key: 'tone-mapping',
+
+      group: 'picture',
       label: t('vset.tonemap'),
       liveDefault: 'spline',
       options: [
@@ -221,6 +229,8 @@
       kind: 'segmented',
       tab: 'video',
       key: 'ytdl-format',
+
+      group: 'online',
       label: t('vset.quality'),
       // Empty is the hook's own choice, which on YouTube means the best
       // available — 4K wherever there is 4K, and every seek then pays for it.
@@ -236,6 +246,8 @@
       kind: 'segmented',
       tab: 'video',
       key: 'hwdec',
+
+      group: 'decode',
       label: t('vset.hwdec'),
       liveDefault: 'auto-safe',
       // "Hardware" is hwdec=auto-safe, i.e. "take the hardware, but only where
@@ -261,6 +273,8 @@
       kind: 'segmented',
       tab: 'audio',
       key: 'audio-spdif',
+
+      group: 'audio',
       label: t('vset.spdif'),
       liveDefault: '',
       options: [
@@ -274,6 +288,8 @@
       kind: 'devices',
       tab: 'audio',
       key: 'audio-device',
+
+      group: 'audio',
       label: t('vset.device'),
       liveDefault: 'auto',
       hint: t('vset.device_hint'),
@@ -282,6 +298,8 @@
       kind: 'langs',
       tab: 'audio',
       key: 'alang',
+
+      group: 'audio',
       label: t('vset.alang'),
       liveDefault: '',
       hint: t('vset.lang_hint'),
@@ -290,6 +308,8 @@
       kind: 'langs',
       tab: 'subs',
       key: 'slang',
+
+      group: 'choice',
       label: t('vset.slang'),
       liveDefault: '',
       hint: t('vset.lang_hint'),
@@ -304,6 +324,8 @@
       // is the "показывать" pill and clearing the line restores it.
       tab: 'subs',
       key: 'subs-with-matching-audio',
+
+      group: 'choice',
       label: t('vset.subs_matching'),
       liveDefault: 'yes',
       options: [
@@ -320,6 +342,8 @@
       // language preferences.
       tab: 'subs',
       key: 'sid',
+
+      group: 'choice',
       label: t('vset.subs_default'),
       liveDefault: 'auto',
       options: [
@@ -331,6 +355,8 @@
       kind: 'slider',
       tab: 'subs',
       key: 'sub-scale',
+
+      group: 'look',
       label: t('vset.sub_scale'),
       // mpv's own default, and its `sub-ass-override` default is `scale`, so
       // this reaches ASS subtitles too rather than only plain text ones.
@@ -345,6 +371,8 @@
       kind: 'slider',
       tab: 'subs',
       key: 'sub-pos',
+
+      group: 'look',
       label: t('vset.sub_pos'),
       liveDefault: '100',
       min: 0,
@@ -357,6 +385,8 @@
       kind: 'slider',
       tab: 'subs',
       key: 'sub-border-size',
+
+      group: 'look',
       label: t('vset.sub_border'),
       // 1.65 is mpv's default here — not the 3 it used to be, and the step has
       // to land on it exactly for "back to default" to be reachable.
@@ -370,6 +400,8 @@
       kind: 'segmented',
       tab: 'subs',
       key: 'sub-border-style',
+
+      group: 'look',
       label: t('vset.sub_style'),
       liveDefault: 'outline-and-shadow',
       options: [
@@ -949,647 +981,922 @@
   </div>
 {/snippet}
 
-<Dialog title={t('set.title')} scrollable header={tabs} peek={!!peeking} {onclose}>
-  {#if settingsTab === 'general'}
-    <div class="setting">
-      <div class="setting-label">{t('set.language')}</div>
-      <div class="segmented">
-        <button class="segopt" class:sel={locale() === 'ru'} onclick={() => changeLocale('ru')}>
-          Русский
-        </button>
-        <button class="segopt" class:sel={locale() === 'en'} onclick={() => changeLocale('en')}>
-          English
-        </button>
+{#snippet windowSwitch(key: 'remember' | 'fitToVideo' | 'alwaysOnTop' | 'snapMini', label: string)}
+  <div class="setting">
+    <div class="row-toggle">
+      <div class="row-text">
+        <div class="setting-label">{label}</div>
       </div>
+      <button
+        class="switch"
+        class:on={windowPrefs[key]}
+        role="switch"
+        aria-checked={windowPrefs[key]}
+        aria-label={label}
+        onclick={() => toggleWindowPref(key)}
+      >
+        <span class="switch-knob"></span>
+      </button>
     </div>
+  </div>
+{/snippet}
 
-    <!-- A pill, not a switch: three named places the controls may fade in,
-         and the middle one is the answer for anybody who comes from VLC or
-         MPC. The cursor sits right under it because it is the same question
-         asked of the pointer, answered separately so the bar can stay while
-         the pointer goes. -->
-    <div class="setting">
-      <div class="setting-label">{t('set.autohide')}</div>
-      <div class="segmented">
-        {#each AUTO_HIDE_CHOICES as v (v)}
-          <button class="segopt" class:sel={windowPrefs.autoHide === v} onclick={() => setAutoHide(v)}>
-            {t(`set.autohide_${v}`)}
+<!-- One mpv-backed setting, drawn from its `SETTINGS` entry. A snippet rather
+     than a loop body because the tabs are now laid out in sections, and the
+     player's own settings (SDR colour, the adjustments, leveling) sit between
+     mpv's inside them. -->
+{#snippet mpvRows(group: SettingDef['group'])}
+  {#each SETTINGS.filter((s) => s.group === group) as s (s.key)}
+    {@render mpvSetting(s)}
+  {/each}
+{/snippet}
+
+{#snippet mpvSetting(s: SettingDef)}
+  <div class="setting">
+    <div class="setting-label">{s.label}</div>
+    {#if s.kind === 'devices'}
+      <div class="segmented vertical">
+        {#each audioDevices as device (device.name)}
+          <!-- mpv's own list starts with `auto`, and that is also its
+               default — mapped to null so choosing it CLEARS the
+               mpv.conf line instead of pinning "auto" in writing, the
+               same meaning "по умолчанию" has everywhere else here. -->
+          {@const value = device.name === 'auto' ? null : device.name}
+          <button
+            class="segopt"
+            class:sel={(settingsValues[s.key] ?? null) === value}
+            onclick={() => setSetting(s, value)}
+          >
+            {device.description}
           </button>
         {/each}
       </div>
-      <div class="setting-hint">{t('set.autohide_hint')}</div>
-    </div>
-
-    <!-- One delay for the bars and the cursor, because it is one timer: the
-         pointer resting. Kept on screen under `never` rather than removed — the
-         cursor still reads it there. -->
-    <div class="setting">
-      <div class="setting-label">{t('set.hide_delay')}</div>
-      <div class="segmented">
-        {#each HIDE_DELAY_CHOICES as v (v)}
-          <button class="segopt" class:sel={windowPrefs.hideDelay === v} onclick={() => setHideDelay(v)}>
-            {v === 0 ? t('set.hide_delay_now') : t('set.seek_sec', { s: (v / 1000).toLocaleString(locale()) })}
-          </button>
-        {/each}
-      </div>
-      <div class="setting-hint">{t('set.hide_delay_hint')}</div>
-    </div>
-
-    <div class="setting">
-      <div class="setting-label">{t('set.cursor_hide')}</div>
-      <div class="segmented">
-        {#each CURSOR_HIDE_CHOICES as v (v)}
-          <button class="segopt" class:sel={windowPrefs.cursorHide === v} onclick={() => setCursorHide(v)}>
-            {t(`set.cursor_hide_${v}`)}
-          </button>
-        {/each}
-      </div>
-      <div class="setting-hint">{t('set.cursor_hide_hint')}</div>
-    </div>
-
-    <!-- Three named things a click on the picture can mean, so a pill. The
-         default tells a click from a double click without waiting, and the
-         two others are for whoever would rather not pay for that: the
-         blink of a pause under a double click, or a pause where a double
-         click was meant. -->
-    <div class="setting">
-      <div class="setting-label">{t('set.video_click')}</div>
-      <div class="segmented">
-        {#each VIDEO_CLICK_CHOICES as v (v)}
-          <button class="segopt" class:sel={windowPrefs.videoClick === v} onclick={() => setVideoClick(v)}>
-            {t(`set.video_click_${v}`)}
-          </button>
-        {/each}
-      </div>
-      <div class="setting-hint">{t('set.video_click_hint')}</div>
-    </div>
-
-    <!-- macOS only: nowhere else does anything native see a pinch as a pinch
-         rather than as Ctrl+wheel. Two named things the gesture can be, so a
-         pill; the zoom keeps ⌥+pinch and Ctrl+wheel either way. -->
-    {#if IS_MAC}
-      <div class="setting">
-        <div class="setting-label">{t('set.pinch')}</div>
-        <div class="segmented">
-          {#each PINCH_CHOICES as v (v)}
-            <button class="segopt" class:sel={windowPrefs.pinch === v} onclick={() => setPinch(v)}>
-              {t(`set.pinch_${v}`)}
-            </button>
-          {/each}
-        </div>
-        <div class="setting-hint">{t('set.pinch_hint')}</div>
-      </div>
-    {/if}
-
-    <!-- Watching together needs a server both ends agree on, and this is where
-         it lives rather than in the room dialog: practically nobody runs their
-         own, so a field on the way into every room was asking a question with
-         one answer. The room dialog points here when the address turns out to
-         be wrong, which is the only moment it matters.
-
-         Placed with the language rather than inside the history block below,
-         even though "which server learns what I watch" is a fair privacy
-         question: history, excluded folders and clearing them are one story
-         read top to bottom, and a text field in the middle of it breaks the
-         run.
-
-         Empty means the default — `setRelayUrl` removes the key rather than
-         storing a blank — so the placeholder is the address itself and
-         clearing the field restores it instead of turning the feature off. -->
-    <div class="setting">
-      <div class="setting-label">{t('sync.relay_label')}</div>
-      <div class="setting-hint">{t('sync.relay_hint')}</div>
-      <input
-        class="link-input"
-        value={relayVal}
-        placeholder={DEFAULT_RELAY}
-        spellcheck="false"
-        autocapitalize="off"
-        aria-label={t('sync.relay_label')}
-        onchange={(e) => saveRelay(e.currentTarget.value)}
-      />
-    </div>
-
-
-    <div class="setting">
-      <div class="row-toggle">
-        <div class="row-text">
-          <div class="setting-label">{t('set.history')}</div>
-          <div class="setting-hint">{t('set.history_hint')}</div>
-        </div>
-        <button
-          class="switch"
-          class:on={history.prefs.enabled}
-          role="switch"
-          aria-checked={history.prefs.enabled}
-          aria-label={t('set.history')}
-          onclick={toggleHistory}
-        >
-          <span class="switch-knob"></span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Dimmed together with disabled history: when nothing is written,
-         the exclusions affect nothing, and that should be visible. -->
-    <div class="setting" class:muted={!history.prefs.enabled}>
-      <div class="setting-label">{t('set.excluded')}</div>
-      <div class="setting-hint">{t('set.excluded_hint')}</div>
-      <div class="folders">
-        {#each history.prefs.excluded as dir (dir)}
-          <div class="folder-row">
-            <svg class="folder-ico" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                d="M1.75 3.5h3.9l1.2 1.6h7.4v7.4H1.75z"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.3"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <!-- bdi isolates the text direction: the container is rtl (so
-                 the ellipsis lands on the left, since the meaningful part
-                 of a path is its tail), and without isolation the slashes,
-                 being neutral characters, move about and "/Users/…" is
-                 drawn as "Users/…/". -->
-            <span class="folder-path" title={dir}><bdi>{dir}</bdi></span>
+    {:else if s.kind === 'langs'}
+      {@const codes = langsOf(s)}
+      <!-- Chips in priority order, then the way to add one. The empty
+           state says "авто" as a word rather than showing an empty
+           strip, which reads as a control that failed to render. -->
+      <div class="langs">
+        {#if !codes.length}
+          <span class="langs-auto">{t('vset.lang_auto')}</span>
+        {/if}
+        {#each codes as code, i (code)}
+          <!-- Two buttons in a chip, never nested: a button inside a
+               button is invalid and the inner one stops being clicked.
+               The first chip is the preferred language and says so by
+               being filled, which is also why clicking it does nothing
+               — it is already what it would become. -->
+          <span class="lang-chip" class:first={i === 0}>
             <button
-              class="folder-remove"
-              data-tip={t('set.excluded_remove')}
-              aria-label={t('set.excluded_remove')}
-              disabled={!history.prefs.enabled}
-              onclick={() => removeExcludedFolder(dir)}
+              class="lang-name"
+              data-tip={i === 0 ? t('vset.lang_primary') : t('vset.lang_promote')}
+              disabled={i === 0}
+              onclick={() => promoteLang(s, code)}
+            >{languageName(code)}</button>
+            <button
+              class="lang-drop"
+              aria-label={t('vset.lang_remove')}
+              data-tip={t('vset.lang_remove')}
+              onclick={() => removeLang(s, code)}
             >
-              <!-- Same coordinates as the card's cross: round-capped ends
-                   must stay inside the viewBox, or they get clipped at
-                   the edge. -->
               <svg viewBox="0 0 10 10" aria-hidden="true">
                 <path stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M1.2 1.2l7.6 7.6M8.8 1.2l-7.6 7.6" />
               </svg>
             </button>
-          </div>
-        {:else}
-          <div class="folders-empty">{t('set.excluded_empty')}</div>
+          </span>
         {/each}
-        <button class="folder-add" disabled={!history.prefs.enabled} onclick={addExcludedFolder}>
+        <button
+          class="lang-add"
+          class:open={langPickerFor === s.key}
+          data-tip={t('vset.lang_add')}
+          aria-label={t('vset.lang_add')}
+          onclick={() => void openLangPicker(s)}
+        >
           <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M8 3.5v9M3.5 8h9" />
+            <path d="M8 3.5v9M3.5 8h9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
-          {t('set.excluded_add')}
         </button>
+      </div>
+      {#if langPickerFor === s.key}
+        <!-- Sixty languages behind a search field, which is the whole
+             shape of this control: the common case is two clicks and the
+             long tail is one word of typing away, without either being
+             in the other's way. -->
+        <div class="lang-picker">
+          <input
+            class="lang-search"
+            type="text"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            placeholder={t('vset.lang_search')}
+            bind:this={langQueryEl}
+            bind:value={langQuery}
+            onkeydown={(e) => {
+              // Enter takes the first hit — with a filtered list of one,
+              // reaching for the mouse is the whole cost of the feature.
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const hit = searchLanguages(langQuery, codes)[0];
+                if (hit) addLang(s, hit.code);
+              }
+              if (e.key === 'Escape') { e.preventDefault(); langPickerFor = null; }
+              e.stopPropagation();
+            }}
+          />
+          <div class="lang-list">
+            {#each searchLanguages(langQuery, codes) as lang (lang.code)}
+              <button class="lang-option" onclick={() => addLang(s, lang.code)}>
+                <span class="lang-option-name">{lang.name}</span>
+                <span class="lang-option-code">{lang.code}</span>
+              </button>
+            {:else}
+              <div class="folders-empty">{t('vset.lang_none')}</div>
+            {/each}
+            <ScrollFade />
+          </div>
+        </div>
+      {/if}
+    {:else if s.kind === 'slider'}
+      {@const value = sliderValue(s)}
+      <div class="slider-row">
+        <input
+          type="range"
+          class="setting-slider"
+          min={s.min}
+          max={s.max}
+          step={s.step}
+          {value}
+          style="--progress: {((value - s.min) / (s.max - s.min)) * 100}%"
+          aria-label={s.label}
+          oninput={(e) => setSlider(s, Number(e.currentTarget.value))}
+          onchange={(e) => e.currentTarget.blur()}
+        />
+        <span class="slider-value">{value.toFixed(s.decimals)}{s.suffix ?? ''}</span>
+      </div>
+    {:else}
+      <div class="segmented">
+        {#each s.options as o (o.label)}
+          <button
+            class="segopt"
+            class:sel={settingsValues[s.key] === o.v}
+            disabled={s.key === 'target-colorspace-hint' &&
+              o.v !== null &&
+              displayHdr !== null &&
+              !displayHdr.supported}
+            onclick={() => setSetting(s, o.v)}
+          >
+            {o.label}
+          </button>
+        {/each}
+      </div>
+    {/if}
+    {#if s.key === 'target-colorspace-hint' && displayHdr}
+      <div class="setting-hint">
+        {#if !displayHdr.supported}
+          {t('set.hdr_unsupported')}
+        {:else if !displayHdr.enabled}
+          {t(IS_MAC ? 'set.hdr_off_mac' : 'set.hdr_off_win')}
+        {:else if settingsValues[s.key] === null}
+          {t(IS_MAC ? 'set.hdr_forced_mac' : 'set.hdr_forced_win')}
+        {:else}
+          {t(IS_MAC ? 'set.hdr_on_mac' : 'set.hdr_on_win')}
+        {/if}
+      </div>
+    {:else if s.hint}<div class="setting-hint">{s.hint}</div>{/if}
+  </div>
+{/snippet}
+
+<Dialog title={t('set.title')} scrollable header={tabs} peek={!!peeking} {onclose}>
+  {#if settingsTab === 'general'}
+    <div class="set-group">{t('sec.interface')}</div>
+    <div class="set-panel">
+      <div class="setting">
+        <div class="setting-label">{t('set.language')}</div>
+        <div class="segmented">
+          <button class="segopt" class:sel={locale() === 'ru'} onclick={() => changeLocale('ru')}>
+            Русский
+          </button>
+          <button class="segopt" class:sel={locale() === 'en'} onclick={() => changeLocale('en')}>
+            English
+          </button>
+        </div>
       </div>
     </div>
 
-    <div class="setting">
-      <div class="setting-label">{t('set.clear')}</div>
-      <div class="setting-hint">{t('set.clear_hint')}</div>
-      <button class="btn-danger" onclick={() => void clearHistory()}>{t('set.clear_btn')}</button>
+    <div class="set-group">{t('sec.chrome')}</div>
+    <div class="set-panel">
+
+      <!-- A pill, not a switch: three named places the controls may fade in,
+           and the middle one is the answer for anybody who comes from VLC or
+           MPC. The cursor sits right under it because it is the same question
+           asked of the pointer, answered separately so the bar can stay while
+           the pointer goes. -->
+      <div class="setting">
+        <div class="setting-label">{t('set.autohide')}</div>
+        <div class="segmented">
+          {#each AUTO_HIDE_CHOICES as v (v)}
+            <button class="segopt" class:sel={windowPrefs.autoHide === v} onclick={() => setAutoHide(v)}>
+              {t(`set.autohide_${v}`)}
+            </button>
+          {/each}
+        </div>
+        <div class="setting-hint">{t('set.autohide_hint')}</div>
+      </div>
+
+      <!-- One delay for the bars and the cursor, because it is one timer: the
+           pointer resting. Kept on screen under `never` rather than removed — the
+           cursor still reads it there. -->
+      <div class="setting">
+        <div class="setting-label">{t('set.hide_delay')}</div>
+        <div class="segmented">
+          {#each HIDE_DELAY_CHOICES as v (v)}
+            <button class="segopt" class:sel={windowPrefs.hideDelay === v} onclick={() => setHideDelay(v)}>
+              {v === 0 ? t('set.hide_delay_now') : t('set.seek_sec', { s: (v / 1000).toLocaleString(locale()) })}
+            </button>
+          {/each}
+        </div>
+        <div class="setting-hint">{t('set.hide_delay_hint')}</div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">{t('set.cursor_hide')}</div>
+        <div class="segmented">
+          {#each CURSOR_HIDE_CHOICES as v (v)}
+            <button class="segopt" class:sel={windowPrefs.cursorHide === v} onclick={() => setCursorHide(v)}>
+              {t(`set.cursor_hide_${v}`)}
+            </button>
+          {/each}
+        </div>
+        <div class="setting-hint">{t('set.cursor_hide_hint')}</div>
+      </div>
+    </div>
+
+    <div class="set-group">{t('sec.pointer')}</div>
+    <div class="set-panel">
+
+      <!-- Three named things a click on the picture can mean, so a pill. The
+           default tells a click from a double click without waiting, and the
+           two others are for whoever would rather not pay for that: the
+           blink of a pause under a double click, or a pause where a double
+           click was meant. -->
+      <div class="setting">
+        <div class="setting-label">{t('set.video_click')}</div>
+        <div class="segmented">
+          {#each VIDEO_CLICK_CHOICES as v (v)}
+            <button class="segopt" class:sel={windowPrefs.videoClick === v} onclick={() => setVideoClick(v)}>
+              {t(`set.video_click_${v}`)}
+            </button>
+          {/each}
+        </div>
+        <div class="setting-hint">{t('set.video_click_hint')}</div>
+      </div>
+
+      <!-- macOS only: nowhere else does anything native see a pinch as a pinch
+           rather than as Ctrl+wheel. Two named things the gesture can be, so a
+           pill; the zoom keeps ⌥+pinch and Ctrl+wheel either way. -->
+      {#if IS_MAC}
+        <div class="setting">
+          <div class="setting-label">{t('set.pinch')}</div>
+          <div class="segmented">
+            {#each PINCH_CHOICES as v (v)}
+              <button class="segopt" class:sel={windowPrefs.pinch === v} onclick={() => setPinch(v)}>
+                {t(`set.pinch_${v}`)}
+              </button>
+            {/each}
+          </div>
+          <div class="setting-hint">{t('set.pinch_hint')}</div>
+        </div>
+      {/if}
+    </div>
+
+      <!-- The window's own switches, which used to live only in the context
+           menu and the macOS menu bar — somebody looking for "remember the
+           window's position" looks here first. Same state as both menus, so
+           nothing can disagree. -->
+    <div class="set-group">{t('sec.window')}</div>
+    <div class="set-panel">
+      {@render windowSwitch('remember', t('ctx.win_remember'))}
+      {@render windowSwitch('fitToVideo', t('ctx.win_fit'))}
+      {@render windowSwitch('alwaysOnTop', t('ctx.win_ontop'))}
+      {@render windowSwitch('snapMini', t('ctx.win_snap'))}
+    </div>
+
+    <div class="set-group">{t('sec.together')}</div>
+    <div class="set-panel">
+
+      <!-- Watching together needs a server both ends agree on, and this is where
+           it lives rather than in the room dialog: practically nobody runs their
+           own, so a field on the way into every room was asking a question with
+           one answer. The room dialog points here when the address turns out to
+           be wrong, which is the only moment it matters.
+
+           Placed with the language rather than inside the history block below,
+           even though "which server learns what I watch" is a fair privacy
+           question: history, excluded folders and clearing them are one story
+           read top to bottom, and a text field in the middle of it breaks the
+           run.
+
+           Empty means the default — `setRelayUrl` removes the key rather than
+           storing a blank — so the placeholder is the address itself and
+           clearing the field restores it instead of turning the feature off. -->
+      <div class="setting">
+        <div class="setting-label">{t('sync.relay_label')}</div>
+        <div class="setting-hint">{t('sync.relay_hint')}</div>
+        <input
+          class="link-input"
+          value={relayVal}
+          placeholder={DEFAULT_RELAY}
+          spellcheck="false"
+          autocapitalize="off"
+          aria-label={t('sync.relay_label')}
+          onchange={(e) => saveRelay(e.currentTarget.value)}
+        />
+      </div>
+    </div>
+
+
+    <div class="set-group">{t('sec.history')}</div>
+    <div class="set-panel">
+      <div class="setting">
+        <div class="row-toggle">
+          <div class="row-text">
+            <div class="setting-label">{t('set.history')}</div>
+            <div class="setting-hint">{t('set.history_hint')}</div>
+          </div>
+          <button
+            class="switch"
+            class:on={history.prefs.enabled}
+            role="switch"
+            aria-checked={history.prefs.enabled}
+            aria-label={t('set.history')}
+            onclick={toggleHistory}
+          >
+            <span class="switch-knob"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Dimmed together with disabled history: when nothing is written,
+           the exclusions affect nothing, and that should be visible. -->
+      <div class="setting" class:muted={!history.prefs.enabled}>
+        <div class="setting-label">{t('set.excluded')}</div>
+        <div class="setting-hint">{t('set.excluded_hint')}</div>
+        <div class="folders">
+          {#each history.prefs.excluded as dir (dir)}
+            <div class="folder-row">
+              <svg class="folder-ico" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M1.75 3.5h3.9l1.2 1.6h7.4v7.4H1.75z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <!-- bdi isolates the text direction: the container is rtl (so
+                   the ellipsis lands on the left, since the meaningful part
+                   of a path is its tail), and without isolation the slashes,
+                   being neutral characters, move about and "/Users/…" is
+                   drawn as "Users/…/". -->
+              <span class="folder-path" title={dir}><bdi>{dir}</bdi></span>
+              <button
+                class="folder-remove"
+                data-tip={t('set.excluded_remove')}
+                aria-label={t('set.excluded_remove')}
+                disabled={!history.prefs.enabled}
+                onclick={() => removeExcludedFolder(dir)}
+              >
+                <!-- Same coordinates as the card's cross: round-capped ends
+                     must stay inside the viewBox, or they get clipped at
+                     the edge. -->
+                <svg viewBox="0 0 10 10" aria-hidden="true">
+                  <path stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M1.2 1.2l7.6 7.6M8.8 1.2l-7.6 7.6" />
+                </svg>
+              </button>
+            </div>
+          {:else}
+            <div class="folders-empty">{t('set.excluded_empty')}</div>
+          {/each}
+          <button class="folder-add" disabled={!history.prefs.enabled} onclick={addExcludedFolder}>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M8 3.5v9M3.5 8h9" />
+            </svg>
+            {t('set.excluded_add')}
+          </button>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">{t('set.clear')}</div>
+        <div class="setting-hint">{t('set.clear_hint')}</div>
+        <button class="btn-danger" onclick={() => void clearHistory()}>{t('set.clear_btn')}</button>
+      </div>
+    </div>
+
+      <!-- What the player is made of: the web engine it draws with and the
+           LGPL notice. They sat under the mpv settings' footer, which is about
+           mpv.conf and has nothing to do with either. The licenses open in a
+           layer above this sheet rather than revealing a file: `open-path` is
+           not in the capabilities, and a .md has no reliable handler on Windows
+           regardless. Revealing the file is still offered, inside that dialog. -->
+    <div class="set-group">{t('sec.about')}</div>
+    <div class="set-panel">
+      {#if webviewVersion}
+        <div class="settings-foot">
+          {t(IS_MAC ? 'set.webview_foot_mac' : 'set.webview_foot_win', { version: webviewVersion })}
+        </div>
+      {/if}
+      <div class="settings-foot">
+        {t('set.licenses_foot')}
+        <button class="settings-link" onclick={onLicenses}>
+          {t('set.licenses_open')}
+        </button>
+      </div>
     </div>
 
   {:else if settingsTab === 'torrents'}
-    <!-- First in the tab, because "how do I find a release" comes before
-         "what happens to one I have". On by default, but the switch stays:
-         this is the only surface in the player that tells a third party what
-         somebody is *looking for* rather than acting on a file they already
-         hold, which is an argument for a way out rather than for hiding the
-         feature from everyone who never opens this sheet. -->
-    <div class="setting">
-      <div class="row-toggle">
-        <div class="row-text">
-          <div class="setting-label">{t('catalog.setting')}</div>
-          <div class="setting-hint">{t('catalog.setting_hint')}</div>
+    <div class="set-group">{t('sec.catalog')}</div>
+    <div class="set-panel">
+      <!-- First in the tab, because "how do I find a release" comes before
+           "what happens to one I have". On by default, but the switch stays:
+           this is the only surface in the player that tells a third party what
+           somebody is *looking for* rather than acting on a file they already
+           hold, which is an argument for a way out rather than for hiding the
+           feature from everyone who never opens this sheet. -->
+      <div class="setting">
+        <div class="row-toggle">
+          <div class="row-text">
+            <div class="setting-label">{t('catalog.setting')}</div>
+            <div class="setting-hint">{t('catalog.setting_hint')}</div>
+          </div>
+          <button
+            class="switch"
+            class:on={catalog.enabled}
+            role="switch"
+            aria-checked={catalog.enabled}
+            aria-label={t('catalog.setting')}
+            onclick={() => setCatalogEnabled(!catalog.enabled)}
+          >
+            <span class="switch-knob"></span>
+          </button>
         </div>
-        <button
-          class="switch"
-          class:on={catalog.enabled}
-          role="switch"
-          aria-checked={catalog.enabled}
-          aria-label={t('catalog.setting')}
-          onclick={() => setCatalogEnabled(!catalog.enabled)}
-        >
-          <span class="switch-knob"></span>
-        </button>
       </div>
+
+      <!-- Shown only once the catalog is on: an address for a feature nobody
+           has enabled is a question about something that is not happening. -->
+      {#if catalog.enabled}
+        <!-- The metadata service first, because it is the one the player itself
+             depends on: without it the panel still works but has no pictures,
+             which is the difference a viewer notices immediately. -->
+        <div class="setting">
+          <div class="setting-label">{t('catalog.tmdb_label')}</div>
+          <div class="setting-hint">{t('catalog.tmdb_hint')}</div>
+          <input
+            class="link-input"
+            value={tmdbVal}
+            placeholder={DEFAULT_TMDB}
+            spellcheck="false"
+            autocapitalize="off"
+            aria-label={t('catalog.tmdb_label')}
+            onchange={(e) => saveTmdb(e.currentTarget.value)}
+          />
+        </div>
+
+        <div class="setting">
+          <div class="setting-label">{t('catalog.indexer_label')}</div>
+          <div class="setting-hint">{t('catalog.indexer_hint')}</div>
+          <!-- The placeholder is whatever is *actually* being used when the
+               viewer has set nothing — the service's suggestion, when there is
+               one — and otherwise the shape of the address to paste, which is
+               the one thing the hint cannot show as well as an example can. -->
+          <input
+            class="link-input"
+            value={indexerVal}
+            placeholder={catalog.suggested || INDEXER_EXAMPLE}
+            spellcheck="false"
+            autocapitalize="off"
+            aria-label={t('catalog.indexer_label')}
+            onchange={(e) => saveIndexer(e.currentTarget.value)}
+          />
+          <!-- Its own field because that is where both servers show it: the
+               feed link in one place, the key on the dashboard or in the
+               settings. A key left inside the pasted address works as well. -->
+          <input
+            class="link-input indexer-key"
+            value={indexerKeyVal}
+            placeholder={t('catalog.indexer_key')}
+            spellcheck="false"
+            autocapitalize="off"
+            autocomplete="off"
+            aria-label={t('catalog.indexer_key')}
+            onchange={(e) => saveIndexerKey(e.currentTarget.value)}
+          />
+        </div>
+      {/if}
     </div>
 
-    <!-- Shown only once the catalog is on: an address for a feature nobody
-         has enabled is a question about something that is not happening. -->
-    {#if catalog.enabled}
-      <!-- The metadata service first, because it is the one the player itself
-           depends on: without it the panel still works but has no pictures,
-           which is the difference a viewer notices immediately. -->
-      <div class="setting">
-        <div class="setting-label">{t('catalog.tmdb_label')}</div>
-        <div class="setting-hint">{t('catalog.tmdb_hint')}</div>
-        <input
-          class="link-input"
-          value={tmdbVal}
-          placeholder={DEFAULT_TMDB}
-          spellcheck="false"
-          autocapitalize="off"
-          aria-label={t('catalog.tmdb_label')}
-          onchange={(e) => saveTmdb(e.currentTarget.value)}
-        />
-      </div>
+    <div class="set-group">{t('sec.network')}</div>
+    <div class="set-panel">
 
+      <!-- Seeding was under the privacy controls, on the argument that it is
+           the same kind of decision as an excluded folder — what leaves this
+           machine. That argument still holds and is not why it moved: a
+           viewer looking for anything about torrents had no section to look
+           in, and found the switch and the cache button by reading a tab
+           named "Основные" to the bottom. The two are here together because
+           they are the whole of what this player decides about a torrent —
+           what goes out, and what stays on the disk. A switch, because it is
+           on/off; the hint carries the legal weight. -->
       <div class="setting">
-        <div class="setting-label">{t('catalog.indexer_label')}</div>
-        <div class="setting-hint">{t('catalog.indexer_hint')}</div>
-        <!-- The placeholder is whatever is *actually* being used when the
-             viewer has set nothing — the service's suggestion, when there is
-             one — and otherwise the shape of the address to paste, which is
-             the one thing the hint cannot show as well as an example can. -->
-        <input
-          class="link-input"
-          value={indexerVal}
-          placeholder={catalog.suggested || INDEXER_EXAMPLE}
-          spellcheck="false"
-          autocapitalize="off"
-          aria-label={t('catalog.indexer_label')}
-          onchange={(e) => saveIndexer(e.currentTarget.value)}
-        />
-        <!-- Its own field because that is where both servers show it: the
-             feed link in one place, the key on the dashboard or in the
-             settings. A key left inside the pasted address works as well. -->
-        <input
-          class="link-input indexer-key"
-          value={indexerKeyVal}
-          placeholder={t('catalog.indexer_key')}
-          spellcheck="false"
-          autocapitalize="off"
-          autocomplete="off"
-          aria-label={t('catalog.indexer_key')}
-          onchange={(e) => saveIndexerKey(e.currentTarget.value)}
-        />
-      </div>
-    {/if}
-
-    <!-- Seeding was under the privacy controls, on the argument that it is
-         the same kind of decision as an excluded folder — what leaves this
-         machine. That argument still holds and is not why it moved: a
-         viewer looking for anything about torrents had no section to look
-         in, and found the switch and the cache button by reading a tab
-         named "Основные" to the bottom. The two are here together because
-         they are the whole of what this player decides about a torrent —
-         what goes out, and what stays on the disk. A switch, because it is
-         on/off; the hint carries the legal weight. -->
-    <div class="setting">
-      <div class="row-toggle">
-        <div class="row-text">
-          <div class="setting-label">{t('torrent.seed')}</div>
-          <div class="setting-hint">{t('torrent.seed_hint')}</div>
+        <div class="row-toggle">
+          <div class="row-text">
+            <div class="setting-label">{t('torrent.seed')}</div>
+            <div class="setting-hint">{t('torrent.seed_hint')}</div>
+          </div>
+          <button
+            class="switch"
+            class:on={torrentPrefs.seeding}
+            role="switch"
+            aria-checked={torrentPrefs.seeding}
+            aria-label={t('torrent.seed')}
+            onclick={onToggleSeeding}
+          >
+            <!-- `.switch-knob`, like every other switch in this dialog. A
+                 bare `.knob` has no rule anywhere, so this one rendered as a
+                 track with nothing in it — on/off told apart only by the
+                 background. -->
+            <span class="switch-knob"></span>
+          </button>
         </div>
-        <button
-          class="switch"
-          class:on={torrentPrefs.seeding}
-          role="switch"
-          aria-checked={torrentPrefs.seeding}
-          aria-label={t('torrent.seed')}
-          onclick={onToggleSeeding}
-        >
-          <!-- `.switch-knob`, like every other switch in this dialog. A
-               bare `.knob` has no rule anywhere, so this one rendered as a
-               track with nothing in it — on/off told apart only by the
-               background. -->
-          <span class="switch-knob"></span>
-        </button>
       </div>
-    </div>
 
-    <!-- **A pill and not a switch, because the middle value is the answer.**
-         Off / when possible / encrypted only: the middle one prefers MSE and
-         redials in the clear for a peer that will not do it, which is why it is
-         the default and why nobody should have to find this setting. The strict
-         one is for a network where the plaintext handshake is precisely what
-         gets cut — measured against the live Sintel swarm, a magnet still
-         resolved from the swarm in 840 ms and the file streamed at 2.2 MB/s
-         from 24 peers with every unencrypted peer refused, so it is a usable
-         setting rather than a way to sit alone. -->
-    <div class="setting">
-      <div class="setting-label">{t('torrent.enc')}</div>
-      <div class="setting-hint">{t('torrent.enc_hint')}</div>
-      <div class="segmented">
-        {#each ENCRYPTION_MODES as mode (mode.id)}
+      <!-- **A pill and not a switch, because the middle value is the answer.**
+           Off / when possible / encrypted only: the middle one prefers MSE and
+           redials in the clear for a peer that will not do it, which is why it is
+           the default and why nobody should have to find this setting. The strict
+           one is for a network where the plaintext handshake is precisely what
+           gets cut — measured against the live Sintel swarm, a magnet still
+           resolved from the swarm in 840 ms and the file streamed at 2.2 MB/s
+           from 24 peers with every unencrypted peer refused, so it is a usable
+           setting rather than a way to sit alone. -->
+      <div class="setting">
+        <div class="setting-label">{t('torrent.enc')}</div>
+        <div class="setting-hint">{t('torrent.enc_hint')}</div>
+        <div class="segmented">
+          {#each ENCRYPTION_MODES as mode (mode.id)}
+            <button
+              class="segopt"
+              class:sel={torrentPrefs.encryption === mode.id}
+              onclick={() => onSetEncryption(mode.id)}
+            >
+              {t(mode.label)}
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      <!-- The only large lever left on peer count, and it is measured rather
+           than believed: of ~30 addresses one tracker's announce returned, 20–22
+           never answered a SYN — peers behind NAT, which can only ever dial us.
+           Public trackers, `numwant`, IPv6 and PEX were all measured and give
+           nothing here.
+
+           It carries a status line because the switch alone would be a claim:
+           librqbit's forwarder reports to nobody, and a router with UPnP
+           disabled swallows the request in silence. "On" and "working" are
+           different facts, so the row says both. -->
+      <div class="setting">
+        <div class="row-toggle">
+          <div class="row-text">
+            <div class="setting-label">{t('torrent.port')}</div>
+            <div class="setting-hint">{t('torrent.port_hint')}</div>
+            {#if portLine}
+              <div class="setting-hint port-state" class:ok={torrent.portStatus?.state === 'mapped'}>
+                {portLine}
+              </div>
+            {/if}
+          </div>
+          <button
+            class="switch"
+            class:on={torrentPrefs.portForward}
+            role="switch"
+            aria-checked={torrentPrefs.portForward}
+            aria-label={t('torrent.port')}
+            onclick={onTogglePortForward}
+          >
+            <span class="switch-knob"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- **Which way out the swarm takes**, and a list rather than a switch
+           because "past the VPN" is not always one interface: it is the one the
+           machine would use with no tunnel *now*, and somebody with Wi-Fi and a
+           cable may want the other. Auto is first and the default — the system's
+           own choice, which is what every release before this one did.
+
+           The line above the list says where the traffic goes right now, as the
+           system answers it; the red line below says what leaving the VPN costs,
+           and is shown only while it is being paid. -->
+      <div class="setting">
+        <div class="setting-label">{t('torrent.route')}</div>
+        <div class="setting-hint">{t('torrent.route_hint')}</div>
+        {#if routeLine}
+          <div class="setting-hint">{routeLine}</div>
+        {/if}
+        <div class="segmented vertical">
           <button
             class="segopt"
-            class:sel={torrentPrefs.encryption === mode.id}
-            onclick={() => onSetEncryption(mode.id)}
+            class:sel={routeNow.kind === 'auto'}
+            onclick={() => onSetRoute({ kind: 'auto' })}
           >
-            {t(mode.label)}
+            {t('torrent.route_auto')}
           </button>
-        {/each}
-      </div>
-    </div>
-
-    <!-- The only large lever left on peer count, and it is measured rather
-         than believed: of ~30 addresses one tracker's announce returned, 20–22
-         never answered a SYN — peers behind NAT, which can only ever dial us.
-         Public trackers, `numwant`, IPv6 and PEX were all measured and give
-         nothing here.
-
-         It carries a status line because the switch alone would be a claim:
-         librqbit's forwarder reports to nobody, and a router with UPnP
-         disabled swallows the request in silence. "On" and "working" are
-         different facts, so the row says both. -->
-    <div class="setting">
-      <div class="row-toggle">
-        <div class="row-text">
-          <div class="setting-label">{t('torrent.port')}</div>
-          <div class="setting-hint">{t('torrent.port_hint')}</div>
-          {#if portLine}
-            <div class="setting-hint port-state" class:ok={torrent.portStatus?.state === 'mapped'}>
-              {portLine}
-            </div>
+          <button
+            class="segopt"
+            class:sel={routeNow.kind === 'direct'}
+            disabled={!!net.view && !net.view.direct && routeNow.kind !== 'direct'}
+            onclick={() => onSetRoute({ kind: 'direct' })}
+          >
+            {net.view?.direct
+              ? t('torrent.route_direct_now', { name: ifaceLabel(net.view.direct) })
+              : t('torrent.route_direct')}
+          </button>
+          {#each net.view?.interfaces ?? [] as iface (iface.name)}
+            {@const route = { kind: 'iface', name: iface.name } as const}
+            <button
+              class="segopt"
+              class:sel={sameRoute(routeNow, route)}
+              onclick={() => onSetRoute(route)}
+            >
+              {iface.label}{iface.label !== iface.name ? ` (${iface.name})` : ''}{iface.addr
+                ? ` · ${iface.addr}`
+                : ''}{iface.vpn ? ` · ${t('torrent.route_vpn_tag')}` : ''}
+            </button>
+          {/each}
+          {#if missingIface}
+            <button class="segopt sel" disabled>
+              {t('torrent.route_missing_row', { name: missingIface })}
+            </button>
           {/if}
         </div>
-        <button
-          class="switch"
-          class:on={torrentPrefs.portForward}
-          role="switch"
-          aria-checked={torrentPrefs.portForward}
-          aria-label={t('torrent.port')}
-          onclick={onTogglePortForward}
-        >
-          <span class="switch-knob"></span>
-        </button>
-      </div>
-    </div>
-
-    <!-- **Which way out the swarm takes**, and a list rather than a switch
-         because "past the VPN" is not always one interface: it is the one the
-         machine would use with no tunnel *now*, and somebody with Wi-Fi and a
-         cable may want the other. Auto is first and the default — the system's
-         own choice, which is what every release before this one did.
-
-         The line above the list says where the traffic goes right now, as the
-         system answers it; the red line below says what leaving the VPN costs,
-         and is shown only while it is being paid. -->
-    <div class="setting">
-      <div class="setting-label">{t('torrent.route')}</div>
-      <div class="setting-hint">{t('torrent.route_hint')}</div>
-      {#if routeLine}
-        <div class="setting-hint">{routeLine}</div>
-      {/if}
-      <div class="segmented vertical">
-        <button
-          class="segopt"
-          class:sel={routeNow.kind === 'auto'}
-          onclick={() => onSetRoute({ kind: 'auto' })}
-        >
-          {t('torrent.route_auto')}
-        </button>
-        <button
-          class="segopt"
-          class:sel={routeNow.kind === 'direct'}
-          disabled={!!net.view && !net.view.direct && routeNow.kind !== 'direct'}
-          onclick={() => onSetRoute({ kind: 'direct' })}
-        >
-          {net.view?.direct
-            ? t('torrent.route_direct_now', { name: ifaceLabel(net.view.direct) })
-            : t('torrent.route_direct')}
-        </button>
-        {#each net.view?.interfaces ?? [] as iface (iface.name)}
-          {@const route = { kind: 'iface', name: iface.name } as const}
-          <button
-            class="segopt"
-            class:sel={sameRoute(routeNow, route)}
-            onclick={() => onSetRoute(route)}
-          >
-            {iface.label}{iface.label !== iface.name ? ` (${iface.name})` : ''}{iface.addr
-              ? ` · ${iface.addr}`
-              : ''}{iface.vpn ? ` · ${t('torrent.route_vpn_tag')}` : ''}
-          </button>
-        {/each}
-        {#if missingIface}
-          <button class="segopt sel" disabled>
-            {t('torrent.route_missing_row', { name: missingIface })}
-          </button>
+        {#if net.runRoute}
+          <div class="setting-hint">{t('torrent.route_this_run')}</div>
+        {/if}
+        {#if exposed}
+          <div class="link-error">{t('torrent.route_exposed')}</div>
         {/if}
       </div>
-      {#if net.runRoute}
-        <div class="setting-hint">{t('torrent.route_this_run')}</div>
-      {/if}
-      {#if exposed}
-        <div class="link-error">{t('torrent.route_exposed')}</div>
-      {/if}
-    </div>
 
-    <!-- The question asked at the first torrent of a run when the system route
-         is a tunnel. A switch here because "remember" in that dialog is the
-         only other way to turn it off, and there has to be a way back. -->
-    <div class="setting">
-      <div class="row-toggle">
-        <div class="row-text">
-          <div class="setting-label">{t('torrent.vpn_ask_setting')}</div>
-          <div class="setting-hint">{t('torrent.vpn_ask_setting_hint')}</div>
+      <!-- The question asked at the first torrent of a run when the system route
+           is a tunnel. A switch here because "remember" in that dialog is the
+           only other way to turn it off, and there has to be a way back. -->
+      <div class="setting">
+        <div class="row-toggle">
+          <div class="row-text">
+            <div class="setting-label">{t('torrent.vpn_ask_setting')}</div>
+            <div class="setting-hint">{t('torrent.vpn_ask_setting_hint')}</div>
+          </div>
+          <button
+            class="switch"
+            class:on={torrentPrefs.vpnAsk}
+            role="switch"
+            aria-checked={torrentPrefs.vpnAsk}
+            aria-label={t('torrent.vpn_ask_setting')}
+            onclick={() => setVpnAsk(!torrentPrefs.vpnAsk)}
+          >
+            <span class="switch-knob"></span>
+          </button>
         </div>
-        <button
-          class="switch"
-          class:on={torrentPrefs.vpnAsk}
-          role="switch"
-          aria-checked={torrentPrefs.vpnAsk}
-          aria-label={t('torrent.vpn_ask_setting')}
-          onclick={() => setVpnAsk(!torrentPrefs.vpnAsk)}
-        >
-          <span class="switch-knob"></span>
-        </button>
+      </div>
+
+      <!-- **The other control that decides where the traffic goes**, and a
+           field rather than a list because the address is somebody's own — a
+           VPN provider's SOCKS5 endpoint, a VPS — and there is nothing sensible
+           to guess on their behalf. Written on `change` like the relay and the
+           indexer above, and for the same reason: a half-typed host is a host,
+           and this one costs the running torrent to apply.
+
+           The hint carries what the proxy does *not* cover, because both halves
+           are found the hard way otherwise — the DHT and the UDP trackers keep
+           their own sockets, and BitTorrent inside a SOCKS5 tunnel is still
+           plaintext BitTorrent, so a network filtering on the protocol rather
+           than on the destination sees exactly what it saw before. -->
+      <div class="setting">
+        <div class="setting-label">{t('torrent.proxy')}</div>
+        <div class="setting-hint">{t('torrent.proxy_hint')}</div>
+        <input
+          class="link-input"
+          value={proxyVal}
+          placeholder="socks5://127.0.0.1:1080"
+          spellcheck="false"
+          autocapitalize="off"
+          autocorrect="off"
+          aria-label={t('torrent.proxy')}
+          onchange={(e) => saveProxy(e.currentTarget.value)}
+        />
+        <!-- Only the shape, and only for a value that cannot work at all:
+             `http://…` is what people paste out of habit and librqbit takes
+             SOCKS5 alone. Whether the proxy is *running* is the session's
+             question, and it answers it by refusing to start. -->
+        {#if !proxyOk}
+          <div class="link-error">{t('torrent.proxy_bad')}</div>
+        {/if}
       </div>
     </div>
 
-    <!-- **The other control that decides where the traffic goes**, and a
-         field rather than a list because the address is somebody's own — a
-         VPN provider's SOCKS5 endpoint, a VPS — and there is nothing sensible
-         to guess on their behalf. Written on `change` like the relay and the
-         indexer above, and for the same reason: a half-typed host is a host,
-         and this one costs the running torrent to apply.
-
-         The hint carries what the proxy does *not* cover, because both halves
-         are found the hard way otherwise — the DHT and the UDP trackers keep
-         their own sockets, and BitTorrent inside a SOCKS5 tunnel is still
-         plaintext BitTorrent, so a network filtering on the protocol rather
-         than on the destination sees exactly what it saw before. -->
-    <div class="setting">
-      <div class="setting-label">{t('torrent.proxy')}</div>
-      <div class="setting-hint">{t('torrent.proxy_hint')}</div>
-      <input
-        class="link-input"
-        value={proxyVal}
-        placeholder="socks5://127.0.0.1:1080"
-        spellcheck="false"
-        autocapitalize="off"
-        autocorrect="off"
-        aria-label={t('torrent.proxy')}
-        onchange={(e) => saveProxy(e.currentTarget.value)}
-      />
-      <!-- Only the shape, and only for a value that cannot work at all:
-           `http://…` is what people paste out of habit and librqbit takes
-           SOCKS5 alone. Whether the proxy is *running* is the session's
-           question, and it answers it by refusing to start. -->
-      {#if !proxyOk}
-        <div class="link-error">{t('torrent.proxy_bad')}</div>
-      {/if}
-    </div>
-
-    <!-- **A setting rather than a question asked at the first torrent.** The
-         player has to work with nothing configured, and stopping somebody who
-         wants to watch an episode to ask about storage is a modal at the worst
-         moment — qBittorrent asks because it *is* a download manager. What the
-         default costs is discoverability: the cache directory is one the system
-         may empty and nobody browses by hand, so the path is printed here in
-         full and the folder button on the start screen opens it. -->
-    <div class="setting">
-      <div class="setting-label">{t('torrent.dir')}</div>
-      <div class="setting-hint">{t('torrent.dir_hint')}</div>
-      <!-- **Shaped as a field with its action inside it**, rather than as a
-           row of text with a button underneath. What it shows is a value that
-           can be changed, which is what a field looks like — and the excluded
-           folders' row, borrowed here first, is built for a *list*: short, and
-           inset by an icon it needs to distinguish one entry from the next.
-           There is one entry here and a label above it saying what it is. -->
-      <div class="torrent-dir">
-        <!-- The container is rtl so the ellipsis eats the head of the path
-             rather than its tail — the meaningful part of a path is its last
-             components — and `bdi` isolates the direction, or the slashes,
-             being neutral characters, drift and "/Users/…" draws as "Users/…/". -->
-        <span class="torrent-dir-path" title={torrentDir ?? ''}><bdi>{torrentDir ?? ''}</bdi></span>
-        <!-- **Both actions belong to the field, so both sit in it.** This was a
-             `.btn-outline` in `.link-actions` first — which is a dialog
-             *footer*: full size, pushed to the bottom right, reading as the
-             main action of the page rather than as an undo for one control.
-             Beside the picker it is unmistakably about this path, and the pair
-             needs no explanation of what it resets. One word for the same
-             reason the delay stepper's reset is one: the noun is already in the
-             label above, and a sentence here would squeeze the path.
-             Quieter than the picker on purpose — choosing is the action, going
-             back to the default is the correction. -->
-        {#if !torrentDirDefault}
+      <!-- **A setting rather than a question asked at the first torrent.** The
+           player has to work with nothing configured, and stopping somebody who
+           wants to watch an episode to ask about storage is a modal at the worst
+           moment — qBittorrent asks because it *is* a download manager. What the
+           default costs is discoverability: the cache directory is one the system
+           may empty and nobody browses by hand, so the path is printed here in
+           full and the folder button on the start screen opens it. -->
+    <div class="set-group">{t('sec.storage')}</div>
+    <div class="set-panel">
+      <div class="setting">
+        <div class="setting-label">{t('torrent.dir')}</div>
+        <div class="setting-hint">{t('torrent.dir_hint')}</div>
+        <!-- **Shaped as a field with its action inside it**, rather than as a
+             row of text with a button underneath. What it shows is a value that
+             can be changed, which is what a field looks like — and the excluded
+             folders' row, borrowed here first, is built for a *list*: short, and
+             inset by an icon it needs to distinguish one entry from the next.
+             There is one entry here and a label above it saying what it is. -->
+        <div class="torrent-dir">
+          <!-- The container is rtl so the ellipsis eats the head of the path
+               rather than its tail — the meaningful part of a path is its last
+               components — and `bdi` isolates the direction, or the slashes,
+               being neutral characters, drift and "/Users/…" draws as "Users/…/". -->
+          <span class="torrent-dir-path" title={torrentDir ?? ''}><bdi>{torrentDir ?? ''}</bdi></span>
+          <!-- **Both actions belong to the field, so both sit in it.** This was a
+               `.btn-outline` in `.link-actions` first — which is a dialog
+               *footer*: full size, pushed to the bottom right, reading as the
+               main action of the page rather than as an undo for one control.
+               Beside the picker it is unmistakably about this path, and the pair
+               needs no explanation of what it resets. One word for the same
+               reason the delay stepper's reset is one: the noun is already in the
+               label above, and a sentence here would squeeze the path.
+               Quieter than the picker on purpose — choosing is the action, going
+               back to the default is the correction. -->
+          {#if !torrentDirDefault}
+            <button
+              class="torrent-dir-reset"
+              onclick={async () => {
+                await resetTorrentDir();
+                await readTorrentDir();
+              }}
+            >
+              {t('torrent.dir_reset')}
+            </button>
+          {/if}
           <button
-            class="torrent-dir-reset"
+            class="torrent-dir-pick"
             onclick={async () => {
-              await resetTorrentDir();
-              await readTorrentDir();
+              if (await pickTorrentDir()) await readTorrentDir();
             }}
           >
-            {t('torrent.dir_reset')}
+            {t('torrent.dir_change')}
           </button>
+        </div>
+        {#if torrentDirDefault}
+          <div class="setting-hint">{t('torrent.dir_default_note')}</div>
         {/if}
-        <button
-          class="torrent-dir-pick"
-          onclick={async () => {
-            if (await pickTorrentDir()) await readTorrentDir();
-          }}
-        >
-          {t('torrent.dir_change')}
-        </button>
       </div>
-      {#if torrentDirDefault}
-        <div class="setting-hint">{t('torrent.dir_default_note')}</div>
-      {/if}
-    </div>
 
-    <!-- Streaming a torrent writes the pieces to disk, so a few films fill
-         a directory the viewer never chose to fill. -->
-    <div class="setting">
-      <div class="setting-label">{t('torrent.cache_clear')}</div>
-      <div class="setting-hint">{t('torrent.cache_hint')}</div>
-      <button class="btn-danger" onclick={onClearTorrentCache}>{t('torrent.cache_clear')}</button>
+      <!-- Streaming a torrent writes the pieces to disk, so a few films fill
+           a directory the viewer never chose to fill. -->
+      <div class="setting">
+        <div class="setting-label">{t('torrent.cache_clear')}</div>
+        <div class="setting-hint">{t('torrent.cache_hint')}</div>
+        <button class="btn-danger" onclick={onClearTorrentCache}>{t('torrent.cache_clear')}</button>
+      </div>
     </div>
   {:else if settingsTab === 'tv'}
-    <div class="setting">
-      <div class="setting-label">{t('cast.set_cache')}</div>
-      <div class="segmented">
-        {#each CAST_CAP_CHOICES as cap (cap)}
-          <button
-            class="segopt"
-            class:sel={castCapVal === cap}
-            onclick={() => setCastCapHere(cap)}
-          >
-            {cap === 0 ? t('cast.cache_none') : t('cast.cap_gb', { n: cap })}
-          </button>
-        {/each}
+    <div class="set-panel">
+      <div class="setting">
+        <div class="setting-label">{t('cast.set_cache')}</div>
+        <div class="segmented">
+          {#each CAST_CAP_CHOICES as cap (cap)}
+            <button
+              class="segopt"
+              class:sel={castCapVal === cap}
+              onclick={() => setCastCapHere(cap)}
+            >
+              {cap === 0 ? t('cast.cache_none') : t('cast.cap_gb', { n: cap })}
+            </button>
+          {/each}
+        </div>
+        <div class="setting-hint">{t('cast.cache_hint')}</div>
+        {#if castCacheBytes !== null}
+          <div class="setting-hint">{t('cast.cache_size', { size: fmtSize(castCacheBytes) })}</div>
+        {/if}
+        <button class="btn-danger" onclick={() => void clearCastCacheHere()}>
+          {t('cast.cache_clear')}
+        </button>
       </div>
-      <div class="setting-hint">{t('cast.cache_hint')}</div>
-      {#if castCacheBytes !== null}
-        <div class="setting-hint">{t('cast.cache_size', { size: fmtSize(castCacheBytes) })}</div>
-      {/if}
-      <button class="btn-danger" onclick={() => void clearCastCacheHere()}>
-        {t('cast.cache_clear')}
-      </button>
     </div>
   {:else if settingsTab === 'playback'}
-    <!-- Pills rather than a slider: nobody wants a 7-second step, and five
-         round numbers are quicker to hit than a thumb. The key names come from
-         the binding table, because the keys can be moved. -->
-    <div class="setting">
-      <div class="setting-label">{t('set.seek_short')}</div>
-      <div class="segmented">
-        {#each SHORT_STEPS as v (v)}
-          <button class="segopt" class:sel={seekSteps.short === v} onclick={() => setSeekStep('short', v)}>
-            {t('set.seek_sec', { s: v })}
-          </button>
-        {/each}
-      </div>
-      <div class="setting-hint">
-        {t('set.seek_short_hint', {
-          keys: hintPair('seek_back', 'seek_fwd'),
-          precise: hintPair('seek_back_precise', 'seek_fwd_precise'),
-        })}
-      </div>
-    </div>
-
-    <div class="setting">
-      <div class="setting-label">{t('set.seek_long')}</div>
-      <div class="segmented">
-        {#each LONG_STEPS as v (v)}
-          <button class="segopt" class:sel={seekSteps.long === v} onclick={() => setSeekStep('long', v)}>
-            {t('set.seek_sec', { s: v })}
-          </button>
-        {/each}
-      </div>
-      <div class="setting-hint">{t('set.seek_long_hint', { keys: hintPair('seek_back_10', 'seek_fwd_10') })}</div>
-    </div>
-
-    <div class="setting">
-      <div class="row-toggle">
-        <div class="row-text">
-          <div class="setting-label">{t('set.queue')}</div>
-          <div class="setting-hint">{t('set.queue_hint')}</div>
+    <div class="set-group">{t('sec.seek')}</div>
+    <div class="set-panel">
+      <!-- Pills rather than a slider: nobody wants a 7-second step, and five
+           round numbers are quicker to hit than a thumb. The key names come from
+           the binding table, because the keys can be moved. -->
+      <div class="setting">
+        <div class="setting-label">{t('set.seek_short')}</div>
+        <div class="segmented">
+          {#each SHORT_STEPS as v (v)}
+            <button class="segopt" class:sel={seekSteps.short === v} onclick={() => setSeekStep('short', v)}>
+              {t('set.seek_sec', { s: v })}
+            </button>
+          {/each}
         </div>
-        <button
-          class="switch"
-          class:on={playlist.queueFolder}
-          role="switch"
-          aria-checked={playlist.queueFolder}
-          aria-label={t('set.queue')}
-          onclick={() => setPlaylistPref('queueFolder', !playlist.queueFolder)}
-        >
-          <span class="switch-knob"></span>
-        </button>
+        <div class="setting-hint">
+          {t('set.seek_short_hint', {
+            keys: hintPair('seek_back', 'seek_fwd'),
+            precise: hintPair('seek_back_precise', 'seek_fwd_precise'),
+          })}
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">{t('set.seek_long')}</div>
+        <div class="segmented">
+          {#each LONG_STEPS as v (v)}
+            <button class="segopt" class:sel={seekSteps.long === v} onclick={() => setSeekStep('long', v)}>
+              {t('set.seek_sec', { s: v })}
+            </button>
+          {/each}
+        </div>
+        <div class="setting-hint">{t('set.seek_long_hint', { keys: hintPair('seek_back_10', 'seek_fwd_10') })}</div>
+      </div>
+
+      <div class="setting">
+        <div class="row-toggle">
+          <div class="row-text">
+            <div class="setting-label">{t('set.thumb_exact')}</div>
+            <div class="setting-hint">{t('set.thumb_exact_hint')}</div>
+          </div>
+          <button
+            class="switch"
+            class:on={thumbs.exact}
+            role="switch"
+            aria-checked={thumbs.exact}
+            aria-label={t('set.thumb_exact')}
+            onclick={() => setExactThumbs(!thumbs.exact)}
+          >
+            <span class="switch-knob"></span>
+          </button>
+        </div>
       </div>
     </div>
 
-    <div class="setting">
-      <div class="row-toggle">
-        <div class="row-text">
-          <div class="setting-label">{t('set.autoadvance')}</div>
-          <div class="setting-hint">{t('set.autoadvance_hint')}</div>
+    <div class="set-group">{t('sec.queue')}</div>
+    <div class="set-panel">
+      <div class="setting">
+        <div class="row-toggle">
+          <div class="row-text">
+            <div class="setting-label">{t('set.queue')}</div>
+            <div class="setting-hint">{t('set.queue_hint')}</div>
+          </div>
+          <button
+            class="switch"
+            class:on={playlist.queueFolder}
+            role="switch"
+            aria-checked={playlist.queueFolder}
+            aria-label={t('set.queue')}
+            onclick={() => setPlaylistPref('queueFolder', !playlist.queueFolder)}
+          >
+            <span class="switch-knob"></span>
+          </button>
         </div>
-        <button
-          class="switch"
-          class:on={playlist.autoAdvance}
-          role="switch"
-          aria-checked={playlist.autoAdvance}
-          aria-label={t('set.autoadvance')}
-          onclick={() => setPlaylistPref('autoAdvance', !playlist.autoAdvance)}
-        >
-          <span class="switch-knob"></span>
-        </button>
+      </div>
+
+      <div class="setting">
+        <div class="row-toggle">
+          <div class="row-text">
+            <div class="setting-label">{t('set.autoadvance')}</div>
+            <div class="setting-hint">{t('set.autoadvance_hint')}</div>
+          </div>
+          <button
+            class="switch"
+            class:on={playlist.autoAdvance}
+            role="switch"
+            aria-checked={playlist.autoAdvance}
+            aria-label={t('set.autoadvance')}
+            onclick={() => setPlaylistPref('autoAdvance', !playlist.autoAdvance)}
+          >
+            <span class="switch-knob"></span>
+          </button>
+        </div>
       </div>
     </div>
 
   {:else if settingsTab === 'keys'}
     {#each GROUP_ORDER as group (group)}
-      <div class="keys-group">{t(`kgroup.${group}`)}</div>
+      <div class="set-group">{t(`kgroup.${group}`)}</div>
+      <div class="set-panel">
       {#each ACTIONS.filter((a) => a.group === group) as def (def.id)}
         {@const chords = chordsOf(def.id)}
         <div class="setting keyrow">
@@ -1646,6 +1953,7 @@
           <div class="setting-hint keynote">{t(def.note)}</div>
         {/if}
       {/each}
+      </div>
     {/each}
     <div class="settings-foot">{t('keys.footer')}</div>
     <button class="btn-danger" disabled={!hasCustomBindings()} onclick={() => { keyNote = null; resetAll(); }}>
@@ -1653,273 +1961,136 @@
     </button>
 
   {:else}
-  {#each SETTINGS.filter((s) => s.tab === settingsTab) as s (s.key)}
-    <div class="setting">
-      <div class="setting-label">{s.label}</div>
-      {#if s.kind === 'devices'}
-        <div class="segmented vertical">
-          {#each audioDevices as device (device.name)}
-            <!-- mpv's own list starts with `auto`, and that is also its
-                 default — mapped to null so choosing it CLEARS the
-                 mpv.conf line instead of pinning "auto" in writing, the
-                 same meaning "по умолчанию" has everywhere else here. -->
-            {@const value = device.name === 'auto' ? null : device.name}
-            <button
-              class="segopt"
-              class:sel={(settingsValues[s.key] ?? null) === value}
-              onclick={() => setSetting(s, value)}
-            >
-              {device.description}
-            </button>
-          {/each}
-        </div>
-      {:else if s.kind === 'langs'}
-        {@const codes = langsOf(s)}
-        <!-- Chips in priority order, then the way to add one. The empty
-             state says "авто" as a word rather than showing an empty
-             strip, which reads as a control that failed to render. -->
-        <div class="langs">
-          {#if !codes.length}
-            <span class="langs-auto">{t('vset.lang_auto')}</span>
-          {/if}
-          {#each codes as code, i (code)}
-            <!-- Two buttons in a chip, never nested: a button inside a
-                 button is invalid and the inner one stops being clicked.
-                 The first chip is the preferred language and says so by
-                 being filled, which is also why clicking it does nothing
-                 — it is already what it would become. -->
-            <span class="lang-chip" class:first={i === 0}>
-              <button
-                class="lang-name"
-                data-tip={i === 0 ? t('vset.lang_primary') : t('vset.lang_promote')}
-                disabled={i === 0}
-                onclick={() => promoteLang(s, code)}
-              >{languageName(code)}</button>
-              <button
-                class="lang-drop"
-                aria-label={t('vset.lang_remove')}
-                data-tip={t('vset.lang_remove')}
-                onclick={() => removeLang(s, code)}
-              >
-                <svg viewBox="0 0 10 10" aria-hidden="true">
-                  <path stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M1.2 1.2l7.6 7.6M8.8 1.2l-7.6 7.6" />
-                </svg>
-              </button>
-            </span>
-          {/each}
-          <button
-            class="lang-add"
-            class:open={langPickerFor === s.key}
-            data-tip={t('vset.lang_add')}
-            aria-label={t('vset.lang_add')}
-            onclick={() => void openLangPicker(s)}
-          >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M8 3.5v9M3.5 8h9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-            </svg>
-          </button>
-        </div>
-        {#if langPickerFor === s.key}
-          <!-- Sixty languages behind a search field, which is the whole
-               shape of this control: the common case is two clicks and the
-               long tail is one word of typing away, without either being
-               in the other's way. -->
-          <div class="lang-picker">
-            <input
-              class="lang-search"
-              type="text"
-              spellcheck="false"
-              autocapitalize="off"
-              autocorrect="off"
-              placeholder={t('vset.lang_search')}
-              bind:this={langQueryEl}
-              bind:value={langQuery}
-              onkeydown={(e) => {
-                // Enter takes the first hit — with a filtered list of one,
-                // reaching for the mouse is the whole cost of the feature.
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const hit = searchLanguages(langQuery, codes)[0];
-                  if (hit) addLang(s, hit.code);
-                }
-                if (e.key === 'Escape') { e.preventDefault(); langPickerFor = null; }
-                e.stopPropagation();
-              }}
-            />
-            <div class="lang-list">
-              {#each searchLanguages(langQuery, codes) as lang (lang.code)}
-                <button class="lang-option" onclick={() => addLang(s, lang.code)}>
-                  <span class="lang-option-name">{lang.name}</span>
-                  <span class="lang-option-code">{lang.code}</span>
-                </button>
-              {:else}
-                <div class="folders-empty">{t('vset.lang_none')}</div>
-              {/each}
-              <ScrollFade />
-            </div>
-          </div>
-        {/if}
-      {:else if s.kind === 'slider'}
-        {@const value = sliderValue(s)}
-        <div class="slider-row">
-          <input
-            type="range"
-            class="setting-slider"
-            min={s.min}
-            max={s.max}
-            step={s.step}
-            {value}
-            style="--progress: {((value - s.min) / (s.max - s.min)) * 100}%"
-            aria-label={s.label}
-            oninput={(e) => setSlider(s, Number(e.currentTarget.value))}
-            onchange={(e) => e.currentTarget.blur()}
-          />
-          <span class="slider-value">{value.toFixed(s.decimals)}{s.suffix ?? ''}</span>
-        </div>
-      {:else}
-        <div class="segmented">
-          {#each s.options as o (o.label)}
-            <button
-              class="segopt"
-              class:sel={settingsValues[s.key] === o.v}
-              disabled={s.key === 'target-colorspace-hint' &&
-                o.v !== null &&
-                displayHdr !== null &&
-                !displayHdr.supported}
-              onclick={() => setSetting(s, o.v)}
-            >
-              {o.label}
-            </button>
-          {/each}
-        </div>
-      {/if}
-      {#if s.key === 'target-colorspace-hint' && displayHdr}
-        <div class="setting-hint">
-          {#if !displayHdr.supported}
-            {t('set.hdr_unsupported')}
-          {:else if !displayHdr.enabled}
-            {t(IS_MAC ? 'set.hdr_off_mac' : 'set.hdr_off_win')}
-          {:else if settingsValues[s.key] === null}
-            {t(IS_MAC ? 'set.hdr_forced_mac' : 'set.hdr_forced_win')}
-          {:else}
-            {t(IS_MAC ? 'set.hdr_on_mac' : 'set.hdr_on_win')}
-          {/if}
-        </div>
-      {:else if s.hint}<div class="setting-hint">{s.hint}</div>{/if}
-    </div>
-  {/each}
-    {#if settingsTab === 'audio'}
-    <!-- Bitstream passthrough hands the receiver an undecoded stream, and a
-         filter has nothing to attach to — so the switch says why it is
-         unavailable rather than silently doing nothing. Kept by the player
-         rather than written to mpv.conf (see the module), which is why it
-         sits below the footer's claim about mpv's own settings. -->
-    {@const bitstream = Boolean(settingsValues['audio-spdif'])}
-    <div class="setting" class:muted={bitstream}>
-      <div class="row-toggle">
-        <div class="row-text">
-          <div class="setting-label">{t('set.normalize')}</div>
-          <div class="setting-hint">
-            {t(bitstream ? 'set.normalize_spdif' : 'set.normalize_hint')}
-          </div>
-        </div>
-        <button
-          class="switch"
-          class:on={player.normalize && !bitstream}
-          role="switch"
-          aria-checked={player.normalize && !bitstream}
-          disabled={bitstream}
-          aria-label={t('set.normalize')}
-          onclick={() => applyNormalize(!player.normalize)}
-        >
-          <span class="switch-knob"></span>
-        </button>
-      </div>
-    </div>
-
-    {/if}
     {#if settingsTab === 'video'}
-    <!-- macOS only: the difference is between mpv and AVFoundation, and on
-         Windows there is no system player whose curve anyone expects. A pill,
-         not a switch — both positions are named ways of drawing, neither is
-         "off". Kept by the player rather than in mpv.conf (see
-         `applySdrColor`). -->
-    {#if IS_MAC}
-      <div class="setting">
-        <div class="setting-label">{t('vset.sdr_color')}</div>
-        <div class="segmented">
-          <button
-            class="segopt"
-            class:sel={player.sdrColor === 'mpv'}
-            onclick={() => applySdrColor('mpv')}
-          >
-            {t('vset.sdr_color_mpv')}
-          </button>
-          <button
-            class="segopt"
-            class:sel={player.sdrColor === 'system'}
-            onclick={() => applySdrColor('system')}
-          >
-            {t('vset.sdr_color_system')}
+      <div class="set-group">{t('sec.picture')}</div>
+      <div class="set-panel peek-keep" class:peeking={!!peeking}>
+        {@render mpvRows('picture')}
+        <!-- macOS only: the difference is between mpv and AVFoundation, and on
+             Windows there is no system player whose curve anyone expects. A pill,
+             not a switch — both positions are named ways of drawing, neither is
+             "off". Kept by the player rather than in mpv.conf (see
+             `applySdrColor`). -->
+        {#if IS_MAC}
+          <div class="setting">
+            <div class="setting-label">{t('vset.sdr_color')}</div>
+            <div class="segmented">
+              <button
+                class="segopt"
+                class:sel={player.sdrColor === 'mpv'}
+                onclick={() => applySdrColor('mpv')}
+              >
+                {t('vset.sdr_color_mpv')}
+              </button>
+              <button
+                class="segopt"
+                class:sel={player.sdrColor === 'system'}
+                onclick={() => applySdrColor('system')}
+              >
+                {t('vset.sdr_color_system')}
+              </button>
+            </div>
+            <div class="setting-hint">{t('vset.sdr_color_hint')}</div>
+          </div>
+        {/if}
+        <!-- The global end of the picture adjustments; the file and playlist ends
+             are in the context menu, next to the picture they are judged against.
+             Dragging a slider here turns the sheet see-through for the same
+             reason it does there. -->
+        <div class="setting peek-keep" class:peeking={!!peeking}>
+          <div class="setting-label">{t('vset.adjust')}</div>
+          {#each ADJUST_PARAMS as k (k)}
+            {@const v = adjust.global?.[k] ?? 0}
+            <div class="slider-row adj-set-row" class:live={peeking === k}>
+              <label class="adj-set-label" for="set-adj-{k}">{adjustLabel(k)}</label>
+              <input
+                id="set-adj-{k}"
+                type="range"
+                class="bipolar"
+                min="-100"
+                max="100"
+                step="1"
+                value={v}
+                style={bipolarFill(v)}
+                oninput={(e) => {
+                  chrome.tuning = true;
+                  setGlobalAdjust(k, +e.currentTarget.value);
+                }}
+                onpointerdown={(e) => startPeek(k, e)}
+                ondblclick={() => setGlobalAdjust(k, 0)}
+              />
+              <span class="slider-value">{signed(v)}</span>
+            </div>
+          {/each}
+          <div class="setting-hint">
+            {#if player.hasFile && !adjust.followsGlobal}
+              {t(adjust.scope === 'folder' ? 'vset.adjust_own_folder' : 'vset.adjust_own_file')}
+            {:else}
+              {t('vset.adjust_hint')}
+            {/if}
+          </div>
+          <button class="btn-outline adj-reset" disabled={isZero(adjust.global)} onclick={resetGlobalAdjust}>
+            {t('adj.reset')}
           </button>
         </div>
-        <div class="setting-hint">{t('vset.sdr_color_hint')}</div>
       </div>
-    {/if}
-    <!-- The global end of the picture adjustments; the file and playlist ends
-         are in the context menu, next to the picture they are judged against.
-         Dragging a slider here turns the sheet see-through for the same
-         reason it does there. -->
-    <div class="setting peek-keep" class:peeking={!!peeking}>
-      <div class="setting-label">{t('vset.adjust')}</div>
-      {#each ADJUST_PARAMS as k (k)}
-        {@const v = adjust.global?.[k] ?? 0}
-        <div class="slider-row adj-set-row" class:live={peeking === k}>
-          <label class="adj-set-label" for="set-adj-{k}">{adjustLabel(k)}</label>
-          <input
-            id="set-adj-{k}"
-            type="range"
-            class="bipolar"
-            min="-100"
-            max="100"
-            step="1"
-            value={v}
-            style={bipolarFill(v)}
-            oninput={(e) => {
-              chrome.tuning = true;
-              setGlobalAdjust(k, +e.currentTarget.value);
-            }}
-            onpointerdown={(e) => startPeek(k, e)}
-            ondblclick={() => setGlobalAdjust(k, 0)}
-          />
-          <span class="slider-value">{signed(v)}</span>
-        </div>
-      {/each}
-      <div class="setting-hint">
-        {#if player.hasFile && !adjust.followsGlobal}
-          {t(adjust.scope === 'folder' ? 'vset.adjust_own_folder' : 'vset.adjust_own_file')}
-        {:else}
-          {t('vset.adjust_hint')}
+
+      <div class="set-group">{t('sec.decode')}</div>
+      <div class="set-panel">
+        {@render mpvRows('decode')}
+        {#if hwdecCurrent}
+          <div class="settings-foot">
+            {t('set.hwdec_foot')}
+            {hwdecCurrent === 'no'
+              ? t('set.hwdec_sw')
+              : t('set.hwdec_hw', { name: hwdecCurrent })}
+          </div>
         {/if}
       </div>
-      <button class="btn-outline adj-reset" disabled={isZero(adjust.global)} onclick={resetGlobalAdjust}>
-        {t('adj.reset')}
-      </button>
-    </div>
 
-    {#if hwdecCurrent}
-      <div class="settings-foot">
-        {t('set.hwdec_foot')}
-        {hwdecCurrent === 'no'
-          ? t('set.hwdec_sw')
-          : t('set.hwdec_hw', { name: hwdecCurrent })}
+      <div class="set-group">{t('sec.online')}</div>
+      <div class="set-panel">
+        {@render mpvRows('online')}
       </div>
-    {/if}
-    {#if webviewVersion}
-      <div class="settings-foot">
-        {t(IS_MAC ? 'set.webview_foot_mac' : 'set.webview_foot_win', { version: webviewVersion })}
+    {:else if settingsTab === 'audio'}
+      {@const bitstream = Boolean(settingsValues['audio-spdif'])}
+      <div class="set-panel">
+        {@render mpvRows('audio')}
+        <!-- Bitstream passthrough hands the receiver an undecoded stream, and a
+             filter has nothing to attach to — so the switch says why it is
+             unavailable rather than silently doing nothing. Kept by the player
+             rather than written to mpv.conf (see the module), which is why it
+             sits below the footer's claim about mpv's own settings. -->
+        <div class="setting" class:muted={bitstream}>
+          <div class="row-toggle">
+            <div class="row-text">
+              <div class="setting-label">{t('set.normalize')}</div>
+              <div class="setting-hint">
+                {t(bitstream ? 'set.normalize_spdif' : 'set.normalize_hint')}
+              </div>
+            </div>
+            <button
+              class="switch"
+              class:on={player.normalize && !bitstream}
+              role="switch"
+              aria-checked={player.normalize && !bitstream}
+              disabled={bitstream}
+              aria-label={t('set.normalize')}
+              onclick={() => applyNormalize(!player.normalize)}
+            >
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+        </div>
       </div>
-    {/if}
+    {:else}
+      <div class="set-group">{t('sec.sub_choice')}</div>
+      <div class="set-panel">
+        {@render mpvRows('choice')}
+      </div>
+      <div class="set-group">{t('sec.sub_look')}</div>
+      <div class="set-panel">
+        {@render mpvRows('look')}
+      </div>
     {/if}
     <!-- The durable half of the report. The popup at startup is easy to miss,
          and this is the one place a viewer comes to when a setting of theirs is
@@ -1938,16 +2109,6 @@
         onclick={() => { if (player.mpvConfPath) void revealItemInDir(player.mpvConfPath); }}
       >
         {t(IS_MAC ? 'set.conf_reveal_mac' : 'set.conf_reveal_win')}
-      </button>
-    </div>
-    <!-- The LGPL notice. The link opens the texts in a layer above this sheet
-         rather than revealing a file: `open-path` is not in the capabilities,
-         and a .md has no reliable handler on Windows regardless. Revealing the
-         file is still offered, inside that dialog. -->
-    <div class="settings-foot">
-      {t('set.licenses_foot')}
-      <button class="settings-link" onclick={onLicenses}>
-        {t('set.licenses_open')}
       </button>
     </div>
   {/if}
@@ -2360,25 +2521,68 @@
      A row is a flex pair rather than the label-above-control shape the rest of
      the dialog uses: thirty-six actions at two lines each is a page of
      scrolling, and a chord is short enough to sit beside its own name. */
-  /* Its own class rather than a borrowed .menu-title. That one is a *menu*
+  /* A section heading inside a tab. Born in the key editor and now every tab's
+     that holds more than one subject: a tab is a list read top to bottom, and
+     without these "Основные" was language, cursor, a relay server and the watch
+     history in one undifferentiated run.
+
+     Its own class rather than a borrowed .menu-title. That one is a *menu*
      heading and carries `padding: 6px 10px` for it, which set every section
      title 10px right of the rows it labels — and the `padding: 0` written here
      lost, because the two selectors weigh the same and .menu-title is defined
      later in the file (measured in the shipped bundle: byte 22325 against
      27825). Exactly the trap .menu-item.chapter-item is on record for. Same
      look, no collision to lose. */
-  .keys-group {
-    /* 28 above against 8 below, and the asymmetry is the whole point: a heading
+  .set-group {
+    /* 24 above against 8 below, and the asymmetry is the whole point: a heading
        has to bind to the section it labels far more strongly than to the one it
-       follows, or thirty-six rows read as one undifferentiated list. The row
-       above contributes nothing — adjoining sibling margins collapse, so the
-       gap is this 28 and not 28 plus the row's 6. No :first-child case either:
-       the heading is the dialog's third child (head, tabs, then this). */
-    margin: 28px 0 8px;
+       follows, or the rows read as one undifferentiated list. The row above
+       contributes nothing — adjoining sibling margins collapse, so the gap is
+       this 24 and not 24 plus the row's own margin. No :first-child case
+       either: the first heading follows the pinned tab row, whose 18px margin
+       collapses into this 24. */
+    margin: 24px 0 8px 2px;
     color: #9a9aa5;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+  }
+
+  /* What a heading labels: the section's rows on a backing of their own. The
+     heading alone did not hold a section together — an 11px grey caption is
+     lighter than the 12.5px labels under it, so the eye read it as one more
+     row, and the 12px between rows is about the gap inside a row. A block
+     says where a section starts and stops without anybody having to read
+     anything. Tabs with one subject (Audio, TV) get one block and no heading,
+     so every tab is drawn the same way. */
+  .set-panel {
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.035);
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  /* A key row is a dense one-line pair and keeps its own 6px. */
+  .set-panel .setting:not(.keyrow) {
+    margin-bottom: 14px;
+  }
+
+  /* The panel's padding is the space under its last row. Written to outweigh
+     both row rules above and `.setting.keyrow` further down: as a bare
+     `:last-child` it lost to them, and every panel carried its last row's
+     14px on top of its own padding. */
+  .set-panel > .setting:last-child,
+  .set-panel > .setting.keyrow:last-child {
+    margin-bottom: 0;
+  }
+
+  /* The notes under the mpv tabs and the key editor stand apart from the block
+     above them rather than reading as its last line. */
+  .set-panel + .settings-foot {
+    margin-top: 14px;
   }
 
 
@@ -2569,8 +2773,8 @@
 
   /* While a slider is dragged, only its own row is left, on a backing of its
      own: the sheet around it has gone transparent (Dialog's `peek`). */
-  .peek-keep.peeking > :not(.adj-set-row),
-  .peek-keep.peeking .adj-set-row:not(.live) {
+  .setting.peek-keep.peeking > :not(.adj-set-row),
+  .setting.peek-keep.peeking .adj-set-row:not(.live) {
     opacity: 0;
   }
 
@@ -2580,6 +2784,18 @@
 
   .peek-keep > * {
     transition: opacity 0.15s ease;
+  }
+
+  /* The panel the sliders sit in is the sheet's direct child, which is what
+     Dialog's `peek` keeps or hides — so it is kept, and does the hiding of its
+     other rows itself, its own backing going with the sheet's. */
+  .set-panel.peek-keep.peeking {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .set-panel.peek-keep.peeking > :not(.peek-keep) {
+    opacity: 0;
   }
 
   .segmented.vertical {

@@ -115,7 +115,8 @@ export type Feature =
   | 'screenshot'
   | 'mini'
   | 'trash'
-  | 'picture';
+  | 'picture'
+  | 'audioMix';
 
 class Playback {
   /// The television owns playback and this window is a remote. False while
@@ -192,6 +193,10 @@ class Playback {
       trash: !cast.active,
       // Adjusts the frame mpv draws, and while the television plays there is none.
       picture: !remote,
+      // Mixed by the local decoder, and the television plays one track of its
+      // own. `active`, like `trash`: a mix started while a session is being
+      // prepared would be handed a file whose audio the receiver never hears.
+      audioMix: !cast.active,
     };
   }
 }

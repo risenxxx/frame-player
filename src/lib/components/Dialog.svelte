@@ -319,7 +319,7 @@
      collapses with the top margin of whatever follows, exactly as it did when
      the head was a plain child of the sheet. Give the block that space as
      padding instead and the collapse stops: `.info-section`'s 16px would go
-     from a 16px gap to a 28px one, `.keys-group`'s 28 to 46, and every dialog
+     from a 16px gap to a 28px one, `.set-group`'s 24 to 42, and every dialog
      would need its first child adjusted.
 
      What escapes is uncovered, though, and content scrolls through it. Hence a

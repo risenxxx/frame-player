@@ -32,9 +32,39 @@ class Thumbs {
   /// except for the length of that fade.
   fading = $state<string | null>(null);
   loading = $state(false);
+  /// The viewer's choice: replace the storyboard frame with the exact one when
+  /// the cursor rests. On by default. Off, the preview never changes under a
+  /// still cursor — at the price of showing the nearest grid frame (up to 5 s
+  /// away on a long film) rather than the one a click would land on. That
+  /// change of picture after the cursor stops is what some viewers read as a
+  /// glitch, and neither answer is wrong, so it is theirs to make.
+  exact = $state(true);
 }
 
 export const thumbs = new Thumbs();
+
+const PREFS_KEY = 'frameplayer.thumbs';
+
+export function loadThumbPrefs() {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw) as { exact?: unknown };
+    if (typeof saved.exact === 'boolean') thumbs.exact = saved.exact;
+  } catch {
+    // corrupt entry: the default stays
+  }
+}
+
+export function setExactThumbs(on: boolean) {
+  thumbs.exact = on;
+  if (!on) clearTimeout(settleTimer);
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ exact: on }));
+  } catch {
+    // not critical: the choice simply will not survive a restart
+  }
+}
 
 /// Grid cells, keyed by cell index. Exact frames are keyed by PTS and the two
 /// spaces overlap numerically (cell 12 vs 12.0 s), hence two maps rather than
@@ -186,7 +216,9 @@ export function requestThumb(pos: number, hoverTime: () => number | null) {
   // re-enters up to 85 ms later, and re-arming there pushed the exact frame a
   // further 85 ms out for nothing the user did.
   clearTimeout(settleTimer);
-  settleTimer = setTimeout(fireExactThumb, SETTLE_MS);
+  // A file still downloading has no grid, so there the exact frame is the only
+  // preview there is and the setting does not get a say.
+  if (thumbs.exact || thumbs.partial) settleTimer = setTimeout(fireExactThumb, SETTLE_MS);
   // No grid exists for a file that is still downloading — there is no
   // storyboard behind it — so the moving-cursor request would only ever miss.
   if (!thumbs.partial) pumpGridThumb(pos, hoverTime);

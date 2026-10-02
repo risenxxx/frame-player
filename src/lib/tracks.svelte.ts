@@ -87,6 +87,11 @@ let delayWriteTimer: ReturnType<typeof setTimeout> | undefined;
 /// Arm the restore for the file that has just loaded.
 export function restoreTrackChoice() {
   pending = null;
+  // The graph went with the previous file (it is a file-local option); the
+  // menu's mode goes with it, so every file opens on one track.
+  audioMix.multi = false;
+  audioMix.ticked = [];
+  graphIds = [];
   if (!player.filePath) return;
   const legacy = trackChoiceFor(player.filePath);
   const audio = trackWishFor(player.filePath, 'audio');
@@ -199,13 +204,25 @@ export function initTracks() {
  */
 export function selectTrack(kind: 'audio' | 'sub', track: Track | null) {
   pending = null;
+  // A pick of one audio track ends a mix: mpv ignores `aid` for as long as a
+  // graph is set (measured — the write succeeds and nothing changes).
+  if (kind === 'audio' && mixing()) {
+    audioMix.multi = false;
+    audioMix.ticked = [];
+    graphIds = [];
+    void (async () => {
+      await clearMixGraph();
+      await mpvSelectTrack(kind, track);
+    })();
+  } else {
+    void mpvSelectTrack(kind, track);
+  }
   const wish: TrackWish | null = player.filePath
     ? track
       ? describeTrack(track, kind === 'audio' ? player.audioTracks : player.subTracks)
       : 'no'
     : null;
   if (player.filePath && wish) rememberTrack(player.filePath, kind, wish);
-  void mpvSelectTrack(kind, track);
   // Told to the room only for the kinds the *room* shares — a rule the host
   // sets beside "only the host controls playback", not a preference each viewer
   // keeps. `wire.shares` answers in both directions, which is what stops two
@@ -342,4 +359,134 @@ export function subSpeedLabel(factor: number): string {
     : t('osc.sub_speed_custom', {
         value: factor.toLocaleString(locale(), { maximumFractionDigits: 4 }),
       });
+}
+
+// ---- Several audio tracks at once ----------------------------------------
+//
+// A recording made for editing keeps the game, the microphone and the call in
+// separate tracks, and a player that plays one of them at a time cannot be used
+// to look through it. mpv can mix them: `lavfi-complex` takes the tracks by id
+// and hands one stream to the output — measured on three test tones, each one
+// arrives at its own level.
+//
+// What was measured, and what the code below does about each:
+//
+//   - **Every change of the graph is an exact seek to where playback is**
+//     (`update_lavfi_complex` → `issue_refresh_seek`), and one that switches on
+//     a stream the demuxer was not reading makes the picture jump forward;
+//     one that does not, does not. So the graph takes **every** audio track of
+//     the file from the moment the mode is switched on, and a tick only changes
+//     `amix`'s weights — never which streams are read. What remains is one
+//     jump, on the switch, rather than one per tick.
+//   - With every track in the graph, every one reads `selected` and `aid`
+//     reads `no`, so which tracks are *heard* is ours to keep (`ticked`).
+//   - While a graph is set, `set aid` succeeds and does nothing. A single pick
+//     has to clear the graph first (`selectTrack`).
+//   - Clearing the graph leaves *no* audio at all — `aid` stays `no` — so going
+//     back to one track always names it.
+//   - A graph left over from the previous file stops a file lacking one of its
+//     tracks from opening at all. So it is written as a **file-local** option:
+//     mpv drops it when the file changes, whichever way the next file arrives,
+//     and there is no load path to remember.
+//
+// The mix is not remembered: it is a way of looking through one file, and the
+// next file opens on its single track like any other.
+
+class AudioMix {
+  /// The menu is in "several tracks" mode: the graph is up, and a click on a
+  /// track adds it to what is heard or takes it out.
+  multi = $state(false);
+  /// The tracks heard, by id, in the order they were ticked. Never empty while
+  /// `multi` is on.
+  ticked = $state<number[]>([]);
+}
+
+export const audioMix = new AudioMix();
+
+/// The tracks the graph was built over. A track that turns up later (an
+/// external file added while mixing) is not among them, and ticking it rebuilds
+/// the graph — the one tick that costs a jump.
+let graphIds: number[] = [];
+
+/// `normalize=0` keeps every track at its own level — what was recorded is what
+/// is heard — and the limiter is what makes that safe: three loud tracks summed
+/// clip. `level=0` turns off the limiter's own make-up gain, which would
+/// otherwise raise the whole mix. A weight of 0 is a track decoded and not
+/// heard, which is the price of never changing the set of streams.
+function mixGraph(ids: number[], heard: number[]): string {
+  const weights = ids.map((id) => (heard.includes(id) ? 1 : 0)).join(' ');
+  return `${ids.map((id) => `[aid${id}]`).join('')}amix=inputs=${ids.length}:normalize=0:weights=${weights},alimiter=limit=1:level=0[ao]`;
+}
+
+export function mixing(): boolean {
+  return audioMix.multi;
+}
+
+async function clearMixGraph() {
+  await command('set', ['file-local-options/lavfi-complex', '']);
+}
+
+async function writeMix(heard: number[]) {
+  // A restore still waiting for its track would otherwise land on top of this
+  // as an `aid` write — ignored while the graph stands.
+  pending = null;
+  const all = player.audioTracks.map((track) => track.id);
+  if (!heard.every((id) => graphIds.includes(id))) graphIds = all;
+  await command('set', ['file-local-options/lavfi-complex', mixGraph(graphIds, heard)]);
+  audioMix.ticked = heard;
+}
+
+/// Turn the menu's "several tracks" mode on or off. On keeps what is heard —
+/// only the track that was playing is ticked. Off keeps the first track ticked.
+export async function setAudioMulti(on: boolean) {
+  if (!on) {
+    if (!audioMix.multi) return;
+    const keep = audioMix.ticked[0] ?? player.audioTracks[0]?.id;
+    audioMix.multi = false;
+    audioMix.ticked = [];
+    graphIds = [];
+    try {
+      await clearMixGraph();
+      if (keep !== undefined) await command('set', ['aid', String(keep)]);
+      const track = player.audioTracks.find((candidate) => candidate.id === keep);
+      if (track) showOsd(track.label);
+    } catch {
+      showOsd(t('osd.track_failed'));
+    }
+    setTimeout(() => void loadTracks(), RELIST_MS);
+    return;
+  }
+  // Bitstream hands the receiver an undecoded stream; there is nothing to mix.
+  const spdif = await getProperty('audio-spdif', 'string').catch(() => '');
+  if (spdif) {
+    showOsd(t('osd.mix_spdif'));
+    return;
+  }
+  const current = player.audioTracks.find((track) => track.selected) ?? player.audioTracks[0];
+  if (!current) return;
+  graphIds = [];
+  try {
+    await writeMix([current.id]);
+    audioMix.multi = true;
+  } catch (e) {
+    showOsd(t('osd.track_failed'));
+    console.warn('audio mix failed:', e);
+  }
+}
+
+/// Add a track to what is heard, or take it out. The last one stays: a mix of
+/// nothing is silence, which nobody asked for with a tick box.
+export async function toggleMixTrack(track: Track) {
+  if (!audioMix.multi) return;
+  const ticked = audioMix.ticked;
+  const next = ticked.includes(track.id) ? ticked.filter((id) => id !== track.id) : [...ticked, track.id];
+  if (!next.length) return;
+  try {
+    await writeMix(next);
+    const only = player.audioTracks.find((candidate) => candidate.id === next[0]);
+    showOsd(next.length > 1 ? t('osd.mix_on', { n: next.length }) : (only?.label ?? ''));
+  } catch (e) {
+    showOsd(t('osd.track_failed'));
+    console.warn('audio mix failed:', e);
+  }
 }
