@@ -382,8 +382,10 @@ export function subSpeedLabel(factor: number): string {
 //     reads `no`, so which tracks are *heard* is ours to keep (`ticked`).
 //   - While a graph is set, `set aid` succeeds and does nothing. A single pick
 //     has to clear the graph first (`selectTrack`).
-//   - Clearing the graph leaves *no* audio at all — `aid` stays `no` — so going
-//     back to one track always names it.
+//   - Clearing the graph leaves *no* audio at all — `aid` reads `no` — so going
+//     back to one track always names it. And the option underneath still holds
+//     the track picked before the mix, so naming that one again changes
+//     nothing unless `aid` is set to `no` first (`clearMixGraph`).
 //   - A graph left over from the previous file stops a file lacking one of its
 //     tracks from opening at all. So it is written as a **file-local** option:
 //     mpv drops it when the file changes, whichever way the next file arrives,
@@ -424,6 +426,15 @@ export function mixing(): boolean {
 
 async function clearMixGraph() {
   await command('set', ['file-local-options/lavfi-complex', '']);
+  // `aid` still holds the track picked before the mix: the graph takes the
+  // tracks over without writing the option, and a write of the value it
+  // already holds is no change to mpv — `set aid 4` answers success and selects
+  // nothing, so a viewer going back to the dub they had was left with no
+  // track and no sound, every click on it included. Measured on mpv 0.41: a
+  // track picked by hand, mixed, the graph cleared, the same id set → nothing;
+  // any other id → selected. Through `no` first, the write that follows is
+  // always a change.
+  await command('set', ['aid', 'no']);
 }
 
 async function writeMix(heard: number[]) {
