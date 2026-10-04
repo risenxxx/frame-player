@@ -160,12 +160,75 @@ pub fn webview_dir() -> Option<PathBuf> {
     root().map(|root| root.join("webview"))
 }
 
-/// What the settings sheet shows: which mode this copy is in and where its
-/// state is, so that it is never a mystery which of the two a given folder is.
+/// Whether an installer put this copy here, which is a **different question**
+/// from where it keeps its state and has to be asked separately.
+///
+/// Conflating the two was a bug: an installation that keeps its state beside
+/// itself — which the installer's own checkbox now offers — would have been
+/// sent to the download page when a swap was refused, although it has an
+/// installer to fall back on, and would have registered shell handlers its
+/// installer had already written. Both answers come from here instead.
+///
+/// The test is the uninstall entry naming *this* directory. Not merely the
+/// entry existing: a portable copy unpacked beside an installation must not
+/// read the installation's entry as its own.
+pub fn installed(app: &tauri::AppHandle) -> bool {
+    #[cfg(windows)]
+    {
+        uninstall_entry(app).is_some()
+    }
+    // A macOS application is a bundle from a disk image; there is no second kind
+    // of copy to tell it apart from, and nothing on that platform asks.
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        true
+    }
+}
+
+/// The uninstall entry that names this directory — the hive it is in and its
+/// path — or `None` when no installer put this copy here.
+///
+/// One definition, because two things read it: this file, to answer
+/// `installed()`, and update.rs, to write `DisplayVersion` after a swap.
+#[cfg(windows)]
+pub fn uninstall_entry(
+    app: &tauri::AppHandle,
+) -> Option<(&'static windows_registry::Key, String)> {
+    let product = app.config().product_name.clone()?;
+    let path = format!(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{product}");
+    let here = app_dir().ok()?;
+    // Per-user first, which is what the installer writes by default; a
+    // per-machine installation keeps the same entry under the machine's own
+    // hive.
+    for hive in [
+        windows_registry::CURRENT_USER,
+        windows_registry::LOCAL_MACHINE,
+    ] {
+        let Ok(key) = hive.open(&path) else { continue };
+        // The installer writes this one quoted.
+        let Ok(location) = key.get_string("InstallLocation") else {
+            continue;
+        };
+        if Path::new(location.trim_matches('"'))
+            .as_os_str()
+            .eq_ignore_ascii_case(here.as_os_str())
+        {
+            return Some((hive, path));
+        }
+    }
+    None
+}
+
+/// What the settings sheet shows: which mode this copy is in, where its state
+/// is, and who registered it with the system — so that it is never a mystery
+/// which kind of copy a given folder holds.
 #[derive(serde::Serialize)]
 pub struct State {
     /// Whether this copy keeps its state beside its executable.
     pub portable: bool,
+    /// Whether an installer put it here.
+    pub installed: bool,
     /// Where that state is, either way.
     pub location: String,
 }
@@ -174,6 +237,7 @@ pub struct State {
 pub fn portable_state(app: tauri::AppHandle) -> State {
     State {
         portable: is_portable(),
+        installed: installed(&app),
         location: match root() {
             Some(root) => root.display().to_string(),
             None => app

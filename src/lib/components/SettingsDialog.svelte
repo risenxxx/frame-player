@@ -1406,24 +1406,33 @@
     {#if portable.active}
       <div class="set-group">{t('sec.portable')}</div>
       <div class="set-panel">
-        <div class="setting">
-          <div class="row-toggle">
-            <div class="row-text">
-              <div class="setting-label">{t('set.handler')}</div>
-              <div class="setting-hint">{t('set.handler_hint')}</div>
+        <!-- The switch belongs to a copy that nobody installed. An installation
+             that keeps its state beside itself — the installer's checkbox makes
+             one — got its protocol and its associations from that installer, and
+             the player has no business taking them over or giving them back; it
+             says who owns them instead. -->
+        {#if portable.installed}
+          <div class="settings-foot">{t('set.handler_installer')}</div>
+        {:else}
+          <div class="setting">
+            <div class="row-toggle">
+              <div class="row-text">
+                <div class="setting-label">{t('set.handler')}</div>
+                <div class="setting-hint">{t('set.handler_hint')}</div>
+              </div>
+              <button
+                class="switch"
+                class:on={portable.handler}
+                role="switch"
+                aria-checked={portable.handler}
+                aria-label={t('set.handler')}
+                onclick={() => void setHandler(!portable.handler)}
+              >
+                <span class="switch-knob"></span>
+              </button>
             </div>
-            <button
-              class="switch"
-              class:on={portable.handler}
-              role="switch"
-              aria-checked={portable.handler}
-              aria-label={t('set.handler')}
-              onclick={() => void setHandler(!portable.handler)}
-            >
-              <span class="switch-knob"></span>
-            </button>
           </div>
-        </div>
+        {/if}
         <div class="settings-foot">{t('set.portable_foot', { path: portable.location })}</div>
         <div class="settings-foot">{t('set.portable_keychain')}</div>
       </div>

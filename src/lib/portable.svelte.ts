@@ -23,6 +23,7 @@ const HANDLER_KEY = 'frameplayer.handler';
 
 interface NativeState {
   portable: boolean;
+  installed: boolean;
   location: string;
 }
 
@@ -32,6 +33,12 @@ class Portable {
   /// Where that state is — shown in the settings sheet either way, so that
   /// which of the two modes a given folder is in is never a mystery.
   location = $state('');
+  /// Whether an installer put this copy here — a different question from
+  /// where it keeps its state, and the one that decides who owns the shell
+  /// registration. The installer's own checkbox can produce an installation
+  /// that is portable, and such a copy must not re-register what its installer
+  /// already wrote.
+  installed = $state(true);
   /// Whether the shell points at *this* copy right now. Read back from the
   /// registry rather than from the preference: with an ordinary installation
   /// beside a portable copy, whichever ran last owns the association, so the
@@ -49,8 +56,13 @@ export async function initPortable() {
   });
   if (!state) return;
   portable.active = state.portable;
+  portable.installed = state.installed;
   portable.location = state.location;
-  if (!state.portable) return;
+  // Only a copy nobody installed has to register itself. An installation —
+  // portable or not — got its protocol and its associations from the installer,
+  // and writing them again would be the player quietly taking over something
+  // that is already correct.
+  if (!state.portable || state.installed) return;
 
   // Off only if it was turned off: a first run has nothing stored and a
   // portable copy that registers nothing cannot open an invitation link.

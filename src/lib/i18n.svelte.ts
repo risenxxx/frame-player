@@ -732,6 +732,8 @@ const ru = {
   // they are covered by that license. It is a sentence rather than a bare link
   // for that reason — the link alone would satisfy nobody's obligation.
   'set.handler': 'Открывать видео и ссылки этой копией',
+  'set.handler_installer':
+    'Видео и ссылки frameplayer:// открывает эта копия — так её прописал установщик. Отменить это можно там же, удалив программу.',
   'set.handler_hint':
     'Windows умеет связать тип файла и ссылку только с конкретным путём, папочного способа нет. Если рядом стоит обычная установка, обработчиком будет та копия, которую запустили последней.',
   'set.portable_foot': 'Настройки, история просмотра и кэш — в {path}',
@@ -1738,6 +1740,8 @@ const en: Record<MessageKey, string> = {
   'set.conf_reveal_mac': 'show mpv.conf in Finder',
   'set.conf_reveal_win': 'show mpv.conf in Explorer',
   'set.handler': 'Open video and links with this copy',
+  'set.handler_installer':
+    'Video files and frameplayer:// links open with this copy, which is how its installer registered it. Uninstalling is what undoes that.',
   'set.handler_hint':
     'Windows can only tie a file type or a link to one specific path; there is no folder-local way. With an ordinary installation beside this copy, whichever ran last is the handler.',
   'set.portable_foot': 'Settings, watch history and caches are in {path}',
