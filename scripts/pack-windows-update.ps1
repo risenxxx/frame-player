@@ -261,8 +261,14 @@ try {
 }
 
 $zipSize = (Get-Item -LiteralPath $zip).Length
-Write-Output ("{0}: {1} files, {2:N1} MB -> {3:N1} MB ({4:N0}%)" -f `
-  (Split-Path -Leaf $zip), $entries.Count, ($raw / 1MB), ($zipSize / 1MB), ($zipSize / $raw * 100))
+# The marker is named rather than counted, because the two archives are
+# otherwise one rounded megabyte apart and a release log could not tell them
+# apart - which is exactly what it would have to do if -Portable were ever
+# dropped by accident.
+$kind = 'payload'
+if ($Portable) { $kind = 'portable, with the .portable marker' }
+Write-Output ("{0}: {1} files, {2:N1} MB -> {3:N1} MB ({4:N0}%) [{5}]" -f `
+  (Split-Path -Leaf $zip), $entries.Count, ($raw / 1MB), ($zipSize / 1MB), ($zipSize / $raw * 100), $kind)
 foreach ($e in $entries) { Write-Output ("  {0,12:N0}  {1}" -f $e.size, $e.path) }
 
 # --- the drift check -------------------------------------------------------

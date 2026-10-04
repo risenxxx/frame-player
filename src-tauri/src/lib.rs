@@ -885,16 +885,6 @@ async fn window_enter_fullscreen(window: tauri::WebviewWindow) -> bool {
     }
 }
 
-/// The shutter window for fullscreen transitions (`showShutter` in
-/// chrome.svelte.ts): a black, monitor-sized, always-on-top window that covers
-/// the last DWM composition frames the main window cannot hide from inside.
-///
-/// Built here rather than declared in tauri.conf.json, because only Windows
-/// has a use for it — macOS masks the transition natively
-/// (`window_fullscreen_mask`) and never shows it — and a declared window is
-/// created on every platform. Hidden or not, it is a web view, so on macOS it
-/// cost a WebKit content process of its own (14–19 MB measured) for nothing.
-#[cfg(not(target_os = "macos"))]
 /// The player's own window, built here rather than declared in
 /// tauri.conf.json — and the reason is one line of it, `data_directory`.
 ///
@@ -938,6 +928,16 @@ fn create_main_window(app: &tauri::App) {
     }
 }
 
+/// The shutter window for fullscreen transitions (`showShutter` in
+/// chrome.svelte.ts): a black, monitor-sized, always-on-top window that covers
+/// the last DWM composition frames the main window cannot hide from inside.
+///
+/// Built here rather than declared in tauri.conf.json, because only Windows
+/// has a use for it — macOS masks the transition natively
+/// (`window_fullscreen_mask`) and never shows it — and a declared window is
+/// created on every platform. Hidden or not, it is a web view, so on macOS it
+/// cost a WebKit content process of its own (14–19 MB measured) for nothing.
+#[cfg(not(target_os = "macos"))]
 fn create_veil(app: &tauri::App) {
     let built = tauri::WebviewWindowBuilder::new(app, "veil", tauri::WebviewUrl::App("veil".into()))
         .title("")

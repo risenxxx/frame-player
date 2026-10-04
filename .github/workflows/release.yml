@@ -5,6 +5,13 @@ on:
     branches: [main]
     paths:
       - 'src-tauri/tauri.conf.json'
+  # By hand as well, because the version bump is the wrong thing to gate a
+  # *retry* on. A release that fails for a reason that has nothing to do with
+  # the version — a compile error on one platform, a runner that died — could
+  # otherwise only be retried by burning the next version number. This is safe
+  # to press: `check-version` refuses when the tag already exists, so a release
+  # that already went out cannot be published twice.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
