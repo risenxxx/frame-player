@@ -38,6 +38,7 @@ import {
   trackChoiceFor,
   trackWishFor,
 } from './history.svelte';
+import { onDeviceOffset, output } from './audio-output.svelte';
 import { locale, t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
 import { SUB_SPEED_PRESETS, isPreset, isUnitSpeed, type SubSpeedPreset } from './sub-speed';
@@ -278,6 +279,30 @@ export async function addTrackFile(kind: 'sub' | 'audio') {
 }
 
 // ---- Delays ---------------------------------------------------------------
+//
+// mpv's `audio-delay` carries two things: this file's own delay, remembered
+// per file, and the output device's offset (`audio-output.svelte.ts`), kept
+// per speaker. This is the one writer of it, so the split is kept here:
+// `deviceInForce` is the part of mpv's value that is the device's, and
+// everything that reads the value back for the *file* takes that part out.
+
+/// The device offset inside mpv's `audio-delay` right now.
+let deviceInForce = 0;
+
+onDeviceOffset((_, to) => {
+  // `add`, not a write of the sum: the file's half may hold a nudge that has
+  // not been read back yet, and this leaves it alone.
+  if (player.hasFile && to !== deviceInForce) {
+    void command('add', ['audio-delay', to - deviceInForce]).catch(() => {});
+  }
+  deviceInForce = to;
+});
+
+/// The file's own half of what mpv holds — what the menu shows and the file
+/// remembers.
+export function fileDelay(kind: 'sub' | 'audio'): number {
+  return kind === 'sub' ? player.subDelay : player.audioDelay - output.offset;
+}
 
 /**
  * The value is read back rather than computed: `nudgeDelay` uses mpv's `add`
@@ -293,30 +318,34 @@ function rememberDelaySoon(kind: 'sub' | 'audio') {
     );
     // Rounded before it is written: mpv hands back the raw float, and
     // `rememberDelay` only deletes the record on an exact zero (see
-    // `DELAY_EPSILON`).
-    if (typeof value === 'number') rememberDelay(player.filePath, kind, roundDelay(value));
+    // `DELAY_EPSILON`). The device's part is not the file's to keep.
+    if (typeof value === 'number') {
+      const own = kind === 'audio' ? value - deviceInForce : value;
+      rememberDelay(player.filePath, kind, roundDelay(own));
+    }
   }, DELAY_WRITE_MS);
 }
 
 export function nudgeDelayHere(kind: 'sub' | 'audio', delta: number) {
-  nudgeDelay(kind, delta);
+  nudgeDelay(kind, delta, kind === 'audio' ? deviceInForce : 0);
   rememberDelaySoon(kind);
 }
 
 export function resetDelayHere(kind: 'sub' | 'audio') {
-  resetDelay(kind);
+  resetDelay(kind, kind === 'audio' ? deviceInForce : 0);
   if (player.filePath) rememberDelay(player.filePath, kind, 0);
 }
 
 /// mpv keeps `sub-delay`, `audio-delay` and `sub-speed` across a file change
 /// (all three measured), so a correction dialled in for one episode silently
 /// applies to the next. Every file therefore gets an explicit value for each —
-/// its own, or the default.
+/// its own, or the default — and the audio one has the device's offset added.
 export function applyTiming() {
   if (!player.filePath) return;
   const saved = delaysFor(player.filePath);
+  deviceInForce = output.offset;
   void setProperty('sub-delay', saved.sub).catch(() => {});
-  void setProperty('audio-delay', saved.audio).catch(() => {});
+  void setProperty('audio-delay', saved.audio + deviceInForce).catch(() => {});
   void setProperty('sub-speed', subSpeedFor(player.filePath)).catch(() => {});
 }
 

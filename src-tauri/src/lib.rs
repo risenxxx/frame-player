@@ -7,6 +7,7 @@ use tauri::{Emitter, Manager};
 mod macos_chrome;
 #[cfg(target_os = "macos")]
 mod macos_menu;
+mod audio_output;
 mod cast;
 mod color;
 mod crop;
@@ -1179,6 +1180,7 @@ pub fn run() {
             window_fullscreen_mask,
             window_float_over_fullscreen,
             window_pinch_mode,
+            audio_output::audio_output_default,
             now_playing::now_playing_start,
             now_playing::now_playing_set,
             window_shape::window_shape_lock,
@@ -1307,6 +1309,8 @@ pub fn run() {
         })
         .setup(|app| {
             let _ = ffmpeg_the_third::init();
+            // The default output device, for the per-device audio offset.
+            audio_output::watch(app.handle().clone());
             // Recon only, off by default: see dlna.rs. It has to run inside the
             // app because macOS drops multicast for a process with no Local
             // Network permission, which makes a CLI probe answer "nothing here"

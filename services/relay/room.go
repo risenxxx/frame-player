@@ -72,6 +72,9 @@ type room struct {
 	// a new one costs no redeploy here. Only non-empty entries are kept, so a
 	// member who is simply ready has nothing in it.
 	reason map[string]string
+	// How well each member says they are keeping up. The same arrangement as
+	// `reason`: stored, never read, and only non-empty entries kept.
+	link map[string]string
 
 	// Zero while anyone is here; the moment the last member left otherwise.
 	// The hub sweeps on it.
@@ -96,6 +99,7 @@ func newRoom(code string, now time.Time) *room {
 		members:       map[string]*client{},
 		notReadySince: map[string]time.Time{},
 		reason:        map[string]string{},
+		link:          map[string]string{},
 		emptySince:    now,
 		tl:            wire.Timeline{Speed: 1, At: now.UnixMilli()},
 	}
@@ -151,6 +155,7 @@ func (r *room) leave(id string, now time.Time) bool {
 	delete(r.members, id)
 	delete(r.notReadySince, id)
 	delete(r.reason, id)
+	delete(r.link, id)
 	for i, m := range r.order {
 		if m == id {
 			r.order = append(r.order[:i], r.order[i+1:]...)
@@ -188,6 +193,7 @@ func (r *room) membersLocked(now time.Time) []wire.Member {
 			Name:   c.name(),
 			Ready:  r.readyLocked(id, now),
 			Reason: r.reason[id],
+			Link:   r.link[id],
 		})
 	}
 	return out
@@ -247,7 +253,7 @@ func (r *room) setTimeline(from string, next wire.Timeline, now time.Time) error
 	return nil
 }
 
-func (r *room) setReady(id string, ready bool, reason string, now time.Time) {
+func (r *room) setReady(id string, ready bool, reason, link string, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.members[id]; !ok {
@@ -267,12 +273,14 @@ func (r *room) setReady(id string, ready bool, reason string, now time.Time) {
 	// between a room that is making progress and one that is stuck. A client
 	// only sends this when its own answer changes, so there is no traffic here
 	// that somebody's player did not just do.
-	if r.reason[id] != reason {
-		if reason == "" {
-			delete(r.reason, id)
-		} else {
-			r.reason[id] = reason
-		}
+	if setOrDelete(r.reason, id, reason) {
+		changed = true
+	}
+	// The quality word rides on the same message and changes nothing about
+	// readiness; it is broadcast for the same reason the reason is. The client
+	// holds a better word back for a while before sending it, so a connection
+	// sitting on a threshold does not cost the room a member list every second.
+	if setOrDelete(r.link, id, link) {
 		changed = true
 	}
 	if !changed {
@@ -356,6 +364,20 @@ func (r *room) tick(now time.Time) {
 	if r.rev != before || waitingKey(r.waitingLocked(now)) != r.lastWaiting {
 		r.broadcastMembersLocked(now)
 	}
+}
+
+// setOrDelete records `v` under `id`, keeping only non-empty values, and
+// reports whether anything changed.
+func setOrDelete(m map[string]string, id, v string) bool {
+	if m[id] == v {
+		return false
+	}
+	if v == "" {
+		delete(m, id)
+	} else {
+		m[id] = v
+	}
+	return true
 }
 
 func waitingKey(ids []string) string { return strings.Join(ids, ",") }

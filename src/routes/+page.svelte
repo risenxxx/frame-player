@@ -193,6 +193,7 @@
     type RecentItem,
   } from '$lib/history.svelte';
   import { initNowPlaying } from '$lib/now-playing.svelte';
+  import { initAudioOutput } from '$lib/audio-output.svelte';
   import { IS_MAC } from '$lib/platform';
   import {
     chapterAt,
@@ -1113,6 +1114,8 @@
   // Now Playing on macOS: what Control Center shows, and where the AirPods'
   // pause goes. Started here for the same reason as the chrome's effects.
   initNowPlaying();
+  // Which device plays the sound, for its own offset (Bluetooth lag).
+  initAudioOutput();
   // Keeps the window in the picture's shape while "match video aspect ratio"
   // is on. It is told when the shell owns the window's size, because a fit
   // that stood down for fullscreen has to be given its turn afterwards, and

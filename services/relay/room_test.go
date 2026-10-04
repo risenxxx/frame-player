@@ -64,8 +64,8 @@ func roomWithTwo(t *testing.T, now time.Time) (*room, *client, *client) {
 	if _, err := r.join(b, 16, now); err != nil {
 		t.Fatal(err)
 	}
-	r.setReady(a.id, true, "", now)
-	r.setReady(b.id, true, "", now)
+	r.setReady(a.id, true, "", "", now)
+	r.setReady(b.id, true, "", "", now)
 	if err := r.setTimeline(a.id, playing(0), now); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestJoiningFreezesTheRoomUntilTheNewcomerIsReady(t *testing.T) {
 		t.Fatalf("waiting = %v, want [%s]", members["waiting"], c.id)
 	}
 
-	r.setReady(c.id, true, "", now)
+	r.setReady(c.id, true, "", "", now)
 	if r.snapshot().Paused {
 		t.Fatal("the room stayed frozen after everyone was ready")
 	}
@@ -162,7 +162,7 @@ func TestWhatAMemberIsWaitingOnReachesTheOthers(t *testing.T) {
 	if _, err := r.join(c, 16, now); err != nil {
 		t.Fatal(err)
 	}
-	r.setReady(c.id, false, "opening", now)
+	r.setReady(c.id, false, "opening", "", now)
 	if got := memberReason(t, a, c.id); got != "opening" {
 		t.Fatalf("reason = %q, want %q", got, "opening")
 	}
@@ -170,14 +170,14 @@ func TestWhatAMemberIsWaitingOnReachesTheOthers(t *testing.T) {
 	// The readiness answer is the same on both sides of this; only the reason
 	// moved, and that alone has to be broadcast.
 	drainOf(t, a, "members")
-	r.setReady(c.id, false, "buffering", now)
+	r.setReady(c.id, false, "buffering", "", now)
 	if got := memberReason(t, a, c.id); got != "buffering" {
 		t.Fatalf("reason = %q, want %q", got, "buffering")
 	}
 
 	// And it is dropped when there is nothing left to say, rather than standing
 	// next to a member the room is no longer waiting for.
-	r.setReady(c.id, true, "", now)
+	r.setReady(c.id, true, "", "", now)
 	if got := memberReason(t, a, c.id); got != "" {
 		t.Fatalf("reason = %q after becoming ready, want it gone", got)
 	}
@@ -186,16 +186,7 @@ func TestWhatAMemberIsWaitingOnReachesTheOthers(t *testing.T) {
 // The reason `id` carries in the newest `members` message `c` received.
 func memberReason(t *testing.T, c *client, id string) string {
 	t.Helper()
-	members, _ := lastOf(t, c, "members")["members"].([]any)
-	for _, m := range members {
-		row, _ := m.(map[string]any)
-		if row["id"] == id {
-			reason, _ := row["reason"].(string)
-			return reason
-		}
-	}
-	t.Fatalf("%s is not in the member list", id)
-	return ""
+	return memberField(t, c, id, "reason")
 }
 
 func TestFreezingKeepsThePositionItHadReached(t *testing.T) {
@@ -233,7 +224,7 @@ func TestAHumanPauseSurvivesTheThawing(t *testing.T) {
 	if err := r.setTimeline(a.id, paused, now); err != nil {
 		t.Fatal(err)
 	}
-	r.setReady(c.id, true, "", now)
+	r.setReady(c.id, true, "", "", now)
 
 	if !r.snapshot().Paused {
 		t.Fatal("a pause somebody asked for was lifted by the relay when buffering ended")
@@ -255,7 +246,7 @@ func TestResumingWhileSomebodyLoadsMeansResumeWhenTheyAreDone(t *testing.T) {
 	if !r.snapshot().Paused {
 		t.Fatal("the room resumed while a member was still loading")
 	}
-	r.setReady(c.id, true, "", now)
+	r.setReady(c.id, true, "", "", now)
 	if r.snapshot().Paused {
 		t.Fatal("the room did not resume once everyone was ready")
 	}
@@ -392,7 +383,7 @@ func TestASlowMemberCostsOnlyThemselves(t *testing.T) {
 		if _, err := r.join(c, 16, now); err != nil {
 			t.Fatal(err)
 		}
-		r.setReady(c.id, true, "", now)
+		r.setReady(c.id, true, "", "", now)
 	}
 
 	// The slow member's outbox fills immediately and stays full. The room must
@@ -430,7 +421,7 @@ func TestAMemberAgeingOutOfTheGraceIsAnnounced(t *testing.T) {
 	if _, err := r.join(watcher, 16, now); err != nil {
 		t.Fatal(err)
 	}
-	r.setReady(watcher.id, true, "", now)
+	r.setReady(watcher.id, true, "", "", now)
 	if _, err := r.join(stuck, 16, now); err != nil {
 		t.Fatal(err)
 	}
@@ -535,4 +526,42 @@ func TestTheHandshakeCarriesTheRoomRules(t *testing.T) {
 	if !w.ShareAudio || !w.ShareSubs || w.HostOnly {
 		t.Errorf("welcome carried audio %v subs %v hostOnly %v", w.ShareAudio, w.ShareSubs, w.HostOnly)
 	}
+}
+
+// How well a member is keeping up reaches the others on its own, without their
+// readiness or their reason moving — and goes when they stop saying it.
+func TestTheQualityWordReachesTheOthers(t *testing.T) {
+	now := time.Now()
+	r, a, b := roomWithTwo(t, now)
+
+	r.setReady(b.id, true, "", "fair-net", now)
+	if got := memberField(t, a, b.id, "link"); got != "fair-net" {
+		t.Fatalf("link = %q, want %q", got, "fair-net")
+	}
+
+	drainOf(t, a, "members")
+	r.setReady(b.id, true, "", "good", now)
+	if got := memberField(t, a, b.id, "link"); got != "good" {
+		t.Fatalf("link = %q, want %q", got, "good")
+	}
+
+	r.setReady(b.id, true, "", "", now)
+	if got := memberField(t, a, b.id, "link"); got != "" {
+		t.Fatalf("link = %q after it was cleared, want it gone", got)
+	}
+}
+
+// A string field `id` carries in the newest `members` message `c` received.
+func memberField(t *testing.T, c *client, id, field string) string {
+	t.Helper()
+	members, _ := lastOf(t, c, "members")["members"].([]any)
+	for _, m := range members {
+		row, _ := m.(map[string]any)
+		if row["id"] == id {
+			v, _ := row[field].(string)
+			return v
+		}
+	}
+	t.Fatalf("%s is not in the member list", id)
+	return ""
 }

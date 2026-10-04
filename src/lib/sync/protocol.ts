@@ -180,6 +180,16 @@ export interface Member {
    * whoever is waiting.
    */
   reason?: ReadyReason;
+  /**
+   * How well they are keeping up — a `LinkWord` from `quality.ts`, judged by
+   * the member about themselves.
+   *
+   * A string rather than the union for the same reason `reason` degrades: the
+   * relay passes it through unread, so a member on a newer build can send a
+   * word this one has never heard of, and that has to be no dot rather than a
+   * type error. `parseLink` is where it becomes a word.
+   */
+  link?: string;
 }
 
 /**
@@ -239,7 +249,7 @@ export function emptyTimeline(): Timeline {
 export type ClientMsg =
   | { t: 'hello'; ver: number; room: string; name: string }
   | { t: 'timeline'; timeline: Timeline }
-  | { t: 'ready'; ready: boolean; reason: string }
+  | { t: 'ready'; ready: boolean; reason: string; link: string }
   | ({ t: 'mode' } & RoomRules)
   | { t: 'ping'; c: number }
   | { t: 'bye' };
@@ -349,10 +359,10 @@ type Complete<T, F extends readonly string[]> =
   Missing<T, F> extends never ? true : ['missing from the field list:', Missing<T, F>];
 
 const TIMELINE_FIELDS = ['content', 'tracks', 'paused', 'position', 'speed', 'at', 'rev', 'by'] as const;
-const MEMBER_FIELDS = ['id', 'name', 'ready', 'reason'] as const;
+const MEMBER_FIELDS = ['id', 'name', 'ready', 'reason', 'link'] as const;
 const HELLO_FIELDS = ['t', 'ver', 'room', 'name'] as const;
 const CLIENT_TIMELINE_FIELDS = ['t', 'timeline'] as const;
-const READY_FIELDS = ['t', 'ready', 'reason'] as const;
+const READY_FIELDS = ['t', 'ready', 'reason', 'link'] as const;
 const MODE_FIELDS = ['t', 'hostOnly', 'shareAudio', 'shareSubs'] as const;
 const PING_FIELDS = ['t', 'c'] as const;
 const BYE_FIELDS = ['t'] as const;

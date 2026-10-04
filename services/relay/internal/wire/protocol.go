@@ -105,6 +105,12 @@ type Member struct {
 	// up on it — three different situations that were showing as one word on
 	// everybody else's screen, with no way to tell which.
 	Reason string `json:"reason,omitempty"`
+	// How well they are keeping up, as they judged it themselves — one word
+	// from the client's vocabulary, passed through untouched for the same
+	// reason `Reason` is. The relay could time its own pings, but only the
+	// member knows whether their *playback* is keeping up, and that is half of
+	// what the word says.
+	Link string `json:"link,omitempty"`
 }
 
 // ---- client → relay ---------------------------------------------------------
@@ -129,6 +135,7 @@ type ClientMsg struct {
 	// ready
 	Ready  *bool  `json:"ready,omitempty"`
 	Reason string `json:"reason,omitempty"`
+	Link   string `json:"link,omitempty"`
 
 	// mode — the room's own rules, each present only when it is being changed.
 	HostOnly   *bool `json:"hostOnly,omitempty"`
@@ -174,6 +181,7 @@ func (m *ClientMsg) Validate() error {
 			return ErrBadMessage
 		}
 		m.Reason = truncate(sanitizeName(m.Reason), 24)
+		m.Link = truncate(sanitizeName(m.Link), 16)
 	case "mode":
 		// At least one rule, or the message asks for nothing.
 		if m.HostOnly == nil && m.ShareAudio == nil && m.ShareSubs == nil {

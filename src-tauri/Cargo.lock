@@ -1630,7 +1630,7 @@ dependencies = [
 
 [[package]]
 name = "frameplayer"
-version = "1.25.0"
+version = "1.26.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1671,6 +1671,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-util",
+ "windows 0.61.3",
  "windows-registry",
  "windows-sys 0.61.2",
  "zip",

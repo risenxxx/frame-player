@@ -19,6 +19,7 @@
   import { showOsd } from '$lib/osd.svelte';
   import { retryOpen, sync } from '$lib/sync/apply.svelte';
   import { invite } from '$lib/sync/link.svelte';
+  import { levelOf, parseLink, type QualityLevel } from '$lib/sync/quality';
   import {
     CODE_LENGTH,
     formatCode,
@@ -146,6 +147,24 @@
     return reason === 'opening' ? t('sync.badge_opening') : t('sync.loading_badge');
   }
 
+  /**
+   * The quality dot beside a name, or none.
+   *
+   * Our own row reads the verdict from here rather than from the relay's echo,
+   * and is the only one with figures: the others send a word, not their round
+   * trips. Nothing at all while alone — the same rule the clock line follows: a
+   * figure about keeping in step with nobody reads as a warning.
+   */
+  function linkOf(member: Member): { level: QualityLevel; tip: string } | null {
+    if (wire.members.length < 2) return null;
+    const mine = member.id === wire.me;
+    const word = mine ? wire.link : parseLink(member.link);
+    if (!word) return null;
+    let tip = t(`sync.link_${word.replace('-', '_')}` as 'sync.link_good');
+    if (mine && wire.net) tip += `\n${t('sync.link_rtt', wire.net)}`;
+    return { level: levelOf(word), tip };
+  }
+
   const verdict = $derived.by(() => {
     if (!wire.timeline.content || sync.match === 'unknown') return '';
     return t(`sync.match_${sync.match}` as 'sync.match_exact');
@@ -221,6 +240,7 @@
           <!-- Hoisted to the top of the block because `{@const}` may only be an
                immediate child of one, not of the `<li>` it is used in. -->
           {@const badge = badgeFor(member)}
+          {@const link = linkOf(member)}
           <li class="room-person">
             <svg class="room-person-ico" viewBox="0 0 16 16" aria-hidden="true">
               <path
@@ -239,6 +259,9 @@
                  is a note, not an alarm. -->
             {#if badge}
               <span class="room-badge" class:loading={!member.ready}>{badge}</span>
+            {/if}
+            {#if link}
+              <span class="room-link {link.level}" role="img" data-tip={link.tip} aria-label={link.tip}></span>
             {/if}
           </li>
         {/each}
@@ -621,6 +644,38 @@
     background: rgba(255, 255, 255, 0.08);
     color: #9a9aa6;
     font-size: 11px;
+  }
+
+  /* At the row's far end, so the dots form a column that can be read down at a
+     glance. The box is larger than the dot it draws — eight pixels is a target
+     nobody can rest a pointer on to get the tooltip. */
+  .room-link {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    margin-left: auto;
+  }
+
+  .room-link::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  /* The same three the diagnosis panel uses for ok / warning / problem. */
+  .room-link.good::before {
+    background: #4ade80;
+  }
+
+  .room-link.fair::before {
+    background: #fbbf24;
+  }
+
+  .room-link.poor::before {
+    background: #f87171;
   }
 
   /* The one badge worth the accent: it is the reason the room is standing still. */

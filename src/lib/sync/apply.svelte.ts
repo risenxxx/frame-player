@@ -44,14 +44,17 @@ import { followRoomTrack } from '../tracks.svelte';
 import { compareLocal, contentOf, sameContent, type MatchVerdict } from './content';
 import { correctionFor, deadbandFor, speedChanged } from './drift';
 import { readinessOf } from './ready';
+import { UNSETTLED, combine, netLevel, playLevel, pruneDisruptions, settle } from './quality';
 import type { ContentRef, Timeline, TrackKind } from './protocol';
 
 /// Both kinds, in one place, so a loop over them cannot forget one.
 const TRACK_KINDS: readonly TrackKind[] = ['audio', 'sub'];
 import {
   initWire,
+  netStats,
   publishContent,
   publishSettling,
+  reportLink,
   reportReady,
   serverNow,
   targetPosition,
@@ -125,6 +128,27 @@ let startedSrc = $state<string | null>(null);
 /// rewrite mpv's `speed` every second with a value a hair from the last.
 let correctedSpeed = 0;
 
+/// When the room's timeline last arrived, and the moments this player had to be
+/// hauled back since — the playback half of the quality dot (`quality.ts`).
+let timelineAt = 0;
+let disruptions: number[] = [];
+let linkSettled = UNSETTLED;
+
+/**
+ * How long after the room moves, or a file opens, a seek is the room working
+ * rather than this player failing.
+ *
+ * The reconciler seeks every time *somebody else* seeks — the target jumped, so
+ * the drift is suddenly enormous — and once right after every file opens, to
+ * get from zero to where the room is. Counting those would turn the dot yellow
+ * for two minutes after every remote seek and after every episode, and that
+ * dot would look exactly like one that works. Three seconds covers the round
+ * trip and the pause tolerance's own catch-up; ten covers a torrent's first
+ * buffering after a load.
+ */
+const COMMANDED_MS = 3000;
+const AFTER_LOAD_MS = 10_000;
+
 // ---- wiring -----------------------------------------------------------------
 
 /**
@@ -189,9 +213,47 @@ export function initSync() {
   // the component instead of outliving it — which under HMR means one extra
   // reconciler per edit, each writing mpv's `speed` on its own schedule.
   $effect(() => {
-    const timer = setInterval(reconcile, TICK_MS);
+    const timer = setInterval(() => {
+      reconcile();
+      assessLink();
+    }, TICK_MS);
     return () => clearInterval(timer);
   });
+
+  // A stall on the source is a disruption — but only its onset, and only once
+  // the file has had its chance to buffer after opening.
+  let wasStalled = false;
+  $effect(() => {
+    const stalled = player.stalled;
+    if (stalled && !wasStalled) noteDisruption();
+    wasStalled = stalled;
+  });
+}
+
+/**
+ * Record that this player had to be hauled back, unless it is one of the moments
+ * where that is the room working rather than this player failing. See
+ * `COMMANDED_MS`.
+ */
+function noteDisruption() {
+  if (!wire.on || wire.members.length < 2 || !wire.timeline.content) return;
+  const now = performance.now();
+  if (now - timelineAt < COMMANDED_MS || now - loadedAt < AFTER_LOAD_MS) return;
+  disruptions = [...pruneDisruptions(disruptions, now), now];
+}
+
+/// Judge both halves and tell the room — `reportLink` sends only a change, and
+/// `settle` holds a better word back, so this costs nothing most seconds.
+function assessLink() {
+  if (!wire.on) {
+    linkSettled = UNSETTLED;
+    disruptions = [];
+    return;
+  }
+  const now = performance.now();
+  disruptions = pruneDisruptions(disruptions, now);
+  linkSettled = settle(linkSettled, combine(netLevel(netStats()), playLevel(disruptions, now)), now);
+  reportLink(linkSettled.word);
 }
 
 function currentLocal() {
@@ -215,6 +277,7 @@ function currentLocal() {
 const followed: Record<TrackKind, string | null> = { audio: null, sub: null };
 
 function onTimeline(next: Timeline, fromSelf: boolean) {
+  timelineAt = performance.now();
   // A content change is the one thing that cannot wait for the reconciler: it
   // means a different film, and every second of delay is a second of the wrong
   // one. Handled before the self-check, because our own publish is exactly what
@@ -424,6 +487,7 @@ function reconcile() {
   const plan = correctionFor(drift, tl.speed, tl.paused, deadbandFor(wire.uncertainty));
   switch (plan.do) {
     case 'seek':
+      noteDisruption();
       restoreSpeed();
       // The file's own exact/keyframe verdict, the same one every other seek in
       // the player obeys — a room is not a reason to pay 1.9 s for a frame.

@@ -17,6 +17,7 @@
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { command, getProperty } from 'tauri-plugin-libmpv-api';
 
+  import { refreshAudioOutput } from '$lib/audio-output.svelte';
   import Dialog from '$lib/components/Dialog.svelte';
   import ScrollFade from '$lib/components/ScrollFade.svelte';
   import { IS_MAC } from '$lib/platform';
@@ -690,7 +691,9 @@
   function setSetting(def: SettingDef, v: string | null, debounce = false) {
     settingsValues = { ...settingsValues, [def.key]: v };
     // apply live, without a restart
-    void command('set', [def.key, v ?? def.liveDefault]).catch(() => {});
+    const applied = command('set', [def.key, v ?? def.liveDefault]).catch(() => {});
+    // Another device has its own offset (audio-output.svelte.ts).
+    if (def.key === 'audio-device') void applied.then(() => refreshAudioOutput());
     // persist into mpv.conf (surgically, leaving the rest alone)
     clearTimeout(confWrites.get(def.key));
     const write = () => {

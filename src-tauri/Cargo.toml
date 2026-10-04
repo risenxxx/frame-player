@@ -1,6 +1,6 @@
 [package]
 name = "frameplayer"
-version = "1.25.0"
+version = "1.26.0"
 description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
 authors = ["Evgenii Zakharov"]
 edition = "2021"
@@ -169,6 +169,18 @@ windows-sys = { version = "0.61.2", features = [
     # update.rs: waiting for the copy that relaunched us to exit, which is what
     # frees the single-instance guard and lets the renamed images be deleted.
     "Win32_System_Threading",
+] }
+# audio_output.rs: the default output device (IMMDeviceEnumerator) and its
+# name, for the per-device audio offset. The version is the one WebView2's
+# bindings already put in the tree.
+windows = { version = "0.61", features = [
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_Foundation",
+    "Win32_System_Variant",
 ] }
 # update.rs: DisplayVersion and EstimatedSize in the uninstall entry, which is
 # the one thing an in-place update has to tell the system about itself. Already

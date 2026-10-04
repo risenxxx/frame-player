@@ -4,11 +4,13 @@
   /// serves both and `kind` narrows it.
   import { t } from '$lib/i18n.svelte';
   import { playback } from '$lib/playback.svelte';
+  import { nudgeDeviceOffset, output, setDeviceOffset } from '$lib/audio-output.svelte';
   import { delayIsZero, formatDelay, player, type Track } from '$lib/player.svelte';
   import { SUB_SPEED_PRESETS, isPreset, isUnitSpeed, presetFactor } from '$lib/sub-speed';
   import { openSubsDialog, removeSubtitle } from '$lib/subs.svelte';
   import {
     audioMix,
+    fileDelay,
     formatFps,
     presetLabel,
     setAudioMulti,
@@ -21,6 +23,8 @@
 
   /// One press of the stepper. Matches mpv's own default sub-delay granularity.
   const DELAY_STEP = 0.1;
+  /// Finer than a file's: a speaker's lag is tuned against lips, to a frame or so.
+  const DEVICE_STEP = 0.05;
 
   interface Props {
     kind: 'audio' | 'sub';
@@ -152,12 +156,16 @@
       </button>
     {/if}
     <div class="menu-sep"></div>
-    <div class="menu-title">{t('osc.delay')}</div>
+    <!-- With the device's row below it, "delay" alone would not say whose this
+         one is. -->
+    <div class="menu-title">
+      {kind === 'audio' && output.name ? t('osc.delay_file') : t('osc.delay')}
+    </div>
     <!-- Stays open on click: a delay is dialled in by repeated nudges while
          watching the result, not chosen once from a list. -->
     <div class="delayrow">
       <button class="speedopt" aria-label="-0.1" onclick={() => onNudgeDelay(kind!, -DELAY_STEP)}>−</button>
-      <span class="delayval">{formatDelay(kind === 'audio' ? player.audioDelay : player.subDelay)}</span>
+      <span class="delayval">{formatDelay(fileDelay(kind!))}</span>
       <button class="speedopt" aria-label="+0.1" onclick={() => onNudgeDelay(kind!, DELAY_STEP)}>+</button>
       <span class="delaysep"></span>
       <!-- Always rendered, only disabled: the menu is anchored by its bottom
@@ -165,12 +173,36 @@
            delay leaves zero — right under the cursor that is clicking it. -->
       <button
         class="speedopt delayreset"
-        disabled={delayIsZero(kind === 'audio' ? player.audioDelay : player.subDelay)}
+        disabled={delayIsZero(fileDelay(kind!))}
         onclick={() => onResetDelay(kind!)}
       >
         {t('osc.delay_reset')}
       </button>
     </div>
+    {#if kind === 'audio' && output.name}
+      <!-- The output device's own lag, kept for that device rather than for
+           this file — see audio-output.svelte.ts. -->
+      <div
+        class="menu-title device-title"
+        data-tip={t('osc.device_offset_tip')}
+        aria-label={t('osc.device_offset_tip')}
+      >
+        {t('osc.device_offset', { device: output.name })}
+      </div>
+      <div class="delayrow">
+        <button class="speedopt" aria-label="-0.05" onclick={() => nudgeDeviceOffset(-DEVICE_STEP)}>−</button>
+        <span class="delayval">{formatDelay(output.offset)}</span>
+        <button class="speedopt" aria-label="+0.05" onclick={() => nudgeDeviceOffset(DEVICE_STEP)}>+</button>
+        <span class="delaysep"></span>
+        <button
+          class="speedopt delayreset"
+          disabled={delayIsZero(output.offset)}
+          onclick={() => setDeviceOffset(0)}
+        >
+          {t('osc.delay_reset')}
+        </button>
+      </div>
+    {/if}
     {#if kind === 'sub'}
       <!-- The manual half of fitting a subtitle to the video's frame rate, for
            when nobody told us the subtitle's: an external file, an embedded
@@ -209,6 +241,14 @@
 </div>
 
 <style>
+  /* A speaker's name is the system's and can be long ("Колонка JBL Flip 5
+     (Hands-Free)"); it is cut rather than allowed to widen the panel. */
+  .device-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   /* Delay stepper: the same pill row as the speed presets, because it is the
      same job — a compact group of small actions. The value between them is a
      readout, not a control, so it stays plain text rather than a third pill.

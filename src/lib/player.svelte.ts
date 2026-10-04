@@ -1059,16 +1059,19 @@ function delayOsd(kind: 'sub' | 'audio', value: number) {
   );
 }
 
-export function nudgeDelay(kind: 'sub' | 'audio', delta: number) {
+/// `base` is the part of mpv's value that is not this delay's — the output
+/// device's offset, inside `audio-delay` (see tracks.svelte.ts). The popup
+/// shows the delay without it, and a reset goes back to it rather than to zero.
+export function nudgeDelay(kind: 'sub' | 'audio', delta: number, base = 0) {
   if (!player.hasFile) return;
   void command('add', [kind === 'sub' ? 'sub-delay' : 'audio-delay', delta]).catch(() => {});
   // Optimistic, like the seek popup: the property change arrives a frame or two
   // later, and a popup that lags one step behind reads as a stuck control.
-  delayOsd(kind, (kind === 'sub' ? player.subDelay : player.audioDelay) + delta);
+  delayOsd(kind, (kind === 'sub' ? player.subDelay : player.audioDelay) - base + delta);
 }
 
-export function resetDelay(kind: 'sub' | 'audio') {
-  void setProperty(kind === 'sub' ? 'sub-delay' : 'audio-delay', 0);
+export function resetDelay(kind: 'sub' | 'audio', base = 0) {
+  void setProperty(kind === 'sub' ? 'sub-delay' : 'audio-delay', base);
   delayOsd(kind, 0);
 }
 

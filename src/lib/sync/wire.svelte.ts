@@ -46,6 +46,7 @@ import {
   sampleOf,
   type Sample,
 } from './clock';
+import { LOST_AFTER_MS, netFigures, type LinkWord, type NetStats } from './quality';
 
 /**
  * The relay this build points at by default.
@@ -128,6 +129,13 @@ class Wire {
   /// How far our clock estimate could be out, in milliseconds. Shown to the
   /// viewer *and* used: it sets how tightly the room is held (`deadbandFor`).
   uncertainty = $state(Infinity);
+  /// The fastest recent round trip to the relay and the spread above it, for
+  /// this viewer's own tooltip. Null before the first pong.
+  net = $state<{ rtt: number; spread: number } | null>(null);
+  /// What this viewer last told the room about how well it is keeping up —
+  /// shown on its own row from here rather than from the echo, so the dot does
+  /// not wait a round trip to agree with itself.
+  link = $state<LinkWord | null>(null);
   /**
    * The last thing that happened to the room's membership, for the indicator.
    *
@@ -273,6 +281,11 @@ let pingTimer: ReturnType<typeof setTimeout> | undefined;
 let pingsSent = 0;
 
 let samples: Sample[] = [];
+/// The last few pings, answered or not. The clock estimator only ever sees the
+/// ones that came back, which is exactly why it cannot tell a connection that
+/// has stalled for ten seconds from one that is fine: this can.
+let pings: { c: number; answered: boolean }[] = [];
+const PING_LOG = 8;
 /// Relay clock minus ours, milliseconds. Seeded from the handshake so there is a
 /// usable value before the first round trip completes.
 let offset = 0;
@@ -291,6 +304,7 @@ let publishedUntil = 0;
 /// effect in `apply.svelte.ts` flips it the moment there is something to play.
 let lastReady = false;
 let lastReason = '';
+let lastLink = '';
 let lastPublished: Timeline | null = null;
 
 /// The relay's clock, as well as we can tell. Whole milliseconds — see
@@ -366,8 +380,12 @@ export function leaveRoom(opts: { quiet?: boolean } = {}) {
   wire.waiting = [];
   wire.timeline = emptyTimeline();
   wire.uncertainty = Infinity;
+  wire.net = null;
+  wire.link = null;
   wire.event = null;
   samples = [];
+  pings = [];
+  lastLink = '';
   offset = 0;
   publishedUntil = 0;
   lastPublished = null;
@@ -472,7 +490,9 @@ function handle(msg: ServerMsg) {
       // out by the whole clock difference between the two machines.
       offset = msg.now - Date.now();
       samples = [];
+      pings = [];
       wire.uncertainty = Infinity;
+      wire.net = null;
       pingsSent = 0;
       schedulePing();
       // Authoritative: a handshake describes the room as it is now, and a room
@@ -481,7 +501,7 @@ function handle(msg: ServerMsg) {
       // Restate what the relay cannot know after a reconnect: whether we are
       // ready, and what we were playing. Without the second, a host who dropped
       // and came back would find the room still pointing at the old file.
-      send({ t: 'ready', ready: lastReady, reason: lastReason });
+      sendReady();
       if (lastPublished && msg.timeline.rev === 0) publish(lastPublished);
       onRoomCb();
       break;
@@ -507,11 +527,14 @@ function handle(msg: ServerMsg) {
       onRoomCb();
       break;
     case 'pong': {
+      const ping = pings.find((p) => p.c === msg.c);
+      if (ping) ping.answered = true;
       const sample = sampleOf(msg.c, msg.s, Date.now());
       if (!sample) break;
       samples = pushSample(samples, sample);
       offset = estimateOffset(samples);
       wire.uncertainty = offsetUncertainty(samples);
+      wire.net = netFigures(samples.map((x) => x.rtt));
       break;
     }
     case 'error': {
@@ -691,7 +714,39 @@ export function reportReady(ready: boolean, reason = '') {
   if (lastReady === ready && lastReason === reason) return;
   lastReady = ready;
   lastReason = reason;
-  if (wire.on) send({ t: 'ready', ready, reason });
+  sendReady();
+}
+
+/**
+ * Tell the room how well this viewer is keeping up — a word from `quality.ts`,
+ * or null while there is nothing to say yet.
+ *
+ * On the `ready` message rather than one of its own, and that is for the relay
+ * a member may be talking to: an older one ignores a field it does not know,
+ * but answers a message type it does not know with an error — which this build
+ * would show in the room panel for as long as the session lasted.
+ */
+export function reportLink(word: LinkWord | null) {
+  wire.link = word;
+  const next = word ?? '';
+  if (lastLink === next) return;
+  lastLink = next;
+  sendReady();
+}
+
+/// What we are, all three answers at once — the relay takes the message as the
+/// whole of it, so sending one without the others would clear them.
+function sendReady() {
+  if (wire.on) send({ t: 'ready', ready: lastReady, reason: lastReason, link: lastLink });
+}
+
+/// The network half of the quality verdict, from the pings the clock loop was
+/// sending anyway.
+export function netStats(now = Date.now()): NetStats {
+  return {
+    rtts: samples.map((x) => x.rtt),
+    lost: pings.filter((p) => !p.answered && now - p.c > LOST_AFTER_MS).length,
+  };
 }
 
 /**
@@ -727,7 +782,9 @@ function schedulePing() {
   pingTimer = setTimeout(() => {
     if (!socket) return;
     pingsSent += 1;
-    send({ t: 'ping', c: Date.now() });
+    const c = Date.now();
+    pings = [...pings, { c, answered: false }].slice(-PING_LOG);
+    send({ t: 'ping', c });
     schedulePing();
   }, wait);
 }
