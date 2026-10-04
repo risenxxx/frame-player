@@ -15,6 +15,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { tick } from 'svelte';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
+  import { portable, setHandler } from '$lib/portable.svelte';
   import { command, getProperty } from 'tauri-plugin-libmpv-api';
 
   import { refreshAudioOutput } from '$lib/audio-output.svelte';
@@ -1396,6 +1397,37 @@
         <button class="btn-danger" onclick={() => void clearHistory()}>{t('set.clear_btn')}</button>
       </div>
     </div>
+
+    <!-- Only a portable copy has this, and only because Windows gives it no
+         choice: a protocol handler and a file type are machine-side
+         registrations, so the one thing a folder cannot carry is being found by
+         the system. The switch shows what is true rather than what was asked
+         for — another copy may have taken the association since. -->
+    {#if portable.active}
+      <div class="set-group">{t('sec.portable')}</div>
+      <div class="set-panel">
+        <div class="setting">
+          <div class="row-toggle">
+            <div class="row-text">
+              <div class="setting-label">{t('set.handler')}</div>
+              <div class="setting-hint">{t('set.handler_hint')}</div>
+            </div>
+            <button
+              class="switch"
+              class:on={portable.handler}
+              role="switch"
+              aria-checked={portable.handler}
+              aria-label={t('set.handler')}
+              onclick={() => void setHandler(!portable.handler)}
+            >
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+        </div>
+        <div class="settings-foot">{t('set.portable_foot', { path: portable.location })}</div>
+        <div class="settings-foot">{t('set.portable_keychain')}</div>
+      </div>
+    {/if}
 
       <!-- What the player is made of: the web engine it draws with and the
            LGPL notice. They sat under the mpv settings' footer, which is about

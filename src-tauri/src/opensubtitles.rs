@@ -31,7 +31,6 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use tauri::Manager;
 
 const API: &str = "https://api.opensubtitles.com/api/v1";
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -58,7 +57,7 @@ fn api_key(app: &tauri::AppHandle) -> Option<String> {
         let s = s.trim().to_string();
         (!s.is_empty()).then_some(s)
     };
-    if let Ok(dir) = app.path().app_data_dir() {
+    if let Ok(dir) = crate::portable::data_dir(app) {
         if let Ok(k) = std::fs::read_to_string(dir.join("opensubtitles.key")) {
             if let Some(k) = cleaned(k) {
                 return Some(k);
@@ -1059,11 +1058,7 @@ fn destination(
             }
         }
     }
-    let dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?
-        .join("subtitles");
+    let dir = crate::portable::cache_dir(app)?.join("subtitles");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let base = Path::new(remote_name)
         .file_stem()

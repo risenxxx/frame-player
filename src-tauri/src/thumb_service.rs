@@ -26,7 +26,6 @@ use ffmpeg::media;
 use ffmpeg::software::scaling;
 use ffmpeg::util::frame::video::Video;
 use ffmpeg_the_third as ffmpeg;
-use tauri::Manager;
 
 const THUMB_WIDTH: u32 = 320;
 const JPEG_QUALITY: u8 = 78;
@@ -670,7 +669,7 @@ pub fn set_private_paths(paths: Vec<String>, all: bool) {
 }
 
 fn thumbs_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let dir = app.path().app_cache_dir().ok()?.join("thumbs");
+    let dir = crate::portable::cache_dir(app).ok()?.join("thumbs");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
@@ -1589,8 +1588,7 @@ fn poster_usable(rgb: &[u8]) -> bool {
 }
 
 fn posters_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
-    use tauri::Manager as _;
-    let dir = app.path().app_cache_dir().ok()?.join("posters");
+    let dir = crate::portable::cache_dir(app).ok()?.join("posters");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }

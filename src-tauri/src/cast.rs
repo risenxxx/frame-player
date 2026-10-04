@@ -2169,11 +2169,9 @@ pub fn cast_prepare_cached(
     audio_index: i64,
     transcode_audio: bool,
 ) -> Option<String> {
-    use tauri::Manager as _;
-
     let src = PathBuf::from(&path);
     let meta = src.metadata().ok()?;
-    let dir = app.path().app_cache_dir().ok()?.join("cast");
+    let dir = crate::portable::cache_dir(&app).ok()?.join("cast");
     let key = prepare_key(&src, &meta, audio_index, transcode_audio);
     let out = dir.join(format!("{key}.mp4"));
     (out.is_file() && out.metadata().map(|m| m.len() > 0).unwrap_or(false))
@@ -2192,15 +2190,9 @@ pub async fn cast_prepare(
     duration: f64,
     cap_bytes: u64,
 ) -> Result<String, String> {
-    use tauri::Manager as _;
-
     let src = PathBuf::from(&path);
     let meta = src.metadata().map_err(|e| format!("{e}"))?;
-    let dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?
-        .join("cast");
+    let dir = crate::portable::cache_dir(&app)?.join("cast");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     let key = prepare_key(&src, &meta, audio_index, transcode_audio);
@@ -2249,18 +2241,11 @@ pub async fn cast_hls_prepare(
     fmp4: bool,
     duration: f64,
 ) -> Result<String, String> {
-    use tauri::Manager as _;
-
     let src = PathBuf::from(&path);
     if !src.is_file() {
         return Err("no such file".into());
     }
-    let base = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?
-        .join("cast")
-        .join(HLS_DIR);
+    let base = crate::portable::cache_dir(&app)?.join("cast").join(HLS_DIR);
     std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
 
     // Sweep leaked sessions — but never the directory a live cast is serving
@@ -2374,9 +2359,7 @@ pub async fn cast_hls_prepare(
 /// measured from disk like the torrent list — no record of ours to trust.
 #[tauri::command]
 pub fn cast_cache_size(app: tauri::AppHandle) -> u64 {
-    use tauri::Manager as _;
-
-    let Ok(cache) = app.path().app_cache_dir() else {
+    let Ok(cache) = crate::portable::cache_dir(&app) else {
         return 0;
     };
     crate::torrent::dir_size(&cache.join("cast"))
@@ -2390,13 +2373,7 @@ pub fn cast_clear_cache(
     app: tauri::AppHandle,
     service: tauri::State<'_, Arc<CastService>>,
 ) -> Result<u64, String> {
-    use tauri::Manager as _;
-
-    let dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?
-        .join("cast");
+    let dir = crate::portable::cache_dir(&app)?.join("cast");
     let keep: Option<PathBuf> = {
         let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
         inner.server.as_ref().and_then(|server| {
@@ -2607,13 +2584,7 @@ pub fn cast_prepare_cancel(service: tauri::State<'_, Arc<CastService>>) {
 /// must be inside the cast cache, so this cannot be aimed at anything else.
 #[tauri::command]
 pub fn cast_forget_prepared(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    use tauri::Manager as _;
-
-    let dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?
-        .join("cast");
+    let dir = crate::portable::cache_dir(&app)?.join("cast");
     let target = PathBuf::from(&path);
     if !target.starts_with(&dir) {
         return Err("not a prepared file".into());

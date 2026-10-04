@@ -25,6 +25,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 
@@ -38,10 +39,22 @@ const PROGRESS_EVENT = 'frameplayer://update-progress';
 
 /** What `update_prepare` decided. `reason` is for the console, not the window. */
 interface Plan {
-  mode: 'inplace' | 'installer';
+  /// `inplace` — staged, swap it. `installer` — run the installer, as every
+  /// release did before. `download` — a portable copy, for which running the
+  /// installer would mean a second, ordinary copy in the profile and the
+  /// portable one left behind; so the release page opens instead.
+  mode: 'inplace' | 'installer' | 'download';
   version: string | null;
   files: number;
   reason: string | null;
+}
+
+/// Where a portable copy is sent when it cannot swap its own files. The tag
+/// rather than the latest: it lands on the page that actually carries that
+/// version's archive.
+function releasePage(version: string | null): string {
+  const base = 'https://github.com/risenxxx/frame-player/releases';
+  return version ? `${base}/tag/v${version}` : `${base}/latest`;
 }
 
 /** What `update_check` announces. The plugin's own `Update` satisfies it too. */
@@ -122,6 +135,14 @@ async function swapInPlace(): Promise<boolean> {
   });
   try {
     const plan = await invoke<Plan>('update_prepare');
+    if (plan.mode === 'download') {
+      console.info('update: sending a portable copy to the release page -', plan.reason);
+      updater.percent = null;
+      dropResumeSnapshot();
+      showOsd(t('osd.update_download'));
+      await openUrl(releasePage(updater.available?.version ?? null));
+      return true;
+    }
     if (plan.mode === 'installer') {
       console.info('update: using the installer -', plan.reason);
       return false;

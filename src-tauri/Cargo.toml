@@ -1,6 +1,6 @@
 [package]
 name = "frameplayer"
-version = "1.26.0"
+version = "1.27.0"
 description = "Video player for Windows and macOS built on libmpv: frame-accurate seeking, seekbar previews and live torrent streaming"
 authors = ["Evgenii Zakharov"]
 edition = "2021"
@@ -182,6 +182,10 @@ windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_System_Variant",
 ] }
+# shell_handler.rs: a path the shell can read back — a \? prefix in a
+# registry command line is not something Explorer handles. Already in the tree
+# via tauri-plugin-deep-link, which uses it for the same registration.
+dunce = "1"
 # update.rs: DisplayVersion and EstimatedSize in the uninstall entry, which is
 # the one thing an in-place update has to tell the system about itself. Already
 # in the tree via tauri-plugin-deep-link.

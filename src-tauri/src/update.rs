@@ -112,12 +112,36 @@ pub struct Plan {
 }
 
 impl Plan {
+    /// Run the installer, which is what an ordinary installation falls back to.
     fn installer(reason: impl Into<String>) -> Self {
         Self {
             mode: "installer",
             version: None,
             files: 0,
             reason: Some(reason.into()),
+        }
+    }
+
+    /// Send the viewer to the download page, which is what a **portable** copy
+    /// falls back to. Running the installer there would be actively wrong: it
+    /// would install a second, ordinary copy into the profile and leave the
+    /// portable one exactly as old as it was, which is the failure this whole
+    /// mode exists to avoid.
+    fn download(reason: impl Into<String>) -> Self {
+        Self {
+            mode: "download",
+            version: None,
+            files: 0,
+            reason: Some(reason.into()),
+        }
+    }
+
+    /// Whichever of the two this copy has.
+    fn no_swap(reason: impl Into<String>) -> Self {
+        if crate::portable::is_portable() {
+            Self::download(reason)
+        } else {
+            Self::installer(reason)
         }
     }
 }
@@ -173,7 +197,7 @@ pub async fn update_prepare(app: AppHandle) -> Result<Plan, String> {
     #[cfg(not(windows))]
     {
         let _ = app;
-        Ok(Plan::installer("in-place updates are Windows-only"))
+        Ok(Plan::no_swap("in-place updates are Windows-only"))
     }
 }
 
@@ -438,14 +462,10 @@ mod imp {
     }
 
     /// The directory the swap operates on, and the one the relaunch spawns out
-    /// of. Taken from the running image rather than from the registry: a
-    /// portable copy has no registry entry, and a per-user installation's entry
-    /// can point somewhere a previous installation was.
+    /// of — the same answer `portable` builds its own layout on, and one
+    /// definition rather than two.
     fn install_dir() -> Result<PathBuf, String> {
-        let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
-        exe.parent()
-            .map(Path::to_path_buf)
-            .ok_or_else(|| "the executable has no directory".to_string())
+        crate::portable::app_dir()
     }
 
     fn exe_name() -> Result<std::ffi::OsString, String> {
@@ -599,7 +619,7 @@ mod imp {
 
         if !writable(&staging) {
             let _ = std::fs::remove_dir_all(&staging);
-            return Ok(Plan::installer(format!(
+            return Ok(Plan::no_swap(format!(
                 "{} is not writable",
                 install.display()
             )));
@@ -613,13 +633,13 @@ mod imp {
             Ok(Some(u)) => u,
             Ok(None) => {
                 let _ = std::fs::remove_dir_all(&staging);
-                return Ok(Plan::installer("the manifest announces no newer version"));
+                return Ok(Plan::no_swap("the manifest announces no newer version"));
             }
             // A release whose zip failed to build has no such key, and the
             // check reports exactly that. The installer still has one.
             Err(e) => {
                 let _ = std::fs::remove_dir_all(&staging);
-                return Ok(Plan::installer(format!("no in-place payload: {e}")));
+                return Ok(Plan::no_swap(format!("no in-place payload: {e}")));
             }
         };
         let announced = update.version.clone();
@@ -675,7 +695,7 @@ mod imp {
             Ok(staged) => staged,
             Err(reason) => {
                 eprintln!("[update] falling back to the installer: {reason}");
-                return Ok(Plan::installer(reason));
+                return Ok(Plan::no_swap(reason));
             }
         };
 

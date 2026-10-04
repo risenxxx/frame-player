@@ -19,8 +19,10 @@ mod lan_sweep;
 mod net_route;
 mod now_playing;
 mod opensubtitles;
+mod portable;
 mod power;
 mod screenshot;
+mod shell_handler;
 mod step_engine;
 mod thumb_service;
 mod torrent;
@@ -28,8 +30,15 @@ mod torrent_storage;
 mod trash;
 mod update;
 mod upnp;
+mod webview2;
 mod window_guard;
 mod window_shape;
+
+/// The scheme the player answers to, as `tauri.conf.json` declares it for the
+/// deep-link plugin. Named here because a portable copy registers it itself —
+/// see shell_handler.rs — and two spellings of it would be a link that opens
+/// nothing.
+pub const DEEP_LINK_SCHEME: &str = "frameplayer";
 
 const OPEN_FILE_EVENT: &str = "frameplayer://open-file";
 
@@ -380,7 +389,7 @@ const YTDLP_ASSET: &str = "yt-dlp";
 /// invalidating the bundle's signature — and being able to overwrite it is the
 /// entire point, since yt-dlp updates itself in place.
 fn ytdlp_managed_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    let dir = app.path().app_data_dir().ok()?.join("bin");
+    let dir = portable::data_dir(app).ok()?.join("bin");
     Some(dir.join(YTDLP_BIN))
 }
 
@@ -541,8 +550,7 @@ fn third_party_notices(app: tauri::AppHandle) -> Result<String, String> {
 /// run, parsed as `key=value` (comments and blank lines are skipped).
 #[tauri::command]
 fn user_mpv_conf(app: tauri::AppHandle) -> Result<UserConf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dir = portable::config_dir(&app)?;
     let path = dir.join("mpv.conf");
     if !path.exists() {
         std::fs::write(&path, MPV_CONF_TEMPLATE).map_err(|e| e.to_string())?;
@@ -576,8 +584,7 @@ fn user_mpv_conf(app: tauri::AppHandle) -> Result<UserConf, String> {
 /// not know about are left untouched.
 #[tauri::command]
 fn mpv_conf_set(app: tauri::AppHandle, key: String, value: Option<String>) -> Result<(), String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dir = portable::config_dir(&app)?;
     let path = dir.join("mpv.conf");
     let text = if path.exists() {
         std::fs::read_to_string(&path).map_err(|e| e.to_string())?
@@ -888,6 +895,49 @@ async fn window_enter_fullscreen(window: tauri::WebviewWindow) -> bool {
 /// created on every platform. Hidden or not, it is a web view, so on macOS it
 /// cost a WebKit content process of its own (14–19 MB measured) for nothing.
 #[cfg(not(target_os = "macos"))]
+/// The player's own window, built here rather than declared in
+/// tauri.conf.json — and the reason is one line of it, `data_directory`.
+///
+/// A portable copy keeps localStorage beside its executable, which means the
+/// webview's data store has to be an absolute path under the installation. The
+/// configuration cannot express that: its `dataDirectory` is documented as
+/// relative to `appDataDir()/<label>` and an absolute value is refused with
+/// "is not a relative path, ignoring config". So the window moves into code,
+/// and with it every property the configuration used to carry.
+///
+/// **An ordinary installation passes nothing**, which is what keeps every
+/// viewer's positions, track choices, hotkeys and window geometry exactly where
+/// they already are: with no data directory set, Tauri's manager forces
+/// `LocalData/<identifier>` — downstream of the configuration, so the default
+/// does not depend on this function reproducing it. Computing a "same" path by
+/// hand would be one typo away from losing all of it.
+fn create_main_window(app: &tauri::App) {
+    let mut builder =
+        tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
+            .title("Frame Player")
+            .inner_size(1100.0, 660.0)
+            .min_inner_size(480.0, 320.0)
+            .center()
+            // The transparency the whole embedding model rests on: mpv draws
+            // behind the webview, so anything the page does not paint is a hole
+            // through the window. Needs `macOSPrivateApi` on macOS, which stays
+            // in the configuration.
+            .transparent(true)
+            .decorations(false)
+            // Or an inactive window cannot be dragged and a double click on it
+            // lands as a pause — see the ActivationGate rule in window.md.
+            .accept_first_mouse(true)
+            // Shown from the frontend once it has a black background, with the
+            // three-second safety net in `setup` behind it.
+            .visible(false);
+    if let Some(dir) = portable::webview_dir() {
+        builder = builder.data_directory(dir);
+    }
+    if let Err(e) = builder.build() {
+        eprintln!("[startup] could not create the window: {e}");
+    }
+}
+
 fn create_veil(app: &tauri::App) {
     let built = tauri::WebviewWindowBuilder::new(app, "veil", tauri::WebviewUrl::App("veil".into()))
         .title("")
@@ -1125,6 +1175,16 @@ pub fn run() {
     // it: a copy relaunched by an in-place update has to let its predecessor
     // exit first, or it finds the guard, hands over its argv and disappears.
     update::wait_for_predecessor();
+
+    // Before the builder, because the window needs an engine to be drawn with
+    // and there is no lesser version of that: the whole interface is HTML over
+    // mpv's view, so a missing WebView2 runtime is not a degraded window but no
+    // window at all — nothing even to put the explanation in. An installation
+    // gets the runtime from its installer; a portable copy has none, which is
+    // what webview2.rs is for. It gives up only after it has said why.
+    if !webview2::ensure() {
+        return;
+    }
     // And then what the predecessor could not delete, because the files it
     // renamed out of the way were still mapped into it.
     update::sweep_in_background();
@@ -1132,8 +1192,22 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     point_vulkan_at_bundled_driver();
 
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+    // The single-instance guard is keyed on the identifier, which a development
+    // build shares with an installed one — so running one while the other is
+    // open makes the newcomer hand over its argv and exit **without a word**,
+    // which reads as a build that does not start. Debug builds can be told to
+    // skip it; a release binary has no such switch and always takes the guard,
+    // because forwarding a file from Explorer to the window that is already
+    // open is the whole point of it.
+    let mut builder = tauri::Builder::default();
+    #[cfg(debug_assertions)]
+    let skip_guard = std::env::var("FP_NO_SINGLE_INSTANCE").is_ok();
+    #[cfg(not(debug_assertions))]
+    let skip_guard = false;
+    if skip_guard {
+        eprintln!("[startup] single-instance guard skipped (FP_NO_SINGLE_INSTANCE)");
+    } else {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // A second launch ("Open with" again, say): focus the existing
             // window and hand the file to it.
             if let Some(win) = app.get_webview_window("main") {
@@ -1148,7 +1222,10 @@ pub fn run() {
             // `pick_file_args` above already ignores it, since it keeps only
             // arguments that exist on disk.
             deliver_deep_links(app, &args);
-        }))
+        }));
+    }
+
+    let app = builder
         // After single-instance, which is what the plugin's own documentation
         // asks for: on Windows a link opens a second process, and that process
         // has to hand over and exit rather than register itself as the handler.
@@ -1209,6 +1286,9 @@ pub fn run() {
             thumb_service::set_private_paths,
             thumb_service::forget_thumbs,
             trash::trash_file,
+            portable::portable_state,
+            shell_handler::shell_handler_state,
+            shell_handler::shell_handler_set,
             update::update_check,
             update::update_prepare,
             update::update_commit,
@@ -1328,6 +1408,17 @@ pub fn run() {
                     dlna::selftest(&handle, target, path).await;
                 });
             }
+            // `FP_SHELL_HANDLER=on|off` takes or gives back the shell
+            // registration a portable copy would normally decide from its own
+            // settings switch — the undo path is the safety valve on an
+            // automatic registry write, so it has to be testable.
+            if let Ok(want) = std::env::var("FP_SHELL_HANDLER") {
+                let on = want == "on";
+                match shell_handler::shell_handler_set(app.handle().clone(), on) {
+                    Ok(()) => eprintln!("[shell] handler set to {want} by FP_SHELL_HANDLER"),
+                    Err(e) => eprintln!("[shell] FP_SHELL_HANDLER failed: {e}"),
+                }
+            }
             // `FP_UPDATE_AUTO=<seconds>` runs the whole Windows in-place
             // update through the same commands the update button calls, with
             // the player playing — how the swap is tested without a release and
@@ -1345,6 +1436,7 @@ pub fn run() {
             // dev console. Errors still get through; warnings about a file we
             // are only sampling frames from are not ours to report.
             ffmpeg_the_third::util::log::set_level(ffmpeg_the_third::util::log::Level::Error);
+            create_main_window(app);
             #[cfg(not(target_os = "macos"))]
             create_veil(app);
             if let Some(win) = app.get_webview_window("main") {

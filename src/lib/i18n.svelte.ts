@@ -97,6 +97,7 @@ const ru = {
   'osd.fit_on': 'Окно под пропорции видео',
   'osd.fit_off': 'Пропорции окна свободные',
   'osd.update_failed': 'Ошибка обновления',
+  'osd.update_download': 'Открываю страницу загрузки — портативную версию нужно распаковать вручную',
   'osd.history_cleared': 'История просмотров очищена',
   'osd.zoom': 'Масштаб: {value}%',
   'osd.ab_a': 'Начало отрезка: {time}',
@@ -657,6 +658,7 @@ const ru = {
   'sec.window': 'Окно',
   'sec.together': 'Совместный просмотр',
   'sec.history': 'История и приватность',
+  'sec.portable': 'Портативная копия',
   'sec.about': 'О программе',
   'sec.catalog': 'Каталог',
   'sec.network': 'Сеть',
@@ -729,6 +731,12 @@ const ru = {
   // The notice LGPL-2.1 section 6 requires: it has to name the libraries and say
   // they are covered by that license. It is a sentence rather than a bare link
   // for that reason — the link alone would satisfy nobody's obligation.
+  'set.handler': 'Открывать видео и ссылки этой копией',
+  'set.handler_hint':
+    'Windows умеет связать тип файла и ссылку только с конкретным путём, папочного способа нет. Если рядом стоит обычная установка, обработчиком будет та копия, которую запустили последней.',
+  'set.portable_foot': 'Настройки, история просмотра и кэш — в {path}',
+  'set.portable_keychain':
+    'За пределами папки остаётся только пароль OpenSubtitles — он в хранилище учётных данных Windows, потому что держать его файлом в папке, которую копируют на другие машины, было бы хуже.',
   'set.licenses_foot':
     'Плеер работает на mpv, FFmpeg и других свободных библиотеках — они распространяются по LGPL и другим лицензиям, их полные тексты входят в поставку:',
   'set.licenses_open': 'открыть лицензии',
@@ -1117,6 +1125,7 @@ const en: Record<MessageKey, string> = {
   'osd.fit_on': 'Window follows video aspect',
   'osd.fit_off': 'Window aspect is free',
   'osd.update_failed': 'Update failed',
+  'osd.update_download': 'Opening the download page - a portable copy has to be unpacked by hand',
   'osd.history_cleared': 'Watch history cleared',
   'osd.zoom': 'Zoom: {value}%',
   'osd.ab_a': 'Segment start: {time}',
@@ -1661,6 +1670,7 @@ const en: Record<MessageKey, string> = {
   'sec.window': 'Window',
   'sec.together': 'Watching together',
   'sec.history': 'History and privacy',
+  'sec.portable': 'Portable copy',
   'sec.about': 'About',
   'sec.catalog': 'Catalog',
   'sec.network': 'Network',
@@ -1727,6 +1737,12 @@ const en: Record<MessageKey, string> = {
     'mpv settings are stored in mpv.conf and applied immediately. Fine-tuning lives in the file itself:',
   'set.conf_reveal_mac': 'show mpv.conf in Finder',
   'set.conf_reveal_win': 'show mpv.conf in Explorer',
+  'set.handler': 'Open video and links with this copy',
+  'set.handler_hint':
+    'Windows can only tie a file type or a link to one specific path; there is no folder-local way. With an ordinary installation beside this copy, whichever ran last is the handler.',
+  'set.portable_foot': 'Settings, watch history and caches are in {path}',
+  'set.portable_keychain':
+    'The one thing kept outside the folder is the OpenSubtitles password, which lives in the Windows credential store - a password in a file inside a folder people copy onto other machines would be worse.',
   'set.licenses_foot':
     'Frame Player runs on mpv, FFmpeg and other free software libraries — covered by the LGPL and other licenses, whose full texts ship with the application:',
   'set.licenses_open': 'open the licenses',

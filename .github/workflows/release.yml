@@ -363,6 +363,19 @@ jobs:
           if (-not (Test-Path "$zip.sig")) { Write-Error "the payload was not signed" }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item $zip dist/
+          # And the portable download: the same files plus the marker that puts
+          # the player's state beside its executable, without the manifest.
+          # Into a subdirectory of dist/ because it is a download and not an
+          # update payload — a portable copy updates itself from the payload
+          # above, whose file set is the same one — so it belongs on the GitHub
+          # release, where assets are kept, rather than in the update bucket,
+          # which is pruned to the last few versions.
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 -Version $version -OutDir $out -Portable
+          if ($LASTEXITCODE -ne 0) { Write-Error "packing the portable download failed with $LASTEXITCODE" }
+          $portable = Join-Path $out "FramePlayer_${version}_x64-portable.zip"
+          if (-not (Test-Path $portable)) { Write-Error "no portable download at $portable" }
+          New-Item -ItemType Directory -Force -Path dist/portable | Out-Null
+          Copy-Item $portable dist/portable/
 
       # --- Stage -------------------------------------------------------------
       # Each platform stages its own files plus a manifest fragment,
@@ -508,6 +521,7 @@ jobs:
           | `FramePlayer_*_x64-setup.exe` | Installer (Windows 10/11 x64) |
           | `FramePlayer_*_aarch64.dmg` | Disk image (macOS, Apple Silicon) |
           | `FramePlayer_*_x64.zip` | The Windows installation's own files, which the in-place update downloads |
+          | `FramePlayer_*_x64-portable.zip` | Portable (Windows 10/11 x64): unpack anywhere, keeps settings and history in its own folder |
 
           The player updates automatically: when a new version is released,
           an update button appears in the app.
@@ -559,6 +573,9 @@ jobs:
           # learns about a version whose files are not uploaded yet.
           for f in dist/*; do
             [ "$(basename "$f")" = "latest.json" ] && continue
+            # dist/portable/ is a GitHub-release-only artifact, and a directory
+            # handed to `aws s3 cp` without --recursive fails the whole step.
+            [ -d "$f" ] && continue
             aws s3 cp "$f" "s3://$bucket/$(basename "$f")" --endpoint-url "$endpoint"
           done
           aws s3 cp dist/latest.json "s3://$bucket/latest.json" \
@@ -584,6 +601,7 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/*.zip
+            dist/portable/*.zip
             dist/latest.json
 
       # Last, and a step of its own. It used to sit at the end of the upload,
