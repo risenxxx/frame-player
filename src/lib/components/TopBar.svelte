@@ -18,6 +18,7 @@
   import { formatCode } from '$lib/sync/protocol';
   import { wire, type RoomEvent } from '$lib/sync/wire.svelte';
   import type { TorrentStatus } from '$lib/torrent.svelte';
+  import type { Waiting } from '$lib/updater.svelte';
 
   interface Props {
     idle: boolean;
@@ -34,7 +35,7 @@
     chromeEl: HTMLElement | null;
     /// `body` is the release's notes from `latest.json`, shown as the button's
     /// tooltip; absent for a release published before they existed.
-    updateAvail: { version: string; body?: string } | null;
+    updateAvail: Waiting | null;
     updatePct: number | null;
     torrentChip: TorrentStatus | null;
     torrentLabel: string | null;

@@ -45,3 +45,7 @@ services/relay/relay
 # file added there was ignored without a word.
 /tmdb
 /relay
+
+# Release staging: `scripts/pack-windows-update.ps1` and the release workflow
+# both write the Windows update zip and its staging tree here.
+/dist

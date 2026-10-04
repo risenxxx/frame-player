@@ -25,6 +25,7 @@ mod thumb_service;
 mod torrent;
 mod torrent_storage;
 mod trash;
+mod update;
 mod upnp;
 mod window_guard;
 mod window_shape;
@@ -1119,6 +1120,14 @@ pub fn run() {
     // against 256.
     raise_fd_limit();
 
+    // Before the builder, because the single-instance guard is set up inside
+    // it: a copy relaunched by an in-place update has to let its predecessor
+    // exit first, or it finds the guard, hands over its argv and disappears.
+    update::wait_for_predecessor();
+    // And then what the predecessor could not delete, because the files it
+    // renamed out of the way were still mapped into it.
+    update::sweep_in_background();
+
     #[cfg(target_os = "macos")]
     point_vulkan_at_bundled_driver();
 
@@ -1198,6 +1207,9 @@ pub fn run() {
             thumb_service::set_private_paths,
             thumb_service::forget_thumbs,
             trash::trash_file,
+            update::update_check,
+            update::update_prepare,
+            update::update_commit,
             external_dirs::external_track_dirs,
             thumb_service::forget_thumbs_under,
             thumb_service::clear_thumb_cache,
@@ -1311,6 +1323,13 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     dlna::selftest(&handle, target, path).await;
                 });
+            }
+            // `FP_UPDATE_AUTO=<seconds>` runs the whole Windows in-place
+            // update through the same commands the update button calls, with
+            // the player playing — how the swap is tested without a release and
+            // without a hand on the mouse. See scripts/update-test.ps1.
+            if std::env::var("FP_UPDATE_AUTO").is_ok() {
+                update::selftest(app.handle());
             }
             // Quieten OUR copy of libavcodec. mpv links its own and installs a
             // log callback for it (its lines read `[ffmpeg/video] hevc: …`);

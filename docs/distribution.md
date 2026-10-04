@@ -169,32 +169,173 @@ Since the 2023 CA/Browser Forum rules, private keys must live in hardware — a
 USB token, which is useless for automated builds, or a cloud signing service,
 which is not.
 
-### The update takes seconds, and where they go
+### The update takes seconds, and where they went
 
-| | macOS | Windows |
+This is where the Windows update started, and the table is kept because it is
+what the in-place path below was written against:
+
+| | macOS | Windows, originally |
 |---|---|---|
 | artifact | `.app.tar.gz`, gzip | `-setup.exe`, solid LZMA |
 | what the updater does | unpack, swap the application directory | launch a separate installer process |
 | removes the old version first | no | **yes** — runs the previous uninstaller and waits |
 
-So a Windows update deletes the previous installation and writes the new one
+So a Windows update deleted the previous installation and wrote the new one
 back, decompressing an LZMA payload, where macOS unpacks a gzip archive over the
-old directory. Levers, cheapest first:
+old directory. The levers, cheapest first, were:
 
 - **Quiet install mode** removes the installer window. Not faster, but it turns
   "the app closes, a foreign window appears, the app comes back" into "the app
-  closes and comes back".
+  closes and comes back". Shipped, and still in `tauri.conf.json` as
+  `installMode: passive` — which is what the fallback below uses.
 - **Announce the update before starting it.** The project's own rule that a slow
-  operation must say so first has to be applied *before* the install call,
-  because on Windows no code after that call ever runs — the installer kills the
-  process from inside it. Anything that must survive an update (the resume
-  snapshot) has to be written first for the same reason.
+  operation must say so first had to be applied *before* the install call,
+  because no code after that call ever ran — the installer kills the process
+  from inside it. Anything that must survive an update (the resume snapshot) had
+  to be written first for the same reason.
 - **Compression.** A faster codec would decompress in a fraction of the time and
-  grow the download by roughly half. That trades processor seconds for network
-  seconds and is only a win on a fast link.
+  grow the download. Measured below.
 - **The size itself.** On Windows libmpv and the thumbnail sidecar link
   *separate* FFmpeg copies, where macOS points both at one set, so the installer
-  ships FFmpeg twice. Deduplicating cuts download and decompression at once.
+  ships FFmpeg twice. Deduplicating cuts download and decompression at once, and
+  is the one lever here still untouched.
+
+### Replacing the files instead of reinstalling them
+
+What ships now is a second Windows artifact — the installation as a zip — which
+the player unpacks into its own directory and swaps file by file. No installer
+window, no uninstall pass, and code after the call runs, which is what lets the
+player relaunch itself the way macOS always has. The rules are in
+[`rules/build-and-release.md`](rules/build-and-release.md); what follows is why
+it looks like this.
+
+**What Windows actually allows was measured before anything was written**, in
+isolation, with a DLL loaded through `LoadLibrary` and a copy of a real
+executable running:
+
+| with the process running and the image mapped | |
+|---|---|
+| rename a loaded DLL inside its directory | works |
+| rename the running `.exe` | works |
+| create a new file at the name just vacated | works |
+| **delete** the renamed image | **access denied** |
+| delete it once the process has exited | works |
+| rename a *directory* holding a loaded DLL | works |
+
+Two of those decided the design. Because a renamed image cannot be deleted until
+the process holding it exits, the leftovers are somebody else's job: the
+relaunched copy is given `--after-update=<pid>` and waits for that process before
+sweeping. And the last row is the one usually told the other way round — a
+directory with a loaded DLL in it *can* be renamed — so per-file renaming is a
+choice rather than a necessity, made because it is what can be rolled back one
+file at a time.
+
+**Compression was a measurement, not a preference.** The same 259.8 MB
+installation, in one archive each:
+
+| | size | needs |
+|---|---|---|
+| `-setup.exe`, solid LZMA (what the installer is) | 85.6 MB | — |
+| zip, deflate level 9 | **105.9 MB** | nothing — `flate2` is already in the tree |
+| zip, zstd level 19 | 93.0 MB | a C codec in the reader, and a zip writer of our own |
+
+Deflate costs about twenty megabytes against the installer and buys back the
+uninstall pass and the LZMA decompression, so the update is faster end to end on
+anything but a slow link — and the reader is the `zip` crate that
+`tauri-plugin-updater` already pulls in, with one pure-Rust feature added.
+zstd would have closed most of that gap; what it wanted in exchange was a C
+library in the client and, on the packaging side, a zip writer written here,
+because nothing that ships with Windows writes a zstd zip. That trade is
+recorded rather than taken, and the number is here for whoever wants to revisit
+it. The other half of the gap is the FFmpeg duplication above, which would
+shrink both artifacts at once and is the better lever of the two.
+
+**The uninstaller is why the file set is frozen.** The NSIS uninstaller deletes a
+list of paths generated when it was built, then removes the directories it knows
+about and nothing else; only an installer run writes a new one. So an in-place
+update that added or dropped a path would leave an uninstaller unable to clean up
+after itself — and a release that renames a library, which a major FFmpeg bump
+does, would leave ninety megabytes behind after an uninstall with nothing to say
+so. Three ways out were considered:
+
+- **Ship `uninstall.exe` in the payload.** It exists only after an installer has
+  run, so building the payload would mean running the installer into a staging
+  directory in CI — which also writes uninstall-registry entries and shortcuts,
+  and could not be reproduced on a developer's machine without clobbering their
+  own installation's entry.
+- **An `RMDir /r "$INSTDIR"` hook in the uninstaller.** Tauri supports the hook,
+  and it would make the uninstaller correct for ever. It would also delete
+  whatever else is in that directory — and `$INSTDIR` is whatever the person
+  typed during installation, so somebody who installed into `D:\Utilities`
+  rather than `D:\Utilities\Frame Player` would lose `D:\Utilities`.
+- **Refuse the swap when the set changes**, which is what runs. The release that
+  changes the file set goes through the installer once, the installer rewrites
+  the uninstaller, and every release after it is in place again.
+
+The set on disk is read by *walking the installation* rather than from a manifest
+a previous version left behind, which is what makes the first in-place update
+work with no transition release — and it is also why the payload's manifest sits
+at the root of the zip, outside the folder that gets installed: a manifest
+installed beside the binaries would itself be a path the uninstaller does not
+know, and the very first swap would refuse itself.
+
+That comparison is also the safety property worth stating plainly: **if the
+payload's layout ever stops matching what the installer lays down, every client
+refuses the swap and falls back to the installer.** Getting the packaging wrong
+costs a release its new update path; it cannot produce a broken installation.
+
+### Testing the Windows update
+
+The whole client path runs locally, against a real installation layout, with no
+release and no access to the project's signing key — which matters because the
+alternative is finding out from the first person to press the button.
+
+A **debug build only** reads `FP_UPDATE_ENDPOINT` and `FP_UPDATE_PUBKEY` from the
+environment, so a throwaway key and a loopback server stand in for R2 while the
+signature check stays in the loop exactly as it is in a release. A release binary
+ignores both, which is the point of the gate: nothing in the environment can
+point a shipped player at another manifest or another signing key. The plugin's
+own refusal of `http://` endpoints is lifted under the same condition, which is
+why the server can be plain HTTP.
+
+```bash
+bun run tauri build --debug --no-bundle
+powershell -ExecutionPolicy Bypass -File scripts/update-test.ps1 -WithRegistry
+```
+
+The script generates the key, builds and signs a payload with
+`pack-windows-update.ps1` — the same command the release workflow runs — serves
+it on loopback, and launches a *copy* of a real installation with a few bytes
+appended to its executable and one of its scripts, so that the swap has something
+to do. (Trailing bytes on a PE file are overlay data and the loader ignores
+them.) Nothing outside the temporary directory changes, except with
+`-WithRegistry`, which points the uninstall entry at the staged copy after
+exporting it to a `.reg` file and puts it back at the end.
+
+`-Auto <seconds>` then runs the update through the same two commands the button
+calls, so the swap can be exercised with the libraries mapped and a video playing
+without a hand on the mouse (`FP_UPDATE_AUTO`, the same shape as the
+`FP_DLNA_PLAY` self-test). What that leaves untested is the frontend's two lines
+— the progress listener and the resume snapshot — and the release workflow's own
+half, for which the payload being built by the script CI runs is the whole of the
+mitigation.
+
+Two traps in the scripts themselves, both of which cost an hour:
+
+- **A `.ps1` in this repository has no byte-order mark, so Windows PowerShell 5.1
+  decodes it as the ANSI code page** — and the third byte of a UTF-8 em dash
+  lands on U+201D, which PowerShell accepts as a closing double quote. A string
+  containing one ends there, the next quote in the file opens another, and
+  everything between them — a whole function, in the case that found this —
+  parses as a string literal and ceases to exist. It is not a syntax error: the
+  script runs and reports the function as an unknown command. Comments are safe,
+  since those end at the line break regardless. Hence: nothing but ASCII inside a
+  quoted string.
+- **`$env:X = ''` deletes the variable** rather than setting it to empty, so
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` set that way leaves the signer prompting
+  for a password with nobody to answer, and the script hangs with no output. The
+  password goes on the command line (`--password=`) instead. In the workflow,
+  where `""` in YAML really is an empty variable, the environment is fine.
 
 ### A store listing
 

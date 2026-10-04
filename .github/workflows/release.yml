@@ -324,6 +324,46 @@ jobs:
           [ -f "$dmg" ] || { echo "no dmg at $dmg" >&2; ls -la src-tauri/target/release/bundle/dmg/ >&2; exit 1; }
           scripts/macos-notarize.sh "$dmg"
 
+      # --- The in-place update payload ---------------------------------------
+      # The second Windows artifact: the installation itself as a zip, which the
+      # player unpacks into its own directory and swaps file by file, with no
+      # installer window and no uninstall pass (src-tauri/src/update.rs). Built
+      # from `bundle.resources` and the main binary, signed with the same key as
+      # the installer, and published under a manifest key of its own -
+      # `windows-x86_64-zip` - so that every client older than this release keeps
+      # reading `windows-x86_64` and keeps getting the installer.
+      #
+      # Deliberately not fatal. A release whose payload did not build still goes
+      # out with its installer key intact, and every client falls back to the
+      # installer because the key it looks for is simply absent. The warning
+      # below is the whole of the consequence.
+      - name: Pack the in-place update (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        continue-on-error: true
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          $version = "${{ needs.check-version.outputs.version }}"
+          $out = Join-Path $env:RUNNER_TEMP 'zip'
+          # Out of dist/ on purpose: everything in dist/ is uploaded to R2 as
+          # it stands, and the signature is not a thing to publish. Only the
+          # zip is copied across, below.
+          # Through `powershell` and not this step's pwsh: Windows PowerShell
+          # 5.1 is the shell the script is developed and tested under locally
+          # (and the one package.json calls fetch-libs.ps1 with), and running
+          # the packaging in CI under a shell nobody has exercised is how a
+          # release discovers a difference between them.
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 -Version $version -OutDir $out
+          if ($LASTEXITCODE -ne 0) { Write-Error "packing the payload failed with $LASTEXITCODE" }
+          $zip = Join-Path $out "FramePlayer_${version}_x64.zip"
+          if (-not (Test-Path $zip)) { Write-Error "no payload at $zip" }
+          bun run tauri signer sign $zip
+          if (-not (Test-Path "$zip.sig")) { Write-Error "the payload was not signed" }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item $zip dist/
+
       # --- Stage -------------------------------------------------------------
       # Each platform stages its own files plus a manifest fragment,
       # platform-<key>.json, into dist/. The publish job merges them into one
@@ -348,7 +388,20 @@ jobs:
           # Unset would produce `/FramePlayer_….exe` in the manifest: a relative
           # URL that fails at the client, days later, with nothing here to show.
           if (-not $base) { Write-Error "R2_PUBLIC_URL_UPDATES is not set"; exit 1 }
-          @{ "windows-x86_64" = @{ signature = $sig; url = "$base/$name" } } |
+          $platforms = [ordered]@{ "windows-x86_64" = @{ signature = $sig; url = "$base/$name" } }
+          # The in-place payload's key, when the step above produced one. Second
+          # rather than instead: the installer key is what an older client reads
+          # and what this one falls back to.
+          $zipName = "FramePlayer_${version}_x64.zip"
+          $zipSig = Join-Path $env:RUNNER_TEMP "zip/$zipName.sig"
+          if (Test-Path $zipSig) {
+            $platforms["windows-x86_64-zip"] = @{
+              signature = (Get-Content $zipSig -Raw).Trim(); url = "$base/$zipName"
+            }
+          } else {
+            Write-Output "::warning::no signed in-place payload - this release updates through the installer only"
+          }
+          $platforms |
             ConvertTo-Json -Depth 4 |
             Set-Content "dist/platform-windows-x86_64.json" -Encoding utf8
 
@@ -454,6 +507,7 @@ jobs:
           |------|-------------|
           | `FramePlayer_*_x64-setup.exe` | Installer (Windows 10/11 x64) |
           | `FramePlayer_*_aarch64.dmg` | Disk image (macOS, Apple Silicon) |
+          | `FramePlayer_*_x64.zip` | The Windows installation's own files, which the in-place update downloads |
 
           The player updates automatically: when a new version is released,
           an update button appears in the app.
@@ -529,6 +583,7 @@ jobs:
           files: |
             dist/*.exe
             dist/*.dmg
+            dist/*.zip
             dist/latest.json
 
       # Last, and a step of its own. It used to sit at the end of the upload,

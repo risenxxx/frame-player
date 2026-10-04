@@ -1,54 +1,99 @@
 /**
  * The signed auto-update, driven off the `latest.json` manifest on R2.
  *
- * **Nothing after `downloadAndInstall` runs on Windows** — the NSIS installer
- * kills the process inside that call, so `relaunch()` below is effectively dead
- * code there and anything that must survive the update has to be written first.
- * That is what the two `saveResumeSnapshot()` calls are: one before the
- * download starts, one when it finishes, because the download may have taken
- * minutes and the position has moved since.
+ * There are two ways it lands, and the difference is one platform's.
+ *
+ * On **macOS** the plugin does all of it: it downloads the `.app.tar.gz`,
+ * verifies it and unpacks it over the application directory, and `relaunch()`
+ * afterwards runs.
+ *
+ * On **Windows** there are now two paths of its own. The player asks its own
+ * backend first (`update_prepare`), which downloads the installation as a zip
+ * and stages what changed; `update_commit` then swaps the files and relaunches,
+ * with no installer window and no uninstall pass. When that cannot be used —
+ * a directory it may not write to, a release with no such payload, a file set
+ * that changed — `update_prepare` says so without downloading anything in the
+ * common cases, and the installer runs exactly as it always did. That path
+ * still ends inside `downloadAndInstall`: the NSIS installer kills the process
+ * from in there, and no code after it runs.
+ *
+ * Which is why the resume snapshot is written twice on every path: once before
+ * the download starts, once when it finishes, because the download may have
+ * taken minutes and the position has moved since. See update.rs for what the
+ * swap actually does and why the file set may not change.
  */
 
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 
 import { t } from './i18n.svelte';
 import { dropResumeSnapshot, saveResumeSnapshot } from './history.svelte';
 import { showOsd } from './osd.svelte';
+import { IS_MAC } from './platform';
+
+/** Whole percent of the in-place payload's download, from update.rs. */
+const PROGRESS_EVENT = 'frameplayer://update-progress';
+
+/** What `update_prepare` decided. `reason` is for the console, not the window. */
+interface Plan {
+  mode: 'inplace' | 'installer';
+  version: string | null;
+  files: number;
+  reason: string | null;
+}
+
+/** What `update_check` announces. The plugin's own `Update` satisfies it too. */
+export interface Waiting {
+  version: string;
+  body?: string | null;
+}
 
 class Updater {
   /// A release is waiting, or null. Shown as the button in the title bar.
-  available = $state<Update | null>(null);
+  available = $state<Waiting | null>(null);
   /// Download progress while installing, or null when not installing.
   percent = $state<number | null>(null);
 }
 
 export const updater = new Updater();
 
+/**
+ * The plugin's own handle on the waiting release, kept for the paths that
+ * install through it — macOS always, Windows when the swap is refused. Separate
+ * from `updater.available`, which is only what the button shows: on Windows
+ * that comes from our own backend, so that one place decides what is announced
+ * and what gets installed.
+ */
+let pluginUpdate: Update | null = null;
+
 /// Ask R2 whether there is a newer signed build.
 export async function checkForUpdate() {
-  updater.available = await check().catch(() => null);
+  if (IS_MAC) {
+    pluginUpdate = await check().catch(() => null);
+    updater.available = pluginUpdate;
+    return;
+  }
+  updater.available = await invoke<Waiting | null>('update_check').catch((e) => {
+    console.warn('update check failed:', e);
+    return null;
+  });
 }
 
 export async function installUpdate() {
   if (!updater.available || updater.percent !== null) return;
   try {
-    let total = 0;
-    let done = 0;
     updater.percent = 0;
     saveResumeSnapshot();
-    await updater.available.downloadAndInstall((e) => {
-      if (e.event === 'Started') total = e.data.contentLength ?? 0;
-      else if (e.event === 'Progress') {
-        done += e.data.chunkLength;
-        if (total > 0) updater.percent = Math.round((done / total) * 100);
-      } else if (e.event === 'Finished') {
-        updater.percent = 100;
-        // the download may have taken minutes — refresh the position first
-        saveResumeSnapshot();
-      }
-    });
-    await relaunch();
+    if (!IS_MAC && (await swapInPlace())) return;
+    // The installer runs through the plugin, which needs its own handle on the
+    // release. On Windows there is none yet: the announcement came from our
+    // backend, so the manifest is read once more here — on the rare path, and
+    // it is a kilobyte and a half.
+    const update = pluginUpdate ?? (await check());
+    if (!update) throw new Error('the release is no longer announced');
+    await runInstaller(update);
   } catch (e) {
     // do not leave the snapshot behind, or a later ordinary launch would
     // suddenly open a video
@@ -59,15 +104,60 @@ export async function installUpdate() {
   }
 }
 
-/// Builds the list and pulls in posters. Entries whose file vanished drop out
-/// silently: poster_frame returns an error, and keeping something unopenable
-/// in the list is pointless.
-///
-/// The sequence number is bumped on every call: the list reloads on every
-/// return to the start screen, and posters from the previous pass must not
-/// append themselves to it.
+/**
+ * The Windows path. Returns false when the backend asked for the installer
+ * instead, and otherwise does not return at all: `update_commit` replaces this
+ * process with the new one.
+ *
+ * A commit that fails has put every file back and says so. It is not retried
+ * here and does not fall through to the installer: the payload it staged is
+ * gone with it, so a fallback would mean a second download of its own, and a
+ * viewer who presses the button again gets exactly that — deliberately, rather
+ * than as something the player decided for them after a failure it could not
+ * explain.
+ */
+async function swapInPlace(): Promise<boolean> {
+  const unlisten = await listen<number>(PROGRESS_EVENT, (e) => {
+    updater.percent = e.payload;
+  });
+  try {
+    const plan = await invoke<Plan>('update_prepare');
+    if (plan.mode === 'installer') {
+      console.info('update: using the installer -', plan.reason);
+      return false;
+    }
+    updater.percent = 100;
+    // the download may have taken minutes — refresh the position first
+    saveResumeSnapshot();
+    await invoke('update_commit');
+    // Reached only when the swap had nothing to move, which means this process
+    // is already running those files: there is no relaunch and nothing to
+    // restore afterwards, so put the button back the way a finished update
+    // leaves it.
+    dropResumeSnapshot();
+    updater.percent = null;
+    await checkForUpdate();
+    return true;
+  } finally {
+    unlisten();
+  }
+}
 
-// Custom seekbar (a native input[type=range] is unusable: the click is mapped
-// accounting for the thumb width — diverging from the preview — and clicking
-// the thumb itself is a dead zone). Click and preview use one formula: the
-// fraction of the track width.
+/** What every release did before, and what macOS still does. */
+async function runInstaller(update: Update) {
+  let total = 0;
+  let done = 0;
+  updater.percent = 0;
+  await update.downloadAndInstall((e) => {
+    if (e.event === 'Started') total = e.data.contentLength ?? 0;
+    else if (e.event === 'Progress') {
+      done += e.data.chunkLength;
+      if (total > 0) updater.percent = Math.round((done / total) * 100);
+    } else if (e.event === 'Finished') {
+      updater.percent = 100;
+      saveResumeSnapshot();
+    }
+  });
+  // Windows never gets here; macOS does.
+  await relaunch();
+}
