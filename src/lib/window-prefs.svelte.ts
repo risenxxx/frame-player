@@ -33,10 +33,12 @@ import {
 
 export { PINCH_CHOICES, type PinchAction };
 
-/// Minimum window size in LOGICAL pixels. Duplicates minWidth/minHeight from
-/// tauri.conf.json: there is no way to read them back from the window, and
-/// fitting to the video has to respect them itself — otherwise the window runs
-/// away on its shoulders. Changed together with the config.
+/// Minimum window size in LOGICAL pixels. Duplicates `min_inner_size` in
+/// `create_main_window` (lib.rs — the window is built there rather than
+/// declared in tauri.conf.json, so that a portable copy can be given its own
+/// webview data directory): there is no way to read them back from the window,
+/// and fitting to the video has to respect them itself — otherwise the window
+/// runs away on its shoulders. Changed together with that function.
 const MIN_WINDOW_W = 480;
 const MIN_WINDOW_H = 320;
 

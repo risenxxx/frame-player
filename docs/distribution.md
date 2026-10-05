@@ -284,6 +284,107 @@ payload's layout ever stops matching what the installer lays down, every client
 refuses the swap and falls back to the installer.** Getting the packaging wrong
 costs a release its new update path; it cannot produce a broken installation.
 
+### A copy that lives in its own folder
+
+The portable download is the same files the in-place update ships, plus one
+marker, and the whole of what makes it portable is where the player then looks
+for things. The rules are in
+[`rules/build-and-release.md`](rules/build-and-release.md); what follows is why
+the three awkward parts look the way they do.
+
+**What was actually outside the folder, counted rather than assumed.** On the
+machine this was developed on, an ordinary installation kept:
+
+| where | what | here |
+|---|---|---|
+| `%APPDATA%\app.frameplayer\` | `mpv.conf` | 796 B |
+| `%LOCALAPPDATA%\…\torrents\` | torrent content | **128 GB** |
+| `…\cast\` | the transcode cache for televisions | 18 GB |
+| `…\EBWebView\` | the webview's store — **positions, tracks, hotkeys, geometry** | 143 MB |
+| `…\thumbs\`, `…\posters\` | previews | 234 MB |
+| Credential Manager | the OpenSubtitles password | — |
+
+Everything on that list but the last moved into `.data/`. The password did not:
+it is in the Windows credential store, and the alternative is a password in a
+file inside a folder that people copy onto other people's machines. That is the
+one trace a portable copy leaves, and the settings sheet says so rather than
+leaving it to be found.
+
+**The window had to move into code, and the move was the risk.** Everything the
+player remembers is in localStorage, which lives inside the webview's data
+store. Pointing that at the installation directory needs an absolute path, and
+the configuration's `dataDirectory` is documented as relative to
+`appDataDir()/<label>` — an absolute one is refused outright, with
+*"is not a relative path, ignoring config"*. So `app.windows` in
+`tauri.conf.json` is empty and `create_main_window` carries the window.
+
+What makes that safe for the hundreds of installations that already exist is a
+detail of where the default comes from: with no data directory set, Tauri's
+*manager* forces `LocalData/<identifier>`, downstream of the configuration. An
+ordinary installation therefore passes nothing and keeps the exact directory it
+has always used — rather than being handed a path this code computed to be "the
+same", which is one typo away from every viewer losing their watch history.
+Checked differentially instead of by reading: the window the builder makes and
+the one the shipped 1.26.0 declared have identical `GetWindowLong` style and
+extended-style words and identical outer size, and running it creates no new
+directory beside the existing `EBWebView`.
+
+**The registry is not storage; it is how the system finds the application.** An
+ordinary installation gets five things from its installer, all under
+`HKEY_CURRENT_USER`: the uninstall entry, the `frameplayer://` protocol, the
+`Video` ProgId, sixteen extensions pointing at it, and the install path under
+the publisher's key. A portable copy needs two of them to work at all — an
+invitation link and "Open with" — and **Windows has no folder-local form of
+either**. A protocol handler is a path in the registry or it does not exist.
+
+So "everything in the folder" is true of the data and cannot be true of the
+shell integration, and what remains is a choice. Registering nothing is the
+tidiest and breaks invitation links; registering on every launch is what runs,
+with a switch to turn it off. Two consequences come with that and are in the
+settings hint rather than discovered later: with an ordinary installation beside
+a portable copy, whichever ran last owns the association; and a portable folder
+that is simply deleted leaves keys naming a path that is gone.
+
+Everything displaced is therefore kept beside what replaced it, and both halves
+of that were wrong in the first version — found by running it, not by reading
+it. With no previous value to restore, it wrote an **empty** ProgId into the
+extension, and it deleted the shared `Video` key outright; either takes an
+installed copy's association down with the portable one, because both copies
+call their ProgId `Video`. The rule now is that nothing is undone unless
+something was displaced. Verified by polling the keys while the undo ran: the
+ProgId goes back to the installation, and half a second later the preference
+re-asserts itself and the portable copy takes it again — which is the switch
+being authoritative rather than a one-shot.
+
+**It can also be installed rather than unpacked, and that took one finding about the generated installer.** The four `NSIS_HOOK_*` macros Tauri offers are inserted *inside* sections — far too late to add anything to a page — so a checkbox looks impossible until you notice *where* the hook file is included: line 35 of the template, before its own `Var` declarations and before it defines its pages, with `MUI2.nsh` already included at line 22. An include at the top of a script can define `MUI_PAGE_CUSTOMFUNCTION_SHOW` for a page inserted afterwards, and the template leaves `_SHOW` and `_LEAVE` free (it defines only `_PRE` for its pages). So `installer-hooks.nsh` adds the control that way, following the template's own pattern for the uninstaller's "delete app data" box down to the DPI arithmetic, so the two look alike.
+
+**Which page it lands on is not a choice.** `MUI_PAGE_CUSTOMFUNCTION_SHOW` is generic: the first page inserted after the define consumes it and undefines it again, and the template's first page is the welcome page. The directory page — where "where does this go" would sit more naturally, and where the first version of this aimed — is nine pages later and unreachable from the top of the script. The finish page, the other candidate, already spends both of its checkbox slots on the desktop shortcut and running the player. So the welcome page it is, which is at least where installers conventionally put an option.
+
+Three details decide whether that is safe rather than merely possible. The box is **pre-ticked when the marker is already there**, or re-running the installer over such a folder would make unticking the only way to leave things as they were. It acts **only when the page was actually shown** (`FpPortableAsked`), because the updater runs this installer with `/P /UPDATE` and a silent run skips every page — without the guard an unanswered checkbox would read as "unticked" and every update would quietly move a portable installation's state back into the profile and lose sight of its watch history. And the cleanup is in **PREUNINSTALL**, not POSTUNINSTALL, because the template's own `RMDir "$INSTDIR"` runs between the two: a marker file still on disk by then leaves the whole installation directory behind. The state beside the executable is that installation's app data, so it answers to the uninstaller's own "delete app data" checkbox and is kept, for the same reason, when the answer is no.
+
+**The runtime is the one dependency the archive cannot carry.** The binaries
+need nothing redistributable: searching them for imports turns up only
+`api-ms-win-crt*`, the Universal CRT that is part of Windows 10, and
+`d3d11.dll`. WebView2 is different, because the interface is HTML over mpv's
+view — without a runtime there is no degraded window, there is no window, and
+nowhere to put the explanation. Three routes, and the trade is not about size:
+
+| | asks the viewer | size | trace outside the folder | effect on updates |
+|---|---|---|---|---|
+| carry the runtime in the archive | nothing, and no network | +~75 MB compressed | none | **forks the payload**: its file set differs from an installation's, so it needs an artifact and a manifest key of its own |
+| install the Evergreen runtime when missing | nothing, but needs the network once | +2 MB bootstrapper | yes, the same one the installer leaves | none: one payload serves both kinds of copy |
+| say so and open the download page | a click and a wait | none | none | none |
+
+The second runs, with the third as its fallback. The reason is the first
+column's last cell: the in-place update rests on an installation's file set
+matching the payload's, and a bundled runtime breaks that for the one kind of
+copy that has no installer to fall back to. Detection is free — the same
+`tauri::webview_version()` the settings footer already shows — and on Windows 10
+or 11 the code essentially never runs. It runs for both kinds of copy, so an
+installation whose runtime was removed afterwards heals itself the same way.
+Carrying the runtime stays available and would need no redesign: the mechanism
+is the same environment variable either way.
+
 ### Testing the Windows update
 
 The whole client path runs locally, against a real installation layout, with no

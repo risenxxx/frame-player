@@ -62,7 +62,6 @@ use librqbit::{
     AddTorrent, AddTorrentOptions, AddTorrentResponse, ManagedTorrent, Session, SessionOptions,
 };
 use serde::Serialize;
-use tauri::Manager;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex as AsyncMutex;
@@ -434,11 +433,7 @@ impl Dirs {
     /// effect, not a download the viewer asked to keep, and a cache directory is
     /// the one place an OS and a user both understand as disposable.
     fn state_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-        let dir = app
-            .path()
-            .app_cache_dir()
-            .map_err(|e| format!("no cache dir: {e}"))?
-            .join("torrents");
+        let dir = crate::portable::cache_dir(app)?.join("torrents");
         std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {dir:?}: {e}"))?;
         Ok(dir)
     }

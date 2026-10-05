@@ -51,6 +51,18 @@
   Fails if a path is missing from either side (`uninstall.exe`, which belongs
   to the installer and is never swapped, is ignored).
 
+.PARAMETER Portable
+  Build the portable download instead of the update payload: the same files,
+  plus the `.portable` marker that tells the player to keep its state beside
+  itself, and without the manifest - nothing updates from this archive, so
+  there is nothing for a manifest to describe, and a human unpacking it should
+  find one folder and no bookkeeping.
+
+  It is deliberately not signed and deliberately not uploaded to R2: it is a
+  download, not an update payload, and a GitHub release keeps its assets where
+  the update bucket is pruned to the last few versions. A portable copy updates
+  itself from the ordinary payload, because its file set is the same one.
+
 .EXAMPLE
   bun run tauri build
   powershell -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 `
@@ -60,7 +72,8 @@ param(
   [string]$Version,
   [string]$Exe,
   [string]$OutDir = 'dist',
-  [string]$CompareWith
+  [string]$CompareWith,
+  [switch]$Portable
 )
 
 $ErrorActionPreference = 'Stop'
@@ -212,7 +225,9 @@ $json = $doc | ConvertTo-Json -Depth 5
 $manifestFile = [IO.Path]::GetTempFileName()
 [IO.File]::WriteAllText($manifestFile, $json, (New-Object Text.UTF8Encoding $false))
 
-$zip = Join-Path $outPath "FramePlayer_${Version}_x64.zip"
+$suffix = ''
+if ($Portable) { $suffix = '-portable' }
+$zip = Join-Path $outPath "FramePlayer_${Version}_x64${suffix}.zip"
 if (Test-Path -LiteralPath $zip) { Remove-Item -Force -LiteralPath $zip }
 # Entry by entry rather than CreateFromDirectory, for two reasons. It saves
 # copying 260 MB into a staging tree only to read it straight back. And
@@ -225,8 +240,17 @@ if (Test-Path -LiteralPath $zip) { Remove-Item -Force -LiteralPath $zip }
 $archive = [IO.Compression.ZipFile]::Open($zip, [IO.Compression.ZipArchiveMode]::Create)
 try {
   $level = [IO.Compression.CompressionLevel]::Optimal
-  [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-    $archive, $manifestFile, 'update-manifest.json', $level)
+  if ($Portable) {
+    # Present is all it has to be; the text is for whoever opens it wondering.
+    $entry = $archive.CreateEntry("$product/.portable", $level)
+    $writer = New-Object IO.StreamWriter($entry.Open())
+    try {
+      $writer.Write("Frame Player keeps its settings, watch history and caches in the .data`r`nfolder beside this file. Delete this file to make this copy behave like an`r`nordinary installation and use the Windows user profile instead.`r`n")
+    } finally { $writer.Dispose() }
+  } else {
+    [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+      $archive, $manifestFile, 'update-manifest.json', $level)
+  }
   foreach ($f in ($files | Sort-Object { $_.To })) {
     [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
       $archive, $f.From, "$product/$($f.To)", $level)
@@ -237,8 +261,14 @@ try {
 }
 
 $zipSize = (Get-Item -LiteralPath $zip).Length
-Write-Output ("{0}: {1} files, {2:N1} MB -> {3:N1} MB ({4:N0}%)" -f `
-  (Split-Path -Leaf $zip), $entries.Count, ($raw / 1MB), ($zipSize / 1MB), ($zipSize / $raw * 100))
+# The marker is named rather than counted, because the two archives are
+# otherwise one rounded megabyte apart and a release log could not tell them
+# apart - which is exactly what it would have to do if -Portable were ever
+# dropped by accident.
+$kind = 'payload'
+if ($Portable) { $kind = 'portable, with the .portable marker' }
+Write-Output ("{0}: {1} files, {2:N1} MB -> {3:N1} MB ({4:N0}%) [{5}]" -f `
+  (Split-Path -Leaf $zip), $entries.Count, ($raw / 1MB), ($zipSize / 1MB), ($zipSize / $raw * 100), $kind)
 foreach ($e in $entries) { Write-Output ("  {0,12:N0}  {1}" -f $e.size, $e.path) }
 
 # --- the drift check -------------------------------------------------------

@@ -112,12 +112,40 @@ pub struct Plan {
 }
 
 impl Plan {
+    /// Run the installer, which is what an ordinary installation falls back to.
     fn installer(reason: impl Into<String>) -> Self {
         Self {
             mode: "installer",
             version: None,
             files: 0,
             reason: Some(reason.into()),
+        }
+    }
+
+    /// Send the viewer to the download page, which is what a **portable** copy
+    /// falls back to. Running the installer there would be actively wrong: it
+    /// would install a second, ordinary copy into the profile and leave the
+    /// portable one exactly as old as it was, which is the failure this whole
+    /// mode exists to avoid.
+    fn download(reason: impl Into<String>) -> Self {
+        Self {
+            mode: "download",
+            version: None,
+            files: 0,
+            reason: Some(reason.into()),
+        }
+    }
+
+    /// Whichever of the two this copy has, which is a question about **how it
+    /// was delivered** and not about where it keeps its state. An installation
+    /// that keeps its state beside itself — the installer offers that — has an
+    /// installer to fall back on and must be sent to it; only a copy nobody
+    /// installed has nothing to run.
+    fn no_swap(app: &AppHandle, reason: impl Into<String>) -> Self {
+        if crate::portable::installed(app) {
+            Self::installer(reason)
+        } else {
+            Self::download(reason)
         }
     }
 }
@@ -173,7 +201,7 @@ pub async fn update_prepare(app: AppHandle) -> Result<Plan, String> {
     #[cfg(not(windows))]
     {
         let _ = app;
-        Ok(Plan::installer("in-place updates are Windows-only"))
+        Ok(Plan::no_swap(&app, "in-place updates are Windows-only"))
     }
 }
 
@@ -438,14 +466,10 @@ mod imp {
     }
 
     /// The directory the swap operates on, and the one the relaunch spawns out
-    /// of. Taken from the running image rather than from the registry: a
-    /// portable copy has no registry entry, and a per-user installation's entry
-    /// can point somewhere a previous installation was.
+    /// of — the same answer `portable` builds its own layout on, and one
+    /// definition rather than two.
     fn install_dir() -> Result<PathBuf, String> {
-        let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
-        exe.parent()
-            .map(Path::to_path_buf)
-            .ok_or_else(|| "the executable has no directory".to_string())
+        crate::portable::app_dir()
     }
 
     fn exe_name() -> Result<std::ffi::OsString, String> {
@@ -599,7 +623,7 @@ mod imp {
 
         if !writable(&staging) {
             let _ = std::fs::remove_dir_all(&staging);
-            return Ok(Plan::installer(format!(
+            return Ok(Plan::no_swap(&app, format!(
                 "{} is not writable",
                 install.display()
             )));
@@ -613,13 +637,13 @@ mod imp {
             Ok(Some(u)) => u,
             Ok(None) => {
                 let _ = std::fs::remove_dir_all(&staging);
-                return Ok(Plan::installer("the manifest announces no newer version"));
+                return Ok(Plan::no_swap(&app, "the manifest announces no newer version"));
             }
             // A release whose zip failed to build has no such key, and the
             // check reports exactly that. The installer still has one.
             Err(e) => {
                 let _ = std::fs::remove_dir_all(&staging);
-                return Ok(Plan::installer(format!("no in-place payload: {e}")));
+                return Ok(Plan::no_swap(&app, format!("no in-place payload: {e}")));
             }
         };
         let announced = update.version.clone();
@@ -675,7 +699,7 @@ mod imp {
             Ok(staged) => staged,
             Err(reason) => {
                 eprintln!("[update] falling back to the installer: {reason}");
-                return Ok(Plan::installer(reason));
+                return Ok(Plan::no_swap(&app, reason));
             }
         };
 
@@ -972,13 +996,6 @@ mod imp {
     /// what Apps & Features shows. Only the entry that points at *this*
     /// directory is touched, and a portable copy has none to touch.
     fn registry_version(app: &AppHandle, install: &Path, version: &str) -> Result<(), String> {
-        let product = app
-            .config()
-            .product_name
-            .clone()
-            .ok_or_else(|| "no product name".to_string())?;
-        let path = format!("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{product}");
-
         let mut size_kb = 0u64;
         for rel in walk_installed(install)? {
             if let Ok(meta) = std::fs::metadata(install.join(rel.replace('/', "\\"))) {
@@ -986,36 +1003,22 @@ mod imp {
             }
         }
 
-        // Per-user first, which is what the installer writes by default; a
-        // per-machine installation keeps the same entry under the machine's
-        // own hive and needs elevation to write, so a failure there is
-        // reported and nothing more.
-        for hive in [
-            windows_registry::CURRENT_USER,
-            windows_registry::LOCAL_MACHINE,
-        ] {
-            let Ok(key) = hive.open(&path) else { continue };
-            // The installer writes this one quoted.
-            let Ok(location) = key.get_string("InstallLocation") else {
-                continue;
-            };
-            let location = location.trim_matches('"');
-            if !Path::new(location)
-                .as_os_str()
-                .eq_ignore_ascii_case(install.as_os_str())
-            {
-                continue;
-            }
-            let key = hive
-                .create(&path)
-                .map_err(|e| format!("opening the uninstall entry for writing: {e}"))?;
-            key.set_string("DisplayVersion", version)
-                .map_err(|e| format!("DisplayVersion: {e}"))?;
-            key.set_u32("EstimatedSize", size_kb as u32)
-                .map_err(|e| format!("EstimatedSize: {e}"))?;
-            return Ok(());
-        }
-        Err(format!("no uninstall entry points at {}", install.display()))
+        // The entry that names this directory, located once in portable.rs —
+        // the same lookup that answers "did an installer put this copy here",
+        // so the two cannot disagree. A per-machine installation keeps its
+        // entry in the machine's hive and needs elevation to write it, so a
+        // failure there is reported and nothing more.
+        let Some((hive, path)) = crate::portable::uninstall_entry(app) else {
+            return Err(format!("no uninstall entry points at {}", install.display()));
+        };
+        let key = hive
+            .create(&path)
+            .map_err(|e| format!("opening the uninstall entry for writing: {e}"))?;
+        key.set_string("DisplayVersion", version)
+            .map_err(|e| format!("DisplayVersion: {e}"))?;
+        key.set_u32("EstimatedSize", size_kb as u32)
+            .map_err(|e| format!("EstimatedSize: {e}"))?;
+        Ok(())
     }
 
     // -----------------------------------------------------------------------

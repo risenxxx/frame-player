@@ -171,6 +171,7 @@
     resume,
     setPendingResume,
   } from '$lib/resume.svelte';
+  import { initPortable } from '$lib/portable.svelte';
   import { checkForUpdate, installUpdate, updater } from '$lib/updater.svelte';
   import { openSubsDialog, removeSubtitle, subs } from '$lib/subs.svelte';
   import { LOOP_LABEL } from '$lib/player.svelte';
@@ -705,6 +706,11 @@
         }
       }),
     );
+
+    // Which kind of copy this is, and — for a portable one — taking the shell
+    // registration it has no installer to do for it. Not awaited: nothing on
+    // screen waits for either answer.
+    void initPortable();
 
     // update check: shortly after start and every 6 hours
     setTimeout(() => void checkForUpdate(), 3000);
