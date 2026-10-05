@@ -298,10 +298,17 @@ onDeviceOffset((_, to) => {
   deviceInForce = to;
 });
 
+/// The file's own half of the audio delay, kept rather than derived. Taking
+/// the device's part out of the mirror cannot be timed right: `output.offset`
+/// moves the moment the offset is dialled, the mirror a frame or two later when
+/// mpv reports the `add`, and in between the file's readout showed the
+/// device's step as its own and jumped back.
+const fileAudio = $state({ value: 0 });
+
 /// The file's own half of what mpv holds — what the menu shows and the file
 /// remembers.
 export function fileDelay(kind: 'sub' | 'audio'): number {
-  return kind === 'sub' ? player.subDelay : player.audioDelay - output.offset;
+  return kind === 'sub' ? player.subDelay : fileAudio.value;
 }
 
 /**
@@ -320,19 +327,24 @@ function rememberDelaySoon(kind: 'sub' | 'audio') {
     // `rememberDelay` only deletes the record on an exact zero (see
     // `DELAY_EPSILON`). The device's part is not the file's to keep.
     if (typeof value === 'number') {
-      const own = kind === 'audio' ? value - deviceInForce : value;
-      rememberDelay(player.filePath, kind, roundDelay(own));
+      const own = roundDelay(kind === 'audio' ? value - deviceInForce : value);
+      rememberDelay(player.filePath, kind, own);
+      // What mpv landed on is the truth; the optimistic sum only bridges to it.
+      if (kind === 'audio') fileAudio.value = own;
     }
   }, DELAY_WRITE_MS);
 }
 
 export function nudgeDelayHere(kind: 'sub' | 'audio', delta: number) {
+  if (!player.hasFile) return;
   nudgeDelay(kind, delta, kind === 'audio' ? deviceInForce : 0);
+  if (kind === 'audio') fileAudio.value = roundDelay(fileAudio.value + delta);
   rememberDelaySoon(kind);
 }
 
 export function resetDelayHere(kind: 'sub' | 'audio') {
   resetDelay(kind, kind === 'audio' ? deviceInForce : 0);
+  if (kind === 'audio') fileAudio.value = 0;
   if (player.filePath) rememberDelay(player.filePath, kind, 0);
 }
 
@@ -344,6 +356,7 @@ export function applyTiming() {
   if (!player.filePath) return;
   const saved = delaysFor(player.filePath);
   deviceInForce = output.offset;
+  fileAudio.value = saved.audio;
   void setProperty('sub-delay', saved.sub).catch(() => {});
   void setProperty('audio-delay', saved.audio + deviceInForce).catch(() => {});
   void setProperty('sub-speed', subSpeedFor(player.filePath)).catch(() => {});
