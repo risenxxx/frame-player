@@ -321,6 +321,18 @@ stops answering leaves after thirty, because nothing announces its departure.
 When multicast finds the same device too (same id or same address), the
 multicast entry wins.
 
+**A refused datagram must not stop the search.** On macOS over Wi-Fi a burst
+of 32 sends is answered with `EAGAIN` from the nineteenth on — measured on two
+networks, the same datagram every run, and not a full send buffer, since a UDP
+datagram never sits in one. tokio's `send_to` reads that as "not writable" and
+waits for kqueue to say otherwise; on one network that came late, on another (a
+/22 behind a mesh router) never, and the sweep stopped for good. Since the SSDP
+search waited for it, a television that had already answered the multicast
+search never reached the picker. Sweep datagrams therefore go out as plain
+syscalls, eight to a burst (none refused, a /24 in under 0.2 s), a refused one
+gets one retry, and the search stops waiting for the sweep after twice its
+round.
+
 What it cannot fix: a network that refuses unicast between clients as well —
 guest networks, AP/client isolation, a VLAN behind a firewall. There the
 television could not fetch the file from us even if we found it.

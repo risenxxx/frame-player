@@ -32,7 +32,9 @@
 //!
 //! **A precaution, not a measured fix.** The report that prompted it turned out
 //! to be a television on another network; no router that drops multicast
-//! between bands has been tested against yet.
+//! between bands has been tested against yet. What *has* been measured is the
+//! sweep's own failure — see [`send_all`]: a fallback that can stall must never
+//! be able to hold back what the multicast search already heard.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
@@ -46,7 +48,13 @@ const WIDEST_PREFIX: u8 = 22;
 /// talked to needs an ARP resolution first, and the kernel holds only one or
 /// three packets per pending entry — pacing keeps a sweep from being dropped
 /// on the floor by its own neighbour table.
-const BURST: usize = 32;
+///
+/// **Measured on macOS over Wi-Fi, a burst of 32 is refused, not dropped.**
+/// From the nineteenth datagram of a burst `sendto` answers `EAGAIN`, on two
+/// networks and every run: a /24 swept at 32 per 4 ms had 93–176 of 253 sends
+/// refused, a /22 250 of 1021, live hosts among them. At 8 per 4 ms none were,
+/// and a /24 took under 0.2 s.
+const BURST: usize = 8;
 const BURST_PAUSE: Duration = Duration::from_millis(4);
 
 /// The LAN interfaces a sweep may cover: IPv4, private, not loopback or
@@ -136,14 +144,32 @@ pub(crate) async fn socket() -> Option<tokio::net::UdpSocket> {
 /// Send `payload(host)` to every target on `port`, paced. Send errors are
 /// ignored: a host that does not exist is most of the sweep, and some stacks
 /// report that per datagram (`EHOSTDOWN`, `ENOBUFS`) rather than silently.
+///
+/// **The send is a plain syscall, not tokio's `send_to`.** The `EAGAIN` above
+/// does not come from the socket's send buffer, which a UDP datagram never sits
+/// in — yet tokio reads it as "not writable", clears the socket's write
+/// readiness and waits for kqueue to report it again. Whether that report ever
+/// comes depends on the network: on one it came late, on another (a /22 behind
+/// a mesh router) never, and the sweep stopped at its first refused datagram
+/// for good. Through `SockRef` an `EAGAIN` is an error returned at once; the
+/// datagram gets one retry after a pause and is then let go, like any other
+/// send error here.
 pub(crate) async fn send_all(
     sock: &tokio::net::UdpSocket,
     targets: &[Ipv4Addr],
     port: u16,
     payload: impl Fn(Ipv4Addr) -> Vec<u8>,
 ) {
+    let raw = socket2::SockRef::from(sock);
     for (i, host) in targets.iter().enumerate() {
-        let _ = sock.send_to(&payload(*host), SocketAddr::from((*host, port))).await;
+        let bytes = payload(*host);
+        let to = socket2::SockAddr::from(SocketAddr::from((*host, port)));
+        if let Err(e) = raw.send_to(&bytes, &to) {
+            if e.kind() == std::io::ErrorKind::WouldBlock {
+                tokio::time::sleep(BURST_PAUSE).await;
+                let _ = raw.send_to(&bytes, &to);
+            }
+        }
         if (i + 1) % BURST == 0 {
             tokio::time::sleep(BURST_PAUSE).await;
         }

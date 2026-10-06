@@ -81,7 +81,7 @@ pub struct Renderer {
 /// (see [`crate::lan_sweep`]) — for the router that drops multicast between the
 /// machine's segment and the television's.
 async fn ssdp_search(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<String> {
-    let unicast = tauri::async_runtime::spawn(ssdp_sweep(timeout, hints.to_vec()));
+    let mut unicast = tauri::async_runtime::spawn(ssdp_sweep(timeout, hints.to_vec()));
     let sockets = ssdp_sockets();
     if sockets.is_empty() {
         eprintln!("[dlna] no usable network interface for SSDP");
@@ -134,12 +134,25 @@ async fn ssdp_search(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<Str
     }
 
     let mut locations: Vec<String> = Vec::new();
-    tasks.push(unicast);
-    for task in tasks {
-        for loc in task.await.unwrap_or_default() {
+    let mut add = |found: Vec<String>| {
+        for loc in found {
             if !locations.contains(&loc) {
                 locations.push(loc);
             }
+        }
+    };
+    for task in tasks {
+        add(task.await.unwrap_or_default());
+    }
+    // The sweep is a fallback and must not be able to hold back what the
+    // multicast search already heard: when it stalled on a refused send, a
+    // renderer that had answered never reached the picker. Its own round is
+    // the send plus `timeout`, so twice that is generous.
+    match tokio::time::timeout(timeout * 2, &mut unicast).await {
+        Ok(found) => add(found.unwrap_or_default()),
+        Err(_) => {
+            unicast.abort();
+            eprintln!("[dlna] unicast sweep overran its round, dropped");
         }
     }
     locations
