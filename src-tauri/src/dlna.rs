@@ -80,8 +80,18 @@ pub struct Renderer {
 /// A unicast sweep runs beside it — `hints` and every LAN host asked directly
 /// (see [`crate::lan_sweep`]) — for the router that drops multicast between the
 /// machine's segment and the television's.
-async fn ssdp_search(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<String> {
-    let mut unicast = tauri::async_runtime::spawn(ssdp_sweep(timeout, hints.to_vec()));
+///
+/// **Each LOCATION goes out on `found` the moment it is heard**, not in a list
+/// at the end of the round: what a caller does with one (an HTTP description
+/// fetch) must not wait for the slowest part of the search, and a duplicate is
+/// the receiver's to drop. Returns when the round is over.
+async fn ssdp_search(
+    timeout: Duration,
+    hints: &[std::net::Ipv4Addr],
+    found: tokio::sync::mpsc::UnboundedSender<String>,
+) {
+    let mut unicast =
+        tauri::async_runtime::spawn(ssdp_sweep(timeout, hints.to_vec(), found.clone()));
     let sockets = ssdp_sockets();
     if sockets.is_empty() {
         eprintln!("[dlna] no usable network interface for SSDP");
@@ -93,6 +103,7 @@ async fn ssdp_search(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<Str
 
     let mut tasks = Vec::new();
     for (ip, sock) in sockets {
+        let found = found.clone();
         tasks.push(tauri::async_runtime::spawn(async move {
             for st in [
                 "urn:schemas-upnp-org:device:MediaRenderer:1",
@@ -104,10 +115,10 @@ async fn ssdp_search(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<Str
                 );
                 if let Err(e) = sock.send_to(msg.as_bytes(), SSDP_ADDR).await {
                     eprintln!("[dlna] M-SEARCH from {ip} failed: {e}");
-                    return Vec::new();
+                    return;
                 }
             }
-            let mut found: Vec<String> = Vec::new();
+            let mut heard: Vec<String> = Vec::new();
             let mut buf = vec![0u8; 8192];
             let deadline = tokio::time::Instant::now() + timeout;
             loop {
@@ -121,38 +132,40 @@ async fn ssdp_search(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<Str
                 };
                 let text = String::from_utf8_lossy(&buf[..n]);
                 if let Some(loc) = header(&text, "location") {
-                    if !found.contains(&loc) {
+                    if !heard.contains(&loc) {
                         if crate::cast::cast_debug() {
                             eprintln!("[dlna] {from} -> {loc}");
                         }
-                        found.push(loc);
+                        heard.push(loc.clone());
+                        let _ = found.send(loc);
                     }
                 }
             }
-            found
         }));
     }
+    drop(found);
 
-    let mut locations: Vec<String> = Vec::new();
-    let mut add = |found: Vec<String>| {
-        for loc in found {
-            if !locations.contains(&loc) {
-                locations.push(loc);
-            }
-        }
-    };
     for task in tasks {
-        add(task.await.unwrap_or_default());
+        let _ = task.await;
     }
     // The sweep is a fallback and must not be able to hold back what the
     // multicast search already heard: when it stalled on a refused send, a
     // renderer that had answered never reached the picker. Its own round is
     // the send plus `timeout`, so twice that is generous.
-    match tokio::time::timeout(timeout * 2, &mut unicast).await {
-        Ok(found) => add(found.unwrap_or_default()),
-        Err(_) => {
-            unicast.abort();
-            eprintln!("[dlna] unicast sweep overran its round, dropped");
+    if tokio::time::timeout(timeout * 2, &mut unicast).await.is_err() {
+        unicast.abort();
+        eprintln!("[dlna] unicast sweep overran its round, dropped");
+    }
+}
+
+/// [`ssdp_search`] for a caller that wants the round's whole list at once.
+async fn ssdp_locations(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<String> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    ssdp_search(timeout, hints, tx).await;
+    let mut locations: Vec<String> = Vec::new();
+    while let Ok(loc) = rx.try_recv() {
+        if !locations.contains(&loc) {
+            locations.push(loc);
         }
     }
     locations
@@ -161,9 +174,13 @@ async fn ssdp_search(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<Str
 /// Unicast `M-SEARCH` to every sweep target. UPnP 1.1 has a device answer a
 /// search addressed to it exactly as it answers the multicast one; a 1.0
 /// device may stay silent, which costs nothing but its absence here.
-async fn ssdp_sweep(timeout: Duration, hints: Vec<std::net::Ipv4Addr>) -> Vec<String> {
+async fn ssdp_sweep(
+    timeout: Duration,
+    hints: Vec<std::net::Ipv4Addr>,
+    found: tokio::sync::mpsc::UnboundedSender<String>,
+) {
     let Some(sock) = crate::lan_sweep::socket().await else {
-        return Vec::new();
+        return;
     };
     let targets = crate::lan_sweep::sweep_targets(&hints);
     crate::lan_sweep::send_all(&sock, &targets, 1900, |host| {
@@ -173,7 +190,7 @@ async fn ssdp_sweep(timeout: Duration, hints: Vec<std::net::Ipv4Addr>) -> Vec<St
         .into_bytes()
     })
     .await;
-    let mut found: Vec<String> = Vec::new();
+    let mut heard: Vec<String> = Vec::new();
     let mut buf = vec![0u8; 8192];
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
@@ -186,15 +203,15 @@ async fn ssdp_sweep(timeout: Duration, hints: Vec<std::net::Ipv4Addr>) -> Vec<St
         };
         let text = String::from_utf8_lossy(&buf[..n]);
         if let Some(loc) = header(&text, "location") {
-            if !found.contains(&loc) {
+            if !heard.contains(&loc) {
                 if crate::cast::cast_debug() {
                     eprintln!("[dlna] unicast {from} -> {loc}");
                 }
-                found.push(loc);
+                heard.push(loc.clone());
+                let _ = found.send(loc);
             }
         }
     }
-    found
 }
 
 /// One bound socket per usable IPv4 interface: loopback and link-local (APIPA,
@@ -641,7 +658,7 @@ fn didl(url: &str, mime: &str, title: &str, size: u64, duration: Option<f64>) ->
 /// Print what the network has. Called at startup only under `FP_DLNA_PROBE=1`.
 pub async fn probe() {
     eprintln!("[dlna] searching for UPnP devices…");
-    let locations = ssdp_search(Duration::from_secs(6), &[]).await;
+    let locations = ssdp_locations(Duration::from_secs(6), &[]).await;
     if locations.is_empty() {
         eprintln!("[dlna] nothing answered M-SEARCH — no UPnP devices, or multicast is being dropped");
         return;
@@ -1213,42 +1230,90 @@ async fn seek_to(
     Err(last.unwrap_or_else(|| "Seek: no unit accepted".into()))
 }
 
-/// Collect renderers once. Devices that cannot be pushed to are dropped here
+/// One round of discovery. Devices that cannot be pushed to are dropped here
 /// rather than shown and refused later.
-async fn collect_renderers(timeout: Duration, hints: &[std::net::Ipv4Addr]) -> Vec<DlnaDeviceInfo> {
-    let client = http();
-    let mut out = Vec::new();
-    for location in ssdp_search(timeout, hints).await {
-        let Some(r) = describe(client, &location).await else {
-            continue;
-        };
-        let Some(control) = r.avtransport.clone() else {
-            continue;
-        };
-        let mimes = match &r.connection_manager {
-            Some(cm) => protocol_info(client, cm)
-                .await
-                .map(|sink| summarize_sink(&sink).keys().cloned().collect())
-                .unwrap_or_default(),
-            None => Vec::new(),
-        };
-        let ip = host_of(&location);
-        let id = if r.udn.is_empty() { location.clone() } else { r.udn.clone() };
-        // The multicast and the unicast search can both hear one renderer.
-        if out.iter().any(|d: &DlnaDeviceInfo| d.id == id) {
-            continue;
+///
+/// **Every LOCATION is asked at once, and each renderer reaches `live` the
+/// moment it is read.** A round used to be the whole search and then each
+/// description and `GetProtocolInfo` in turn, 5 s of timeout apiece, published
+/// at the end — so one LOCATION that never answered (a NAS advertising an
+/// interface the LAN cannot reach is the measured case; a sleeping device is
+/// another) held back every renderer behind it, and the picker restarted the
+/// round before it could finish. Now the slowest device costs only itself.
+///
+/// Returns the round's whole list, which replaces `live` once the round is
+/// over: that is how a device that stopped answering leaves.
+async fn collect_renderers(
+    timeout: Duration,
+    hints: &[std::net::Ipv4Addr],
+    live: &Mutex<Vec<DlnaDeviceInfo>>,
+) -> Vec<DlnaDeviceInfo> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let search = ssdp_search(timeout, hints, tx);
+    tokio::pin!(search);
+    let mut searching = true;
+    let mut asked: Vec<String> = Vec::new();
+    let mut reads = tokio::task::JoinSet::new();
+    let mut out: Vec<DlnaDeviceInfo> = Vec::new();
+    loop {
+        tokio::select! {
+            () = &mut search, if searching => searching = false,
+            Some(location) = rx.recv() => {
+                if !asked.contains(&location) {
+                    asked.push(location.clone());
+                    reads.spawn(renderer_at(location));
+                }
+            }
+            Some(read) = reads.join_next(), if !reads.is_empty() => {
+                let Ok(Some(device)) = read else { continue };
+                // The multicast and the unicast search can both hear one
+                // renderer, and a multi-homed one answers from each address.
+                if out.iter().any(|d| d.id == device.id) {
+                    continue;
+                }
+                let mut shown = live.lock().unwrap_or_else(|p| p.into_inner());
+                match shown.iter_mut().find(|d| d.id == device.id) {
+                    Some(old) => *old = device.clone(),
+                    None => shown.push(device.clone()),
+                }
+                drop(shown);
+                out.push(device);
+            }
+            else => break,
         }
-        out.push(DlnaDeviceInfo {
-            id,
-            name: r.friendly_name,
-            model: r.model,
-            ip,
-            control_url: control,
-            rendering_url: r.rendering_control,
-            mimes,
-        });
     }
     out
+}
+
+/// Read one LOCATION into a renderer the picker can offer, or `None` for a
+/// device that is unreachable, unreadable or not a renderer.
+async fn renderer_at(location: String) -> Option<DlnaDeviceInfo> {
+    let client = http();
+    let Some(r) = describe(client, &location).await else {
+        if crate::cast::cast_debug() {
+            eprintln!("[dlna] {location}: no description");
+        }
+        return None;
+    };
+    let control = r.avtransport.clone()?;
+    let mimes = match &r.connection_manager {
+        Some(cm) => protocol_info(client, cm)
+            .await
+            .map(|sink| summarize_sink(&sink).keys().cloned().collect())
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let ip = host_of(&location);
+    let id = if r.udn.is_empty() { location.clone() } else { r.udn.clone() };
+    Some(DlnaDeviceInfo {
+        id,
+        name: r.friendly_name,
+        model: r.model,
+        ip,
+        control_url: control,
+        rendering_url: r.rendering_control,
+        mimes,
+    })
 }
 
 #[tauri::command]
@@ -1267,7 +1332,7 @@ pub fn dlna_discover_start(
     // that missed the first M-SEARCH would otherwise never appear.
     let task = tauri::async_runtime::spawn(async move {
         loop {
-            let found = collect_renderers(Duration::from_secs(3), &hints).await;
+            let found = collect_renderers(Duration::from_secs(3), &hints, &sink).await;
             if !found.is_empty() {
                 *sink.lock().unwrap_or_else(|p| p.into_inner()) = found;
             }
@@ -2110,4 +2175,146 @@ pub async fn cast_diagnose(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod discovery_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// One LOCATION that never answers must not hold back a renderer that does.
+    ///
+    /// An SSDP responder in the group on every interface the search uses names
+    /// two LOCATIONs on loopback: a listener that accepts and never replies,
+    /// and a renderer that answers at once. Off by default because a round
+    /// also sweeps the real LAN once:
+    ///
+    /// `FP_TEST_DLNA_SLOW=1 cargo test --lib dlna::discovery_tests::slow_location_smoke -- --nocapture`
+    #[tokio::test(flavor = "multi_thread")]
+    async fn slow_location_smoke() {
+        if std::env::var("FP_TEST_DLNA_SLOW").is_err() {
+            return;
+        }
+        // The LOCATION that never answers.
+        let mute = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mute_port = mute.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((s, _)) = mute.accept().await {
+                held.push(s);
+            }
+        });
+        // The renderer that does.
+        let http = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = http.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((mut s, _)) = http.accept().await {
+                tokio::spawn(async move {
+                    let mut req = Vec::new();
+                    let mut buf = [0u8; 4096];
+                    loop {
+                        let Ok(n) = s.read(&mut buf).await else { return };
+                        if n == 0 {
+                            return;
+                        }
+                        req.extend_from_slice(&buf[..n]);
+                        let text = String::from_utf8_lossy(&req).to_string();
+                        let Some(end) = text.find("\r\n\r\n") else { continue };
+                        let length = text[..end]
+                            .lines()
+                            .find_map(|l| {
+                                let (k, v) = l.split_once(':')?;
+                                k.eq_ignore_ascii_case("content-length").then(|| v.trim().parse().ok())?
+                            })
+                            .unwrap_or(0usize);
+                        if req.len() >= end + 4 + length {
+                            break;
+                        }
+                    }
+                    let body = if req.starts_with(b"GET") {
+                        "<?xml version=\"1.0\"?><root xmlns=\"urn:schemas-upnp-org:device-1-0\"><device>\
+                         <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>\
+                         <friendlyName>Loopback renderer</friendlyName><modelName>Test</modelName>\
+                         <UDN>uuid:loopback-renderer</UDN><serviceList>\
+                         <service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>\
+                         <controlURL>/avt</controlURL></service>\
+                         <service><serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>\
+                         <controlURL>/cm</controlURL></service>\
+                         </serviceList></device></root>"
+                    } else {
+                        "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\
+                         <s:Body><u:GetProtocolInfoResponse xmlns:u=\"urn:schemas-upnp-org:service:ConnectionManager:1\">\
+                         <Source></Source><Sink>http-get:*:video/x-matroska:*,http-get:*:video/mp4:*</Sink>\
+                         </u:GetProtocolInfoResponse></s:Body></s:Envelope>"
+                    };
+                    let reply = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = s.write_all(reply.as_bytes()).await;
+                });
+            }
+        });
+        // The SSDP responder: the dead LOCATION first, so a sequential round
+        // would sit on it before reaching the live one.
+        let ssdp = {
+            let sock = socket2::Socket::new(
+                socket2::Domain::IPV4,
+                socket2::Type::DGRAM,
+                Some(socket2::Protocol::UDP),
+            )
+            .unwrap();
+            sock.set_reuse_address(true).unwrap();
+            sock.set_reuse_port(true).unwrap();
+            sock.bind(&std::net::SocketAddrV4::new(std::net::Ipv4Addr::UNSPECIFIED, 1900).into())
+                .unwrap();
+            for (ip, _) in ssdp_sockets() {
+                let _ = sock.join_multicast_v4(&"239.255.255.250".parse().unwrap(), &ip);
+            }
+            sock.set_nonblocking(true).unwrap();
+            tokio::net::UdpSocket::from_std(sock.into()).unwrap()
+        };
+        tokio::spawn(async move {
+            let mut buf = [0u8; 2048];
+            while let Ok((n, from)) = ssdp.recv_from(&mut buf).await {
+                if !buf[..n].starts_with(b"M-SEARCH") {
+                    continue;
+                }
+                for (location, usn) in [
+                    (format!("http://127.0.0.1:{mute_port}/desc.xml"), "uuid:loopback-mute"),
+                    (format!("http://127.0.0.1:{port}/desc.xml"), "uuid:loopback-renderer"),
+                ] {
+                    let reply = format!(
+                        "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nEXT:\r\nLOCATION: {location}\r\n\
+                         ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\nUSN: {usn}\r\n\r\n"
+                    );
+                    let _ = ssdp.send_to(reply.as_bytes(), from).await;
+                }
+            }
+        });
+
+        let live = Mutex::new(Vec::new());
+        let start = std::time::Instant::now();
+        let ours = |list: &[DlnaDeviceInfo]| list.iter().any(|d| d.id == "loopback-renderer");
+        let hints = ["127.0.0.1".parse().unwrap()];
+        let (round, shown_after) = tokio::join!(
+            collect_renderers(Duration::from_secs(3), &hints, &live),
+            async {
+                while !ours(&live.lock().unwrap()) {
+                    if start.elapsed() > Duration::from_secs(20) {
+                        return Duration::MAX;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                start.elapsed()
+            }
+        );
+        let round_took = start.elapsed();
+        println!("shown after {shown_after:?}, round over after {round_took:?}");
+        assert!(ours(&round), "the round lost the renderer");
+        let device = round.iter().find(|d| d.id == "loopback-renderer").unwrap();
+        assert!(device.mimes.iter().any(|m| m == "video/x-matroska"));
+        // The sweep's send is well under a second; the mute LOCATION costs 5 s.
+        assert!(shown_after < Duration::from_secs(2), "held back: {shown_after:?}");
+    }
 }

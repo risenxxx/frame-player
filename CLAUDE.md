@@ -197,6 +197,14 @@ round over the LAN with its timing (`sweep`, or an address instead of it):
 cd src-tauri && FP_TEST_CAST_IP=sweep cargo test --lib cast::tests::unicast_probe_smoke -- --nocapture
 ```
 
+A DLNA round against one LOCATION that never answers (loopback only, apart from
+the one LAN sweep every round makes) — the live renderer must be shown long
+before the round ends:
+
+```bash
+cd src-tauri && FP_TEST_DLNA_SLOW=1 cargo test --lib dlna::discovery_tests::slow_location_smoke -- --nocapture
+```
+
 On macOS a test binary in a custom target dir cannot find the bundled dylibs
 (`@executable_path/lib` resolves next to `deps/`, where build.rs did not copy
 them), so any `cargo test` there also needs `DYLD_FALLBACK_LIBRARY_PATH=$PWD/lib`.

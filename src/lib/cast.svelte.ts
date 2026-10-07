@@ -96,6 +96,13 @@ const DLNA_SWEEP_MS = 4500;
 /// changes nothing — the daemon has to be torn down and built again, which is
 /// what turns "allow" into devices appearing without the viewer closing the
 /// panel and opening it a second time to make it work.
+///
+/// **Only Cast is rebuilt.** DLNA opens fresh sockets for every search round,
+/// so a late permission reaches it on its own, and tearing it down bought
+/// nothing but a lost round — which on a network with no Cast device was every
+/// round: a renderer whose round outlasted this window (one LOCATION that
+/// never answered was enough) was aborted, restarted and aborted again, and the
+/// picker said it was still searching forever.
 const REBUILD_AFTER_EMPTY_POLLS = 9;
 
 class Cast {
@@ -548,22 +555,13 @@ export function startCastDiscovery() {
   deviceTimer = setInterval(() => void pull(), DEVICE_POLL_MS);
 }
 
-/// Tear both discoveries down and start them again. Cheap: one mDNS daemon and
-/// a handful of UDP sockets.
+/// Tear Cast discovery down and start it again. Cheap: one mDNS daemon. DLNA
+/// is left running — see `REBUILD_AFTER_EMPTY_POLLS`.
 async function rebuildDiscovery() {
   emptyPolls = 0;
   cast.rebuilds++;
-  await Promise.all([
-    invoke('cast_discover_stop').catch(() => {}),
-    invoke('dlna_discover_stop').catch(() => {}),
-  ]);
-  const hints = loadHosts();
-  await Promise.all([
-    invoke('cast_discover_start', { hints }).catch(() => {}),
-    invoke('dlna_discover_start', { hints }).catch(() => {}),
-  ]);
-  cast.dlnaSweeping = true;
-  setTimeout(() => (cast.dlnaSweeping = false), DLNA_SWEEP_MS);
+  await invoke('cast_discover_stop').catch(() => {});
+  await invoke('cast_discover_start', { hints: loadHosts() }).catch(() => {});
 }
 
 let emptyPolls = 0;

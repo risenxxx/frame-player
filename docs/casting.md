@@ -333,6 +333,21 @@ syscalls, eight to a burst (none refused, a /24 in under 0.2 s), a refused one
 gets one retry, and the search stops waiting for the sweep after twice its
 round.
 
+**The slowest device must cost only itself.** The fix above made the search
+finish, and the picker still showed no renderer on a network with a NAS that
+advertises an interface the LAN cannot reach. A round was the search, then a
+description fetch and a `GetProtocolInfo` per LOCATION *in turn*, 5 s of
+timeout each, published at the end; the picker rebuilt discovery after nine
+empty polls (about seven seconds), which aborted the round, so one LOCATION that
+never answered kept every renderer out for good — whenever no Cast device made
+the polls non-empty. Two changes, either of which would have done it: every
+LOCATION is read as soon as it is heard and all of them at once, each renderer
+reaching the picker the moment its own reads are done (a loopback test with a
+LOCATION that accepts and never replies: the live renderer is shown after
+~0.1 s, the round ends at 5 s); and the rebuild no longer touches DLNA, which
+opens fresh sockets every round and so never needed it — the rebuild exists
+for a Local Network permission granted after mDNS's sockets were opened.
+
 What it cannot fix: a network that refuses unicast between clients as well —
 guest networks, AP/client isolation, a VLAN behind a firewall. There the
 television could not fetch the file from us even if we found it.
