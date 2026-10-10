@@ -190,7 +190,9 @@ function roomRefuses(): boolean {
 /// Tell the room where a finished gesture left the film.
 function shareSeek(position: number) {
   if (!wire.on) return;
-  publishState(player.paused, Math.max(0, position), player.speed);
+  // The room's speed, not mpv's, which may be bent by drift correction — see
+  // `share` in playback.svelte.ts.
+  publishState(player.paused, Math.max(0, position), wire.timeline.speed || 1);
 }
 
 export function onSeekDown(e: PointerEvent) {

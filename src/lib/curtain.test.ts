@@ -306,6 +306,14 @@ describe('over no picture', () => {
     expect(curtain.bare).toBe(false);
   });
 
+  it('is not bare when the loading plate was up before it came down', () => {
+    nothing();
+    loading = true;
+    void raiseCurtain();
+    expect(curtain.bare).toBe(false);
+    expect(curtain.on).toBe(true);
+  });
+
   it('stops being bare once the loading plate stands over it, curtain or not', () => {
     nothing();
     void raiseCurtain();

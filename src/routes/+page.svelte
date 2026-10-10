@@ -1143,8 +1143,11 @@
   // The loading plate is up: from here the bars come up beside it, as they
   // always did — a slow source is not kept waiting for a window move that
   // may be many seconds off. See `curtain.bare`.
+  // `curtain.bare` is read as well as answered: the plate can be up *before*
+  // the curtain comes down (the room's own open, a torrent still resolving),
+  // and an effect that only watched the plate had already run by then.
   $effect(() => {
-    if (opening.busy || (sync.opening && !player.hasFile)) curtainCovered();
+    if (curtain.bare && (opening.busy || (sync.opening && !player.hasFile))) curtainCovered();
   });
   // Lifts the subtitles clear of the control bar while it is up. Its own
   // effects rather than the chrome's: what it measures is the bar, but what it

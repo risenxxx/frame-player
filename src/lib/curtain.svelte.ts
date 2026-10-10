@@ -147,7 +147,13 @@ function lower() {
   const showing = pictureShowing();
   curtain.ms = showing ? RAISE_MS : 0;
   curtain.on = true;
-  curtain.bare = !showing;
+  // Not bare when the loading plate is already standing: a torrent opened from
+  // the catalog or the history raises it for the magnet resolve, long before
+  // there is a file to come down for, so nothing would say "covered" again —
+  // and the bars, the traffic lights and the plate itself (`.afloat`) stayed
+  // away until the swarm produced a first frame. A black window, for as long
+  // as the slowest wait in the player takes.
+  curtain.bare = !showing && !loading();
   present();
   return showing;
 }

@@ -228,7 +228,13 @@ function share(next: { paused?: boolean; position?: number; speed?: number }) {
   publishState(
     next.paused ?? playback.paused,
     clampPosition(next.position ?? (cast.remote ? playback.position : positionNow())),
-    next.speed ?? player.speed,
+    // The room's speed, never mpv's: while this player is catching up with
+    // the room its `speed` is the *bent* one, and a pause or a seek pressed in
+    // that window used to publish it as what the room runs at. Every peer then
+    // corrected around the new base — up to ten per cent on top of it — and the
+    // next gesture published that, so a room ratcheted itself to 1.14× with
+    // nobody having touched the speed.
+    next.speed ?? (wire.timeline.speed || 1),
   );
 }
 
@@ -404,7 +410,9 @@ export function toggleMute() {
  */
 export function changeSpeed(factor: number) {
   if (refusedByRoom()) return;
-  const next = mpvChangeSpeed(factor);
+  // From the room's speed while in one, for the same reason `share` publishes
+  // it: mpv's own may be mid-correction, and a step taken from 1.04 is 1.14.
+  const next = mpvChangeSpeed(factor, wire.on ? wire.timeline.speed || 1 : undefined);
   share({ speed: next });
 }
 

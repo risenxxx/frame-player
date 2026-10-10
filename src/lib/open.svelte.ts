@@ -38,6 +38,7 @@ import {
   type RecentItem,
 } from './history.svelte';
 import { t } from './i18n.svelte';
+import { latest, type Attempt } from './latest';
 import { showOsd } from './osd.svelte';
 import {
   applyYtdlpPath,
@@ -61,6 +62,8 @@ import {
 } from './feed';
 import {
   addTorrent,
+  forgetResolve,
+  releaseTorrent,
   DELETE_STUCK,
   expectFeed,
   findSupersededTorrent,
@@ -487,7 +490,7 @@ export function cancelLoadFailure() {
 /// A file opened. Whatever failed on the way there was a step and not an
 /// outcome, and nothing is being attempted any more.
 export function noteOpened() {
-  abandonOpening();
+  settleOpening();
 }
 
 /**
@@ -503,9 +506,51 @@ export function noteOpened() {
  * `end-file` whose reason is `stop`, and only `error` reaches the failure path.
  */
 export function abandonOpening() {
+  settleOpening();
+  // And whatever is still on its way here is no longer wanted. A torrent is
+  // opened in steps with a wait between them — the resolve alone can run to a
+  // minute and a half — and each step used to carry on after the viewer had
+  // left: the resolve came back and started the film over the start screen,
+  // or raised the plate again with nothing left to take it down.
+  opens.begin();
+  departures += 1;
+  forgetResolve();
+  opening.pick = null;
+  opening.rowOpening = null;
+}
+
+/// What `noteOpened` and `abandonOpening` share: no verdict is pending and
+/// nothing is being attempted.
+function settleOpening() {
   clearTimeout(loadFailTimer);
   opening.attempting = '';
   opening.busy = false;
+}
+
+/// The torrent opens in flight. Begun by each one and by `abandonOpening`, so
+/// an open is stale once the viewer has left or has asked for something else.
+const opens = latest();
+
+/// How many times the viewer has left. Apart from `opens` because a step
+/// shared by several opens (`playTorrentFile`) must be able to ask "did they
+/// leave" without making the open that called it stale.
+let departures = 0;
+
+/**
+ * Whether a torrent open was overtaken while it waited — and if it was, let go
+ * of what it brought back.
+ *
+ * A resolve that finishes after the viewer has left has still added the
+ * torrent to the session, where it would sit connected to its swarm with
+ * nothing playing it. Released only when nothing else has a claim on the
+ * session: no newer resolve under way, nothing playing, no picker open.
+ */
+function overtaken(run: Attempt): boolean {
+  if (!run.stale) return false;
+  if (!torrent.resolving && !player.hasFile && !opening.pick && torrent.info) {
+    void releaseTorrent();
+  }
+  return true;
 }
 
 /**
@@ -548,8 +593,10 @@ export async function openTorrent(source: string, origin?: CatalogOrigin) {
   opening.box.torrentError = null;
   opening.pick = null;
   opening.lastLink = source;
+  const run = opens.begin();
   try {
     const info = await addTorrent(source);
+    if (overtaken(run)) return;
     // **What is remembered is a magnet, whatever was handed over.** A dropped
     // `.torrent` file is a path that can be moved or deleted and a `.torrent`
     // URL is a page that can go down, while the info hash names the torrent for
@@ -586,6 +633,8 @@ export async function openTorrent(source: string, origin?: CatalogOrigin) {
     opening.linkOpen = false;
     opening.pick = info;
   } catch (e) {
+    // Nobody is waiting for the reason any more.
+    if (run.stale) return;
     // The one failure worth naming is the timeout, and naming it is
     // `torrentFailureText`'s job — shared with the room panel, which shows the
     // same reason for the same call.
@@ -622,7 +671,12 @@ export async function playTorrentFile(info: TorrentInfo, file: TorrentFile) {
   opening.linkOpen = false;
   opening.box.failed = false;
   opening.box.torrentError = null;
+  const left = departures;
   await loadFiles([file.url]);
+  // Left while the file was being handed over: the `stop` has emptied the
+  // playlist, and a season queued behind nothing would start by itself at the
+  // next nudge.
+  if (left !== departures) return;
   // After the load, like the folder queue: the entry being played is already in
   // the playlist and the rest go around it.
   await queueTorrent(torrentVideos(info), file.url);
@@ -798,7 +852,9 @@ export async function openRecent(item: RecentItem) {
 /// swarm is gone — and the viewer has already been told so.
 async function openTorrentById(id: string): Promise<boolean> {
   opening.busy = true;
+  const run = opens.begin();
   const resolved = await resolveTorrentFile(id);
+  if (overtaken(run)) return false;
   if (!resolved) {
     opening.busy = false;
     showOsd(t('start.torrent_lost'));
@@ -861,8 +917,10 @@ export async function openRememberedTorrent(row: TorrentRow) {
   const resume = torrentResume(row);
   opening.rowOpening = row.folder;
   opening.box.torrentError = null;
+  const run = opens.begin();
   try {
     const info = await addTorrent(magnet);
+    if (overtaken(run)) return;
     rememberTorrent(info, magnet);
     const videos = torrentVideos(info);
     if (!videos.length) {
@@ -879,10 +937,12 @@ export async function openRememberedTorrent(row: TorrentRow) {
     }
     opening.pick = info;
   } catch (e) {
+    if (run.stale) return;
     opening.box.torrentError = torrentFailureText(e);
     opening.linkOpen = true;
   } finally {
-    opening.rowOpening = null;
+    // A newer open owns the row's spinner now.
+    if (!run.stale) opening.rowOpening = null;
   }
 }
 

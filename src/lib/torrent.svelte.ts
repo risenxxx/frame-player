@@ -539,6 +539,7 @@ export async function addTorrent(source: string): Promise<TorrentInfo> {
   // Before the resolve clock starts: the question is the viewer's time, not
   // the swarm's.
   await askAboutVpn();
+  const run = resolves.begin();
   torrent.resolving = true;
   torrent.resolvingSince = Date.now();
   try {
@@ -558,8 +559,26 @@ export async function addTorrent(source: string): Promise<TorrentInfo> {
     torrent.info = info;
     return info;
   } finally {
-    torrent.resolving = false;
+    // Only the newest resolve may say that resolving is over: one that was
+    // let go of (`forgetResolve`) or overtaken would otherwise take the flag
+    // down under the one still running.
+    if (!run.stale) torrent.resolving = false;
   }
+}
+
+const resolves = latest();
+
+/**
+ * Stop waiting for a resolve the viewer walked away from.
+ *
+ * The lookup itself is not cancelled — it runs inside `torrent_add` for up to
+ * `RESOLVE_TIMEOUT` — but nothing on screen may go on saying it is under way:
+ * the link box keeps its field disabled and the loading plate prints "looking
+ * for the torrent" for as long as this flag stands.
+ */
+export function forgetResolve() {
+  resolves.begin();
+  torrent.resolving = false;
 }
 
 /**
