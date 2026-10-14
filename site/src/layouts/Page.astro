@@ -173,6 +173,10 @@ const jsonLd = { '@context': 'https://schema.org', '@graph': [website, app, ...s
         root.classList.add('scenes')
         setTimeout(() => { if (!root.classList.contains('reveal')) root.classList.remove('scenes') }, 5000)
       }
+      // Which download is the primary one (base.css). An iPad reports itself
+      // as a Mac, which is the right answer for a visitor on Apple hardware.
+      const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent
+      if (/mac|iphone|ipad|ipod/i.test(platform)) document.documentElement.dataset.os = 'macos'
       try {
         const theme = localStorage.getItem('fp-theme')
         if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme

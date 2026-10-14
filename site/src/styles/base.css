@@ -168,6 +168,15 @@ section[id] { scroll-margin-top: 72px; }
 .btn svg { width: 17px; height: 17px; flex: none; }
 .btn-lg svg { width: 19px; height: 19px; }
 
+/* The markup makes Windows the primary download; a visitor on a Mac gets the
+   two swapped — first and filled — before the first paint, from the `data-os`
+   the head script sets. Without JS, or on anything else, the markup stands.
+   `order` moves the box, not the focus: Tab still reaches Windows first. */
+:root[data-os="macos"] .cta .dl-macos { order: -1; background: var(--btn); color: var(--btn-fg); border-color: transparent; }
+:root[data-os="macos"] .cta .dl-macos:hover { background: var(--btn-hover); }
+:root[data-os="macos"] .cta .dl-windows { background: transparent; color: var(--fg); border-color: var(--line2); }
+:root[data-os="macos"] .cta .dl-windows:hover { background: var(--ghost); border-color: var(--line3); }
+
 .cta { display: flex; flex-wrap: wrap; gap: 12px; }
 .cta-c { justify-content: center; }
 
