@@ -251,6 +251,30 @@
 .seektrack .buffered { background: rgba(255, 255, 255, 0.3); width: var(--buf, 46%); }
 .seektrack .fill { background: #fff; width: var(--pos, 7.4%); }
 
+/*
+  The hero's download (scripts/download.ts): the track as pieces, each one
+  arriving bright and settling to the buffered shade. A flex row rather than
+  pieces placed by percentage, so neighbours meet on whole pixels — translucent
+  boxes that overlap by a fraction draw a seam where they do. The still's single
+  `.buffered` goes once this takes over.
+*/
+.player.live .seektrack > .buffered { display: none; }
+.pieces { position: absolute; inset: 0; display: flex; border-radius: 2px; overflow: hidden; }
+.pieces i { flex: 1; }
+.pieces i.on, .pieces i.new { background: rgba(255, 255, 255, 0.3); }
+.pieces i.new { animation: piece-in 1.6s ease-out both; }
+
+@keyframes piece-in {
+  from { background: rgba(255, 255, 255, 0.95); }
+  to { background: rgba(255, 255, 255, 0.3); }
+}
+
+/* Nothing left to fetch: the readout goes, as the application's does. The
+   transition lives on `.done` alone — on `.torchip` it would also smooth the
+   scene's own frame-by-frame `--ui`, and the readout would trail the bars in. */
+.torchip.done { opacity: 0; transform: translateY(-4px); transition: opacity 0.6s var(--ease), transform 0.6s var(--ease); }
+.torchip-bar i { transition: width 0.25s linear; }
+
 .chap {
   position: absolute;
   top: 0;

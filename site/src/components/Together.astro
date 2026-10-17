@@ -7,17 +7,15 @@ import RoomMock from './mocks/RoomMock.astro'
       <div class="feat-copy" data-reveal>
         <h2>Two machines, one timeline</h2>
         <p class="lede">
-          A six-character code puts both players on the same position, the same pauses and the same
-          episode. Seek on one and the other lands on the same frame: the room's state travels, not
-          the gesture, so a message arriving late still says where playback should be now.
+          Share a six-character code and everyone in the room stays on the same position, pauses and episode. Seek on one and the other lands on the same frame, even on a slow connection.
         </p>
         <ul class="checks">
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Drift is corrected by speed, never by seeking.</b> A seek to fix a tenth of a second costs a decode from the previous keyframe and lands further out than it started; ten seconds at 103% erases it inaudibly.</span></li>
+            <span><b>Drift is corrected by speed, not by seeking</b> — ten seconds at 103% closes the gap without a jump.</span></li>
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>The room waits for whoever is still buffering</b> and resumes by itself when they are ready.</span></li>
+            <span><b>The room waits for whoever is buffering</b> and resumes by itself.</span></li>
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>If it is a torrent, nobody pastes anything</b>: everyone fetches from the same swarm and follows you through the season. Nothing but the timeline goes through the relay; no media ever does.</span></li>
+            <span><b>Torrents need no pasting:</b> everyone joins the same swarm. Only the timeline goes through the relay, never the video.</span></li>
         </ul>
         <a class="more-link" href="/watch-together">How watching together works</a>
       </div>

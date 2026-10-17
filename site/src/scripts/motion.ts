@@ -78,6 +78,9 @@ export function initMotion(): void {
     played.add(el)
     el.classList.add('in')
     if (!el.hasAttribute('data-scene')) return
+    /* For a scene with more to it than `--p` can say — the hero's download
+       (download.ts) — so that it starts when the scene does, whichever way. */
+    el.dispatchEvent(new Event('sceneplay'))
     running.push({
       el,
       start: performance.now(),

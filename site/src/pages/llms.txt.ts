@@ -29,7 +29,7 @@ export const GET: APIRoute = async ({ site }) => {
     '> a DLNA television without re-encoding it, and keeps several people on one timeline in a room.',
     '',
     `Version ${version}${date ? `, released ${date.slice(0, 10)}` : ''}. Licence: GPL-3.0-or-later.`,
-    'Windows 10 and 11 (x64), macOS on Apple Silicon. No account, no telemetry.',
+    'Windows 10 and 11 (x64), macOS on Apple Silicon. No account, no tracking; one anonymous report of the first launch.',
     '',
     '## Start here',
     '',

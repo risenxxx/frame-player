@@ -176,3 +176,33 @@
 }
 
 .foot .credits a:hover { color: var(--fg2); }
+
+/* ── questions ────────────────────────────────────────────────────────────── */
+
+.faq-home { padding-block: 0 96px; }
+.faq-list { margin-top: 32px; max-width: 760px; border-top: 1px solid var(--line); }
+.faq-q { border-bottom: 1px solid var(--line); }
+.faq-q summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 0;
+  font-size: 17px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.faq-q summary::-webkit-details-marker { display: none; }
+.faq-q summary::after {
+  content: "+";
+  flex: none;
+  color: var(--fg2);
+  font-size: 20px;
+  line-height: 1;
+  transition: transform 0.2s var(--ease);
+}
+.faq-q[open] summary::after { transform: rotate(45deg); }
+.faq-q p { margin: -4px 0 18px; color: var(--fg2); font-size: 16px; line-height: 1.6; }
+.faq-q p a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line3); }
+.faq-q p a:hover { text-decoration-color: currentColor; }

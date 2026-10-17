@@ -1,0 +1,24 @@
+---
+/*
+  Questions, closed by default: a reader scanning the page sees only the
+  questions, and the answers are in the markup for anything that reads rather
+  than scrolls. The list is shared with the page's structured data (src/faq.ts).
+*/
+import { FAQ } from '../faq.ts'
+---
+
+<section class="faq-home" id="questions">
+  <div class="wrap">
+    <div class="sec-h" data-reveal>
+      <h2>Questions</h2>
+    </div>
+    <div class="faq-list" data-reveal style="--dl:1">
+      {FAQ.map(({ q, a, more }) => (
+        <details class="faq-q">
+          <summary>{q}</summary>
+          <p>{a}{more && <> <a href={more.href}>{more.label}</a></>}</p>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>

@@ -7,17 +7,15 @@ import SubsMock from './mocks/SubsMock.astro'
       <div class="feat-copy" data-reveal>
         <h2>Subtitles that are already in sync</h2>
         <p class="lede">
-          Search OpenSubtitles by the file's own hash, which identifies the exact release rather
-          than guessing which rip you have, with a title search as the fallback, and a panel that
-          says which of the two produced the list, because they are not the same kind of answer.
+          Frame Player searches OpenSubtitles by the file's hash, which matches your exact release instead of guessing from the title. Title search is the fallback, and the panel says which one you got.
         </p>
         <ul class="checks">
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>A mismatched frame rate is flagged</b> before you download it: a 25 fps subtitle on a 23.976 fps file does not start late, it drifts further out the longer you watch.</span></li>
+            <span><b>A frame-rate mismatch is flagged before you download</b> — a 25 fps subtitle on a 23.976 fps file drifts further out the longer you watch.</span></li>
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>They lift out of the way of the controls</b> while the bar is up, and the delay you dial in is remembered for that file alone.</span></li>
+            <span><b>Subtitles move above the controls</b> while the bar is up, and a delay you set is kept for that file.</span></li>
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>The dub you chose in episode 1 is found again in episode 2</b> by language, title and codec, never by track number, which moves between releases.</span></li>
+            <span><b>The dub you picked in episode 1 is picked again in episode 2</b>, matched by language and title, not track number.</span></li>
         </ul>
         <a class="more-link" href="/guides/subtitles-out-of-sync">Why subtitles drift out of sync</a>
       </div>

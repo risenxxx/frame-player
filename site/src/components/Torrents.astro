@@ -7,16 +7,15 @@ import TorrentMock from './mocks/TorrentMock.astro'
       <div class="feat-copy" data-reveal>
         <h2>Watch it while it is still downloading</h2>
         <p class="lede">
-          Pieces are prioritised around the playhead, and the seekbar shades what has already arrived, so you can see whether a jump will land or wait. A whole season is a queue you
-          can start in seconds.
+          Paste a magnet or open a <span class="mono">.torrent</span> and Frame Player starts playing while it downloads. Pieces near the playhead come first, and the seekbar shows what has arrived, so you know whether a jump will land.
         </p>
         <ul class="checks">
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Nothing is downloaded until you ask for it</b>, and seeding is off by default, the one behavior here with legal weight attached.</span></li>
+            <span><b>Nothing downloads until you open it</b>, and seeding is off by default.</span></li>
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Subtitles shipped inside the release are attached</b> by themselves, and the next episode is fetched ahead once the current one is complete.</span></li>
+            <span><b>Subtitles inside the release attach themselves</b>, and the next episode is fetched ahead.</span></li>
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>A stall says why.</b> Rate, peers and how much of this file is on disk, because "no peers" and "slow swarm" are different problems.</span></li>
+            <span><b>A stall says why:</b> download rate, peers and how much of the file is on disk.</span></li>
         </ul>
         <a class="more-link" href="/torrent-streaming">How torrent streaming works</a>
       </div>
