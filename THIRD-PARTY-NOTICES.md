@@ -102,6 +102,7 @@ Notes on individual components:
 - **FreeType** — Dual-licensed FTL or GPL-2.0-or-later; the FreeType License is the option taken.
 - **GNU FriBidi** — The project is distributed as GPL-2.0-or-later AND LGPL-2.1-or-later; the GPL half covers the command-line tool, which is not shipped. The library is LGPL.
 - **uchardet** — Tri-licensed MPL-1.1 or GPL-2.0-or-later or LGPL-2.1-or-later; MPL-1.1 is the option taken.
+- **Vulkan-Loader** — On Windows, vulkan-1.dll is the loader from LunarG's Vulkan Runtime, unmodified, and is used only on a system that has no loader of its own.
 - **GLib** — GLib's own COPYING is a symlink to the unmodified FSF text, which is what is reproduced here.
 - **GNU gettext runtime (libintl)** — Only the runtime library is shipped. The GPL-3.0 text in the gettext distribution covers its command-line tools, which are not.
 - **Graphite2** — Quad-licensed LGPL-2.1-or-later, MPL-2.0, GPL-2.0-or-later or MIT; LGPL-2.1-or-later is the option taken.

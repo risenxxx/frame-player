@@ -634,6 +634,26 @@ export function notePlaybackRestart() {
   for (const w of waiting) w();
 }
 
+/**
+ * Why libmpv-2.dll could not be loaded, in place of the plugin's "Failed to
+ * create mpv instance", which names neither the file nor the cause.
+ * `libmpv_load.rs` loads the library before the plugin does in order to keep
+ * this; it is Windows-only, and `null` whenever the library loaded.
+ */
+async function libmpvLoadError(): Promise<string | null> {
+  try {
+    const failure = await invoke<{ code: number; message: string; missing: string[] } | null>(
+      'libmpv_load_error',
+    );
+    if (!failure) return null;
+    const reason = t('error.mpv_load', { reason: failure.message, code: failure.code });
+    if (failure.missing.length === 0) return reason;
+    return `${reason} ${t('error.mpv_missing', { names: failure.missing.join(', ') })}`;
+  } catch {
+    return null;
+  }
+}
+
 export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>> {
   hooks = config;
   const unlisteners: Array<() => void> = [];
@@ -772,7 +792,7 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
       await attempt(initialOptions);
       return true;
     } catch (e) {
-      player.initError = String(e);
+      player.initError = (await libmpvLoadError()) ?? String(e);
       return false;
     }
   };

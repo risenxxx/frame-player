@@ -1,5 +1,5 @@
 # Downloads every binary SDK the Windows build needs into src-tauri/:
-#   lib/     libmpv-2.dll (LGPL build) and libmpv-wrapper.dll
+#   lib/     libmpv-2.dll (LGPL build), libmpv-wrapper.dll and the Vulkan loader
 #   ffmpeg/  the LGPL shared FFmpeg SDK, for the thumbnail and step sidecars
 #   tools/   libclang.dll, needed by bindgen when compiling ffmpeg-sys
 #
@@ -107,6 +107,27 @@ Invoke-WebRequest $mpvUrl -OutFile $mpv7z
 # bsdtar in System32 reads 7z archives.
 & "$env:SystemRoot\System32\tar.exe" -xf $mpv7z -C $tmp
 Copy-Item (Join-Path $tmp 'libmpv-2.dll') $libDir -Force
+
+Write-Host 'Downloading the Vulkan loader (LunarG Vulkan Runtime)...'
+# libmpv-2.dll imports vulkan-1.dll directly, and Windows does not ship it — a
+# GPU driver does. Without it libmpv cannot be loaded at all, although mpv draws
+# through D3D11 here. The bundled copy is a fallback: libmpv_load.rs uses the
+# system's loader whenever there is one, which is why it goes to lib\ and not
+# beside the executable, where it would always win.
+$vkZip = Join-Path $tmp 'vulkan-rt.zip'
+Invoke-WebRequest 'https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-runtime-components.zip' -OutFile $vkZip
+$vkDir = Join-Path $tmp 'vulkan-rt'
+New-Item -ItemType Directory -Force $vkDir | Out-Null
+& "$env:SystemRoot\System32\tar.exe" -xf $vkZip -C $vkDir
+$vkDll = Get-ChildItem $vkDir -Recurse -Filter 'vulkan-1.dll' | Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
+if ($null -eq $vkDll) { throw 'x64\vulkan-1.dll not found in the Vulkan Runtime archive' }
+# A loader from anywhere but LunarG would be a DLL in every process that plays
+# a video, so its Authenticode signature is checked rather than trusted.
+$sig = Get-AuthenticodeSignature $vkDll.FullName
+if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'LunarG') {
+    throw "vulkan-1.dll is not validly signed by LunarG ($($sig.Status): $($sig.SignerCertificate.Subject))"
+}
+Copy-Item $vkDll.FullName $libDir -Force
 
 Write-Host 'Downloading FFmpeg LGPL shared SDK (BtbN/FFmpeg-Builds, for the sidecars)...'
 $ffDir = Join-Path $repoRoot 'src-tauri\ffmpeg'

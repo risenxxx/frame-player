@@ -199,7 +199,8 @@
       "text": "vulkan-loader",
       "url": "https://github.com/KhronosGroup/Vulkan-Loader",
       "source": "https://github.com/KhronosGroup/Vulkan-Loader",
-      "libs": ["libvulkan"]
+      "libs": ["libvulkan", "vulkan-1"],
+      "note": "On Windows, vulkan-1.dll is the loader from LunarG's Vulkan Runtime, unmodified, and is used only on a system that has no loader of its own."
     },
     {
       "id": "libx11",

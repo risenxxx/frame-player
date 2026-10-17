@@ -16,6 +16,7 @@ mod dlna;
 mod external_dirs;
 mod feed;
 mod lan_sweep;
+mod libmpv_load;
 mod net_route;
 mod now_playing;
 mod opensubtitles;
@@ -1189,6 +1190,10 @@ pub fn run() {
     // renamed out of the way were still mapped into it.
     update::sweep_in_background();
 
+    // Before the frontend can ask mpv to start: on Windows, libmpv is loaded
+    // here first, so a machine that cannot load it is told why.
+    libmpv_load::preload();
+
     #[cfg(target_os = "macos")]
     point_vulkan_at_bundled_driver();
 
@@ -1251,6 +1256,7 @@ pub fn run() {
             double_click_time,
             primary_button_down,
             webview_version,
+            libmpv_load::libmpv_load_error,
             hdr_status,
             window_buttons,
             window_enter_fullscreen,

@@ -80,7 +80,9 @@ const ru = {
 
   'error.mpv': 'Не удалось запустить mpv',
   'error.mpv_hint':
-    'Проверьте, что libmpv-2.dll и libmpv-wrapper.dll лежат в src-tauri/lib/ (см. README).',
+    'Обычно помогает переустановка Frame Player. Если не помогла, создайте issue на GitHub и приложите текст выше.',
+  'error.mpv_load': 'Windows не смог загрузить libmpv-2.dll: {reason} (код {code}).',
+  'error.mpv_missing': 'Не найдены: {names}.',
 
   'osd.conf_ignored': 'mpv.conf не применён',
   'osd.settings_failed': 'Не удалось открыть параметры',
@@ -1110,7 +1112,9 @@ const en: Record<MessageKey, string> = {
 
   'error.mpv': 'Could not start mpv',
   'error.mpv_hint':
-    'Check that libmpv-2.dll and libmpv-wrapper.dll are in src-tauri/lib/ (see README).',
+    'Reinstalling Frame Player usually fixes this. If it does not, please open an issue on GitHub with the text above.',
+  'error.mpv_load': 'Windows could not load libmpv-2.dll: {reason} (code {code}).',
+  'error.mpv_missing': 'Not found: {names}.',
 
   'osd.conf_ignored': 'mpv.conf was not applied',
   'osd.settings_failed': 'Could not open settings',
