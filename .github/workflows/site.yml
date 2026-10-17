@@ -69,6 +69,20 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: bun run wrangler whoami
 
+      # The installation counter (installs/) goes first: the site binds to it
+      # by name, and a binding to a worker that does not exist fails the
+      # site's deploy. It has no preview — a worker with a Durable Object gets
+      # none — so a pull request's preview talks to the live counter.
+      - name: Deploy the installation counter
+        if: github.event_name != 'pull_request'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: site
+          packageManager: bun
+          command: deploy -c installs/wrangler.jsonc
+
       - name: Deploy
         if: github.event_name != 'pull_request'
         uses: cloudflare/wrangler-action@v3

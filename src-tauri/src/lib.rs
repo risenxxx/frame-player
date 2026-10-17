@@ -15,6 +15,7 @@ mod catalog;
 mod dlna;
 mod external_dirs;
 mod feed;
+mod install_count;
 mod lan_sweep;
 mod libmpv_load;
 mod net_route;
@@ -1442,6 +1443,9 @@ pub fn run() {
             // dev console. Errors still get through; warnings about a file we
             // are only sampling frames from are not ours to report.
             ffmpeg_the_third::util::log::set_level(ffmpeg_the_third::util::log::Level::Error);
+            // Before the window, so before the frontend writes mpv.conf: see
+            // install_count.rs for why that order is the whole of it.
+            install_count::start(app.handle());
             create_main_window(app);
             #[cfg(not(target_os = "macos"))]
             create_veil(app);

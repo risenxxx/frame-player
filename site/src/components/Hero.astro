@@ -1,6 +1,7 @@
 ---
 import PlayerMock from './mocks/PlayerMock.astro'
 import { downloads } from '../release.ts'
+import { INSTALLS_BASE, installsLabel } from '../installs.ts'
 
 const { version, windows, macos } = await downloads()
 ---
@@ -28,7 +29,7 @@ const { version, windows, macos } = await downloads()
         </a>
       </div>
       <p class="fine facts-line mid enter" style="--dl:3">
-        <span class="nb">Version {version}</span><span class="sep"></span><span class="nb">Windows 10/11<span class="sep"></span>Apple Silicon</span><span class="sep"></span><span class="nb">free and open source, GPL-3.0</span>
+        <span class="nb">Version {version}</span><span class="sep"></span><span class="nb" data-installs>{installsLabel(INSTALLS_BASE)}</span><span class="sep"></span><span class="nb">Windows 10/11<span class="sep"></span>Apple Silicon</span><span class="sep"></span><span class="nb">free and open source, GPL-3.0</span>
       </p>
     </div>
 

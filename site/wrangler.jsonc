@@ -33,6 +33,12 @@
     ]
   },
   "routes": [{ "pattern": "frameplayer.app", "custom_domain": true }],
+  /*
+    The installation counter, a worker of its own (installs/) because one that
+    implements a Durable Object gets no preview addresses. `/api/install` is
+    forwarded to it and the hero's number is read from it — see worker/index.ts.
+  */
+  "services": [{ "binding": "INSTALLS", "service": "frame-player-installs" }],
   "workers_dev": false,
   "preview_urls": true
 }

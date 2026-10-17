@@ -12,12 +12,22 @@
  * wrangler.jsonc); `/_astro/*`, `/gen/*` and the rest never leave the CDN.
  *
  * Its second job is `/s/*`, the page counter's own address (src/analytics.ts),
- * which it forwards to Rybbit — see {@link counter}.
+ * which it forwards to Rybbit — see {@link counter}. Its third is the
+ * installation count: `/api/install` goes to the counter worker, and the home
+ * page gets the current number written into it — see {@link installs}.
  */
 import { ANALYTICS_PREFIX, RYBBIT_UPSTREAM } from '../src/analytics.ts'
+import { INSTALLS_ATTR, installsLabel } from '../src/installs.ts'
 
 interface Env {
   ASSETS: { fetch: (request: Request | string | URL) => Promise<Response> }
+  INSTALLS: { fetch: (request: Request | string | URL, init?: RequestInit) => Promise<Response> }
+}
+
+/** The part of the Workers runtime's `HTMLRewriter` used here; the DOM types do not know it. */
+declare class HTMLRewriter {
+  on(selector: string, handler: { element(element: { setInnerContent(content: string): void }): void }): HTMLRewriter
+  transform(response: Response): Response
 }
 
 /** Workers add `cf` to `fetch`; the DOM types do not know it. */
@@ -129,6 +139,59 @@ async function counter(request: Request, path: string): Promise<Response> {
   return response
 }
 
+/// How long one isolate trusts the count it last read before asking again.
+const INSTALLS_TTL_MS = 10 * 60 * 1000
+
+let installsCache: { count: number; at: number } | null = null
+
+/**
+ * The current count, or null when the counter cannot be reached — the page then
+ * keeps the starting number it was built with, which is never more than the
+ * truth.
+ */
+async function currentInstalls(env: Env): Promise<number | null> {
+  if (installsCache && Date.now() - installsCache.at < INSTALLS_TTL_MS) return installsCache.count
+  try {
+    const res = await env.INSTALLS.fetch('https://installs/count')
+    if (!res.ok) return installsCache?.count ?? null
+    const { installs } = (await res.json()) as { installs?: unknown }
+    if (typeof installs !== 'number' || !Number.isFinite(installs)) return installsCache?.count ?? null
+    installsCache = { count: installs, at: Date.now() }
+    return installs
+  } catch {
+    return installsCache?.count ?? null
+  }
+}
+
+/**
+ * The installation count, both directions.
+ *
+ * `POST /api/install` is the player's one report of its first launch
+ * (`src-tauri/src/install_count.rs`). It goes on to the counter with the
+ * sender's address in `x-client-ip` — the counter keeps a salted hash of it for
+ * the rest of the day and nothing longer — and with nothing else of the
+ * request's: the body is re-encoded from the one field the counter reads.
+ */
+async function installs(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'POST') {
+    return new Response('method not allowed', { status: 405, headers: { allow: 'POST' } })
+  }
+  const address = request.headers.get('cf-connecting-ip')
+  if (address === null) return new Response('no address', { status: 400 })
+  let platform: unknown = null
+  try {
+    platform = ((await request.json()) as { platform?: unknown }).platform
+  } catch {
+    return new Response('bad body', { status: 400 })
+  }
+  const res = await env.INSTALLS.fetch('https://installs/install', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-client-ip': address },
+    body: JSON.stringify({ platform }),
+  })
+  return new Response(null, { status: res.status, headers: { 'cache-control': 'no-store' } })
+}
+
 /**
  * Does this request want Markdown more than it wants a page?
  *
@@ -162,6 +225,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (url.pathname.startsWith(ANALYTICS_PREFIX)) return counter(request, url.pathname.slice(ANALYTICS_PREFIX.length))
+    if (url.pathname === '/api/install') return installs(request, env)
 
     if ((request.method === 'GET' || request.method === 'HEAD') && wantsMarkdown(request.headers.get('accept') ?? '')) {
       const twin = twinOf(url.pathname)
@@ -185,6 +249,18 @@ export default {
     const headers = new Headers(response.headers)
     const vary = headers.get('vary')
     headers.set('vary', vary && !/\baccept\b/i.test(vary) ? `${vary}, Accept` : 'Accept')
-    return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+    const page = new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+
+    /* Only the home page carries the count, so only it pays for reading one. */
+    if (url.pathname !== '/' || !response.ok || !(headers.get('content-type') ?? '').includes('text/html')) return page
+    const count = await currentInstalls(env)
+    if (count === null) return page
+    const label = installsLabel(count)
+    /* The asset's validator describes the file as built, not the page as sent:
+       kept, a browser revalidating would get a 304 and keep yesterday's number. */
+    page.headers.delete('etag')
+    return new HTMLRewriter()
+      .on(`[${INSTALLS_ATTR}]`, { element: (element) => element.setInnerContent(label) })
+      .transform(page)
   },
 }

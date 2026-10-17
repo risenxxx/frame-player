@@ -1,0 +1,18 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "frame-player-installs",
+  "compatibility_date": "2026-09-01",
+  /*
+    The installation counter (index.ts). No route and no workers.dev address:
+    the site's worker is the only way in, through its `INSTALLS` service
+    binding. Deployed before the site by site.yml, since a binding to a worker
+    that does not exist yet fails the site's deploy.
+  */
+  "main": "index.ts",
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [{ "name": "COUNTER", "class_name": "InstallCounter" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["InstallCounter"] }]
+}

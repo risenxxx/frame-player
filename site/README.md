@@ -31,6 +31,18 @@ at the next release. `astro.config.ts` writes them into `_redirects` from the
 same `release()` the buttons use, and the release workflow rebuilds the site,
 which is what moves them on.
 
+## The installation count
+
+The hero's "870+ installs" is live: the player reports its first launch once
+(`src-tauri/src/install_count.rs`), `POST /api/install` hands that to the
+counter worker in `installs/` (a Durable Object, reached only through the
+`INSTALLS` service binding), and `worker/index.ts` writes the current number
+into the home page's `data-installs` element, read at most every ten minutes
+per isolate. The built page carries the starting number, `INSTALLS_BASE` in
+`src/installs.ts`, so a counter that cannot be reached shows that rather than
+nothing. `site.yml` deploys the counter before the site; locally both run in
+one session with `wrangler dev -c wrangler.jsonc -c installs/wrangler.jsonc`.
+
 ## Guide pages
 
 Everything beyond the home page — a page per feature, the comparisons, the
