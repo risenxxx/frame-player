@@ -382,6 +382,12 @@
 }
 
 .castrow.pick { background: rgba(255, 255, 255, calc(0.09 * var(--pick))); }
+/* A row the pointer only passes over on its way: lit while it is over it
+   (`--in` to `--out`, measured by scripts/castwalk.ts), as `.menu-item:hover`
+   is in the application. Unmeasured, it never lights. */
+.castrow:not(.pick) {
+  background: rgba(255, 255, 255, calc(0.09 * (clamp(0, (var(--m2, 0) - var(--in, 2)) * 1000, 1) - clamp(0, (var(--m2, 0) - var(--out, 2)) * 1000, 1))));
+}
 .castrow .txt { min-width: 0; flex: 1; }
 .castrow .cast-name { display: block; font-size: 13px; color: #d6d6de; }
 .castrow .cast-model { display: block; font-size: 11px; color: rgba(232, 232, 236, 0.45); }
@@ -398,7 +404,7 @@
   The pointer walks to the cast button and the button lights under it — the
   two halves of "this is where that panel comes from".
 
-  Each beat has its own time and curve, cut from a LINEAR `--p` over 2200 ms
+  Each beat has its own time and curve, cut from a LINEAR `--p` over 2400 ms
   (`data-ease="linear"` on the scene). It used to be sliced from the eased one,
   and the steepest part of an ease-out is its start: the walk covered half its
   distance in the first ~100 ms, while the pointer was still fading in, then
@@ -409,16 +415,20 @@
     pointer walks      0–800       smoothstep: sets off and lands gently, so
                                    the fade happens where it starts from
     button + panel     900–1250    ease-out, a beat after the pointer lands
-    device picked      1450–1900   ease-out
+    pointer to device  1350–1950   smoothstep, from the button to the first
+                                   row (scripts/castwalk.ts measures where)
+    device lit         when the pointer crosses into the row, at once —
+                       a menu row's hover has no transition in the application
 
   The `-t` terms are each phase's linear time, the bare names its curve.
 */
 .sc-cast .player {
   --ui: 1;
-  --pop-t: clamp(0, (var(--p, 1) - 0.4091) / 0.1591, 1);
+  --pop-t: clamp(0, (var(--p, 1) - 0.375) / 0.1458, 1);
   --pop: calc(1 - (1 - var(--pop-t)) * (1 - var(--pop-t)) * (1 - var(--pop-t)));
-  --pick-t: clamp(0, (var(--p, 1) - 0.6591) / 0.2045, 1);
-  --pick: calc(1 - (1 - var(--pick-t)) * (1 - var(--pick-t)) * (1 - var(--pick-t)));
+  --m2-t: clamp(0, (var(--p, 1) - 0.5625) / 0.25, 1);
+  --m2: calc(var(--m2-t) * var(--m2-t) * (3 - 2 * var(--m2-t)));
+  --pick: clamp(0, (var(--m2) - var(--row-in, 0)) * 1000, 1);
 }
 .sc-cast .b.cast { color: rgba(232, 232, 236, calc(0.9 - 0.9 * var(--pop))); }
 .sc-cast .b.cast::after {
@@ -441,8 +451,8 @@
   position: absolute;
   width: 0;
   height: 0;
-  left: calc(-146.7px * (1 - var(--m)) + 18px * var(--m));
-  top: calc(-94.6px * (1 - var(--m)) + 17px * var(--m));
+  left: calc(-146.7px * (1 - var(--m)) + 18px * var(--m) + (var(--to-x, 18px) - 18px) * var(--m2));
+  top: calc(-94.6px * (1 - var(--m)) + 17px * var(--m) + (var(--to-y, 17px) - 17px) * var(--m2));
   opacity: var(--walk-in);
   z-index: 6;
 }
@@ -463,11 +473,14 @@
   clamp into a step there.
 */
 .sc-cast .player {
-  --walk-in-t: clamp(0, var(--p, 1) / 0.0818, 1);
+  --walk-in-t: clamp(0, var(--p, 1) / 0.075, 1);
   --walk-in: calc(1 - (1 - var(--walk-in-t)) * (1 - var(--walk-in-t)) * (1 - var(--walk-in-t)));
-  --m-t: clamp(0, var(--p, 1) / 0.3636, 1);
+  --m-t: clamp(0, var(--p, 1) / 0.3333, 1);
   --m: calc(var(--m-t) * var(--m-t) * (3 - 2 * var(--m-t)));
-  --hand: clamp(0, (var(--m) - 0.891) * 1000, 1);
+  /* On the way to the device it is an arrow again for the stretch of video
+     between the button and the panel (`--h-out` to `--h-in`, measured). */
+  --between: calc(clamp(0, (var(--m2) - var(--h-out, 2)) * 1000, 1) - clamp(0, (var(--m2) - var(--h-in, 2)) * 1000, 1));
+  --hand: calc(clamp(0, (var(--m) - 0.891) * 1000, 1) * (1 - var(--between)));
 }
 
 /*
