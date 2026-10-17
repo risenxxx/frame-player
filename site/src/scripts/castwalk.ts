@@ -25,9 +25,29 @@
  * the row lit, which is the still the page had before.
  */
 
-/** Where on the row the hotspot comes to rest: on the name, clear of the line under it. */
-const ON_ROW_X = 64
+/** How far down the row the hotspot comes to rest; the hand hangs below its tip. */
 const ON_ROW_Y = 0.32
+
+/**
+ * Where across the row the hotspot comes to rest: halfway between the end of
+ * the longer of its two lines and the gear, so the hand covers neither the
+ * device's name nor what it says about the file. Measured from rendered boxes
+ * relative to the row's own, so the panel's slide cancels out, and scaled back
+ * into layout pixels in case anything above the mock is scaled.
+ */
+function restX(row: HTMLElement): number {
+  const box = row.getBoundingClientRect()
+  const scale = box.width / row.offsetWidth || 1
+  let textEnd = 0
+  for (const line of row.querySelectorAll('.cast-name, .cast-model')) {
+    const range = document.createRange()
+    range.selectNodeContents(line)
+    textEnd = Math.max(textEnd, range.getBoundingClientRect().right - box.left)
+  }
+  const gear = row.querySelector('svg, .spin')
+  const gearStart = gear ? gear.getBoundingClientRect().left - box.left : box.width
+  return (textEnd + gearStart) / 2 / scale
+}
 
 function offsetIn(el: HTMLElement, root: HTMLElement): { x: number; y: number } {
   let x = 0
@@ -66,7 +86,7 @@ function walk(player: HTMLElement): void {
 
     // The first walk ends on the button's centre; `.walk` in mocks.css.
     const from = { x: own.w / 2, y: own.h / 2 }
-    const to = { x: rowBox.x + ON_ROW_X, y: rowBox.y + rowBox.h * ON_ROW_Y }
+    const to = { x: rowBox.x + restX(row), y: rowBox.y + rowBox.h * ON_ROW_Y }
     const at = (t: number): { x: number; y: number } => ({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t })
 
     let out = 1
@@ -104,4 +124,6 @@ function walk(player: HTMLElement): void {
 
   measure()
   new ResizeObserver(measure).observe(player)
+  // The text's width depends on the web font, which may arrive after this ran.
+  void document.fonts?.ready.then(measure)
 }

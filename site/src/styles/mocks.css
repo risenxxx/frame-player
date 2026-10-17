@@ -391,7 +391,9 @@
 .castrow .txt { min-width: 0; flex: 1; }
 .castrow .cast-name { display: block; font-size: 13px; color: #d6d6de; }
 .castrow .cast-model { display: block; font-size: 11px; color: rgba(232, 232, 236, 0.45); }
-.castrow.pick .cast-model { color: rgba(129, 140, 248, calc(0.2 + 0.75 * var(--pick))); }
+/* One line each, cut with an ellipsis, as `.tv-row` cuts them in CastMenu.svelte —
+   the device's state is a summary, not a paragraph. */
+.castrow :is(.cast-name, .cast-model) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .castrow svg { width: 15px; height: 15px; color: rgba(232, 232, 236, 0.4); flex: none; }
 .castrow .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(232, 232, 236, 0.25); border-top-color: rgba(232, 232, 236, 0.7); }
 /* Same rule as the loop above: a spinner nobody is looking at is a spinner
