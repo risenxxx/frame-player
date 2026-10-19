@@ -118,6 +118,17 @@ export const CURSOR_HIDE_CHOICES: CursorHide[] = ['controls', 'always', 'never']
  * - `pause` — only the click means anything; fullscreen is left to its key and
  *   its button.
  */
+/**
+ * What the window does when a picture arrives, as the viewer chooses it: left
+ * as it is, given the picture's shape at its own area, or given the picture's
+ * own size. One choice rather than two switches because the fourth
+ * combination — sized to the picture, then free to be dragged out of its shape
+ * — is nobody's request, and two switches beside each other read as either.
+ * Kept as the two fields underneath: the hold follows `fitToVideo` alone.
+ */
+export type WindowFit = 'free' | 'shape' | 'size';
+export const WINDOW_FIT_CHOICES: WindowFit[] = ['free', 'shape', 'size'];
+
 export type VideoClick = 'both' | 'fullscreen' | 'pause';
 export const VIDEO_CLICK_CHOICES: VideoClick[] = ['both', 'fullscreen', 'pause'];
 
@@ -127,6 +138,12 @@ class WindowPrefs {
   /// The window has the picture's shape: it takes it when a file opens and
   /// keeps it while it is resized by hand — see `initWindowShape`.
   fitToVideo = $state(true);
+  /// A new picture opens the window at its own size — 100 %, as the window
+  /// menu's item, shrunk into the screen — rather than at the window's area.
+  /// What mpv does by itself; off by default, since it moves the window on
+  /// every file whose size differs from the last one's. Only ever true with
+  /// `fitToVideo`: the two are one choice of three (`WindowFit`).
+  videoSize = $state(false);
   alwaysOnTop = $state(false);
   /// Magnetic edges for the mini window. On by default: a corner window is put
   /// where it is meant to be out of the way, and pixel-accurate placement is
@@ -434,6 +451,9 @@ export function loadWindowPrefs() {
     // was the one it has now — see `PREFS_VERSION`.
     if (v >= 2 && typeof saved.remember === 'boolean') windowPrefs.remember = saved.remember;
     if (v >= 3 && typeof saved.fitToVideo === 'boolean') windowPrefs.fitToVideo = saved.fitToVideo;
+    if (typeof saved.videoSize === 'boolean') {
+      windowPrefs.videoSize = saved.videoSize && windowPrefs.fitToVideo;
+    }
     if (typeof saved.alwaysOnTop === 'boolean') windowPrefs.alwaysOnTop = saved.alwaysOnTop;
     if (typeof saved.snapMini === 'boolean') windowPrefs.snapMini = saved.snapMini;
     if (saved.autoHide && AUTO_HIDE_CHOICES.includes(saved.autoHide)) windowPrefs.autoHide = saved.autoHide;
@@ -461,6 +481,7 @@ function saveWindowPrefs() {
         v: PREFS_VERSION,
         remember: windowPrefs.remember,
         fitToVideo: windowPrefs.fitToVideo,
+        videoSize: windowPrefs.videoSize,
         alwaysOnTop: windowPrefs.alwaysOnTop,
         snapMini: windowPrefs.snapMini,
         autoHide: windowPrefs.autoHide,
@@ -484,6 +505,7 @@ export function syncMenuChecks() {
   void invoke('sync_window_menu', {
     remember: windowPrefs.remember,
     fitToVideo: windowPrefs.fitToVideo,
+    videoSize: windowPrefs.videoSize,
     alwaysOnTop: windowPrefs.alwaysOnTop,
     snapMini: windowPrefs.snapMini,
   }).catch(() => {});
@@ -629,6 +651,14 @@ function currentShape(): Size | null {
 /// the air would start a second fit from the middle of the first.
 let fittedFor = '';
 
+/// What `fittedFor` holds for a shape: the shape itself, and which of the two
+/// fits it got. `dwidth`×`dheight` is the picture's size as well as its shape,
+/// so "once per shape" is already once per size; the mode is in the key so that
+/// turning "open at video size" on or off fits the picture on screen again.
+function fitKey(shape: Size): string {
+  return `${windowPrefs.videoSize ? 'native ' : ''}${shapeKey(shape)}`;
+}
+
 /// What the last fit left the window at, and the area it was aiming for. If the
 /// window is still that size the next fit aims for the same area again, rather
 /// than for whatever the screen or the minimum left of it: read from the window
@@ -725,6 +755,7 @@ export function initWindowShape(page: ShapeHooks) {
     // start screen, and the two modes — leaving one is when a fit that stood
     // down gets its turn, and the minimum is the mode's while mini is on.
     void windowPrefs.fitToVideo;
+    void windowPrefs.videoSize;
     void currentShape();
     void page.resting();
     void page.sizeOwned();
@@ -767,28 +798,29 @@ export function scheduleShape() {
     // of the last one.
     if (resting) fittedFor = '';
     const picture = resting ? null : currentShape();
-    void adoptShape(windowPrefs.fitToVideo ? picture : null, picture !== null);
+    const fit = windowPrefs.fitToVideo ? picture : null;
+    void adoptShape(fit, fit, picture !== null);
   }, SHAPE_SETTLE_MS);
 }
 
-async function adoptShape(shape: Size | null, picture: boolean, tries = 0) {
+async function adoptShape(shape: Size | null, hold: Size | null, picture: boolean, tries = 0) {
   const run = shapeRuns.begin();
   try {
     let moving = false;
-    if (shape && shapeKey(shape) !== fittedFor) {
-      const outcome = await fitToShape(shape, null, run, true);
+    if (shape && fitKey(shape) !== fittedFor) {
+      const outcome = await fitToShape(shape, windowPrefs.videoSize ? 1 : null, run, true);
       if (run.stale) return;
       moving = outcome === 'done';
       // Stood down with nothing of ours owning the size: a transition is in
       // flight. Anything else that stood it down ends with this effect
       // running again.
       if (outcome === 'away' && !mini.on && !hooks.sizeOwned() && tries < FIT_RETRIES) {
-        shapeTimer = setTimeout(() => void adoptShape(shape, picture, tries + 1), FIT_RETRY_MS);
+        shapeTimer = setTimeout(() => void adoptShape(shape, hold, picture, tries + 1), FIT_RETRY_MS);
       }
     }
     // A fit that moved the window has said so itself, at the moment it began.
     if (picture && !moving) hooks.settled?.(0);
-    await holdShape(shape, run);
+    await holdShape(hold, run);
   } catch (e) {
     console.warn('adoptShape failed:', e);
   }
@@ -950,8 +982,10 @@ async function fitToShape(
     if (run.stale) return 'stale';
     // Written before the window moves, not after it has: a fit that starts
     // while this one is in the air has to know what it was aiming for.
-    lastFit = { w: fit.w, h: fit.h, area: wanted };
-    fittedFor = shapeKey(shape);
+    // A size asked for by scale is what the window got, screen and all: the
+    // next fit by area keeps that window, not the one the screen refused.
+    lastFit = { w: fit.w, h: fit.h, area: scale === null ? wanted : fit.w * fit.h };
+    fittedFor = fitKey(shape);
     fitsInFlight++;
     shapeState.gliding = true;
     // Now, not once it has landed: whatever is waiting for the picture to have
@@ -1022,7 +1056,29 @@ export function setVideoClick(v: VideoClick) {
   saveWindowPrefs();
 }
 
-export function toggleWindowPref(key: 'remember' | 'fitToVideo' | 'alwaysOnTop' | 'snapMini') {
+export type WindowSwitch = 'remember' | 'alwaysOnTop' | 'snapMini';
+
+export function windowFit(): WindowFit {
+  if (!windowPrefs.fitToVideo) return 'free';
+  return windowPrefs.videoSize ? 'size' : 'shape';
+}
+
+export function setWindowFit(v: WindowFit) {
+  if (v === windowFit()) return;
+  windowPrefs.fitToVideo = v !== 'free';
+  windowPrefs.videoSize = v === 'size';
+  saveWindowPrefs();
+  // Whichever way it went, the window has been anybody's since the last fit:
+  // free to take any shape while the setting was off, and about to be. The
+  // fit and the constraint themselves follow from the setting
+  // (`initWindowShape`) — and since the mode is part of a fit's key
+  // (`fitKey`), the picture on screen is fitted again at once: at its own
+  // size for `size`, at the window's area — the window it is in — for `shape`.
+  fittedFor = '';
+  showOsd(t(`osd.window_fit_${v}`));
+}
+
+export function toggleWindowPref(key: WindowSwitch) {
   windowPrefs[key] = !windowPrefs[key];
   saveWindowPrefs();
   if (key === 'snapMini') {
@@ -1038,12 +1094,5 @@ export function toggleWindowPref(key: 'remember' | 'fitToVideo' | 'alwaysOnTop' 
     // takes effect on the next launch and not only after a resize.
     if (windowPrefs.remember) void captureGeometry();
     showOsd(t(windowPrefs.remember ? 'osd.remember_on' : 'osd.remember_off'));
-  } else {
-    // Whichever way it went, the window has been anybody's since the last fit:
-    // free to take any shape while the setting was off, and about to be. The
-    // fit and the constraint themselves follow from the setting
-    // (`initWindowShape`).
-    fittedFor = '';
-    showOsd(t(windowPrefs.fitToVideo ? 'osd.fit_on' : 'osd.fit_off'));
   }
 }

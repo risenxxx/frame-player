@@ -45,6 +45,9 @@
   import { openSubsDialog } from '$lib/subs.svelte';
   import {
     fitWindowToVideo,
+    setWindowFit,
+    windowFit,
+    WINDOW_FIT_CHOICES,
     mini,
     toggleMini,
     toggleWindowPref,
@@ -606,9 +609,6 @@
   <button class="menu-item" class:active={windowPrefs.remember} onclick={() => toggleWindowPref('remember')}>
     {t('ctx.win_remember')}
   </button>
-  <button class="menu-item" class:active={windowPrefs.fitToVideo} onclick={() => toggleWindowPref('fitToVideo')}>
-    {t('ctx.win_fit')}
-  </button>
   <button class="menu-item" class:active={windowPrefs.alwaysOnTop} onclick={() => toggleWindowPref('alwaysOnTop')}>
     {t('ctx.win_ontop')}
   </button>
@@ -616,6 +616,14 @@
     {t('ctx.win_snap')}
   </button>
   <div class="menu-sep"></div>
+  <div class="menu-title">{t('ctx.win_fit')}</div>
+  <div class="speedrow">
+    {#each WINDOW_FIT_CHOICES as v (v)}
+      <button class="speedopt" class:sel={windowFit() === v} onclick={() => setWindowFit(v)}>
+        {t(`ctx.win_fit_${v}`)}
+      </button>
+    {/each}
+  </div>
   <div class="menu-title">{t('ctx.win_size')}</div>
   <div class="speedrow">
     {#each [0.5, 1, 2] as z (z)}

@@ -97,6 +97,10 @@
     syncMenuChecks,
     toggleWindowPref,
     windowPrefs,
+    windowFit,
+    setWindowFit,
+    WINDOW_FIT_CHOICES,
+    type WindowSwitch,
   } from '$lib/window-prefs.svelte';
   import { DEFAULT_RELAY, relayUrl, setRelayUrl } from '$lib/sync/wire.svelte';
   import {
@@ -985,7 +989,7 @@
   </div>
 {/snippet}
 
-{#snippet windowSwitch(key: 'remember' | 'fitToVideo' | 'alwaysOnTop' | 'snapMini', label: string)}
+{#snippet windowSwitch(key: WindowSwitch, label: string)}
   <div class="setting">
     <div class="row-toggle">
       <div class="row-text">
@@ -1281,7 +1285,19 @@
     <div class="set-group">{t('sec.window')}</div>
     <div class="set-panel">
       {@render windowSwitch('remember', t('ctx.win_remember'))}
-      {@render windowSwitch('fitToVideo', t('ctx.win_fit'))}
+      <!-- What a new picture does to the window: three named outcomes, so a
+           pill rather than the two switches it is stored as (`WindowFit`). -->
+      <div class="setting">
+        <div class="setting-label">{t('ctx.win_fit')}</div>
+        <div class="segmented">
+          {#each WINDOW_FIT_CHOICES as v (v)}
+            <button class="segopt" class:sel={windowFit() === v} onclick={() => setWindowFit(v)}>
+              {t(`ctx.win_fit_${v}`)}
+            </button>
+          {/each}
+        </div>
+        <div class="setting-hint">{t('set.win_fit_hint')}</div>
+      </div>
       {@render windowSwitch('alwaysOnTop', t('ctx.win_ontop'))}
       {@render windowSwitch('snapMini', t('ctx.win_snap'))}
     </div>

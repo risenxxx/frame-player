@@ -34,6 +34,7 @@ pub const MENU_EVENT: &str = "frameplayer://menu";
 pub struct MenuChecks {
     pub remember: CheckMenuItem<Wry>,
     pub fit_to_video: CheckMenuItem<Wry>,
+    pub video_size: CheckMenuItem<Wry>,
     pub always_on_top: CheckMenuItem<Wry>,
     pub snap_mini: CheckMenuItem<Wry>,
 }
@@ -86,6 +87,7 @@ struct Strings {
     chapter_next: &'static str,
     remember: &'static str,
     fit_to_video: &'static str,
+    video_size: &'static str,
     always_on_top: &'static str,
     snap_mini: &'static str,
     size_50: &'static str,
@@ -124,6 +126,7 @@ const EN: Strings = Strings {
     chapter_next: "Next Chapter",
     remember: "Remember Size and Position",
     fit_to_video: "Match Video Aspect Ratio",
+    video_size: "Open at Video Size",
     always_on_top: "Always on Top",
     snap_mini: "Snap Mini Player to Edges",
     size_50: "50% of Video Size",
@@ -162,6 +165,7 @@ const RU: Strings = Strings {
     chapter_next: "Следующая глава",
     remember: "Запоминать размер и положение",
     fit_to_video: "Подгонять под пропорции видео",
+    video_size: "Открывать в размере видео",
     always_on_top: "Поверх всех окон",
     snap_mini: "Прилипание мини-плеера",
     size_50: "50% размера видео",
@@ -285,6 +289,8 @@ pub fn build(app: &tauri::AppHandle<Wry>, locale: &str) -> tauri::Result<()> {
         CheckMenuItem::with_id(app, "win_remember", s.remember, true, false, None::<&str>)?;
     let fit_to_video =
         CheckMenuItem::with_id(app, "win_fit", s.fit_to_video, true, false, None::<&str>)?;
+    let video_size =
+        CheckMenuItem::with_id(app, "win_video_size", s.video_size, true, false, None::<&str>)?;
     let always_on_top =
         CheckMenuItem::with_id(app, "win_ontop", s.always_on_top, true, false, None::<&str>)?;
     let snap_mini =
@@ -305,6 +311,7 @@ pub fn build(app: &tauri::AppHandle<Wry>, locale: &str) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &remember,
             &fit_to_video,
+            &video_size,
             &always_on_top,
             &snap_mini,
             &PredefinedMenuItem::separator(app)?,
@@ -330,6 +337,7 @@ pub fn build(app: &tauri::AppHandle<Wry>, locale: &str) -> tauri::Result<()> {
     let checks = MenuChecks {
         remember,
         fit_to_video,
+        video_size,
         always_on_top,
         snap_mini,
     };
@@ -374,6 +382,7 @@ pub fn sync_window_menu(
     app: tauri::AppHandle<Wry>,
     remember: bool,
     fit_to_video: bool,
+    video_size: bool,
     always_on_top: bool,
     snap_mini: bool,
 ) {
@@ -388,6 +397,7 @@ pub fn sync_window_menu(
         };
         let _ = checks.remember.set_checked(remember);
         let _ = checks.fit_to_video.set_checked(fit_to_video);
+        let _ = checks.video_size.set_checked(video_size);
         let _ = checks.always_on_top.set_checked(always_on_top);
         let _ = checks.snap_mini.set_checked(snap_mini);
     });

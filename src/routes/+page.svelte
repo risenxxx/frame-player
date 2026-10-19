@@ -238,6 +238,8 @@
     exitMini,
     toggleMini,
     toggleWindowPref,
+    setWindowFit,
+    windowFit,
   } from '$lib/window-prefs.svelte';
   import {
     dropPosters,
@@ -296,7 +298,10 @@
         break;
       case 'fullscreen': void toggleFullscreen(); break;
       case 'win_remember': toggleWindowPref('remember'); break;
-      case 'win_fit': toggleWindowPref('fitToVideo'); break;
+      // Two check marks over one choice of three (`WindowFit`): each one
+      // unticked goes back to the middle of the three, or to nothing.
+      case 'win_fit': setWindowFit(windowFit() === 'free' ? 'shape' : 'free'); break;
+      case 'win_video_size': setWindowFit(windowFit() === 'size' ? 'shape' : 'size'); break;
       case 'win_ontop': toggleWindowPref('alwaysOnTop'); break;
       case 'win_snap': toggleWindowPref('snapMini'); break;
       case 'win_size_50': void fitWindowToVideo(0.5); break;

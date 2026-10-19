@@ -141,7 +141,8 @@ import {
   loadWindowPrefs,
   scheduleShape,
   shapeState,
-  toggleWindowPref,
+  setWindowFit,
+  windowFit,
   windowPrefs,
 } from './window-prefs.svelte';
 
@@ -192,6 +193,7 @@ beforeEach(async () => {
   canGlide = true;
   glided = null;
   windowPrefs.fitToVideo = true;
+  windowPrefs.videoSize = false;
   show('/nothing', 0, 0);
   player.filename = null;
   player.filePath = null;
@@ -397,7 +399,7 @@ describe('saying when the picture has its window', () => {
   });
 
   it('says so with the setting off, where a picture is in its window by existing', async () => {
-    toggleWindowPref('fitToVideo');
+    setWindowFit(windowFit() === 'free' ? 'shape' : 'free');
     await settle();
     settled.length = 0;
     show('/a.mkv', 1920, 1080);
@@ -492,7 +494,7 @@ describe('the setting and the start screen', () => {
   it('lets the window go when turned off, and fits it again when turned on', async () => {
     show('/a.mkv', 1920, 1080);
     await settle();
-    toggleWindowPref('fitToVideo');
+    setWindowFit(windowFit() === 'free' ? 'shape' : 'free');
     await settle();
     expect(locked).toBeNull();
     expect(win.min).toEqual({ w: 480, h: 320 });
@@ -500,14 +502,14 @@ describe('the setting and the start screen', () => {
     // Free now, and dragged into a shape the picture does not have.
     win.w = 700;
     win.h = 700;
-    toggleWindowPref('fitToVideo');
+    setWindowFit(windowFit() === 'free' ? 'shape' : 'free');
     await settle();
     expect(ratio()).toBeCloseTo(16 / 9, 2);
     expect(locked).toEqual({ width: 1920, height: 1080 });
   });
 
   it('does nothing at all while off', async () => {
-    toggleWindowPref('fitToVideo');
+    setWindowFit(windowFit() === 'free' ? 'shape' : 'free');
     await settle();
     calls.length = 0;
     show('/a.mkv', 1920, 1080);
@@ -516,7 +518,7 @@ describe('the setting and the start screen', () => {
   });
 
   it('still offers the sizes in the menu while off, in the picture`s shape', async () => {
-    toggleWindowPref('fitToVideo');
+    setWindowFit(windowFit() === 'free' ? 'shape' : 'free');
     await settle();
     show('/a.mkv', 1280, 720);
     await settle();
@@ -543,6 +545,92 @@ describe('the setting and the start screen', () => {
     show('/a.mkv', 1920, 1080);
     await settle();
     expect(ratio()).toBeCloseTo(16 / 9, 2);
+  });
+});
+
+describe('open at video size', () => {
+  beforeEach(() => {
+    windowPrefs.videoSize = true;
+  });
+
+  it('opens a picture at its own size', async () => {
+    show('/a.mkv', 1280, 720);
+    await settle();
+    expect({ w: win.w, h: win.h }).toEqual({ w: 1280, h: 720 });
+  });
+
+  it('shrinks a picture larger than the screen into it, in its shape', async () => {
+    show('/4k.mkv', 3840, 2160);
+    await settle();
+    // The work area less the margin on each side: 1680 across is the limit.
+    expect(win.w).toBe(1680);
+    expect(ratio()).toBeCloseTo(16 / 9, 2);
+    expect(win.x).toBeGreaterThanOrEqual(24);
+  });
+
+  it('follows the size from one file to the next, not only the shape', async () => {
+    show('/4k.mkv', 3840, 2160);
+    await settle();
+    show('/small.mkv', 960, 540);
+    await settle();
+    expect({ w: win.w, h: win.h }).toEqual({ w: 960, h: 540 });
+  });
+
+  it('leaves a size chosen during one episode to the next one of the same size', async () => {
+    show('/e1.mkv', 1280, 720);
+    await settle();
+    win.w = 1600;
+    win.h = 900;
+    show('/e2.mkv', 1280, 720);
+    await settle();
+    expect({ w: win.w, h: win.h }).toEqual({ w: 1600, h: 900 });
+  });
+
+  it('counts a video pixel as a point, as the window menu`s 100 % does', async () => {
+    win.dpr = 2;
+    Object.assign(win, { w: 2200, h: 1320, min: { w: 960, h: 640 }, work: { w: 3456, h: 2000 } });
+    show('/a.mkv', 1280, 720);
+    await settle();
+    expect({ w: win.w, h: win.h }).toEqual({ w: 2560, h: 1440 });
+  });
+
+  it('holds the picture`s shape at its own size, as the aspect choice does', async () => {
+    show('/a.mkv', 1280, 720);
+    await settle();
+    expect(locked).toEqual({ width: 1280, height: 720 });
+  });
+
+  it('fits the picture on screen when chosen, and keeps that window going back to the shape', async () => {
+    setWindowFit('shape');
+    show('/a.mkv', 1280, 720);
+    await settle();
+    expect(win.w).not.toBe(1280);
+    setWindowFit('size');
+    await settle();
+    expect({ w: win.w, h: win.h }).toEqual({ w: 1280, h: 720 });
+    setWindowFit('shape');
+    await settle();
+    expect({ w: win.w, h: win.h }).toEqual({ w: 1280, h: 720 });
+  });
+
+  it('is one choice of three, never sized and then let go', () => {
+    setWindowFit('free');
+    expect(windowPrefs.videoSize).toBe(false);
+    expect(windowFit()).toBe('free');
+  });
+
+  it('writes the choice so that it is read back', async () => {
+    setWindowFit('shape');
+    setWindowFit('size');
+    windowPrefs.videoSize = false;
+    loadWindowPrefs();
+    expect(windowFit()).toBe('size');
+  });
+
+  it('does not read a size without the shape under it', () => {
+    localStorage.setItem('frameplayer.window', JSON.stringify({ v: 3, fitToVideo: false, videoSize: true }));
+    loadWindowPrefs();
+    expect(windowFit()).toBe('free');
   });
 });
 
@@ -575,7 +663,7 @@ describe('what is read from a saved payload', () => {
 
   it('writes the choice so that it is read back', async () => {
     windowPrefs.fitToVideo = true;
-    toggleWindowPref('fitToVideo');
+    setWindowFit(windowFit() === 'free' ? 'shape' : 'free');
     await settle();
     windowPrefs.fitToVideo = true;
     loadWindowPrefs();
