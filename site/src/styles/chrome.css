@@ -54,6 +54,15 @@
 .nav-links a:hover { color: var(--fg); }
 .nav-r { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
+/* One Download button of three: the installer for the system the head script
+   recognised (`data-dl`), or the link to the page's download block for any
+   other — and without JS. */
+.nav-r .nav-dl-windows,
+.nav-r .nav-dl-macos,
+:root[data-dl] .nav-r .nav-dl { display: none; }
+:root[data-dl="windows"] .nav-r .nav-dl-windows,
+:root[data-dl="macos"] .nav-r .nav-dl-macos { display: inline-flex; }
+
 .theme {
   min-inline-size: 0;
   margin: 0;
