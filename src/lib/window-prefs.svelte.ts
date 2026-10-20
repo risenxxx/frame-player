@@ -26,6 +26,7 @@ import {
   placeAround,
   shapeFits,
   shapeKey,
+  videoPixel,
   type PinchAction,
   type Rect,
   type Size,
@@ -935,7 +936,8 @@ type FitOutcome = 'done' | 'away' | 'stale' | 'failed';
 
 /**
  * Give the window the picture's shape.
- * `scale` is a fraction of the video's natural size (1 = pixel for pixel), or
+ * `scale` is a fraction of the video's natural size (1 = 100 %, in the
+ * platform's own sense of a video pixel — see `videoPixel`), or
  * null to keep the window's area and change only the shape.
  */
 async function fitToShape(
@@ -961,7 +963,8 @@ async function fitToShape(
           (Math.abs(inner.width - lastFit.w) <= 2 && Math.abs(inner.height - lastFit.h) <= 2));
       wanted = untouched && lastFit ? lastFit.area : inner.width * inner.height;
     } else {
-      wanted = shape.w * scale * dpr * (shape.h * scale * dpr);
+      const px = videoPixel(dpr, IS_MAC);
+      wanted = shape.w * scale * px * (shape.h * scale * px);
     }
     const fit = fitWindow({ shape, area: wanted, min, room });
     // Around the window's own center, and inside the screen: a window grows

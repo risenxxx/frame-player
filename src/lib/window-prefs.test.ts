@@ -586,12 +586,13 @@ describe('open at video size', () => {
     expect({ w: win.w, h: win.h }).toEqual({ w: 1600, h: 900 });
   });
 
-  it('counts a video pixel as a point, as the window menu`s 100 % does', async () => {
-    win.dpr = 2;
-    Object.assign(win, { w: 2200, h: 1320, min: { w: 960, h: 640 }, work: { w: 3456, h: 2000 } });
-    show('/a.mkv', 1280, 720);
+  it('gives a video pixel one device pixel on Windows, whatever the scaling', async () => {
+    // What was reported: a 4K screen at 175 %, and the window 1.75 times mpv's.
+    win.dpr = 1.75;
+    Object.assign(win, { w: 2200, h: 1320, min: { w: 840, h: 560 }, work: { w: 3840, h: 2088 } });
+    show('/a.mkv', 1280, 688);
     await settle();
-    expect({ w: win.w, h: win.h }).toEqual({ w: 2560, h: 1440 });
+    expect({ w: win.w, h: win.h }).toEqual({ w: 1280, h: 688 });
   });
 
   it('holds the picture`s shape at its own size, as the aspect choice does', async () => {

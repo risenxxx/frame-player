@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fitWindow, floorForShape, pictureShape, pinchResizes, placeAround, shapeFits, shapeKey } from './window-fit';
+import { fitWindow, floorForShape, pictureShape, pinchResizes, placeAround, shapeFits, shapeKey, videoPixel } from './window-fit';
 
 const MIN = { w: 480, h: 320 };
 const HD = { w: 1920, h: 1080 };
@@ -185,5 +185,13 @@ describe('pinchResizes', () => {
 
   it('is the setting first', () => {
     expect(pinchResizes({ ...plain, setting: 'zoom' })).toBe(false);
+  });
+});
+
+describe('what 100 % of a video is', () => {
+  it('is a point on macOS and a device pixel on Windows', () => {
+    expect(videoPixel(2, true)).toBe(2);
+    expect(videoPixel(1.75, false)).toBe(1);
+    expect(videoPixel(1, false)).toBe(1);
   });
 });

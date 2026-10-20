@@ -30,6 +30,22 @@ export function pictureShape(w: number, h: number, rotate: number): Size | null 
   return Math.abs(rotate) % 180 === 90 ? { w: h, h: w } : { w, h };
 }
 
+/**
+ * How many physical pixels one pixel of video takes at "100 %".
+ *
+ * Two conventions, one per platform, and each is what the platform's own
+ * players do. On macOS a video pixel is a point — QuickTime's actual size, and
+ * mpv's `hidpi-window-scale` there — since a 1080p film one device pixel per
+ * pixel on a Retina screen is a 960-point window. On Windows it is a device
+ * pixel, as mpv draws it: measured against mpv on a 4K screen at 175 %, a
+ * 1280×688 film took 1280 device pixels in mpv and 2240 in a window that
+ * counted points — and at a fractional scale that is also the only size at
+ * which the picture is not resampled.
+ */
+export function videoPixel(dpr: number, mac: boolean): number {
+  return mac ? dpr : 1;
+}
+
 /** A shape as a key: two files of one shape are the same window. */
 export function shapeKey(shape: Size): string {
   return `${shape.w}x${shape.h}`;
