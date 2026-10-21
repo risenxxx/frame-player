@@ -944,6 +944,11 @@ const ru = {
   'osc.audio': 'Аудиодорожка',
   'osc.subs': 'Субтитры',
   'osc.subs_off': 'Выключены',
+  /** The audio and subtitle buttons' tooltips once they carry a tag: what is
+      playing, and where it sits among the file's tracks. */
+  'osc.track_tip': '{label}: {track} ({n} из {total})',
+  'osc.audio_mix_tip': 'Аудиодорожки: слышно {n} из {total}',
+  'osc.subs_off_tip': 'Субтитры выключены (доступно: {total})',
   'osc.chapters': 'Главы',
   /** The panel behind the gear: the right-hand tools when the bar is too narrow
       to carry them. Two keys because they sit in different places — one is a
@@ -1955,6 +1960,9 @@ const en: Record<MessageKey, string> = {
   'osc.audio': 'Audio track',
   'osc.subs': 'Subtitles',
   'osc.subs_off': 'Off',
+  'osc.track_tip': '{label}: {track} ({n} of {total})',
+  'osc.audio_mix_tip': 'Audio tracks: {n} of {total} playing',
+  'osc.subs_off_tip': 'Subtitles off ({total} available)',
   'osc.chapters': 'Chapters',
   'osc.more': 'Playback options',
   'osc.more_title': 'Playback',

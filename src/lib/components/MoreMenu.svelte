@@ -18,7 +18,9 @@
   import { hint } from '$lib/keys.svelte';
   import type { OscMenu } from '$lib/overlays.svelte';
   import { LOOP_LABEL, player } from '$lib/player.svelte';
+  import type { TrackBadge } from '$lib/track-badge';
   import MenuBody from './MenuBody.svelte';
+  import TrackTag from './TrackTag.svelte';
 
   interface Props {
     /// Which tools this file offers. Passed rather than recomputed from
@@ -30,20 +32,34 @@
     showAudio: boolean;
     showSubs: boolean;
     showCast: boolean;
+    /// The tags the track buttons carry, so a folded bar loses none of what
+    /// they said.
+    audioTag: TrackBadge | null;
+    subTag: TrackBadge | null;
     onPick: (kind: OscMenu) => void;
     onCycleLoop: () => void;
   }
 
-  let { showQueue, showChapters, showAudio, showSubs, showCast, onPick, onCycleLoop }: Props =
-    $props();
+  let {
+    showQueue,
+    showChapters,
+    showAudio,
+    showSubs,
+    showCast,
+    audioTag,
+    subTag,
+    onPick,
+    onCycleLoop,
+  }: Props = $props();
 </script>
 
-{#snippet tool(kind: OscMenu, label: string)}
+{#snippet tool(kind: OscMenu, label: string, badge: TrackBadge | null = null)}
   <!-- A row that leads somewhere, drawn like the context menu's submenu heads
        for the same reason: what follows is another panel, and a row that opens
        one has to look different from a row that acts. -->
   <button class="menu-item tool" onclick={() => onPick(kind)}>
-    <span>{label}</span>
+    <span class="label">{label}</span>
+    {#if badge}<TrackTag {badge} />{/if}
     <svg class="caret" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
       <path
         d="M6 3.5 10.5 8 6 12.5"
@@ -71,8 +87,8 @@
     {/if}
     {#if showQueue}{@render tool('queue', t('osc.queue'))}{/if}
     {#if showChapters}{@render tool('chapter', t('osc.chapters'))}{/if}
-    {#if showAudio}{@render tool('audio', t('osc.audio'))}{/if}
-    {#if showSubs}{@render tool('sub', t('osc.subs'))}{/if}
+    {#if showAudio}{@render tool('audio', t('osc.audio'), audioTag)}{/if}
+    {#if showSubs}{@render tool('sub', t('osc.subs'), subTag)}{/if}
     {#if showCast}{@render tool('cast', t('cast.tip'))}{/if}
   </MenuBody>
 </div>
@@ -98,6 +114,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+  }
+
+  /* The label takes the slack, so a tag sits against the caret. */
+  .menu-item.tool .label {
+    flex: 1;
   }
 
   .menu-item.tool .caret {

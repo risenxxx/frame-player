@@ -21,7 +21,10 @@
   import { LOOP_LABEL, isNetworkSource, player } from '$lib/player.svelte';
   import { playlist } from '$lib/playlist.svelte';
   import { parseTorrentUrl } from '$lib/source';
+  import { audioBadge, playingAudio, subBadge } from '$lib/track-badge';
+  import { audioMix } from '$lib/tracks.svelte';
   import MoreMenu from './MoreMenu.svelte';
+  import TrackTag from './TrackTag.svelte';
 
   interface Props {
     mini: boolean;
@@ -56,6 +59,53 @@
     (hasFile && (!isNetworkSource(player.filePath) || !!parseTorrentUrl(player.filePath ?? ''))) ||
       cast.active,
   );
+
+  // ---- What the track buttons say before they are opened ----------------
+  //
+  // A tag in the corner of each (see track-badge.ts for which states it has
+  // and why the two buttons differ), and a tooltip that spells out what the
+  // tag abbreviates. Both are passed on to the folded panel rather than
+  // recomputed there.
+  const heard = $derived(audioMix.multi ? audioMix.ticked : null);
+  const audioTag = $derived(audioBadge(player.audioTracks, heard));
+  const subTag = $derived(subBadge(player.subTracks));
+  const audioTip = $derived.by(() => {
+    const list = player.audioTracks;
+    if (heard && heard.length > 1) return t('osc.audio_mix_tip', { n: heard.length, total: list.length });
+    const playing = playingAudio(list, heard);
+    if (!playing) return t('osc.audio');
+    return t('osc.track_tip', { label: t('osc.audio'), track: playing.label, n: list.indexOf(playing) + 1, total: list.length });
+  });
+  /// What each tag measured itself at; zero until it has been laid out.
+  let audioTagWidth = $state(0);
+  let subTagWidth = $state(0);
+
+  /// The hole a corner tag leaves in its glyph, in the glyph's 24-unit box: the
+  /// tag's rectangle grown by `CUT_GAP` on every side, so the picture shows
+  /// between the two instead of a drawn rim. Written against the layout — the
+  /// 36x34 button with its 20px glyph centred, and the tag's `right: 0; bottom:
+  /// 2px`, 12px tall, 3px corners (TrackTag.svelte). Change one of those and the
+  /// hole slides off the tag, which is at least impossible to miss.
+  const CUT_GAP = 1.5;
+  const GLYPH_UNIT = 24 / 20;
+  function tagCut(tagWidth: number) {
+    const left = 36 - (36 - 20) / 2 - tagWidth - CUT_GAP;
+    const top = 34 - (34 - 20) / 2 - 2 - 12 - CUT_GAP;
+    return {
+      x: left * GLYPH_UNIT,
+      y: top * GLYPH_UNIT,
+      width: (tagWidth + 2 * CUT_GAP) * GLYPH_UNIT,
+      height: (12 + 2 * CUT_GAP) * GLYPH_UNIT,
+      rx: (3 + CUT_GAP) * GLYPH_UNIT,
+    };
+  }
+
+  const subTip = $derived.by(() => {
+    const list = player.subTracks;
+    const shown = list.find((track) => track.selected);
+    if (shown) return t('osc.track_tip', { label: t('osc.subs'), track: shown.label, n: list.indexOf(shown) + 1, total: list.length });
+    return list.length ? t('osc.subs_off_tip', { total: list.length }) : t('osc.subs');
+  });
 
   // ---- Does the right cluster still fit? ---------------------------------
   //
@@ -129,6 +179,22 @@
     overlays.folded = collapsed;
   });
 </script>
+
+<!-- A track button's glyph, with the hole its tag sits in once the tag has a
+     width. The mask ids are fixed because this row exists once. -->
+{#snippet tagged(id: string, tagWidth: number, d: string)}
+  <svg viewBox="0 0 24 24">
+    {#if tagWidth > 0}
+      <defs>
+        <mask {id} maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+          <rect width="24" height="24" fill="#fff" />
+          <rect {...tagCut(tagWidth)} fill="#000" />
+        </mask>
+      </defs>
+    {/if}
+    <path fill="currentColor" mask={tagWidth > 0 ? `url(#${id})` : undefined} {d} />
+  </svg>
+{/snippet}
 
 <div class="controls" class:mini bind:this={rowEl}>
   <div class="cluster cl-left">
@@ -226,6 +292,8 @@
         {showAudio}
         {showSubs}
         {showCast}
+        {audioTag}
+        {subTag}
         onPick={onToggleMenu}
         {onCycleLoop}
       />
@@ -312,13 +380,15 @@
       </button>
     {/if}
     {#if showAudio}
-      <button class="menu-toggle" data-tip={t('osc.audio')} aria-label={t('osc.audio')} class:active={openMenu === 'audio'} onclick={() => onToggleMenu('audio')}>
-        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3a9 9 0 0 0-9 9v7a2 2 0 0 0 2 2h3v-8H5v-1a7 7 0 1 1 14 0v1h-3v8h3a2 2 0 0 0 2-2v-7a9 9 0 0 0-9-9z"/></svg>
+      <button class="menu-toggle tagged" data-tip={audioTip} aria-label={audioTip} class:active={openMenu === 'audio'} onclick={() => onToggleMenu('audio')}>
+        {@render tagged('fp-cut-audio', audioTag ? audioTagWidth : 0, 'M12 3a9 9 0 0 0-9 9v7a2 2 0 0 0 2 2h3v-8H5v-1a7 7 0 1 1 14 0v1h-3v8h3a2 2 0 0 0 2-2v-7a9 9 0 0 0-9-9z')}
+        {#if audioTag}<TrackTag badge={audioTag} corner bind:width={audioTagWidth} />{/if}
       </button>
     {/if}
     {#if showSubs}
-      <button class="menu-toggle" data-tip={t('osc.subs')} aria-label={t('osc.subs')} class:active={openMenu === 'sub'} onclick={() => onToggleMenu('sub')}>
-        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM6 10h2v2H6v-2zm8 6H6v-2h8v2zm4 0h-2v-2h2v2zm0-4H10v-2h8v2z"/></svg>
+      <button class="menu-toggle tagged" data-tip={subTip} aria-label={subTip} class:active={openMenu === 'sub'} onclick={() => onToggleMenu('sub')}>
+        {@render tagged('fp-cut-sub', subTag ? subTagWidth : 0, 'M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM6 10h2v2H6v-2zm8 6H6v-2h8v2zm4 0h-2v-2h2v2zm0-4H10v-2h8v2z')}
+        {#if subTag}<TrackTag badge={subTag} corner bind:width={subTagWidth} />{/if}
       </button>
     {/if}
     {#if showCast}
@@ -439,6 +509,11 @@
 
   .controls button.active {
     color: #818cf8;
+  }
+
+  /* The box the track tag's corner is measured from. */
+  .controls button.tagged {
+    position: relative;
   }
 
   .speed {
