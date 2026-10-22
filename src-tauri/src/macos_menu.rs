@@ -47,8 +47,10 @@ pub struct MenuChecks {
 pub struct MenuChecksState(Mutex<Option<MenuChecks>>);
 
 /// Menu labels. The menu is built natively, so it cannot reach the frontend
-/// dictionary — the two tables here mirror `src/lib/i18n.svelte.ts` and have to
-/// be kept in sync by hand. Everything else about the menu is language-agnostic.
+/// dictionary — the three tables here mirror `src/lib/i18n.svelte.ts` and have
+/// to be kept in sync by hand. ZH follows Apple's own zh-CN menu wording
+/// (全屏幕, 缩放, 打开位置…) where a standard item exists, so it differs from the
+/// HTML menus on purpose. Everything else about the menu is language-agnostic.
 struct Strings {
     about: &'static str,
     /// Shown in the standard About panel. LGPL-2.1 section 6 asks for a
@@ -176,9 +178,50 @@ const RU: Strings = Strings {
     maximize: "Развернуть",
 };
 
+const ZH: Strings = Strings {
+    about: "关于 Frame Player",
+    credits: "Frame Player 是依据 GNU GPL 第 3 版或更高版本发布的自由软件。它使用了 mpv、FFmpeg、libplacebo 等库，这些库采用 LGPL 及其他许可证。完整的许可证文本见应用内的 LICENSE 和 THIRD-PARTY-NOTICES.md。",
+    settings: "设置…",
+    services: "服务",
+    hide: "隐藏 Frame Player",
+    hide_others: "隐藏其他",
+    show_all: "全部显示",
+    quit: "退出 Frame Player",
+    file: "文件",
+    open: "打开文件…",
+    open_link: "打开位置…",
+    reveal: "在访达中显示",
+    info: "媒体信息",
+    close_window: "关闭窗口",
+    edit: "编辑",
+    undo: "撤销",
+    redo: "重做",
+    cut: "剪切",
+    paste: "粘贴",
+    select_all: "全选",
+    view: "显示",
+    fullscreen: "全屏幕",
+    mini: "迷你播放器",
+    chapter_prev: "上一章节",
+    chapter_next: "下一章节",
+    remember: "记住大小和位置",
+    fit_to_video: "匹配视频画面比例",
+    video_size: "以视频尺寸打开",
+    always_on_top: "始终置顶",
+    snap_mini: "迷你播放器贴边吸附",
+    size_50: "视频尺寸的 50%",
+    size_100: "视频尺寸的 100%",
+    size_200: "视频尺寸的 200%",
+    window: "窗口",
+    minimize: "最小化",
+    maximize: "缩放",
+};
+
 fn strings(locale: &str) -> &'static Strings {
     if locale.starts_with("ru") {
         &RU
+    } else if locale.starts_with("zh") {
+        &ZH
     } else {
         &EN
     }

@@ -193,10 +193,13 @@ pub async fn catalog_ready(proxy: String) -> bool {
     )
 }
 
-/// TMDB wants a full BCP-47 tag; the player stores a bare `ru`/`en`.
+/// TMDB wants a full BCP-47 tag; the player stores a bare `ru`/`en`/`zh`.
+/// Chinese is mainland's, the script the interface is written in.
 fn tmdb_lang(locale: &str) -> &'static str {
     if locale.starts_with("ru") {
         "ru-RU"
+    } else if locale.starts_with("zh") {
+        "zh-CN"
     } else {
         "en-US"
     }
@@ -1687,5 +1690,6 @@ mod tests {
     fn tmdb_lang_is_a_full_tag() {
         assert_eq!(tmdb_lang("ru"), "ru-RU");
         assert_eq!(tmdb_lang("en"), "en-US");
+        assert_eq!(tmdb_lang("zh"), "zh-CN");
     }
 }

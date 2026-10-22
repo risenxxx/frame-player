@@ -12,7 +12,31 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { languageName, mpvLangValue, parseLangList, searchLanguages } from './languages';
+import {
+  languageName,
+  mpvLangValue,
+  openSubtitlesLanguages,
+  parseLangList,
+  searchLanguages,
+} from './languages';
+
+describe('openSubtitlesLanguages', () => {
+  it('spells Chinese as both of the scripts OpenSubtitles splits it into', () => {
+    // A bare `zh` finds nothing there, and Chinese is the default search
+    // language of the Chinese interface.
+    expect(openSubtitlesLanguages('zh')).toBe('zh-cn,zh-tw');
+  });
+
+  it('spells Portuguese as Portugal’s and leaves Brazil’s alone', () => {
+    expect(openSubtitlesLanguages('pt')).toBe('pt-pt');
+    expect(openSubtitlesLanguages('pt-br')).toBe('pt-br');
+  });
+
+  it('passes every other code, and “any”, through', () => {
+    expect(openSubtitlesLanguages('ru')).toBe('ru');
+    expect(openSubtitlesLanguages('')).toBe('');
+  });
+});
 
 describe('mpvLangValue', () => {
   it('keeps a language’s spellings adjacent', () => {

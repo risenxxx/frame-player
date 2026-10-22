@@ -32,7 +32,7 @@
 import { setProperty } from 'tauri-plugin-libmpv-api';
 
 import { adjustScopes, loadAdjustAll, writeAdjust, type Adjust, type AdjustScope } from './history.svelte';
-import { t } from './i18n.svelte';
+import { joinList, t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
 import { isUserConfKey, player } from './player.svelte';
 
@@ -237,9 +237,7 @@ export function signed(v: number): string {
 /// "Яркость +10, Гамма −5": what a set of values changes, for the conflict
 /// question and the settings hint.
 export function describeAdjust(a: Adjust): string {
-  return ADJUST_PARAMS.filter((k) => a[k])
-    .map((k) => `${adjustLabel(k)} ${signed(a[k])}`)
-    .join(', ');
+  return joinList(ADJUST_PARAMS.filter((k) => a[k]).map((k) => `${adjustLabel(k)} ${signed(a[k])}`));
 }
 
 /// A hotkey's step, with the popup that says where it landed.

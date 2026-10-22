@@ -551,7 +551,7 @@
                 class:found={!!update}
                 disabled={feedChecking === known.infoHash}
                 data-tip={update
-                  ? t('start.torrent_update') + ': ' + update.title
+                  ? t('start.torrent_update_tip', { title: update.title })
                   : known.feed
                     ? t('torrent.update_tip_feed')
                     : t('torrent.update_tip')}

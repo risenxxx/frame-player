@@ -83,6 +83,38 @@
     U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
+/* Chinese quotation marks and the ellipsis, from the system's Chinese face.
+   Rubik has “ ” and …, so without this they come from it — Latin-width quotes
+   crowding the Han characters they enclose, and an ellipsis sitting on the
+   baseline where Chinese centres it. Only the interface in Chinese puts this
+   family first (the `:lang(zh)` stack below); nothing is downloaded,
+   `local()` names the face already on the machine — PingFang SC on macOS,
+   Microsoft YaHei UI on Windows. */
+@font-face {
+  font-family: 'Han Punctuation';
+  src: local('PingFang SC Regular'), local('PingFangSC-Regular'), local('Microsoft YaHei UI'),
+    local('MicrosoftYaHeiUI');
+  font-weight: 300 549;
+  unicode-range: U+2018-2019, U+201C-201D, U+2026;
+}
+
+@font-face {
+  font-family: 'Han Punctuation';
+  src: local('PingFang SC Semibold'), local('PingFangSC-Semibold'), local('Microsoft YaHei UI Bold'),
+    local('MicrosoftYaHeiUI-Bold');
+  font-weight: 550 900;
+  unicode-range: U+2018-2019, U+201C-201D, U+2026;
+}
+
+/* The page's stack (+page.svelte) with that family in front. Here rather than
+   beside it because css-orphans cannot tie a compound `:global()` to markup;
+   the selector outweighs the page's plain `body`, so load order does not matter. */
+html:lang(zh) body {
+  font-family:
+    'Han Punctuation', 'Rubik', 'Segoe UI Variable', 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
 /* Focus ring: hidden on mouse clicks, shown (in the theme color) only for
    keyboard navigation (:focus-visible is set by the browser itself). */
 :focus {

@@ -127,6 +127,27 @@ export function languageName(code: string): string {
 }
 
 /**
+ * Where OpenSubtitles spells a language differently from mpv.
+ *
+ * The table above is in mpv's terms, and OpenSubtitles has no plain `zh`, `pt`
+ * or `az`: it splits each by script or region and answers the bare code with
+ * nothing — measured, zero results for `zh` and `pt` on a title with dozens in
+ * `zh-cn`/`zh-tw` and `pt-pt`. Chinese is both scripts, because a viewer who
+ * asked for Chinese reads either; Portuguese is Portugal's, since Brazil's has
+ * its own row. Kyrgyz has no code there at all and stays as it is.
+ */
+const OPENSUBTITLES_CODES: Record<string, string> = {
+  zh: 'zh-cn,zh-tw',
+  pt: 'pt-pt',
+  az: 'az-az',
+};
+
+/** A subtitle-search language as OpenSubtitles' `languages=` wants it. */
+export function openSubtitlesLanguages(code: string): string {
+  return OPENSUBTITLES_CODES[code] ?? code;
+}
+
+/**
  * A preference list as mpv wants it.
  *
  * Each language expands to every spelling it has, and the spellings stay

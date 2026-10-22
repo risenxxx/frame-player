@@ -224,7 +224,7 @@
         { v: null, label: t('vset.hdr_sdr') },
         { v: 'auto', label: t('vset.hdr_auto') },
       ],
-      hint: t('vset.hdr_hint'),
+      hint: t(IS_MAC ? 'vset.hdr_hint_mac' : 'vset.hdr_hint_win'),
     },
     {
       kind: 'segmented',
@@ -1198,6 +1198,9 @@
           <button class="segopt" class:sel={locale() === 'en'} onclick={() => changeLocale('en')}>
             English
           </button>
+          <button class="segopt" class:sel={locale() === 'zh'} onclick={() => changeLocale('zh')}>
+            中文
+          </button>
         </div>
       </div>
     </div>
@@ -2153,10 +2156,10 @@
         </div>
         {#if hwdecCurrent}
           <div class="settings-foot">
-            {t('set.hwdec_foot')}
-            {hwdecCurrent === 'no'
-              ? t('set.hwdec_sw')
-              : t('set.hwdec_hw', { name: hwdecCurrent })}
+            {t('set.hwdec_foot', {
+              value:
+                hwdecCurrent === 'no' ? t('set.hwdec_sw') : t('set.hwdec_hw', { name: hwdecCurrent }),
+            })}
           </div>
         {/if}
       </div>

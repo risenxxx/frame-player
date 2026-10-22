@@ -1752,7 +1752,13 @@
     height: 100%;
     background: transparent;
     overflow: hidden;
-    font-family: 'Rubik', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+    /* Rubik has no Han glyphs: a Chinese character falls through to the first
+       face that has one, named so it is the system's UI face rather than
+       whatever `system-ui` resolves to for the glyph. YaHei UI before YaHei:
+       the UI cut has the tighter line spacing Windows' own interface uses. */
+    font-family:
+      'Rubik', 'Segoe UI Variable', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI',
+      'Microsoft YaHei', system-ui, sans-serif;
     user-select: none;
     -webkit-user-select: none;
   }

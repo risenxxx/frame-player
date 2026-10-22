@@ -32,7 +32,7 @@
     setReleaseSort,
     type Release,
   } from '$lib/catalog.svelte';
-  import { t } from '$lib/i18n.svelte';
+  import { joinList, t } from '$lib/i18n.svelte';
   import { fmtSize } from '$lib/units';
 
   interface Props {
@@ -87,7 +87,7 @@
     if (!p) return '';
     const parts: string[] = [];
     if (p.year) parts.push(String(p.year));
-    if (p.genres.length) parts.push(p.genres.slice(0, 3).join(', '));
+    if (p.genres.length) parts.push(joinList(p.genres.slice(0, 3)));
     if (p.runtime) parts.push(t('catalog.runtime', { minutes: p.runtime }));
     return parts.join(' · ');
   });
@@ -97,8 +97,8 @@
   function voicesOf(r: Release): string {
     if (!r.voices.length) return '';
     return r.voices.length > 3
-      ? `${r.voices.slice(0, 3).join(', ')} +${r.voices.length - 3}`
-      : r.voices.join(', ');
+      ? `${joinList(r.voices.slice(0, 3))} +${r.voices.length - 3}`
+      : joinList(r.voices);
   }
 </script>
 

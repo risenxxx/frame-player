@@ -21,7 +21,7 @@ import { getProperty } from 'tauri-plugin-libmpv-api';
 import { parseEpisode, type EpisodeRef } from '$lib/format';
 import { forgetDownloadedSub, isDownloadedSub, rememberDownloadedSub } from '$lib/history.svelte';
 import { locale, t } from '$lib/i18n.svelte';
-import { languageName, parseLangList } from '$lib/languages';
+import { languageName, openSubtitlesLanguages, parseLangList } from '$lib/languages';
 import { showOsd } from '$lib/osd.svelte';
 import { attachTrack, player, removeSubTrack, type Track } from '$lib/player.svelte';
 import { subSpeedFactor } from '$lib/sub-speed';
@@ -312,7 +312,7 @@ export async function runSubsSearch() {
     }>('subs_search', {
       path: player.filePath ?? null,
       query: subs.query.trim() || null,
-      languages: subs.lang,
+      languages: openSubtitlesLanguages(subs.lang),
       season: subs.episode?.season ?? null,
       episode: subs.episode?.episode ?? null,
     });
