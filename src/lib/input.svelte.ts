@@ -55,6 +55,7 @@ import { nudgeDelayHere } from './tracks.svelte';
 import { mini, toggleMini, windowPrefs } from './window-prefs.svelte';
 import { isZoomed, panBy, resetZoom, zoomAt } from './zoom.svelte';
 import { zoomStep } from './zoom-step';
+import { WheelGesture } from './wheel';
 import { IS_MAC } from './platform';
 
 /// Set once from the system rather than guessed: the cast click path waits it
@@ -310,26 +311,12 @@ export function onVideoDblClick() {
   void toggleFullscreen();
 }
 
-// Volume accumulates by delta rather than a fixed step per event: a trackpad
-// fires dozens of tiny events per gesture, and a step for each drove the
-// volume to the ceiling.
-// The quantum is small (20 px = 1 unit) — otherwise the trackpad stays silent
-// until a whole step accumulates, which feels like lag. A mouse wheel notch
-// in Chromium is 100 px, so the familiar 5 units per notch is preserved.
-const PX_PER_VOLUME_UNIT = 20;
-// Seeking by horizontal gesture: 20 px = 1 s, so a wheel notch tilted
-// sideways (100 px) gives the same 5 s as an arrow key.
-const PX_PER_SEEK_SECOND = 20;
-let wheelAccum = 0;
-let wheelSeekAccum = 0;
-// The axis is locked for the whole gesture. Otherwise diagonal finger motion
-// flipped the axis from event to event and seeking bled into volume.
-let wheelAxis: 'x' | 'y' | null = null;
+// The axis machinery — the lock, Shift, the accumulators — is `wheel.ts`;
+// what is left here is the timer that ends a gesture on Windows, where nothing
+// says the wheel has stopped, and who the result goes to.
+const wheel = new WheelGesture();
 let wheelAxisTimer: ReturnType<typeof setTimeout> | undefined;
 const WHEEL_AXIS_RESET_MS = 400;
-// Whether the lock above came from Shift rather than from the event's own
-// deltas (see `onWheel`), so that letting Shift go can unlock it again.
-let wheelAxisShifted = false;
 
 /// Surfaces that own their own wheel: menus, panels, dialogs and the start
 /// and end screens. The player reads a vertical wheel as volume and a
@@ -346,10 +333,7 @@ const WHEEL_SURFACES = '.ctxmenu, .menu, .settings, .settings-backdrop, .overlay
  * locked to the previous direction.
  */
 export function resetWheelGesture() {
-  wheelAxis = null;
-  wheelAxisShifted = false;
-  wheelAccum = 0;
-  wheelSeekAccum = 0;
+  wheel.reset();
 }
 
 export function onWheel(e: WheelEvent) {
@@ -371,83 +355,34 @@ export function onWheel(e: WheelEvent) {
     return;
   }
   if (onSurface) return;
-  // deltaMode: 0 — pixels, 1 — lines, 2 — pages.
-  const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
 
-  // While casting the wheel drives the TV: vertical is its volume, and there
+  // The gesture is held to its end, which on Windows nothing reports — so a
+  // pause in the events stands for one.
+  clearTimeout(wheelAxisTimer);
+  wheelAxisTimer = setTimeout(() => wheel.reset(), WHEEL_AXIS_RESET_MS);
+
+  // While casting the wheel drives the TV's volume, whatever the setting: there
   // is no scrub — keyframe previews are a local concept and every landing
-  // would cost the TV seconds of buffering. So the axis machinery is skipped
-  // entirely (there is nothing for the horizontal one to do) and the vertical
-  // fall-through below does the volume for both transports.
+  // would cost the TV seconds of buffering. So the event is fed as the plain
+  // vertical wheel of volume mode, which `nudgeVolume` routes to the TV.
   //
   // It did not always: this branch used to nudge by `steps * 0.02`, i.e. two
   // units where the local path moves one and where both key steps move five —
   // a scale nobody chose, arrived at by writing the same gesture twice.
-  if (!playback.remote) {
-    // A mouse has one wheel, so Shift+wheel is its horizontal scroll — and it
-    // does not arrive as one. Both engines report it as `deltaY` with
-    // `shiftKey` set and do the remap further down their own scrolling code,
-    // which never runs over the video, because nothing there scrolls. So the
-    // remap is ours, in the browsers' own direction — down becomes right,
-    // hence forward in time — and *without* the inversion `deltaX` needs
-    // below: `deltaY > 0` means "down" on both platforms whatever "natural
-    // scrolling" is set to, so this needs no platform branch. Only when the
-    // event brings no horizontal delta of its own, since a tilt wheel, a
-    // Windows precision touchpad's two-finger swipe and a mac trackpad are
-    // all already right, and Shift is routinely held while scrolling one.
-    const shifted = e.shiftKey && Math.abs(e.deltaY) > Math.abs(e.deltaX);
-    // The axis is picked once at the start of the gesture and held to its end.
-    clearTimeout(wheelAxisTimer);
-    wheelAxisTimer = setTimeout(() => {
-      wheelAxis = null;
-      wheelAxisShifted = false;
-      wheelAccum = 0;
-      wheelSeekAccum = 0;
-    }, WHEEL_AXIS_RESET_MS);
-    // Shift going down — or coming back up — part-way through a gesture is an
-    // explicit ask rather than the diagonal noise the lock exists for, so it
-    // re-decides the axis instead of waiting the gesture out. Both
-    // accumulators go with it, or the fraction of a second already collected
-    // lands as volume, and the other way round.
-    if (shifted !== wheelAxisShifted) {
-      wheelAxisShifted = shifted;
-      wheelAxis = shifted ? 'x' : null;
-      wheelAccum = 0;
-      wheelSeekAccum = 0;
-    }
-    if (wheelAxis === null) {
-      const ax = Math.abs(e.deltaX);
-      const ay = Math.abs(e.deltaY);
-      // While the motion is too small, do not pick an axis: the first events of
-      // a gesture are almost always noisy and can point the wrong way.
-      if (Math.max(ax, ay) < 2) return;
-      wheelAxis = ax > ay ? 'x' : 'y';
-    }
-
-    if (wheelAxis === 'x') {
-      if (!player.hasFile || player.duration <= 0) return;
-      // On macOS the sign of a *real* horizontal delta is inverted for the
-      // same reason as for volume: the system already applied "natural
-      // scrolling" to the event, so a rightward gesture arrives as deltaX < 0
-      // while it feels like "forward".
-      wheelSeekAccum += (shifted ? e.deltaY : IS_MAC ? -e.deltaX : e.deltaX) * scale;
-      const secs = Math.trunc(wheelSeekAccum / PX_PER_SEEK_SECOND);
-      if (!secs) return;
-      wheelSeekAccum -= secs * PX_PER_SEEK_SECOND;
-      scrubBy(secs);
-      return;
-    }
-  }
-
-  const px = e.deltaY * scale;
-  // macOS already applied the "natural scrolling" setting to the event, so an
-  // upward gesture there is deltaY > 0 — the opposite sign to a Windows wheel.
-  wheelAccum += IS_MAC ? px : -px;
-
-  const steps = Math.trunc(wheelAccum / PX_PER_VOLUME_UNIT);
-  if (!steps) return;
-  wheelAccum -= steps * PX_PER_VOLUME_UNIT;
-  nudgeVolume(steps);
+  const remote = playback.remote;
+  const r = wheel.feed(
+    remote ? { deltaX: 0, deltaY: e.deltaY, deltaMode: e.deltaMode, shiftKey: false } : e,
+    remote ? 'volume' : seekSteps.wheel,
+    seekSteps.wheelStep,
+    IS_MAC,
+    player.hasFile && player.duration > 0,
+  );
+  if (!r) return;
+  // A seek can still come out while casting, from a gesture locked before the
+  // session began; it has nowhere to go.
+  if ('seek' in r) {
+    if (!remote) scrubBy(r.seek);
+  } else nudgeVolume(r.volume);
 }
 
 /// Every hotkey action, by id. The chord that reached it is deliberately not

@@ -54,7 +54,16 @@
   } from '$lib/history.svelte';
   import { applyNormalize, applySdrColor, player, readList } from '$lib/player.svelte';
   import { playlist, setPlaylistPref } from '$lib/playlist.svelte';
-  import { LONG_STEPS, SHORT_STEPS, seekSteps, setSeekStep } from '$lib/seek-steps.svelte';
+  import {
+    LONG_STEPS,
+    SHORT_STEPS,
+    WHEEL_MODES,
+    WHEEL_STEPS,
+    seekSteps,
+    setSeekStep,
+    setWheelMode,
+    setWheelStep,
+  } from '$lib/seek-steps.svelte';
   import { setExactThumbs, thumbs } from '$lib/thumbs.svelte';
   import {
     ADJUST_PARAMS,
@@ -1891,6 +1900,30 @@
           {/each}
         </div>
         <div class="setting-hint">{t('set.seek_long_hint', { keys: hintPair('seek_back_10', 'seek_fwd_10') })}</div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">{t('set.wheel')}</div>
+        <div class="segmented">
+          {#each WHEEL_MODES as m (m)}
+            <button class="segopt" class:sel={seekSteps.wheel === m} onclick={() => setWheelMode(m)}>
+              {t(m === 'seek' ? 'set.wheel_seek' : 'set.wheel_volume')}
+            </button>
+          {/each}
+        </div>
+        <div class="setting-hint">{t(IS_MAC ? 'set.wheel_hint_mac' : 'set.wheel_hint_win')}</div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">{t('set.wheel_step')}</div>
+        <div class="segmented">
+          {#each WHEEL_STEPS as v (v)}
+            <button class="segopt" class:sel={seekSteps.wheelStep === v} onclick={() => setWheelStep(v)}>
+              {t('set.seek_sec', { s: v })}
+            </button>
+          {/each}
+        </div>
+        <div class="setting-hint">{t('set.wheel_step_hint')}</div>
       </div>
 
       <div class="setting">
