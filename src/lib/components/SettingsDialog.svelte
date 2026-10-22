@@ -14,7 +14,8 @@
   /// only ever shown here, so the timer now runs only while the dialog is open.
   import { invoke } from '@tauri-apps/api/core';
   import { tick } from 'svelte';
-  import { revealItemInDir } from '@tauri-apps/plugin-opener';
+  import { getVersion } from '@tauri-apps/api/app';
+  import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
   import { portable, setHandler } from '$lib/portable.svelte';
   import { command, getProperty } from 'tauri-plugin-libmpv-api';
 
@@ -22,6 +23,7 @@
   import Dialog from '$lib/components/Dialog.svelte';
   import ScrollFade from '$lib/components/ScrollFade.svelte';
   import { IS_MAC } from '$lib/platform';
+  import { REPO_URL, SITE_URL } from '$lib/links';
   import { locale, setLocale, t, type Locale } from '$lib/i18n.svelte';
   import {
     ACTIONS,
@@ -482,6 +484,15 @@
   /// The WebView2 / WebKit build drawing this sheet. Evergreen on Windows, so
   /// it changes under us between releases — see `webview_version` in lib.rs.
   let webviewVersion = $state<string | null>(null);
+  let appVersion = $state<string | null>(null);
+
+  /// The About links are links — they go somewhere — but a click on an anchor
+  /// inside the web view would navigate the web view itself, so it is handed to
+  /// the system browser instead. The href stays for what it says on hover.
+  function openLink(e: MouseEvent, url: string) {
+    e.preventDefault();
+    void openUrl(url).catch(() => {});
+  }
   /// Settings dialog tab, split by who owns the setting: "Video" is what ends
   /// up in mpv.conf, "General" is what the player keeps itself. "General" by
   /// default: video options are fine-tuning, reached deliberately, whereas the
@@ -647,6 +658,9 @@
       void refreshHdrStatus();
       void invoke<string | null>('webview_version')
         .then((v) => (webviewVersion = v))
+        .catch(() => {});
+      void getVersion()
+        .then((v) => (appVersion = v))
         .catch(() => {});
       hwdecCurrent = player.hasFile
         ? ((await getProperty('hwdec-current', 'string').catch(() => null)) ?? null)
@@ -1467,25 +1481,60 @@
       </div>
     {/if}
 
-      <!-- What the player is made of: the web engine it draws with and the
-           LGPL notice. They sat under the mpv settings' footer, which is about
-           mpv.conf and has nothing to do with either. The licenses open in a
-           layer above this sheet rather than revealing a file: `open-path` is
-           not in the capabilities, and a .md has no reliable handler on Windows
-           regardless. Revealing the file is still offered, inside that dialog. -->
+      <!-- Which player this is and where it lives, then what it is made of: the
+           web engine it draws with and the LGPL notice. The website and the
+           repository are here because nothing else in the player named them —
+           a viewer who wanted the project page had to find it through a search.
+           The licenses open in a layer above this sheet rather than revealing a
+           file: `open-path` is not in the capabilities, and a .md has no
+           reliable handler on Windows regardless. Revealing the file is still
+           offered, inside that dialog. No rules between the parts: the panel
+           already says where the section starts and stops, and a line between
+           four short items read as a list of separate settings. -->
     <div class="set-group">{t('sec.about')}</div>
-    <div class="set-panel">
-      {#if webviewVersion}
-        <div class="settings-foot">
-          {t(IS_MAC ? 'set.webview_foot_mac' : 'set.webview_foot_win', { version: webviewVersion })}
+    <div class="set-panel about">
+      <div class="about-head">
+        <svg class="about-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M3.2 7.6V5.9c0-1.5 1.2-2.7 2.7-2.7h1.7M16.4 3.2h1.7c1.5 0 2.7 1.2 2.7 2.7v1.7M20.8 16.4v1.7c0 1.5-1.2 2.7-2.7 2.7h-1.7M7.6 20.8H5.9c-1.5 0-2.7-1.2-2.7-2.7v-1.7"/><path fill="#e8e8ec" stroke="#e8e8ec" stroke-width="1.6" stroke-linejoin="round" d="M10 9v6l5.4-3z"/></svg>
+        <div>
+          <div class="about-name">Frame Player</div>
+          {#if appVersion}
+            <div class="about-version">{t('set.about_version', { version: appVersion })}</div>
+          {/if}
         </div>
+      </div>
+      <div class="about-links">
+        <a
+          class="about-link"
+          href={SITE_URL}
+          data-tip={t('set.about_site_tip')}
+          aria-label={t('set.about_site_tip')}
+          onclick={(e) => openLink(e, SITE_URL)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" /></svg>
+          frameplayer.app
+        </a>
+        <a
+          class="about-link"
+          href={REPO_URL}
+          data-tip={t('set.about_github_tip')}
+          aria-label={t('set.about_github_tip')}
+          onclick={(e) => openLink(e, REPO_URL)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.9 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.2 4.9 18.2 5.2 18.2 5.2c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z" /></svg>
+          GitHub
+        </a>
+      </div>
+      {#if webviewVersion}
+        <p class="about-note">
+          {t(IS_MAC ? 'set.webview_foot_mac' : 'set.webview_foot_win', { version: webviewVersion })}
+        </p>
       {/if}
-      <div class="settings-foot">
+      <p class="about-note">
         {t('set.licenses_foot')}
         <button class="settings-link" onclick={onLicenses}>
           {t('set.licenses_open')}
         </button>
-      </div>
+      </p>
     </div>
 
   {:else if settingsTab === 'torrents'}
@@ -2936,5 +2985,82 @@
   .setting-slider {
     flex: 1;
     min-width: 0;
+  }
+
+  /* The About panel: a name and a version, two links, two notes. */
+  .about-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .about-logo {
+    width: 34px;
+    height: 34px;
+    flex: none;
+    color: #818cf8;
+  }
+
+  .about-name {
+    color: #e8e8ec;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .about-version {
+    margin-top: 2px;
+    color: #9a9aa5;
+    font-size: 12px;
+  }
+
+  .about-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 14px 0;
+  }
+
+  .about-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #e8e8ec;
+    font-size: 12.5px;
+    text-decoration: none;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .about-link:hover {
+    border-color: rgba(129, 140, 248, 0.4);
+    background: rgba(129, 140, 248, 0.14);
+    color: #fff;
+  }
+
+  .about-link svg {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+  }
+
+  .about-link svg .fill {
+    fill: currentColor;
+    stroke: none;
+  }
+
+  .about-note {
+    margin: 6px 0 0;
+    color: #77777f;
+    font-size: 11.5px;
+    line-height: 1.45;
   }
 </style>

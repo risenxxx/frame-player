@@ -24,11 +24,19 @@
 
 use std::sync::{Mutex, Once};
 
-use tauri::menu::{AboutMetadata, CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager, Wry};
 
 /// Webview event; the payload is the id of the clicked item.
 pub const MENU_EVENT: &str = "frameplayer://menu";
+
+/// Where the About panel points. Mirrors `src/lib/links.ts`.
+const SITE_URL: &str = "https://frameplayer.app";
+const REPO_URL: &str = "https://github.com/risenxxx/frame-player";
+
+/// The language the menu was last built in, for the About panel, which is
+/// assembled when it is opened rather than when the menu is.
+static CURRENT: Mutex<&'static Strings> = Mutex::new(&EN);
 
 /// Check marks whose state is owned by the frontend, along with the settings.
 pub struct MenuChecks {
@@ -229,19 +237,12 @@ fn strings(locale: &str) -> &'static Strings {
 
 pub fn build(app: &tauri::AppHandle<Wry>, locale: &str) -> tauri::Result<()> {
     let s = strings(locale);
-    let pkg = app.package_info().clone();
 
-    let about = PredefinedMenuItem::about(
-        app,
-        Some(s.about),
-        Some(AboutMetadata {
-            name: Some("Frame Player".into()),
-            version: Some(pkg.version.to_string()),
-            copyright: Some("Copyright © 2026 Evgenii Zakharov".into()),
-            credits: Some(s.credits.into()),
-            ..Default::default()
-        }),
-    )?;
+    *CURRENT.lock().unwrap_or_else(|p| p.into_inner()) = s;
+    // Our own item rather than `PredefinedMenuItem::about`: muda hands the
+    // panel its credits as a plain string, and the panel is where a macOS
+    // viewer looks for the website — so the links have to be links.
+    let about = MenuItem::with_id(app, "about", s.about, true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", s.settings, true, Some("CmdOrCtrl+,"))?;
     let app_menu = Submenu::with_items(
         app,
@@ -398,11 +399,89 @@ pub fn build(app: &tauri::AppHandle<Wry>, locale: &str) -> tauri::Result<()> {
     static HANDLER: Once = Once::new();
     HANDLER.call_once(|| {
         app.on_menu_event(|app, event| {
+            if event.id().0 == "about" {
+                show_about(app);
+                return;
+            }
             let _ = app.emit(MENU_EVENT, event.id().0.as_str());
         });
     });
 
     Ok(())
+}
+
+/// The standard About panel, with the credits as rich text: the licence notice,
+/// then the website and the repository as clickable links. Menu events arrive on
+/// the main thread, which is where AppKit wants this.
+fn show_about(app: &tauri::AppHandle<Wry>) {
+    use objc2::rc::{Allocated, Retained};
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+
+    let s = *CURRENT.lock().unwrap_or_else(|p| p.into_inner());
+    let version = app.package_info().version.to_string();
+    let ns = |t: &str| NSString::from_str(t);
+
+    unsafe {
+        let centered: Retained<AnyObject> = msg_send![class!(NSMutableParagraphStyle), new];
+        // From the crate rather than a literal: AppKit numbers the alignments
+        // differently on Apple Silicon and on Intel, and a hard-coded 2 is
+        // "center" on one and "right" on the other.
+        let _: () = msg_send![&*centered, setAlignment: objc2_app_kit::NSTextAlignment::Center];
+        let size: f64 = msg_send![class!(NSFont), smallSystemFontSize];
+        let font: Retained<AnyObject> = msg_send![class!(NSFont), systemFontOfSize: size];
+        let color: Retained<AnyObject> = msg_send![class!(NSColor), labelColor];
+
+        let attrs = |link: Option<&str>| -> Retained<AnyObject> {
+            let d: Retained<AnyObject> = msg_send![class!(NSMutableDictionary), new];
+            let _: () = msg_send![&*d, setObject: &*font, forKey: &*ns("NSFont")];
+            let _: () = msg_send![&*d, setObject: &*color, forKey: &*ns("NSColor")];
+            let _: () = msg_send![&*d, setObject: &*centered, forKey: &*ns("NSParagraphStyle")];
+            if let Some(url) = link {
+                let u: Option<Retained<AnyObject>> = msg_send![class!(NSURL), URLWithString: &*ns(url)];
+                if let Some(u) = u {
+                    let _: () = msg_send![&*d, setObject: &*u, forKey: &*ns("NSLink")];
+                }
+            }
+            d
+        };
+        let piece = |text: &str, link: Option<&str>| -> Retained<AnyObject> {
+            let a: Allocated<AnyObject> = msg_send![class!(NSAttributedString), alloc];
+            msg_send![a, initWithString: &*ns(text), attributes: &*attrs(link)]
+        };
+
+        let credits: Retained<AnyObject> = msg_send![class!(NSMutableAttributedString), new];
+        for (text, link) in [
+            (s.credits, None),
+            ("\n\n", None),
+            ("frameplayer.app", Some(SITE_URL)),
+            ("  ·  ", None),
+            ("GitHub", Some(REPO_URL)),
+        ] {
+            let _: () = msg_send![&*credits, appendAttributedString: &*piece(text, link)];
+        }
+
+        let options: Retained<AnyObject> = msg_send![class!(NSMutableDictionary), new];
+        let name = ns("Frame Player");
+        let version = ns(&version);
+        let copyright = ns("Copyright © 2026 Evgenii Zakharov");
+        // An empty build version, or AppKit repeats the version after it in
+        // parentheses — "Version 1.32.0 (1.32.0)".
+        let build = ns("");
+        for (key, value) in [
+            ("ApplicationName", &*name as &AnyObject),
+            ("ApplicationVersion", &*version),
+            ("Version", &*build),
+            ("Copyright", &*copyright),
+            ("Credits", &*credits),
+        ] {
+            let _: () = msg_send![&*options, setObject: value, forKey: &*ns(key)];
+        }
+
+        let ns_app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+        let _: () = msg_send![&*ns_app, orderFrontStandardAboutPanelWithOptions: &*options];
+    }
 }
 
 /// Rebuild the menu in another language. The frontend owns the language choice

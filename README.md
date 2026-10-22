@@ -1,7 +1,29 @@
-# Frame Player
+<p align="center">
+  <img src="src-tauri/icons/icon-master.svg" width="88" height="88" alt="">
+</p>
 
-Local files, links and magnet torrents in one window, on **Tauri 2 + libmpv** —
-frame-accurate, instant, and unusually careful about the details.
+<h1 align="center">Frame Player</h1>
+
+<p align="center">
+  Local files, links and magnet torrents in one window, on <b>Tauri 2 + libmpv</b> —<br>
+  frame-accurate, instant, and unusually careful about the details.
+</p>
+
+<p align="center">
+  <a href="https://github.com/risenxxx/frame-player/releases/latest"><img src="https://img.shields.io/github/v/release/risenxxx/frame-player?label=release&color=6366f1" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS-6366f1" alt="Windows and macOS">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/risenxxx/frame-player?color=6366f1" alt="License: GPL-3.0"></a>
+</p>
+
+<p align="center">
+  <a href="https://frameplayer.app"><b>Website</b></a> ·
+  <a href="https://github.com/risenxxx/frame-player/releases/latest"><b>Download</b></a> ·
+  <a href="https://frameplayer.app/updates">What’s new</a>
+</p>
+
+<p align="center">
+  <b>English</b> · <a href="README.ru.md">Русский</a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
 <p align="center">
   <img src="docs/intro.webp" width="900"
@@ -94,8 +116,8 @@ language, title and codec — never by track number, which moves between release
 snaps to the corners and, on macOS, floats over other applications' fullscreen
 spaces — the one thing an ordinary always-on-top window cannot do.
 
-The interface is localised **Russian / English**, and every hotkey can be
-rebound.
+The interface is in **English, Russian and Simplified Chinese**, and every
+hotkey can be rebound.
 
 ## Install
 
@@ -229,7 +251,7 @@ Settings → Privacy & Security* — the path that has a way out, as opposed to 
 **Interface**
 
 - **Frameless UI** — custom title bar, auto-hiding controls over the video,
-  custom tooltips, icon OSD; native window chrome and menu bar on macOS.
+  custom tooltips, a text OSD; native window chrome and menu bar on macOS.
 - **Resume playback** — every file, link and torrent episode reopens where you
   left it, behind a start screen of unfinished videos and poster frames.
 - **Remembered tracks** — the audio and subtitle track you chose is scored

@@ -755,6 +755,9 @@ const ru = {
   'set.licenses_foot':
     'Плеер работает на mpv, FFmpeg и других свободных библиотеках — они распространяются по LGPL и другим лицензиям, их полные тексты входят в поставку:',
   'set.licenses_open': 'открыть лицензии',
+  'set.about_version': 'Версия {version}',
+  'set.about_site_tip': 'Открыть сайт Frame Player',
+  'set.about_github_tip': 'Исходный код и обсуждения на GitHub',
   'lic.title': 'Лицензии',
   'lic.intro':
     'Frame Player распространяется по GPL-3.0-or-later — её текст в самом низу. Библиотеки, на которых он работает, идут под своими лицензиями: mpv, FFmpeg, libplacebo и другие под LGPL, остальные каждая под своей. Ниже полный перечень и все тексты, ровно те, что входят в поставку.',
@@ -1789,6 +1792,9 @@ const en: Record<MessageKey, string> = {
   'set.licenses_foot':
     'Frame Player runs on mpv, FFmpeg and other free software libraries — covered by the LGPL and other licenses, whose full texts ship with the application:',
   'set.licenses_open': 'open the licenses',
+  'set.about_version': 'Version {version}',
+  'set.about_site_tip': 'Open the Frame Player website',
+  'set.about_github_tip': 'Source code and issues on GitHub',
   'lic.title': 'Licenses',
   'lic.intro':
     'Frame Player itself is GPL-3.0-or-later — its text is at the very bottom. The libraries it runs on keep their own licenses: mpv, FFmpeg, libplacebo and others under the LGPL, the rest each under its own. Below is the full inventory and every license text, exactly as they ship with the application.',
@@ -2729,6 +2735,9 @@ const zh: Record<MessageKey, string> = {
   'set.portable_keychain': '唯一保存在文件夹之外的是 OpenSubtitles 密码，它存放在 Windows 凭据管理器中：这个文件夹会被复制到其他电脑上，把密码以文件形式放在里面会更不安全。',
   'set.licenses_foot': 'Frame Player 基于 mpv、FFmpeg 及其他自由软件库运行，它们采用 LGPL 及其他许可证，完整文本随应用一同提供：',
   'set.licenses_open': '查看许可证',
+  'set.about_version': '版本 {version}',
+  'set.about_site_tip': '打开 Frame Player 官网',
+  'set.about_github_tip': '在 GitHub 上查看源代码和反馈问题',
   'lic.title': '许可证',
   'lic.intro':
     'Frame Player 本身采用 GPL-3.0-or-later 许可证，其文本位于本页最底部。它所依赖的库保留各自的许可证：mpv、FFmpeg、libplacebo 等采用 LGPL，其余各自采用自己的许可证。以下是完整清单和全部许可证文本，与随应用提供的内容完全一致。',

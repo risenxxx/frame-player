@@ -33,6 +33,7 @@ import { t } from './i18n.svelte';
 import { dropResumeSnapshot, saveResumeSnapshot } from './history.svelte';
 import { showOsd } from './osd.svelte';
 import { IS_MAC } from './platform';
+import { REPO_URL } from './links';
 
 /** Whole percent of the in-place payload's download, from update.rs. */
 const PROGRESS_EVENT = 'frameplayer://update-progress';
@@ -53,7 +54,7 @@ interface Plan {
 /// rather than the latest: it lands on the page that actually carries that
 /// version's archive.
 function releasePage(version: string | null): string {
-  const base = 'https://github.com/risenxxx/frame-player/releases';
+  const base = `${REPO_URL}/releases`;
   return version ? `${base}/tag/v${version}` : `${base}/latest`;
 }
 
