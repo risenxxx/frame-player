@@ -894,6 +894,9 @@ const ru = {
   'vset.hwdec_auto': 'Аппаратное',
   'vset.hwdec_vt': 'Только VideoToolbox',
   'vset.hwdec_sw': 'Программное',
+  'vset.fast_backstep': 'Быстрый шаг назад по кадрам',
+  'vset.fast_backstep_hint':
+    'Если на этом файле шаг назад медленный, плеер один раз декодирует отрезок до ключевого кадра и держит его в памяти. Дальше шаги назад мгновенные. Может занять до четверти оперативной памяти, пока вы шагаете',
   'vset.spdif': 'Звук на ресивер (bitstream)',
   'vset.spdif_off': 'Выкл',
   'vset.spdif_hint': 'Декодирует ресивер; громкость плеера перестаёт действовать',
@@ -1913,6 +1916,9 @@ const en: Record<MessageKey, string> = {
   'vset.hwdec_auto': 'Hardware',
   'vset.hwdec_vt': 'VideoToolbox only',
   'vset.hwdec_sw': 'Software',
+  'vset.fast_backstep': 'Fast stepping back by frame',
+  'vset.fast_backstep_hint':
+    'When a step back is slow on a file, the player decodes the stretch back to the keyframe once and keeps it in memory, so the steps after it are instant. It can hold up to a quarter of your memory while you step',
   'vset.spdif': 'Bitstream to receiver',
   'vset.spdif_off': 'Off',
   'vset.spdif_hint': 'The receiver decodes it; the player volume stops having any effect',

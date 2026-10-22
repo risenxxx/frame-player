@@ -15,6 +15,7 @@ mod catalog;
 mod dlna;
 mod external_dirs;
 mod feed;
+mod frame_step;
 mod install_count;
 mod lan_sweep;
 mod libmpv_load;
@@ -1281,6 +1282,7 @@ pub fn run() {
             user_mpv_conf,
             third_party_notices,
             mpv_conf_set,
+            frame_step::frame_step_probe,
             step_engine::step_prewarm,
             step_engine::step_enter,
             step_engine::step_move,

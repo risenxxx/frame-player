@@ -1,10 +1,10 @@
 /**
  * The FFmpeg-sidecar frame stepper.
  *
- * **Disabled** — `USE_STEP_ENGINE` is false, and every entry point here falls
- * back to mpv's own `frame-step`. It is kept working and smoke-tested because
- * mpv cannot beat the keyframe ceiling on pathological files and a decoded
- * frame source is the only way past it (see architecture.md).
+ * **Disabled** — `USE_STEP_ENGINE` is false, and every entry point here hands
+ * over to `frame-step.svelte.ts`, which steps through mpv itself (software
+ * decoding for the session, backward decoding on slow files). The sidecar is
+ * kept working and smoke-tested; see architecture.md for why it lost.
  *
  * While it is on, frames come from the sidecar and mpv sits paused behind the
  * canvas overlay, walked to the displayed frame by a background pre-seek so
@@ -14,12 +14,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 
+import { frameStepBeforePlay, frameStepBy } from './frame-step.svelte';
 import { player, togglePause as mpvTogglePause, waitPlaybackSettled } from './player.svelte';
 import { seek } from './seek.svelte';
 
-/// Sidecar stepping is off: mpv's native steps give the correct picture (proper
-/// HDR tone mapping) and are fast enough. The code stays for a possible
-/// comeback behind an option.
+/// Sidecar stepping is off: mpv's own steps give the correct picture (proper
+/// HDR tone mapping), and frame-step.svelte.ts makes them fast where they were
+/// not. The code stays, kept working.
 export const USE_STEP_ENGINE: boolean = false;
 
 class Step {
@@ -70,7 +71,7 @@ export function schedulePrewarm() {
 export async function stepBy(delta: number) {
   if (!player.hasFile || busy) return;
   if (!USE_STEP_ENGINE) {
-    void command(delta < 0 ? 'frame-back-step' : 'frame-step', []);
+    await frameStepBy(delta);
     return;
   }
   busy = true;
@@ -140,5 +141,8 @@ export async function togglePlayback() {
     await exitStep(true);
     return;
   }
+  // mpv may be decoding backward for the frame stepper; turned forward first,
+  // or the first moments would play in reverse.
+  if (player.paused) await frameStepBeforePlay();
   await mpvTogglePause();
 }

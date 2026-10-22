@@ -143,11 +143,19 @@ it matters. The power source is read per cell behind a short cache, and a
 machine that cannot answer counts as plugged in: degrading the player on a
 machine that merely failed to report is the worse way to be wrong.
 
-**Frame stepping** — a sidecar decoder that pre-warms a GOP ring on pause, so
-the first step is instant. Currently disabled behind a flag: mpv's own stepping
-turned out to be good enough, and the sidecar's canvas path could not reproduce
-mpv's HDR tone mapping, so the frame it showed did not match the frame the
-player was showing. Kept working and smoke-tested.
+**Frame stepping** goes through mpv. The first attempt was a sidecar decoder
+that pre-warmed a GOP ring on pause; it is disabled behind a flag and kept
+working, and it lost for three reasons visible in its code — RGBA frames at
+source size (its 700 MB cap held under a second and a half of 1080p60), a whole
+frame through IPC into a canvas per step, and colour that could not match mpv's.
+What replaced it is mpv's own stepping with two changes, both measured: a step
+back decodes in software for the session, because hardware decoding is 2–10×
+slower at a one-frame seek, and on a file where a step back is still slow mpv
+decodes backward, so the group is decoded once and every press after that is a
+frame period. The second holds a whole group of decoded pictures, so it runs
+inside a memory budget, and because mpv overflows that buffer silently, every
+landing is checked. The numbers and the traps are in the frame-stepping line of
+[rules/mpv-playback.md](rules/mpv-playback.md).
 
 **Screenshots** go through mpv, which keeps exactly what the video output
 produced, HDR tone mapping included. The compression level is lowered
@@ -166,6 +174,7 @@ as well as making the user wait.
 | `src-tauri/src/thumb_service.rs` | Seekbar thumbnails and posters: decoding, scoring, disk cache |
 | `src-tauri/src/torrent.rs` | The torrent session and the loopback HTTP server |
 | `src-tauri/src/cast.rs` · `dlna.rs` | Casting: the CASTV2 client, the LAN file server, the UPnP transport |
+| `src/lib/frame-step.svelte.ts` · `src-tauri/src/frame_step.rs` | Frame stepping through mpv: software decoding while stepping, backward decoding on slow files, the group probe |
 | `src-tauri/src/step_engine.rs` | The frame-stepping sidecar (disabled, kept working) |
 
 State lives in `.svelte.ts` modules rather than a store library: Svelte runes

@@ -66,6 +66,12 @@
     step,
   } from '$lib/step-engine.svelte';
   import {
+    frameStep,
+    frameStepFileChanged,
+    frameStepNotePause,
+    frameStepNoteRestart,
+  } from '$lib/frame-step.svelte';
+  import {
     chrome,
     closeWindow,
     exitFullscreen,
@@ -278,9 +284,9 @@
   import { loadThumbPrefs, maybeStartThumbs, requestThumb, thumbs } from '$lib/thumbs.svelte';
   import { isZoomed, markZoomLuaLoaded, panBy, reclampPan, resetZoom, zoomAt } from '$lib/zoom.svelte';
 
-  // Sidecar frame stepping (StepEngine) is off: mpv's native steps give the
-  // correct picture (proper HDR tone mapping) and are fast enough. The code
-  // stays for a possible comeback behind an option.
+  // Sidecar frame stepping (StepEngine) is off: stepping goes through mpv,
+  // which shows the correct picture (HDR tone mapping included), made fast by
+  // frame-step.svelte.ts. The sidecar code stays, kept working.
 
   function runMenuAction(id: string) {
     switch (id) {
@@ -677,6 +683,9 @@
           // file of the same shape as the last can change none of them. The
           // window looks again and reports (`settled`).
           if (curtain.on) scheduleShape();
+          // Before the waiters are released: a restart nobody stepping asked
+          // for is a seek that the frame stepper has to turn forward after.
+          frameStepNoteRestart();
           notePlaybackRestart();
           // The one event that means frames are actually being produced, which
           // is what a room has to be told about — a file mpv has merely been
@@ -998,6 +1007,7 @@
     switch (name) {
       case 'pause':
         if (player.paused && USE_STEP_ENGINE && !step.on) schedulePrewarm();
+        frameStepNotePause();
         updateTaskbarProgress();
         if (player.paused) maybeRecordPosition(true);
         break;
@@ -1042,6 +1052,9 @@
         }
         break;
       case 'eof-reached':
+        // Decoding backward, the start of the file is mpv's end: the frame
+        // stepper reaching the first frame is not the film being over.
+        if (frameStep.reverse) break;
         if (player.eofReached) onReachedEnd();
         else resetEnd();
         break;
@@ -1057,6 +1070,7 @@
         // The net under `raiseCurtain`: a file that reached mpv by a way that
         // does not pass through one of our verbs.
         if (player.filePath) curtainFileStarted();
+        frameStepFileChanged();
         // The seek-back buffer for where this file's bytes come from — see
         // `backBufferFor`.
         void setProperty('demuxer-max-back-bytes', backBufferFor(player.filePath)).catch(() => {});

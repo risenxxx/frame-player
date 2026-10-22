@@ -635,6 +635,28 @@ export function notePlaybackRestart() {
 }
 
 /**
+ * Resolve when mpv next reports a *different* `time-pos`, or give up after `ms`.
+ *
+ * A frame step that plays a frame is not a seek: there is no `playback-restart`
+ * for it, and the position moving is the only sign it happened. Released from
+ * the event path only when the value changed, so the 1 s resync sweep
+ * rewriting the same number does not count. A wake-up, not a verdict: mpv's
+ * observer folds changes together, so a position that went away and came back
+ * sends nothing — `waitMovedFrom` in frame-step.svelte.ts confirms with a read.
+ */
+export function waitTimePosChange(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timePosWaiters.push(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+let timePosWaiters: Array<() => void> = [];
+
+/**
  * Why libmpv-2.dll could not be loaded, in place of the plugin's "Failed to
  * create mpv instance", which names neither the file nor the cause.
  * `libmpv_load.rs` loads the library before the plugin does in order to keep
@@ -867,10 +889,17 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
 function applyProperty(ev: PropertyChange) {
   switch (ev.name) {
     case 'pause': player.paused = ev.data; break;
-    case 'time-pos':
+    case 'time-pos': {
+      const before = player.timePos;
       player.timePos = ev.data ?? 0;
       timePosAt = performance.now();
+      if (player.timePos !== before && timePosWaiters.length) {
+        const waiting = timePosWaiters;
+        timePosWaiters = [];
+        for (const w of waiting) w();
+      }
       break;
+    }
     case 'duration': player.duration = ev.data ?? 0; break;
     case 'filename': player.filename = ev.data; break;
     case 'path': player.filePath = ev.data; break;

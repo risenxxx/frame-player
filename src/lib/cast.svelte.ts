@@ -16,6 +16,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 
+import { frameStepBeforeSeek } from './frame-step.svelte';
 import { isPrivatePath } from './history.svelte';
 import { t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
@@ -1346,6 +1347,8 @@ export async function endCast(opts: {
 
   const target = lastTime > 0 ? lastTime : cast.time;
   if (target > 0 && Number.isFinite(target)) {
+    // The frame stepper may have left mpv decoding backward when the cast began.
+    await frameStepBeforeSeek();
     await command('seek', [target, 'absolute']).catch(() => {});
   }
   const unpause = resumeUnpaused && !opts.resumePaused;

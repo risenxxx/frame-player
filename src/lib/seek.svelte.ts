@@ -35,6 +35,7 @@ import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 import { cast, castSeek } from './cast.svelte';
 import { previewWidth } from './floating';
 import { formatTime } from './format';
+import { frameStepBeforeSeek } from './frame-step.svelte';
 import { t } from './i18n.svelte';
 import { osdSeq, showOsd } from './osd.svelte';
 import { player, waitPlaybackSettled } from './player.svelte';
@@ -164,6 +165,11 @@ function noteSeekCost(startedAt: number) {
 }
 
 export function issueSeek(pos: number, exact: boolean): Promise<unknown> {
+  // A frame-stepping session has to hand mpv back first (forward, hardware
+  // decoder) — and before the seek is sent, or the seek is lost to the one the
+  // turn queues. Null outside a session, which keeps this synchronous.
+  const settle = frameStepBeforeSeek();
+  if (settle) return settle.then(() => issueSeek(pos, exact));
   const startedAt = performance.now();
   return command('seek', [pos, exact ? 'absolute+exact' : 'absolute+keyframes'])
     .catch(() => {})
@@ -470,6 +476,13 @@ function wrapInAbLoop(target: number): number | null {
 export function seekRelative(delta: number, exact = false) {
   if (!player.hasFile) return;
   if (hooks.stepMode()) hooks.flushStepThenCancel();
+  // See `issueSeek`. A relative seek after the turn is still right: mpv adds it
+  // to the absolute one the turn queued.
+  const settle = frameStepBeforeSeek();
+  if (settle) {
+    void settle.then(() => seekRelative(delta, exact));
+    return;
+  }
   const wrapped = wrapInAbLoop(player.timePos + delta);
   if (wrapped !== null) {
     // An absolute seek: the point is precisely that it is no longer `delta`

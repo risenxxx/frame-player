@@ -21,6 +21,7 @@
  */
 
 import { chrome } from './chrome.svelte';
+import { frameStep } from './frame-step.svelte';
 import { jumpToChapter, openEntry, playback } from './playback.svelte';
 import { chapterAt, player, skipKind } from './player.svelte';
 import { ADVANCE_MS, ensurePoster, neighbour, playlist } from './playlist.svelte';
@@ -65,7 +66,9 @@ class EndOfFile {
   /// so the next ending offers the cards again.
   dismissed = $state(false);
 
-  ended = $derived(player.hasFile && player.eofReached);
+  /// Not while the frame stepper has mpv decoding backward: there the start of
+  /// the file is what mpv calls its end.
+  ended = $derived(player.hasFile && player.eofReached && !frameStep.reverse);
   /// The cards are on screen. `ended` stays the fact about the file: the
   /// controls still treat a dismissed ending as an ending.
   shown = $derived(this.ended && !this.dismissed);

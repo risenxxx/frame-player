@@ -43,6 +43,7 @@
     unassign,
     type ActionId,
   } from '$lib/keys.svelte';
+  import { frameStep, setFastBackStep } from '$lib/frame-step.svelte';
   import { languageName, mpvLangValue, parseLangList, searchLanguages } from '$lib/languages';
   import {
     addExcludedFolder,
@@ -2097,6 +2098,26 @@
       <div class="set-group">{t('sec.decode')}</div>
       <div class="set-panel">
         {@render mpvRows('decode')}
+        <!-- Kept by the player, not in mpv.conf: it is not an mpv option but a
+             decision the frame stepper makes per file (frame-step.svelte.ts). -->
+        <div class="setting">
+          <div class="row-toggle">
+            <div class="row-text">
+              <div class="setting-label">{t('vset.fast_backstep')}</div>
+              <div class="setting-hint">{t('vset.fast_backstep_hint')}</div>
+            </div>
+            <button
+              class="switch"
+              class:on={frameStep.enabled}
+              role="switch"
+              aria-checked={frameStep.enabled}
+              aria-label={t('vset.fast_backstep')}
+              onclick={() => setFastBackStep(!frameStep.enabled)}
+            >
+              <span class="switch-knob"></span>
+            </button>
+          </div>
+        </div>
         {#if hwdecCurrent}
           <div class="settings-foot">
             {t('set.hwdec_foot')}
