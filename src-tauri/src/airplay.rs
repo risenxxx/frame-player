@@ -20,6 +20,8 @@ use serde::{Deserialize, Serialize};
 /// Where the menu row is, in the page's CSS pixels — the picker is put exactly
 /// there so the system's list opens beside what the viewer clicked.
 #[derive(Debug, Clone, Copy, Deserialize)]
+// Read only by the macOS half; the Windows commands take it and refuse.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct Anchor {
     pub x: f64,
     pub y: f64,
