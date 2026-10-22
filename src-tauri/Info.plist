@@ -16,6 +16,7 @@
     <key>NSBonjourServices</key>
     <array>
         <string>_googlecast._tcp</string>
+        <string>_airplay._tcp</string>
     </array>
 
     <!--

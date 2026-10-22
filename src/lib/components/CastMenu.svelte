@@ -7,8 +7,10 @@
   /// startup, which is the rule that keeps the app from asking for Local
   /// Network permission before anyone has asked to cast.
   import {
+    airplaySummary,
     cast,
     castCurrentFile,
+    castOverAirPlay,
     castStateLabel,
     deviceProfile,
     deviceSummary,
@@ -189,6 +191,32 @@
           {castSearchLong ? t('cast.still_looking') : t('cast.searching')}
         </div>
       {/each}
+      {#if IS_MAC && cast.airplayRoutes}
+        <!-- AirPlay is one row, not one per television: macOS lists its
+             receivers only in its own picker, so this row opens that list.
+             It is anchored to the bar's button rather than to the row: the
+             system decides the side itself (below, unless the screen has no
+             room), so from a row above the seekbar it opened over the
+             seekbar and grew down across it as receivers arrived. From the
+             button it opens below the window, or — fullscreen, or a window
+             at the bottom of the screen — above the button, growing up. The
+             rectangles are read before the panel closes. -->
+        <div class="tv-row">
+          <button
+            class="menu-item cast-device"
+            onclick={(e) => {
+              const button = document.querySelector('[data-cast-anchor]');
+              const b = button?.getBoundingClientRect();
+              const r = b && b.width > 0 ? b : e.currentTarget.getBoundingClientRect();
+              close();
+              void castOverAirPlay({ x: r.left, y: r.top, w: r.width, h: r.height });
+            }}
+          >
+            <span class="cast-name">{t('cast.airplay_row')}</span>
+            <span class="cast-model">{airplaySummary()}</span>
+          </button>
+        </div>
+      {/if}
       <!-- The number-one cause of "casting doesn't work" is the network,
            not the code, so the panel says so up front: the Defender prompt
            before the first cast, and the usual reasons a TV is invisible

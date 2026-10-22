@@ -28,7 +28,7 @@ export const FAQ: Question[] = [
   },
   {
     q: 'Can Frame Player cast to a TV?',
-    a: 'Yes, to Chromecast and other Google Cast devices and to DLNA TVs. When the TV can play the file as it is, Frame Player sends it without re-encoding; otherwise it remuxes the file and copies the video stream.',
+    a: 'Yes, to Chromecast and other Google Cast devices and to DLNA TVs, and from a Mac to an Apple TV or a TV with AirPlay. When the TV can play the file as it is, Frame Player sends it without re-encoding; otherwise it remuxes the file and copies the video stream.',
     more: { href: '/cast-to-tv', label: 'Casting to a TV' },
   },
   {

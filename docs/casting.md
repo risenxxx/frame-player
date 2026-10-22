@@ -358,11 +358,14 @@ television could not fetch the file from us even if we found it.
   and the wrong product.
 - **Miracast** — the same, plus it needs Wi-Fi Direct and an encoder for the
   screen; no support on macOS at all.
-- **AirPlay** — the transport is a URL handoff like the others and would be a
-  day's work, but modern receivers gate everything behind pairing (SRP, HomeKit
-  keys, an encrypted channel), there is no maintained Rust sender to build on,
-  and the device class it would unlock that nothing else reaches is essentially
-  the Apple TV. Considered, not planned.
+- **AirPlay on Windows** — Apple publishes no sender for it, so it would be a
+  reimplementation of a closed, unlicensed protocol with no specification, a
+  single independent implementation of the path that works on current tvOS, and
+  an audience that is tiny (an Apple TV fed from a Windows machine; most sets
+  with AirPlay also speak DLNA). Its legal standing was not assessed, which is a
+  further reason not to start. On the Mac it ships through the system's own
+  `AVPlayer` and route picker — see
+  [airplay.md](airplay.md).
 - **A custom Cast receiver** — same hardware decoders, so no codec gain; it
   would buy a styled interface and codec probing at the cost of an app id and a
   hosted page.

@@ -7,6 +7,7 @@ use tauri::{Emitter, Manager};
 mod macos_chrome;
 #[cfg(target_os = "macos")]
 mod macos_menu;
+mod airplay;
 mod audio_output;
 mod cast;
 mod color;
@@ -1266,6 +1267,13 @@ pub fn run() {
             window_float_over_fullscreen,
             window_pinch_mode,
             audio_output::audio_output_default,
+            airplay::airplay_open,
+            airplay::airplay_replace,
+            airplay::airplay_status,
+            airplay::airplay_control,
+            airplay::airplay_disconnect,
+            airplay::airplay_detect,
+            airplay::airplay_routes,
             now_playing::now_playing_start,
             now_playing::now_playing_set,
             window_shape::window_shape_lock,
@@ -1416,6 +1424,13 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     dlna::selftest(&handle, target, path).await;
                 });
+            }
+            // `FP_AIRPLAY_PLAY=<file>`: one AirPlay session through the same
+            // functions the menu calls, logged — the twin of FP_DLNA_PLAY, and
+            // how a new receiver is checked. See airplay.rs.
+            #[cfg(target_os = "macos")]
+            if let Ok(path) = std::env::var("FP_AIRPLAY_PLAY") {
+                tauri::async_runtime::spawn(airplay::selftest(app.handle().clone(), path));
             }
             // `FP_SHELL_HANDLER=on|off` takes or gives back the shell
             // registration a portable copy would normally decide from its own

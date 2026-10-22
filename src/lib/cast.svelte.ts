@@ -22,6 +22,7 @@ import { t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
 import { isNetworkSource, player, type Track } from './player.svelte';
 import { suspendThumbs } from './thumbs.svelte';
+import { IS_MAC } from './platform';
 import { neighbour, playEntry, playlist, type PlaylistEntry } from './playlist.svelte';
 import { parseTorrentUrl } from './source';
 
@@ -44,7 +45,10 @@ export interface DlnaDevice {
   mimes: string[];
 }
 
-export type Transport = 'cast' | 'dlna';
+/// `airplay` is macOS only and is not a half of any row: the system chooses the
+/// receiver from its own list, so the session has no device of ours behind it
+/// (docs/airplay.md).
+export type Transport = 'cast' | 'dlna' | 'airplay';
 
 /**
  * One television, however many ways there are to reach it.
@@ -63,6 +67,22 @@ export interface TvDevice {
   ip: string;
   cast?: CastDevice;
   dlna?: DlnaDevice;
+  /// The AirPlay row's stand-in: the system's list chooses the television, so
+  /// there is nothing here but the fact that this is that row.
+  airplay?: true;
+}
+
+/// The device a session over AirPlay belongs to. The queue follows "the
+/// device", and for this transport the device is whatever the system's route
+/// is — which outlives a change of file.
+export const AIRPLAY_DEVICE: TvDevice = { key: 'airplay', name: 'AirPlay', model: '', ip: '', airplay: true };
+
+/// Where the AirPlay row is on the page, so the system's list opens beside it.
+export interface Anchor {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 interface CastStatusMsg {
@@ -76,6 +96,8 @@ interface CastStatusMsg {
   volume_fixed: boolean;
   fetches: number;
   device: string | null;
+  /// AirPlay only: the address fetching the file, i.e. the receiver chosen.
+  peer?: string | null;
 }
 
 /// The TV never fetched a byte this long after the LOAD was accepted: the
@@ -122,6 +144,9 @@ class Cast {
     src: string;
     container: string;
     verdict: CastVerdict;
+    /// The same question asked of AirPlay's decoder set (`airplayVerdict`);
+    /// null off macOS.
+    airplayVerdict: CastVerdict | null;
     streaming: boolean;
   } | null>(null);
   /// Which transport the live session is using; the controls, the poll and the
@@ -139,6 +164,9 @@ class Cast {
   /// consequence line under the name) appears seconds later for no visible
   /// reason, which reads as the panel changing its mind.
   dlnaSweeping = $state(false);
+  /// The system sees at least one AirPlay receiver — the AirPlay row is shown
+  /// only then. Which ones is not something macOS will say.
+  airplayRoutes = $state(false);
 
   /// One row per television: the two discoveries merged by address.
   get tvs(): TvDevice[] {
@@ -207,6 +235,13 @@ class Cast {
   get remote(): boolean {
     return this.active && this.state !== 'connecting' && this.state !== 'preparing';
   }
+  /// The cast button's lit state. An AirPlay session exists from the click,
+  /// while the viewer is still choosing in the system's list — a lit button
+  /// then claims a television that may never be picked, so it lights only
+  /// once one has taken over.
+  get engaged(): boolean {
+    return this.active && !(this.transport === 'airplay' && this.state === 'connecting');
+  }
 }
 
 export const cast = new Cast();
@@ -215,6 +250,10 @@ let deviceTimer: ReturnType<typeof setInterval> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let loadStartedAt = 0;
 let sawPlayback = false;
+/// An AirPlay session became an external route. Until then the viewer is
+/// still choosing in the system's list and the local player keeps playing —
+/// so the fetch timeouts, which count from the handover, have not started.
+let airplayLive = false;
 /// Whether local playback was running when the cast started — what the
 /// handback resumes to.
 let resumeUnpaused = false;
@@ -511,6 +550,7 @@ export async function refreshCastPlan() {
     src,
     container: extensionOf(src),
     verdict: await castVerdict(src),
+    airplayVerdict: IS_MAC ? await airplayVerdict(src) : null,
     streaming: 'stream' in resolved,
   };
 }
@@ -529,17 +569,20 @@ export function startCastDiscovery() {
     console.warn('dlna_discover_start failed:', e),
   );
   cast.dlnaSweeping = true;
+  if (IS_MAC) void invoke('airplay_detect', { on: true }).catch(() => {});
   // Cleared by the first sweep that finds anything, or by this deadline — a
   // spinner that never stops is worse than one that gives up.
   setTimeout(() => (cast.dlnaSweeping = false), DLNA_SWEEP_MS);
   void refreshCastPlan();
   const pull = async () => {
-    const [castList, dlnaList] = await Promise.all([
+    const [castList, dlnaList, airplayRoutes] = await Promise.all([
       invoke<CastDevice[]>('cast_devices').catch(() => []),
       invoke<DlnaDevice[]>('dlna_devices').catch(() => []),
+      IS_MAC ? invoke<boolean>('airplay_routes').catch(() => false) : false,
     ]);
     cast.devices = castList;
     cast.dlnaDevices = dlnaList;
+    cast.airplayRoutes = airplayRoutes;
     rememberHosts([...castList.map((d) => d.ip), ...dlnaList.map((d) => d.ip)]);
     if (dlnaList.length > 0) cast.dlnaSweeping = false;
     if (castList.length || dlnaList.length) {
@@ -618,6 +661,7 @@ export function stopCastDiscovery() {
   cast.dlnaSweeping = false;
   void invoke('cast_discover_stop').catch(() => {});
   void invoke('dlna_discover_stop').catch(() => {});
+  if (IS_MAC) void invoke('airplay_detect', { on: false }).catch(() => {});
 }
 
 /// Containers the receiver takes as-is over HTTP.
@@ -662,6 +706,49 @@ export async function castVerdict(src: string): Promise<CastVerdict> {
     return { kind: 'prepare', transcodeAudio: !audioCopy };
   }
   return { kind: 'refuse', reason: t('cast.err_format', { what: ext || '?' }) };
+}
+
+/// What an AirPlay receiver decodes: AVFoundation's set, which is not the Cast
+/// receiver's. VP8/VP9 and Opus/Vorbis are not in it, so WebM stops being a
+/// container that plays as it is; FLAC and ALAC ride along in MP4.
+const AIRPLAY_VIDEO = ['h264', 'hevc', 'av1'];
+const AIRPLAY_AUDIO_COPY = ['aac', 'mp3', 'flac', 'alac', 'ac3', 'eac3'];
+const AIRPLAY_DIRECT = ['mp4', 'm4v', 'mov'];
+
+/**
+ * The AirPlay ladder: the Cast one with AVFoundation's edits. **HEVC is always
+ * prepared**, even in an MP4: AVFoundation plays it only tagged `hvc1`, the tag
+ * cannot be read from mpv, and a remux that re-tags it is seconds and cached —
+ * against a black screen with no error if the tag was `hev1`. AV1 passes as an
+ * attempt; it plays only where the receiver's hardware has it.
+ */
+export async function airplayVerdict(src: string): Promise<CastVerdict> {
+  const ext = extensionOf(src);
+  const video = (await getProperty('video-format', 'string').catch(() => null)) ?? '';
+  const audio = (await getProperty('audio-codec-name', 'string').catch(() => null)) ?? '';
+  if (video && !AIRPLAY_VIDEO.includes(video)) {
+    return { kind: 'refuse', reason: t('cast.err_format', { what: video }) };
+  }
+  const audioCopy = !audio || AIRPLAY_AUDIO_COPY.includes(audio);
+  const container = AIRPLAY_DIRECT.includes(ext) || REMUX_CONTAINERS.includes(ext) || ext === 'webm';
+  if (!container) return { kind: 'refuse', reason: t('cast.err_format', { what: ext || '?' }) };
+  if (AIRPLAY_DIRECT.includes(ext) && audioCopy && video !== 'hevc') {
+    return { kind: 'direct', transcodeAudio: false };
+  }
+  return { kind: 'prepare', transcodeAudio: !audioCopy };
+}
+
+/// The AirPlay row's second line: what happens to this file, as every other
+/// row says it.
+export function airplaySummary(): string {
+  const plan = cast.plan;
+  if (!plan) return t('cast.airplay_sum');
+  if (plan.streaming) return t('cast.sum_stream_wait');
+  if (isNetworkSource(plan.src)) return t('cast.local_only');
+  const verdict = plan.airplayVerdict;
+  if (!verdict) return t('cast.airplay_sum');
+  if (verdict.kind === 'refuse') return t('cast.sum_refuse');
+  return verdict.kind === 'prepare' ? t('cast.sum_prepare') : t('cast.sum_direct');
 }
 
 /**
@@ -892,6 +979,7 @@ export async function castCurrentFile(
   // A fresh session may fall back again; a re-load inside one may not, or a
   // transport that keeps refusing would ping-pong.
   if (!keep && !opts.forceTransport) fellBack = false;
+  if (device.airplay) return castOverAirPlay(null, keep);
   currentDevice = device;
   const path = player.filePath;
   if (!path) return false;
@@ -1196,6 +1284,102 @@ async function castOverDlna(device: TvDevice, src: string, keep = false): Promis
   return true;
 }
 
+/**
+ * Cast over AirPlay: the system's player, the system's list of receivers.
+ *
+ * The session starts *before* there is a television. `airplay_open` gives an
+ * `AVPlayer` the URL, muted and playing alongside mpv, and opens the system's
+ * list beside the row (`anchor`); the session is 'connecting' while the viewer
+ * chooses, so the window stays a player rather than a remote. The poll sees
+ * the route go external and takes over from there — that moment, not this
+ * call, is when mpv stands down. A list closed without a pick, and a
+ * television whose own AirPlay switch is off, look identical from here and end
+ * the same way: Rust's `not_started` after a grace period.
+ *
+ * `keep` is the queue following on a live route: a new item on the same
+ * player, no list.
+ */
+export async function castOverAirPlay(anchor: Anchor | null, keep = false): Promise<boolean> {
+  if (!IS_MAC) return false;
+  if (!keep) fellBack = false;
+  const path = player.filePath;
+  if (!path) return false;
+  const resolved = await resolveCastSource(path);
+  if ('refuse' in resolved) {
+    showOsd(resolved.refuse);
+    return false;
+  }
+  // AVPlayer reads the file through our server like any receiver would, but a
+  // stretch that has not arrived is a hole it would play as silence and
+  // black: nothing here can turn Range requests into piece priority for it.
+  if ('stream' in resolved) {
+    showOsd(t('cast.airplay_stream'));
+    return false;
+  }
+  const src = resolved.src;
+  if (isNetworkSource(src)) {
+    showOsd(t('cast.local_only'));
+    return false;
+  }
+  const verdict = await airplayVerdict(src);
+  if (verdict.kind === 'refuse') {
+    showOsd(verdict.reason);
+    return false;
+  }
+
+  currentDevice = AIRPLAY_DEVICE;
+  if (!keep) {
+    resumeUnpaused = !player.paused;
+    airplayLive = false;
+    cast.deviceName = t('cast.airplay_name');
+  }
+  cast.transport = 'airplay';
+  cast.active = true;
+  cast.state = keep ? 'loading' : 'connecting';
+  cast.time = player.timePos;
+  cast.duration = player.duration;
+  sawPlayback = false;
+  castSrcPath = src;
+  sessionHls = null;
+
+  const hidden = isPrivatePath(src);
+  let castPath = src;
+  if (verdict.kind === 'prepare') {
+    if (!keep) cast.state = 'preparing';
+    try {
+      const { audioIndex, channels } = await selectedAudioParams();
+      castPath = await prepareForCast(src, verdict.transcodeAudio, audioIndex, channels);
+    } catch (e) {
+      console.warn('airplay prepare failed:', e);
+      if (cast.active) await endCast({ osd: t('cast.prepare_failed'), resumeLocal: false });
+      return false;
+    }
+    if (!cast.active) return false;
+    preparedPath = castPath;
+    preparedHidden = hidden;
+    if (!keep) cast.state = 'connecting';
+  }
+
+  try {
+    if (keep) {
+      await invoke('airplay_replace', { path: castPath, position: player.timePos, hidden });
+      loadStartedAt = Date.now();
+    } else {
+      // Up until the television takes over — replaced by "playing on" from
+      // the poll, or by whatever ends the session.
+      showOsd(t('cast.airplay_pick'), { sticky: true });
+      await invoke('airplay_open', { path: castPath, position: player.timePos, hidden, anchor });
+    }
+  } catch (e) {
+    console.warn('airplay open failed:', e);
+    const key = String(e) === 'picker_unavailable' ? 'cast.airplay_unavailable' : 'cast.err_load';
+    await endCast({ osd: t(key), resumeLocal: true });
+    return false;
+  }
+  startPoll();
+  return true;
+}
+
 /// Which HLS rendition to build — or `null` for "this file cannot go over HLS
 /// at all", which sends it down the progressive path instead.
 ///
@@ -1234,9 +1418,7 @@ async function poll() {
   // finished file as ended throughout — without this the queue would jump
   // several episodes at once.
   if (!cast.active || advancing) return;
-  const status = await invoke<CastStatusMsg>(
-    cast.transport === 'dlna' ? 'dlna_status' : 'cast_status',
-  ).catch(() => null);
+  const status = await invoke<CastStatusMsg>(transportCommand('status')).catch(() => null);
   if (!status || !cast.active) return;
 
   cast.state = status.state;
@@ -1247,6 +1429,23 @@ async function poll() {
   cast.volumeKnown = status.volume_known;
   cast.volumeFixed = status.volume_fixed;
   if (status.device) cast.deviceName = status.device;
+  if (cast.transport === 'airplay') {
+    // The handover: the route is external now, so the television plays and
+    // the window becomes its remote — the moment `castCurrentFile` reaches by
+    // calling LOAD, reached here by the viewer's pick.
+    if (!airplayLive && ['playing', 'paused', 'buffering'].includes(status.state)) {
+      airplayLive = true;
+      loadStartedAt = Date.now();
+      suspendThumbs(true);
+      await setProperty('pause', true).catch(() => {});
+    }
+    // macOS does not say which receiver was chosen, but the receiver says it
+    // by fetching, and the address it fetches from has a name.
+    // Rust names it from the set's own Bonjour announcement; a row with the
+    // same address is the fallback for a set that has not announced yet.
+    const tv = !status.device && status.peer ? cast.tvs.find((d) => d.ip === status.peer) : undefined;
+    if (tv) cast.deviceName = tv.name;
+  }
 
   switch (status.state) {
     case 'playing':
@@ -1279,6 +1478,7 @@ async function poll() {
         kind === 'unreachable' ? 'cast.err_unreachable'
         : kind === 'launch_failed' ? 'cast.err_launch'
         : kind === 'load_failed' ? 'cast.err_load'
+        : kind === 'not_started' ? 'cast.airplay_not_started'
         : 'cast.err_closed';
       await endCast({ osd: t(key), resumeLocal: true });
       return;
@@ -1293,6 +1493,9 @@ async function poll() {
   // fallback is deliberately NOT taken here: nothing was fetched, so the file
   // is not the problem and Chromecast would be served by the same blocked
   // server.
+  // AirPlay's clock starts at the handover, not at the click: before it the
+  // viewer is still choosing, and nothing is late.
+  if (cast.transport === 'airplay' && !airplayLive) return;
   if (!sawPlayback && status.fetches === 0 && Date.now() - loadStartedAt > FETCH_TIMEOUT_MS) {
     await endCast({ osd: t('cast.err_firewall'), resumeLocal: true });
     return;
@@ -1326,9 +1529,8 @@ export async function endCast(opts: {
   cast.deviceName = null;
   // A prepare still running dies with the session; harmless when none is.
   void invoke('cast_prepare_cancel').catch(() => {});
-  const lastTime = await invoke<number>(
-    cast.transport === 'dlna' ? 'dlna_disconnect' : 'cast_disconnect',
-  ).catch(() => 0);
+  const lastTime = await invoke<number>(transportCommand('disconnect')).catch(() => 0);
+  airplayLive = false;
   // The prepared copy of a private file must not outlive its session, and
   // with the cache set to "keep nothing" neither does anyone else's; a public
   // one otherwise stays cached so re-casting it is instant. (HLS sessions are
@@ -1477,7 +1679,13 @@ const START_TIMEOUT_MS = 20_000;
 /// which is what lets one set of controls, one seekbar and one casting screen
 /// serve either.
 function controlCommand(): string {
-  return cast.transport === 'dlna' ? 'dlna_control' : 'cast_control';
+  return transportCommand('control');
+}
+
+/// The live transport's own name for a verb — the three answer the same
+/// questions under their own prefixes.
+function transportCommand(verb: 'status' | 'control' | 'disconnect'): string {
+  return `${cast.transport}_${verb}`;
 }
 
 /// A refused command used to vanish into an empty catch, which is how a control
@@ -1562,13 +1770,18 @@ export async function castSwitchAudio(track: Track): Promise<void> {
       ? await prepareHls(src, transcode, audioIndex, channels, sessionHls === 'fmp4')
       : await prepareForCast(src, transcode, audioIndex, channels);
     if (!cast.active) return;
-    await invoke('cast_load', {
-      path: prepared,
-      position: cast.time,
-      title: hidden ? null : player.displayTitle,
-      hidden,
-      hls: sessionHls,
-    });
+    if (cast.transport === 'airplay') {
+      // A new item on the same route: the television stays chosen.
+      await invoke('airplay_replace', { path: prepared, position: cast.time, hidden });
+    } else {
+      await invoke('cast_load', {
+        path: prepared,
+        position: cast.time,
+        title: hidden ? null : player.displayTitle,
+        hidden,
+        hls: sessionHls,
+      });
+    }
     if (!sessionHls) {
       preparedPath = prepared;
       preparedHidden = hidden;

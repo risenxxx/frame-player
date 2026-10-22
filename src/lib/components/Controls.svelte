@@ -263,6 +263,7 @@
          a stray window. -->
     <button
       class="menu-toggle"
+      data-cast-anchor
       data-tip={t('osc.more')}
       aria-label={t('osc.more')}
       class:active={openMenu !== null}
@@ -400,7 +401,8 @@
            not on. -->
       <button
         class="menu-toggle"
-        class:cast-on={cast.active}
+        class:cast-on={cast.engaged}
+        data-cast-anchor
         data-tip={t('cast.tip')}
         aria-label={t('cast.tip')}
         class:active={openMenu === 'cast'}

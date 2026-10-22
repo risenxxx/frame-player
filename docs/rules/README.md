@@ -17,10 +17,10 @@ worth walking into twice. Where the two disagree, this wins.
 | [torrents-core.md](torrents-core.md) | The session, adding a torrent, where the data lives, what may be deleted — and the macOS descriptor budget under it |
 | [torrents-network.md](torrents-network.md) | The swarm: DHT, trackers, encryption, the proxy, port forwarding, and the preferences that rebuild the session |
 | [torrents-playback.md](torrents-playback.md) | Playing one: the queue, the buffer map, the readouts, subtitles inside a release, replacing a torrent with its re-upload |
-| [casting.md](casting.md) | Google Cast and DLNA: the ladders, the LAN server, the remote-control rules, what one television taught us |
+| [casting.md](casting.md) | Google Cast, DLNA and AirPlay: the ladders, the LAN server, the remote-control rules, what one television taught us |
 | [sync.md](sync.md) | Watching together: the wire, the reconciler, readiness, what a room may know |
 | [catalog.md](catalog.md) | The metadata proxy, the indexer, and what leaves this machine when somebody searches |
-| [sources-and-privacy.md](sources-and-privacy.md) | What a source *is* against how it is reached, files arriving from the system, the watch history and the seven privacy enforcement points |
+| [sources-and-privacy.md](sources-and-privacy.md) | What a source *is* against how it is reached, files arriving from the system, the watch history and the eight privacy enforcement points |
 | [window.md](window.md) | The transparent window, the macOS title bar, fullscreen, the mini player, geometry, the idle and cursor rules |
 | [ui-surfaces.md](ui-surfaces.md) | The settings sheet, the context menu, the start screen, tooltips, the OSD, and the arithmetic that places anything floating |
 | [css.md](css.md) | The box model, the cascade between borrowed classes, and the rendering traps measured in both engines |

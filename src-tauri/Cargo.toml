@@ -136,6 +136,11 @@ objc2-app-kit = { version = "0.3.2", features = [
 ] }
 block2 = "0.6"
 objc2-foundation = "0.3.2"
+# airplay.rs: AirPlay is the system's — an AVPlayer handed the casting server's
+# URL, and AVKit's route picker to choose the receiver (docs/airplay.md).
+objc2-av-foundation = { version = "0.3.2", features = ["objc2-core-media"] }
+objc2-av-kit = "0.3.2"
+objc2-core-media = "0.3.2"
 # net_route: the interface names people see ("Wi-Fi") and which interface has a
 # router, from SystemConfiguration. Already in the tree via the keychain crates.
 core-foundation = "0.10"

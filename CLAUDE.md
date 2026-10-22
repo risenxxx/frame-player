@@ -24,10 +24,10 @@ enough to know a rule exists, never enough to change the code under it.
 | `torrents-core.md` | The session, adding a torrent, where the data lives, what may be deleted — and the macOS descriptor budget under it |
 | `torrents-network.md` | The swarm: DHT, trackers, encryption, the proxy, port forwarding, and the preferences that rebuild the session |
 | `torrents-playback.md` | Playing one: the queue, the buffer map, the readouts, subtitles inside a release, replacing a torrent with its re-upload |
-| `casting.md` | Google Cast and DLNA: the ladders, the LAN server, the remote-control rules, what one television taught us |
+| `casting.md` | Google Cast, DLNA and AirPlay: the ladders, the LAN server, the remote-control rules, what one television taught us |
 | `sync.md` | Watching together: the wire, the reconciler, readiness, what a room may know |
 | `catalog.md` | The metadata proxy, the indexer, and what leaves this machine when somebody searches |
-| `sources-and-privacy.md` | What a source *is* against how it is reached, files arriving from the system, the watch history and the seven privacy enforcement points |
+| `sources-and-privacy.md` | What a source *is* against how it is reached, files arriving from the system, the watch history and the eight privacy enforcement points |
 | `window.md` | The transparent window, the macOS title bar, fullscreen, the mini player, geometry, the idle and cursor rules |
 | `ui-surfaces.md` | The settings sheet, the context menu, the start screen, tooltips, the OSD, and the arithmetic that places anything floating |
 | `css.md` | The box model, the cascade between borrowed classes, and the rendering traps measured in both engines |
@@ -206,6 +206,16 @@ before the round ends:
 cd src-tauri && FP_TEST_DLNA_SLOW=1 cargo test --lib dlna::discovery_tests::slow_location_smoke -- --nocapture
 ```
 
+AirPlay (macOS only) against a real receiver: the system's AirPlay list opens in
+the window's top-left corner, you pick a television, and the session is scripted
+from there — play, pause, resume, a seek forward and one back, stop — with one
+log line per change of state. It runs inside the app, through the same functions
+the cast menu calls, because the picker is a view in the window:
+
+```bash
+FP_AIRPLAY_PLAY=/abs/path/to/file.mp4 FP_CAST_DEBUG=1 bun run tauri dev 2>&1 | grep -E '\[airplay\]|\[cast\] http'
+```
+
 On macOS a test binary in a custom target dir cannot find the bundled dylibs
 (`@executable_path/lib` resolves next to `deps/`, where build.rs did not copy
 them), so any `cargo test` there also needs `DYLD_FALLBACK_LIBRARY_PATH=$PWD/lib`.
@@ -252,6 +262,7 @@ them), so any `cargo test` there also needs `DYLD_FALLBACK_LIBRARY_PATH=$PWD/lib
 | `src-tauri/src/opensubtitles.rs` | Subtitle search and download: the API key's lookup order, the OpenSubtitles file hash, `subs_search` (hash and/or title, privacy-gated) and `subs_download` (ticket → file → saved beside the video) |
 | `src-tauri/src/catalog.rs` + `src/lib/catalog.svelte.ts` + `CatalogDialog.svelte` | Finding something to watch: TMDB for *what* (posters, localised titles, seasons) and a Torznab-compatible indexer for *where from* (trackers, quality, dubs, seeders, a magnet). On by default with a switch to turn it off; the metadata proxy and the indexer are both settings. See "The catalog" below |
 | `src-tauri/src/cast.rs` | Casting to TV (Google Cast): mDNS browse (`mdns-sd`, on-demand), a hand-rolled CASTV2 client (TLS to the device's 8009, 4-byte-BE-framed protobuf envelopes with JSON payloads, tokio `select!` pump + dedicated reader task), and the LAN file server (one registered file behind a random token, bound to the interface on the device's subnet). Frontend half in `src/lib/cast.svelte.ts`; see "Casting" below and `casting.md` |
+| `src-tauri/src/airplay.rs` | AirPlay, macOS only: an `AVPlayer` given the casting server's URL and AVKit's route picker, invisible over the bar's cast button and pressed from the menu's AirPlay row, so the system's own list chooses the television (there is no public API that lists or picks one). `airplay_open/replace/status/control/disconnect` mirror the other two transports' commands; `FP_AIRPLAY_PLAY=<file>` drives one session through them, logged. Frontend half in `castOverAirPlay` in `src/lib/cast.svelte.ts`. No Windows half, on purpose — see `docs/airplay.md` |
 | `src-tauri/src/now_playing.rs` + `src/lib/now-playing.svelte.ts` | Now Playing on macOS: the Control Center entry, the keyboard's play/pause key, the AirPods' pause. The frontend reports what plays, the native side hands it to MediaPlayer and sends the system's commands back as an event. See the Now Playing line in [rules/mpv-playback](docs/rules/mpv-playback.md) |
 | `src-tauri/src/audio_output.rs` + `src/lib/audio-output.svelte.ts` | A sound offset per output device, for the lag of a Bluetooth speaker: which device the system plays through (polled natively, since mpv on `auto` does not say), the offsets kept per device, and the one rule that `audio-delay` holds file delay + device offset with `tracks.svelte.ts` keeping the halves apart. See the line in [rules/mpv-playback](docs/rules/mpv-playback.md) |
 | `src-tauri/src/external_dirs.rs` + `src/lib/external-title.ts` | External dubs and subtitles in a release's subfolders: which folders under the video hold them (handed to mpv's own search as `sub-file-paths`/`audio-file-paths` before the load, by `pointAtExternalTracks`), and what to call a track found there instead of mpv's "mka". See the line in [rules/tracks-and-subtitles](docs/rules/tracks-and-subtitles.md) |
@@ -356,6 +367,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 - **DLNA is the second way to a television, and the one that asks the least.** A UPnP MediaRenderer *is* the TV's own player, so a release it already decodes plays untouched — measured on the real set: a 6.3 GB 4K HEVC Main-10 … → [casting](docs/rules/casting.md)
 - **Everything DLNA knows about a television has to be read off that television, because the next one is a different make.** Every rule above was measured against one set, and the failure mode of measuring against one device is … → [casting](docs/rules/casting.md)
 - **The tolerance of the string-scanning XML lives in one function, and it is the price of not taking a parser.** `tag`/`chunks` compare a **local** name against everything up to the first whitespace, so an attribute … → [casting](docs/rules/casting.md)
+- **AirPlay is the system's, on the Mac only, and the session starts before there is a television.** One menu row opens the system's list (an invisible `AVRoutePickerView` over the bar's cast button, pressed — the system picks the side, so the anchor is what decides it); the session is `connecting` with an `AVPlayer` muted beside mpv until the route goes external, and a television with AirPlay switched off — or a list closed without a pick — tells the Mac nothing, so `not_started` ends it. HEVC is always prepared (`hvc1`), WebM refused, no volume, no torrent still downloading. → [casting](docs/rules/casting.md)
 - **Watching together is one shared timeline and nothing else, and the shape of the wire is the whole design.** What travels is a **snapshot of the state after a change** — `{content, paused, position, speed, at, rev, by}` — never … → [sync](docs/rules/sync.md)
 - **The catalog is two services and one rule about which answers what.** A metadata service says *what* to watch — posters, localised titles, descriptions, how many seasons a series has — and a Torznab-compatible indexer says … → [catalog](docs/rules/catalog.md)
 - **A network source is not a file, and a surprising amount of the player assumes otherwise.** `isNetworkSource()` gates the three that matter: the thumbnail storyboard (it decodes the *whole* file in the background — over a stream … → [sources-and-privacy](docs/rules/sources-and-privacy.md)

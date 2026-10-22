@@ -550,6 +550,10 @@ struct ServeShared {
     /// TV accepted is the firewall signature: the command channel worked, the
     /// media channel never reached us.
     hits: AtomicU64,
+    /// Every address that has sent a request for the current registration, in
+    /// order of first request. Who asks is the one thing that tells a URL handed to
+    /// a receiver from a file the Mac is playing itself — AirPlay reads it.
+    peers: Mutex<Vec<IpAddr>>,
 }
 
 struct Server {
@@ -665,12 +669,21 @@ fn log_media_error(what: &str, payload: &Value) {
 /// a receiver that fetched the playlist and stopped failed at parsing it, one
 /// that fetched init.mp4 and a segment failed at decoding, and one that asked
 /// for nothing at all is the firewall case the connect flow already warns about.
-async fn serve_cast(shared: Arc<ServeShared>, req: Request<hyper::body::Incoming>) -> Response<Body> {
+async fn serve_cast(shared: Arc<ServeShared>, req: Request<hyper::body::Incoming>, peer: IpAddr) -> Response<Body> {
+    // Per request, not per connection: a receiver keeps its connection alive
+    // across a change of file, and the list is cleared on every registration —
+    // recorded at accept, the next episode's fetches would come from nobody.
+    {
+        let mut peers = shared.peers.lock().unwrap_or_else(|p| p.into_inner());
+        if peers.len() < 16 && !peers.contains(&peer) {
+            peers.push(peer);
+        }
+    }
     if !cast_debug() {
         return serve_cast_inner(shared, req).await;
     }
     let line = format!(
-        "{} {} range={} timeseek={}",
+        "{peer} {} {} range={} timeseek={}",
         req.method(),
         req.uri().path(),
         req.headers()
@@ -831,6 +844,16 @@ pub(crate) fn server_hits(service: &Arc<CastService>) -> u64 {
         .as_ref()
         .map(|s| s.shared.hits.load(Ordering::Relaxed))
         .unwrap_or(0)
+}
+
+/// The addresses that have sent a request to the LAN server for the current file.
+pub(crate) fn server_peers(service: &Arc<CastService>) -> Vec<IpAddr> {
+    let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
+    inner
+        .server
+        .as_ref()
+        .map(|s| s.shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clone())
+        .unwrap_or_default()
 }
 
 /// Content types inside an HLS session directory.
@@ -1646,6 +1669,7 @@ pub async fn cast_load(
             torrent: None,
         });
         shared.hits.store(0, Ordering::Relaxed);
+        shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clear();
         old
     };
     // A displaced HLS session (the audio switch) leaves its segment directory
@@ -1707,6 +1731,7 @@ pub(crate) async fn serve_one_file(
             torrent: None,
         });
         shared.hits.store(0, Ordering::Relaxed);
+        shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clear();
     }
     Ok(url)
 }
@@ -1785,6 +1810,7 @@ pub async fn cast_serve_torrent(
         });
         *shared.torrents.lock().unwrap_or_else(|p| p.into_inner()) = Some(torrents.inner().clone());
         shared.hits.store(0, Ordering::Relaxed);
+        shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clear();
     }
     Ok(url)
 }
@@ -1827,11 +1853,12 @@ async fn ensure_server(
         reg: Mutex::new(None),
         torrents: Mutex::new(None),
         hits: AtomicU64::new(0),
+        peers: Mutex::new(Vec::new()),
     });
     let serve_shared = shared.clone();
     let task = tauri::async_runtime::spawn(async move {
         loop {
-            let Ok((stream, _)) = listener.accept().await else {
+            let Ok((stream, peer)) = listener.accept().await else {
                 continue;
             };
             let shared = serve_shared.clone();
@@ -1843,7 +1870,7 @@ async fn ensure_server(
                         service_fn(move |req| {
                             let shared = shared.clone();
                             async move {
-                                Ok::<_, std::convert::Infallible>(serve_cast(shared, req).await)
+                                Ok::<_, std::convert::Infallible>(serve_cast(shared, req, peer.ip()).await)
                             }
                         }),
                     )

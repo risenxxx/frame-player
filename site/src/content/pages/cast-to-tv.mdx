@@ -1,11 +1,11 @@
 ---
-title: "Cast video to the TV: Chromecast and DLNA — Frame Player"
-description: "Send a video from your computer to a Chromecast or a DLNA smart TV without re-encoding it: a 4K HEVC HDR MKV plays on the set as it is."
+title: "Cast video to the TV: Chromecast, DLNA and AirPlay — Frame Player"
+description: "Send a video from your computer to a Chromecast, a DLNA smart TV or, from a Mac, an AirPlay TV without re-encoding it: a 4K HEVC HDR MKV plays on the set as it is."
 heading: Send a video to the TV, without re-encoding it
 lede: Frame Player hands your television the file itself and lets the set's own player decode it — at its own quality, with its own HDR. The window you were watching in becomes the remote.
 eyebrow: Casting
 short: Cast to the TV
-updated: 2026-09-21
+updated: 2026-10-23
 order: 20
 related:
   - torrent-streaming
@@ -20,6 +20,8 @@ faq:
     a: Yes. The television reads the file from your computer over the local network as it plays, the same way it would read it from a network drive.
   - q: My TV does not show up. What should I check?
     a: That the computer and the TV are on the same network, and — on macOS 15 and later — that Frame Player is allowed under System Settings › Privacy & Security › Local Network. On Windows, allow the player through the firewall on private networks when it asks. A VPN that sends all traffic through a tunnel can hide the local network too.
+  - q: What about AirPlay and Apple TV?
+    a: On a Mac, yes — to an Apple TV or a television with AirPlay, through the system's own AirPlay. There are no plans for it on Windows, because Apple provides no way to do it there and rebuilding its closed protocol ourselves would be costly to maintain for very few people. Most televisions that speak AirPlay also speak DLNA, which works on both.
   - q: Can I send subtitles to the TV?
     a: Over DLNA the whole file goes across, so the television's own subtitle menu can pick any track that is inside it. Frame Player does not yet send a separate subtitle file to a Chromecast; that is planned.
 ---
@@ -53,8 +55,8 @@ back to the window at the position the set had reached.
 
 ## Google Cast and DLNA
 
-Frame Player reaches a television in one of two ways, and they do not play the
-same things.
+Frame Player reaches a television in one of two ways — three on a Mac, with
+[AirPlay](#airplay-on-the-mac) — and they do not play the same things.
 
 | Compared | Google Cast | DLNA |
 |---|---|---|
@@ -89,13 +91,30 @@ container as something it plays, and Google Cast otherwise. If a DLNA start fail
 anyway, it falls back to Google Cast by itself. The choice can also be pinned per
 television under the gear on its row.
 
+## AirPlay on the Mac
+
+On a Mac the cast panel has one more row, **AirPlay**. It opens the system's own
+list of AirPlay receivers — an Apple TV, or a television with AirPlay built in —
+and you pick one there, the way you would from Control Center. The television
+then fetches the file from Frame Player like any other: the picture is never
+re-encoded, a file in a container the set does not take is repacked first, and
+HEVC is always repacked, because Apple's player only takes it with a tag most
+files do not carry. While it plays, the window is the same remote.
+
+If nothing starts after you pick a television, check that AirPlay is turned on in
+the television's own settings: a set with it switched off says so on its screen
+and tells the computer nothing, so the player can only suggest it. The volume is
+the television's remote's to change.
+
+AirPlay is not available on Windows. Apple provides no way to do it there.
+
 ## Casting a torrent
 
 A [torrent that is still downloading](/torrent-streaming) can go to the television
 too. When the file can play on the set as it is, the television is fed from the
 same stream as the player, with the pieces it is about to show fetched first. When
 the file has to be prepared first, the row says it needs the whole file, because a
-file cannot be repacked before it exists.
+file cannot be repacked before it exists. AirPlay always needs the whole file.
 
 ## What leaves your computer
 

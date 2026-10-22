@@ -43,6 +43,7 @@ nothing about watching a film.
 | 34 | Black bars removed: measured across the whole file, or cut to a named shape; the choice holds for the whole playlist and each file is measured for itself |
 | 35 | Seek steps the viewer sets, for the arrows and for J/L |
 | 36 | Brightness, contrast, saturation and gamma, per file, per playlist or for every file, set in a menu that turns see-through while a slider moves |
+| 37 | AirPlay on the Mac, through the system's own player and list of receivers; deliberately not on Windows ([airplay.md](airplay.md)) |
 
 Details for the larger ones: [torrents.md](torrents.md), [casting.md](casting.md),
 [watch-together.md](watch-together.md), [catalog.md](catalog.md).
@@ -141,16 +142,6 @@ a process running all the time**, which is a product decision rather than an
 implementation detail. There is no extension point: Space toggles selection,
 Windows has no built-in equivalent, and the shell offers no hook for "a key
 opened a preview". Every utility that does this keeps a resident process.
-
-### AirPlay
-
-The transport is the same URL handoff as the other two and would be about a
-day's work. Everything before it is the obstacle: modern receivers gate every
-endpoint behind pairing — one measured set refuses unauthenticated requests
-outright and does not even advertise itself — which means implementing the
-pairing and encrypted-channel stack with no maintained library to build on. The
-device class it would unlock that nothing else reaches is essentially the Apple
-TV, since sets with AirPlay generally also speak DLNA.
 
 ### Miracast
 

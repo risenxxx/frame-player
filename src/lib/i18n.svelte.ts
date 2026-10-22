@@ -532,6 +532,14 @@ const ru = {
   'cast.cache_clear': 'Очистить кэш трансляции',
   'cast.cache_cleared': 'Освобождено: {size}',
   'cast.local_only': 'Транслировать можно только локальные файлы',
+  'cast.airplay_row': 'AirPlay…',
+  'cast.airplay_name': 'AirPlay',
+  'cast.airplay_sum': 'Телевизоры и приставки с AirPlay',
+  'cast.airplay_pick': 'Выберите телевизор в списке AirPlay',
+  'cast.airplay_not_started':
+    'AirPlay не начал показ. Если телевизор был выбран, проверьте, что AirPlay включён в его настройках',
+  'cast.airplay_stream': 'Через AirPlay нужен целый файл — дождитесь, пока торрент докачается',
+  'cast.airplay_unavailable': 'Не удалось открыть список AirPlay',
   'cast.not_while_casting': 'Недоступно во время трансляции',
 
   'ctx.open': 'Открыть файлы…',
@@ -910,6 +918,8 @@ const ru = {
   'vset.hwdec_auto': 'Аппаратное',
   'vset.hwdec_vt': 'Только VideoToolbox',
   'vset.hwdec_sw': 'Программное',
+  'step.waiting_data': 'Ждём данные раздачи…',
+  'step.no_data': 'Этот участок ещё не скачан',
   'vset.fast_backstep': 'Быстрый шаг назад по кадрам',
   'vset.fast_backstep_hint':
     'Если на этом файле шаг назад медленный, плеер один раз декодирует отрезок до ключевого кадра и держит его в памяти. Дальше шаги назад мгновенные. Может занять до четверти оперативной памяти, пока вы шагаете',
@@ -918,8 +928,6 @@ const ru = {
   'vset.spdif_hint': 'Декодирует ресивер; громкость плеера перестаёт действовать',
   'vset.device': 'Устройство вывода',
   'vset.device_hint': 'Список обновляется при открытии этого окна',
-  'step.waiting_data': 'Ждём данные раздачи…',
-  'step.no_data': 'Этот участок ещё не скачан',
   'vset.alang': 'Язык звука',
   'vset.slang': 'Язык субтитров',
   'vset.lang_auto': 'Авто',
@@ -1582,6 +1590,14 @@ const en: Record<MessageKey, string> = {
   'cast.cache_clear': 'Clear casting cache',
   'cast.cache_cleared': 'Freed: {size}',
   'cast.local_only': 'Only local files can be cast',
+  'cast.airplay_row': 'AirPlay…',
+  'cast.airplay_name': 'AirPlay',
+  'cast.airplay_sum': 'TVs and boxes with AirPlay',
+  'cast.airplay_pick': 'Choose a TV in the AirPlay list',
+  'cast.airplay_not_started':
+    'AirPlay did not start. If you chose a TV, check that AirPlay is turned on in its settings',
+  'cast.airplay_stream': 'AirPlay needs the whole file — wait for the torrent to finish',
+  'cast.airplay_unavailable': 'Could not open the AirPlay list',
   'cast.not_while_casting': 'Not available while casting',
 
   'ctx.open': 'Open files…',
@@ -1947,6 +1963,8 @@ const en: Record<MessageKey, string> = {
   'vset.hwdec_auto': 'Hardware',
   'vset.hwdec_vt': 'VideoToolbox only',
   'vset.hwdec_sw': 'Software',
+  'step.waiting_data': 'Waiting for the torrent…',
+  'step.no_data': 'This part has not downloaded yet',
   'vset.fast_backstep': 'Fast stepping back by frame',
   'vset.fast_backstep_hint':
     'When a step back is slow on a file, the player decodes the stretch back to the keyframe once and keeps it in memory, so the steps after it are instant. It can hold up to a quarter of your memory while you step',
@@ -1963,8 +1981,6 @@ const en: Record<MessageKey, string> = {
   'vset.lang_promote': 'Make it the preferred one',
   'vset.lang_primary': 'Preferred language',
   'vset.lang_search': 'Find a language…',
-  'step.waiting_data': 'Waiting for the torrent…',
-  'step.no_data': 'This part has not downloaded yet',
   'vset.lang_none': 'Nothing found',
   'vset.lang_hint':
     'A track is picked when a file opens. The order is the priority: the first language wins',

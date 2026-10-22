@@ -77,7 +77,8 @@ the same swarm and follows you through the season without pasting anything.
 Nothing but the timeline goes through the relay; no media ever does.
 
 **Send it to the television, without repacking it first.** The player speaks
-both Google Cast and DLNA and picks per device and per file: where the set can
+Google Cast and DLNA — and on a Mac, AirPlay, through the system's own player —
+and picks per device and per file: where the set can
 take the release as it is — which for a DLNA renderer usually means a 4K HEVC
 HDR MKV with Dolby audio, untouched — that is what it gets, with seeking and
 surround intact. Where it cannot, the file is remuxed first, with the video
@@ -236,6 +237,12 @@ Settings → Privacy & Security* — the path that has a way out, as opposed to 
   together and merged into one row per device. The row says what will happen to
   *this* file on *that* device ("plays as it is", "prepared before it starts"),
   and the choice can be pinned per device.
+- **AirPlay on the Mac** — an Apple TV or an AirPlay television, picked in the
+  system's own list from a row in the same menu. The television fetches the file
+  from the player as the others do; HEVC is repacked for the tag Apple's player
+  requires, and the window is the same remote. Not on Windows, deliberately:
+  Apple provides no way to do it there, and rebuilding its closed protocol would
+  cost far more than the few people it would serve.
 - **No preparation where none is needed** — a renderer that lists the container
   plays the original file, so HEVC, HDR and surround survive; where a copy is
   required the video is stream-copied and only the audio re-encoded.
