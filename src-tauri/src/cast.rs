@@ -301,6 +301,13 @@ pub struct CastDeviceInfo {
     pub model: String,
     pub ip: String,
     pub port: u16,
+    /// Whether the receiver has a picture at all, from the `ca` capability
+    /// bitmask its announcement carries (bit 0, video out): a Nest speaker or
+    /// a speaker group answers on the same service as a Chromecast and plays
+    /// sound only. `None` where nothing said — a device found by the unicast
+    /// sweep, whose setup endpoint is asked for its name and nothing else.
+    #[serde(default)]
+    pub video: Option<bool>,
 }
 
 struct Discovery {
@@ -380,6 +387,7 @@ impl Discovery {
                             model: txt("md"),
                             ip: ip.to_string(),
                             port: info.port,
+                            video: txt("ca").parse::<u64>().ok().map(|ca| ca & 1 == 1),
                         };
                         let mut map = sink.lock().unwrap_or_else(|p| p.into_inner());
                         map.insert(info.fullname.clone(), device);
@@ -505,6 +513,7 @@ async fn probe_cast(ip: Ipv4Addr) -> Option<CastDeviceInfo> {
         model: String::new(),
         ip: ip.to_string(),
         port: 8009,
+        video: None,
     })
 }
 
@@ -2875,6 +2884,7 @@ mod tests {
             model: String::new(),
             ip: target.clone(),
             port: 8009,
+            video: None,
         };
         let ip: IpAddr = target.parse().expect("FP_CAST_LOAD=<device ip>");
 

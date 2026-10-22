@@ -32,6 +32,9 @@ export interface CastDevice {
   model: string;
   ip: string;
   port: number;
+  /// The announcement's capability bit for video out; null when the device
+  /// was found by the unicast sweep, which asks for nothing but a name.
+  video?: boolean | null;
 }
 
 export interface DlnaDevice {
@@ -200,6 +203,9 @@ class Cast {
   /// A session exists, from connect until disconnect — the window is a remote.
   active = $state(false);
   deviceName = $state<string | null>(null);
+  /// The session's device as its row drew it, for the same icon over the
+  /// disconnect button. AirPlay's mark until the chosen set is known as a row.
+  kind = $state<DeviceKind | 'airplay' | null>(null);
   /// Mirror of cast.rs's state string: connecting | connected | loading |
   /// buffering | playing | paused | ended | stopped | error.
   state = $state('idle');
@@ -441,8 +447,31 @@ function mimeAdvertised(advertised: string[], ext: string): string | null {
 }
 
 export function deviceIsVideoCapable(device: TvDevice): boolean {
-  if (device.cast) return true;
-  return device.dlna?.mimes.some((m) => m.startsWith('video/')) ?? false;
+  if (device.dlna?.mimes.some((m) => m.startsWith('video/'))) return true;
+  // A Nest speaker answers on the Cast service like any Chromecast; only the
+  // capability bit in its announcement says it has no picture. Unknown (the
+  // sweep found it) counts as video, which is what every Cast row used to be.
+  return !!device.cast && device.cast.video !== false;
+}
+
+export type DeviceKind = 'tv' | 'box' | 'speaker';
+
+/// A Cast dongle or streamer announces itself under Google's own name; a set
+/// with Cast built in announces its own model.
+const STREAMER_MODEL = /chromecast|google tv/i;
+
+/**
+ * What kind of thing a row is, for its icon — only as far as the device itself
+ * says. Sound only is a speaker; a Cast receiver that calls itself a
+ * Chromecast or a Google TV is a box behind somebody's television; everything
+ * else with a picture is a screen. A computer running a DLNA renderer is a
+ * screen too: nothing it announces tells it from a television, and a guess
+ * from its model name would be wrong often enough to mislead.
+ */
+export function deviceKind(device: TvDevice): DeviceKind {
+  if (!deviceIsVideoCapable(device)) return 'speaker';
+  if (device.cast && STREAMER_MODEL.test(device.cast.model)) return 'box';
+  return 'tv';
 }
 
 /**
@@ -981,6 +1010,7 @@ export async function castCurrentFile(
   if (!keep && !opts.forceTransport) fellBack = false;
   if (device.airplay) return castOverAirPlay(null, keep);
   currentDevice = device;
+  cast.kind = deviceKind(device);
   const path = player.filePath;
   if (!path) return false;
   const resolved = await resolveCastSource(path);
@@ -1332,6 +1362,7 @@ export async function castOverAirPlay(anchor: Anchor | null, keep = false): Prom
     resumeUnpaused = !player.paused;
     airplayLive = false;
     cast.deviceName = t('cast.airplay_name');
+    cast.kind = 'airplay';
   }
   cast.transport = 'airplay';
   cast.active = true;
@@ -1443,8 +1474,9 @@ async function poll() {
     // by fetching, and the address it fetches from has a name.
     // Rust names it from the set's own Bonjour announcement; a row with the
     // same address is the fallback for a set that has not announced yet.
-    const tv = !status.device && status.peer ? cast.tvs.find((d) => d.ip === status.peer) : undefined;
-    if (tv) cast.deviceName = tv.name;
+    const tv = status.peer ? cast.tvs.find((d) => d.ip === status.peer) : undefined;
+    if (tv && !status.device) cast.deviceName = tv.name;
+    if (tv) cast.kind = deviceKind(tv);
   }
 
   switch (status.state) {
@@ -1527,6 +1559,7 @@ export async function endCast(opts: {
   cast.active = false;
   cast.state = 'idle';
   cast.deviceName = null;
+  cast.kind = null;
   // A prepare still running dies with the session; harmless when none is.
   void invoke('cast_prepare_cancel').catch(() => {});
   const lastTime = await invoke<number>(transportCommand('disconnect')).catch(() => 0);

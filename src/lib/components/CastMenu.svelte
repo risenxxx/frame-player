@@ -12,6 +12,7 @@
     castCurrentFile,
     castOverAirPlay,
     castStateLabel,
+    deviceKind,
     deviceProfile,
     deviceSummary,
     disconnectCast,
@@ -24,6 +25,7 @@
   } from '$lib/cast.svelte';
   import { t } from '$lib/i18n.svelte';
   import { IS_MAC } from '$lib/platform';
+  import CastIcon from './CastIcon.svelte';
   import MenuBack from './MenuBack.svelte';
   import MenuBody from './MenuBody.svelte';
 
@@ -64,8 +66,11 @@
     <div class="menu-title">{t('cast.title')}</div>
     {#if cast.active}
       <div class="cast-current">
-        <span class="cast-name">{cast.deviceName}</span>
-        <span class="cast-state">{castStateLabel()}</span>
+        {#if cast.kind}<CastIcon kind={cast.kind} />{/if}
+        <span class="cast-text">
+          <span class="cast-name">{cast.deviceName}</span>
+          <span class="cast-state">{castStateLabel()}</span>
+        </span>
       </div>
       <button
         class="menu-item"
@@ -90,9 +95,12 @@
               void castCurrentFile(device);
             }}
           >
-            <span class="cast-name">{device.name}</span>
-            <span class="cast-model">
-              {(cast.profileRevision, deviceSummary(device))}
+            <CastIcon kind={deviceKind(device)} />
+            <span class="cast-text">
+              <span class="cast-name">{device.name}</span>
+              <span class="cast-model">
+                {(cast.profileRevision, deviceSummary(device))}
+              </span>
             </span>
           </button>
           {#if cast.dlnaSweeping && !device.dlna}
@@ -212,8 +220,11 @@
               void castOverAirPlay({ x: r.left, y: r.top, w: r.width, h: r.height });
             }}
           >
-            <span class="cast-name">{t('cast.airplay_row')}</span>
-            <span class="cast-model">{airplaySummary()}</span>
+            <CastIcon kind="airplay" />
+            <span class="cast-text">
+              <span class="cast-name">{t('cast.airplay_row')}</span>
+              <span class="cast-model">{airplaySummary()}</span>
+            </span>
           </button>
         </div>
       {/if}
@@ -253,6 +264,7 @@
     align-items: stretch;
   }
 
+  .tv-row .cast-text,
   .tv-row .cast-name,
   .tv-row .cast-model {
     max-width: 100%;
@@ -325,8 +337,8 @@
 
   .cast-current {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    align-items: center;
+    gap: 10px;
     padding: 4px 14px 8px;
     /* Explicit: this is a bare div, not a .menu-item button, so it inherits
        the document's default (black) rather than the menu's text color —
@@ -413,9 +425,18 @@
      a lone modifier class of equal weight loses to source order). */
   .menu-item.cast-device {
     display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* The name over its consequence line, beside the icon. `min-width: 0` is
+     what lets the two ellipsize instead of widening the row (css.md). */
+  .cast-text {
+    display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 2px;
+    min-width: 0;
   }
 
   /* Without this the long consequence line grows the row instead of
