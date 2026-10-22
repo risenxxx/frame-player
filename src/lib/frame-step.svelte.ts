@@ -44,10 +44,14 @@ import {
   reversalNeed,
   shouldReverse,
   SLOW_BACKSTEP_MS,
+  stretchInBands,
   swapsDecoder,
 } from './frame-step-plan';
+import { t } from './i18n.svelte';
+import { dismissOsd, osdSeq, showOsd } from './osd.svelte';
 import { isNetworkSource, player, waitPlaybackSettled, waitTimePosChange } from './player.svelte';
 import { parseTorrentUrl } from './source';
+import { torrent } from './torrent.svelte';
 
 const PREFS_KEY = 'frameplayer.frameStep';
 /// A step that never reports must not hold the keys for ever.
@@ -97,9 +101,13 @@ interface FileState {
   path: string;
   /// A native step back was slow (null: not measured yet).
   slow: boolean | null;
-  /// The bytes are on this disk (see `diskPath`); known once the probe ran.
-  onDisk: boolean;
+  /// Where the bytes sit on this disk, and whether all of them have arrived
+  /// (see `diskFile`); null until asked, or when there is no such file.
+  disk: DiskFile | null;
   probe: Promise<GopProbe | null> | null;
+  /// The longest group the probe measured, kept for the checks on a torrent
+  /// still downloading, which run at every step.
+  longest: number;
   /// Backward playback misbehaved here; native from now on.
   broken: boolean;
 }
@@ -129,7 +137,7 @@ let superseded = false;
 let leaving: Promise<void> | null = null;
 
 function fileState(path: string): FileState {
-  if (!file || file.path !== path) file = { path, slow: null, onDisk: false, probe: null, broken: false };
+  if (!file || file.path !== path) file = { path, slow: null, disk: null, probe: null, longest: 0, broken: false };
   return file;
 }
 
@@ -165,34 +173,75 @@ function probe(path: string, pos: number): Promise<GopProbe | null> {
   return invoke<GopProbe>('frame_step_probe', { path, pos }).catch(() => null);
 }
 
+interface DiskFile {
+  path: string;
+  complete: boolean;
+}
+
 /**
  * Where the bytes of what mpv plays sit on this disk, or null.
  *
- * A local file is its own path. A torrent is played from the loopback server,
- * but once its file has **fully** arrived it is an ordinary file in the cache —
- * `torrent_local_path` says where, and whether it is complete. A file still
- * downloading is sparse: a stretch that has not arrived reads back as zeros
- * rather than failing, so a probe over it would measure nonsense, which is why
- * it answers null until the file is whole (the same rule as the storyboard's,
- * thumbs.svelte.ts). Any other network source has no bytes here at all.
+ * A local file is its own path, and whole. A torrent is played from the
+ * loopback server, but its file is in the cache — `torrent_local_path` says
+ * where and whether every byte has arrived. One still downloading is sparse: a
+ * stretch that has not arrived reads back as **zeros** rather than failing, so
+ * nothing may be read from it, and nothing decoded backward over it, without
+ * the map of what has arrived saying that stretch is there (`stretchOnDisk`).
+ * Any other network source has no bytes here at all.
  */
-async function diskPath(path: string): Promise<string | null> {
-  if (!isNetworkSource(path)) return path;
+async function diskFile(path: string): Promise<DiskFile | null> {
+  if (!isNetworkSource(path)) return { path, complete: true };
   const ref = parseTorrentUrl(path);
   if (!ref) return null;
-  const local = await invoke<{ path: string; complete: boolean } | null>('torrent_local_path', {
-    infoHash: ref.infoHash,
-    index: ref.index,
-  }).catch(() => null);
-  return local?.complete ? local.path : null;
+  return invoke<DiskFile | null>('torrent_local_path', { infoHash: ref.infoHash, index: ref.index }).catch(
+    () => null,
+  );
 }
 
-function probeFile(f: FileState, pos: number): Promise<GopProbe | null> {
-  return diskPath(f.path).then((p) => {
-    f.onDisk = p !== null;
-    return p ? probe(p, pos) : null;
-  });
+/// Has the stretch `[from, to]` of the file, in seconds, arrived? Always on a
+/// whole file; on a torrent still downloading, by its map of bytes.
+function stretchOnDisk(f: FileState, from: number, to: number): boolean {
+  if (!f.disk) return false;
+  if (f.disk.complete) return true;
+  const total = player.duration;
+  if (!(total > 0)) return false;
+  return stretchInBands(torrent.buffered, Math.max(0, from) / total, to / total);
 }
+
+/// What backward decoding from `here` would read: the group being stepped
+/// through and the one before it, which mpv starts decoding as soon as the
+/// current one is handed out — two of the longest groups, and a second over.
+function reverseStretch(f: FileState, here: number): [number, number] {
+  return [here - 2 * f.longest - 1, here];
+}
+
+/// Seconds behind the position the probe reads on a torrent still downloading
+/// (the group back to its keyframe, and the one before for its length): wider
+/// than any group backward decoding would be allowed to hold.
+const PROBE_LOOKBACK_S = 20;
+
+function probeFile(f: FileState, pos: number): Promise<GopProbe | null> {
+  const run = (async () => {
+    f.disk ??= await diskFile(f.path);
+    if (!f.disk) return null;
+    if (!stretchOnDisk(f, pos - PROBE_LOOKBACK_S, pos)) return null;
+    const gop = await probe(f.disk.path, pos);
+    if (gop) f.longest = gop.longest;
+    return gop;
+  })();
+  // A torrent still downloading may simply not have this stretch yet: asked
+  // again at the next step rather than given up on for the file.
+  void run.then((gop) => {
+    if (!gop && f.disk && !f.disk.complete && f.probe === run) f.probe = null;
+  });
+  return run;
+}
+
+/// After this long a step on a torrent still downloading says it is waiting:
+/// mpv is reading from the loopback server, which holds a read of a piece that
+/// has not arrived until it does, and a step that silently takes seconds reads
+/// as the player having hung.
+const WAITING_AFTER_MS = 1000;
 
 export async function frameStepBy(delta: number) {
   const path = player.filePath;
@@ -200,13 +249,32 @@ export async function frameStepBy(delta: number) {
   busy = true;
   stepping = true;
   superseded = false;
+  const f = fileState(path);
+  // Read, not the mirror: the mirror can lag a step, and this is compared
+  // with a read after it.
+  const before = await fresh('time-pos');
+  const downloading = !!parseTorrentUrl(path) && !(f.disk ??= await diskFile(path))?.complete;
+  let waitingSeq: number | null = null;
+  const waiting = downloading
+    ? setTimeout(() => {
+        showOsd(t('step.waiting_data'), { sticky: true });
+        waitingSeq = osdSeq();
+      }, WAITING_AFTER_MS)
+    : undefined;
   try {
     if (restoring) await restoring;
-    const f = fileState(path);
     backRun = delta > 0 ? 0 : backRun + 1;
     if (delta > 0) await stepForward();
     else await stepBack(f);
   } finally {
+    clearTimeout(waiting);
+    if (waitingSeq !== null) {
+      // The sticky popup owes a replacement: nothing if the step got there,
+      // a word if it gave up waiting.
+      const now = await fresh('time-pos');
+      if (now === null || now === before) showOsd(t('step.no_data'));
+      else dismissOsd(waitingSeq);
+    }
     stepping = false;
     busy = false;
     lastStepEnd = performance.now();
@@ -232,10 +300,16 @@ async function stepBack(f: FileState) {
   if (here < frame * 0.5) return;
   await holdSoftware();
   if (frameStep.reverse) {
-    await reverseStep(f, here, frame);
-    return;
+    // A torrent still downloading: the group mpv decodes next has to have
+    // arrived, or the step waits on the network — so short of it, turn forward
+    // and take this step natively, which reads only the group already here.
+    if (stretchOnDisk(f, ...reverseStretch(f, here))) {
+      await reverseStep(f, here, frame);
+      return;
+    }
+    await leaveReverse(true);
   }
-  const budget = backRun >= 2 ? await reverseBudgetFor(f) : null;
+  const budget = backRun >= 2 ? await reverseBudgetFor(f, here) : null;
   if (budget !== null) {
     await enterReverse(f, here, frame, budget);
     return;
@@ -298,7 +372,7 @@ function restoreHardware(untilShown: boolean): Promise<void> {
 }
 
 /// The reversal buffer to ask for, or null when this step should stay native.
-async function reverseBudgetFor(f: FileState): Promise<number | null> {
+async function reverseBudgetFor(f: FileState, here: number): Promise<number | null> {
   if (!frameStep.enabled || f.slow !== true || f.broken || !f.probe) return null;
   const gop = await f.probe;
   const decoder = await getProperty('hwdec-current', 'string').catch(() => null);
@@ -316,7 +390,7 @@ async function reverseBudgetFor(f: FileState): Promise<number | null> {
     enabled: frameStep.enabled,
     slow: f.slow,
     broken: f.broken,
-    onDisk: f.onDisk,
+    onDisk: !!gop && stretchOnDisk(f, ...reverseStretch(f, here)),
     abLoop: player.loopA !== null && player.loopB !== null,
     audioGraph: !!graph,
     software: !decoder || decoder === 'no',
@@ -381,7 +455,15 @@ async function reverseStep(f: FileState, here: number, frame: number) {
   await command('frame-step', [1, 'mute']).catch(() => {});
   await waitMovedFrom(here, STEP_TIMEOUT_MS);
   if (superseded) return;
-  if (!landedRight(here - frame, await fresh('time-pos'), frame)) await abandonReverse(f, here - frame);
+  const landed = await fresh('time-pos');
+  if (landedRight(here - frame, landed, frame)) return;
+  // Not moved at all on a torrent still downloading is the network, not the
+  // file: turn forward, and leave backward decoding available for later.
+  if (landed === here && f.disk && !f.disk.complete) {
+    await leaveReverse(false);
+    return;
+  }
+  await abandonReverse(f, here - frame);
 }
 
 /// The buffer overflowed or the file does not decode backward: go forward, put

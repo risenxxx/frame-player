@@ -16,12 +16,18 @@ let backStepMs = 300;
 let nextLanding: number | null = null;
 
 const FRAME = 1 / 60;
+/// While set, every mpv command waits for it: a read stuck on the network.
+let hold: Promise<void> | null = null;
+/// When the next command is released, whether the position moved.
+let heldMoves = true;
 
 vi.mock('tauri-plugin-libmpv-api', () => ({
   command: vi.fn(async (name: string, args: unknown[] = []) => {
     sent.push(`cmd ${name} ${args.join(' ')}`.trim());
+    if (hold) await hold;
     const pos = props['time-pos'] as number;
     if (name === 'frame-back-step') {
+      if (!heldMoves) return;
       clock += backStepMs;
       props['time-pos'] = pos - FRAME;
     } else if (name === 'frame-step') {
@@ -55,8 +61,12 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 const TORRENT = `http://127.0.0.1:41234/t/${'0e'.repeat(20)}/0/episode.mkv`;
 
+const torrentState = { buffered: [] as [number, number][] };
+vi.mock('./torrent.svelte', () => ({ torrent: torrentState }));
+
 const player = {
   hasFile: true,
+  duration: 3600,
   filePath: '/films/long-gop.webm' as string | null,
   timePos: 34.5,
   paused: true,
@@ -73,6 +83,8 @@ vi.mock('./player.svelte', () => ({
 }));
 
 const fs = await import('./frame-step.svelte');
+const osd = await import('./osd.svelte');
+const { t } = await import('./i18n.svelte');
 const { frameStep, frameStepBy, frameStepBeforeSeek, frameStepFileChanged, frameStepNotePause } = fs;
 
 function open(path: string, hwdec = 'videotoolbox') {
@@ -98,6 +110,9 @@ beforeEach(() => {
   vi.spyOn(performance, 'now').mockImplementation(() => clock);
   backStepMs = 300;
   nextLanding = null;
+  hold = null;
+  heldMoves = true;
+  torrentState.buffered = [];
   frameStep.enabled = true;
   player.paused = true;
   player.loopA = player.loopB = null;
@@ -189,7 +204,7 @@ describe('a step back', () => {
     expect(frameStep.reverse).toBe(true);
   });
 
-  it('stays native on a torrent still downloading', async () => {
+  it('stays native on a torrent still downloading where the stretch behind has not arrived', async () => {
     torrentFile = { path: '/cache/torrents/x/episode.mkv', complete: false };
     open(TORRENT);
     await frameStepBy(-1);
@@ -198,6 +213,64 @@ describe('a step back', () => {
     expect(frameStep.reverse).toBe(false);
     // Software decoding still applies: it needs nothing from the disk.
     expect(sent[0]).toBe('set file-local-options/hwdec=no');
+  });
+
+  it('decodes a downloading torrent backward once the stretch behind has arrived', async () => {
+    torrentFile = { path: '/cache/torrents/x/episode.mkv', complete: false };
+    open(TORRENT);
+    // Only the last few seconds before the position: too little to read.
+    torrentState.buffered = [[0.0085, 0.5]];
+    await frameStepBy(-1);
+    expect(probes).toEqual([]);
+    // The pieces behind arrive; the probe is asked again, not given up on.
+    torrentState.buffered = [[0, 0.5]];
+    await frameStepBy(-1);
+    await frameStepBy(-1);
+    expect(probes).toHaveLength(1);
+    expect(frameStep.reverse).toBe(true);
+  });
+
+  it('turns forward and steps natively when the next group back has not arrived', async () => {
+    torrentFile = { path: '/cache/torrents/x/episode.mkv', complete: false };
+    open(TORRENT);
+    torrentState.buffered = [[0, 0.5]];
+    await frameStepBy(-1);
+    await frameStepBy(-1);
+    expect(frameStep.reverse).toBe(true);
+    torrentState.buffered = [[0.009, 0.5]];
+    sent.length = 0;
+    await frameStepBy(-1);
+    expect(frameStep.reverse).toBe(false);
+    expect(sent).toEqual(['set file-local-options/play-direction=forward', 'cmd frame-back-step']);
+  });
+
+  it('says it is waiting when a step on a downloading torrent takes over a second', async () => {
+    torrentFile = { path: '/cache/torrents/x/episode.mkv', complete: false };
+    open(TORRENT);
+    await frameStepBy(-1); // the decoder is in software from here
+    vi.useFakeTimers();
+    try {
+      let release!: () => void;
+      hold = new Promise((r) => (release = r));
+      const step = frameStepBy(-1);
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(osd.osd()?.text).toBe(t('step.waiting_data'));
+      hold = null;
+      release();
+      await step;
+      expect(osd.osd()).toBeNull();
+      // And when the data never came, it says so instead of vanishing.
+      heldMoves = false;
+      hold = new Promise((r) => (release = r));
+      const stuck = frameStepBy(-1);
+      await vi.advanceTimersByTimeAsync(1100);
+      hold = null;
+      release();
+      await stuck;
+      expect(osd.osd()?.text).toBe(t('step.no_data'));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does nothing on the first frame', async () => {

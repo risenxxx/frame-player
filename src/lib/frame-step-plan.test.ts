@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   frameDuration,
+  stretchInBands,
   landedRight,
   reversalBudget,
   reversalNeed,
@@ -114,6 +115,34 @@ describe('landedRight', () => {
 
   it('treats a missing reading as a bad landing', () => {
     expect(landedRight(10, null, frame)).toBe(false);
+  });
+});
+
+describe('stretchInBands', () => {
+  const bands: [number, number][] = [
+    [0, 0.3],
+    [0.5, 0.52],
+  ];
+
+  it('finds a stretch inside one band, with the margin to spare', () => {
+    expect(stretchInBands(bands, 0.1, 0.2)).toBe(true);
+  });
+
+  it('refuses a stretch that runs into a hole or across two bands', () => {
+    expect(stretchInBands(bands, 0.28, 0.31)).toBe(false);
+    expect(stretchInBands(bands, 0.2, 0.51)).toBe(false);
+  });
+
+  it('refuses a stretch too close to the edge of its band', () => {
+    expect(stretchInBands(bands, 0.501, 0.51)).toBe(false);
+  });
+
+  it('accepts the start of the file without a margin before it', () => {
+    expect(stretchInBands(bands, 0, 0.1)).toBe(true);
+  });
+
+  it('refuses everything when nothing has arrived', () => {
+    expect(stretchInBands([], 0.1, 0.2)).toBe(false);
   });
 });
 

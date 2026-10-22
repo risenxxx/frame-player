@@ -918,6 +918,8 @@ const ru = {
   'vset.spdif_hint': 'Декодирует ресивер; громкость плеера перестаёт действовать',
   'vset.device': 'Устройство вывода',
   'vset.device_hint': 'Список обновляется при открытии этого окна',
+  'step.waiting_data': 'Ждём данные раздачи…',
+  'step.no_data': 'Этот участок ещё не скачан',
   'vset.alang': 'Язык звука',
   'vset.slang': 'Язык субтитров',
   'vset.lang_auto': 'Авто',
@@ -1961,6 +1963,8 @@ const en: Record<MessageKey, string> = {
   'vset.lang_promote': 'Make it the preferred one',
   'vset.lang_primary': 'Preferred language',
   'vset.lang_search': 'Find a language…',
+  'step.waiting_data': 'Waiting for the torrent…',
+  'step.no_data': 'This part has not downloaded yet',
   'vset.lang_none': 'Nothing found',
   'vset.lang_hint':
     'A track is picked when a file opens. The order is the priority: the first language wins',

@@ -42,6 +42,17 @@ export function osdSeq(): number {
  * happened. A sticky popup waits for the next `showOsd` to replace it, so the
  * caller must always follow it with one, in a `finally` if need be.
  */
+/**
+ * Take down the popup raised as `seq`, if it is still the one on screen. For a
+ * sticky popup whose wait ended with nothing to report: anything raised since
+ * has replaced it and is left alone.
+ */
+export function dismissOsd(seq: number) {
+  if (state.seq !== seq) return;
+  clearTimeout(timer);
+  state.current = null;
+}
+
 export function showOsd(
   text: string,
   opts: { sub?: string; progress?: number; sticky?: boolean } = {},

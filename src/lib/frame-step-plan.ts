@@ -96,6 +96,24 @@ export function shouldReverse(i: ReverseInputs): boolean {
   return i.need !== null && i.need > 0 && i.need <= i.budget;
 }
 
+/// How far a stretch is widened before it is looked up in a torrent's map of
+/// what has arrived. The map is of *bytes* and the stretch is of *time*, and a
+/// variable-bitrate file makes the two disagree — the same reasoning and the
+/// same margin as the preview gate (`positionBuffered` in torrent.svelte.ts).
+export const BUFFER_MARGIN = 0.004;
+
+/**
+ * Whether one downloaded band covers the whole stretch `[from, to]`, both as
+ * fractions of the file, widened by BUFFER_MARGIN at each end. One band, not a
+ * union of several: the bands are already merged, so a stretch spanning two of
+ * them spans a hole.
+ */
+export function stretchInBands(bands: [number, number][], from: number, to: number): boolean {
+  const a = Math.max(0, from - BUFFER_MARGIN);
+  const b = Math.min(1, to + BUFFER_MARGIN);
+  return bands.some(([s, e]) => s <= a && b <= e);
+}
+
 /// One frame's duration, from whichever rate mpv knows. 1/24 when it knows none.
 export function frameDuration(fps: number | null | undefined): number {
   return fps && fps > 1 && fps < 1000 ? 1 / fps : 1 / 24;
