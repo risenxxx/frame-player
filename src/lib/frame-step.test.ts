@@ -42,13 +42,18 @@ vi.mock('tauri-plugin-libmpv-api', () => ({
 }));
 
 const probes: Array<{ path: string; pos: number }> = [];
+/// What `torrent_local_path` answers for the torrent below.
+let torrentFile: { path: string; complete: boolean } | null = null;
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(async (cmd: string, args: { path: string; pos: number }) => {
+    if (cmd === 'torrent_local_path') return torrentFile;
     if (cmd !== 'frame_step_probe') return undefined;
     probes.push(args);
     return { start: 30, next: 40, prev: 20, longest: 10, ram: 36 * 1024 ** 3 };
   }),
 }));
+
+const TORRENT = `http://127.0.0.1:41234/t/${'0e'.repeat(20)}/0/episode.mkv`;
 
 const player = {
   hasFile: true,
@@ -82,6 +87,8 @@ function open(path: string, hwdec = 'videotoolbox') {
     hwdec: hwdec === 'no' ? 'no' : 'auto-safe',
     'hwdec-current': hwdec,
     'play-direction': 'forward',
+    aid: '1',
+    'lavfi-complex': '',
   });
   sent.length = 0;
   probes.length = 0;
@@ -110,6 +117,7 @@ describe('a step back', () => {
     await frameStepBy(-1);
     expect(sent).toEqual([
       `set file-local-options/video-reversal-buffer=${4 * 1024 ** 3}`,
+      'set file-local-options/aid=no',
       'set file-local-options/play-direction=backward',
       'cmd frame-step 1 mute',
     ]);
@@ -164,13 +172,32 @@ describe('a step back', () => {
     expect(frameStep.reverse).toBe(false);
   });
 
-  it('keeps hardware decoding for a 4K picture, and therefore stays native', async () => {
+  it('takes a 4K picture to software and decodes it backward like any other', async () => {
     props['video-params/w'] = 3840;
     props['video-params/h'] = 2160;
+    // A 4K group of two seconds fits; ten would not inside 4 GiB.
+    await frameStepBy(-1);
+    expect(sent).toContain('set file-local-options/hwdec=no');
+  });
+
+  it('decodes a torrent backward once its file has fully arrived, probing it on disk', async () => {
+    torrentFile = { path: '/cache/torrents/x/episode.mkv', complete: true };
+    open(TORRENT);
     await frameStepBy(-1);
     await frameStepBy(-1);
-    expect(sent).not.toContain('set file-local-options/hwdec=no');
+    expect(probes).toEqual([{ path: '/cache/torrents/x/episode.mkv', pos: 34.5 }]);
+    expect(frameStep.reverse).toBe(true);
+  });
+
+  it('stays native on a torrent still downloading', async () => {
+    torrentFile = { path: '/cache/torrents/x/episode.mkv', complete: false };
+    open(TORRENT);
+    await frameStepBy(-1);
+    await frameStepBy(-1);
+    expect(probes).toEqual([]);
     expect(frameStep.reverse).toBe(false);
+    // Software decoding still applies: it needs nothing from the disk.
+    expect(sent[0]).toBe('set file-local-options/hwdec=no');
   });
 
   it('does nothing on the first frame', async () => {
@@ -210,9 +237,26 @@ describe('leaving a session', () => {
     await settle;
     expect(sent).toEqual([
       'set file-local-options/play-direction=forward',
+      'set file-local-options/aid=1',
       'set file-local-options/hwdec=auto-safe',
     ]);
     expect(frameStepBeforeSeek()).toBeNull();
+  });
+
+  it('never gives the sound back before turning forward', async () => {
+    await frameStepBy(-1);
+    await frameStepBy(-1);
+    await fs.frameStepBeforePlay();
+    const turn = sent.indexOf('set file-local-options/play-direction=forward');
+    expect(turn).toBeGreaterThanOrEqual(0);
+    expect(sent.indexOf('set file-local-options/aid=1')).toBeGreaterThan(turn);
+  });
+
+  it('does not decode backward while several audio tracks are mixed', async () => {
+    props['lavfi-complex'] = '[aid1] [aid2] amix [ao]';
+    await frameStepBy(-1);
+    await frameStepBy(-1);
+    expect(frameStep.reverse).toBe(false);
   });
 
   it('turns forward before a step forward', async () => {
@@ -230,8 +274,11 @@ describe('leaving a session', () => {
     clock += 1000;
     player.paused = false;
     frameStepNotePause();
-    // Somebody else started playback while mpv was going backward.
-    expect(sent).toEqual(['set file-local-options/play-direction=forward']);
+    // Somebody else started playback while mpv was going backward: turned
+    // forward, then the sound given back — in that order.
+    await vi.waitFor(() =>
+      expect(sent).toEqual(['set file-local-options/play-direction=forward', 'set file-local-options/aid=1']),
+    );
     // Once the turn is in, a seek during playback does not touch the decoder:
     // a change now would feed the new decoder mid-group packets.
     await vi.waitFor(() => expect(frameStepBeforeSeek()).toBeNull());
@@ -251,6 +298,7 @@ describe('leaving a session', () => {
     await before;
     expect(sent).toEqual([
       'set file-local-options/play-direction=forward',
+      'set file-local-options/aid=1',
       'set file-local-options/hwdec=auto-safe',
     ]);
     // Nothing left for the resume itself to undo, and nothing at the pause after.

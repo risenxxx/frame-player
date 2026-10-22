@@ -18,13 +18,11 @@
 
 /// A native step back slower than this means the file is worth decoding
 /// backward. Any step on the file can say so; one fast step never takes it back.
-export const SLOW_BACKSTEP_MS = 150;
-
-/// The decoder goes to software for a stepping session only up to this many
-/// pixels. Above it software decoding is no longer the faster way back (4K HEVC
-/// measured 1.85 s in hardware against 1.6 s in software) and playing on in
-/// software afterwards is a real cost on an ordinary machine.
-export const SWAP_MAX_PIXELS = 2560 * 1440;
+/// 100 rather than the 150 first shipped: a 4K web release with two-second
+/// groups steps back in 130–220 ms in software, which reads as slow beside the
+/// 42 ms of a step forward, and its backward entry costs only 0.65 s. A film
+/// with two-second groups at 1080p steps in ~60 ms and stays native.
+export const SLOW_BACKSTEP_MS = 100;
 
 const GiB = 1024 ** 3;
 
@@ -54,10 +52,15 @@ export function reversalNeed(format: PictureFormat, longestGopSecs: number): num
   return frameBytes * frames * 1.1;
 }
 
-/// Whether a session should take the decoder to software (see SWAP_MAX_PIXELS).
+/// Whether a session should take the decoder to software: whenever it is in
+/// hardware and has reported a picture. There used to be a 1440p ceiling, set
+/// on a synthetic 4K file where software won by 15 %; on a real 4K HEVC web
+/// release it steps back in 130–220 ms against 230–410 ms in hardware, and the
+/// other reason for the ceiling — playing on in software — went once our play
+/// controls began giving the decoder back before they unpause.
 export function swapsDecoder(hwdecCurrent: string | null, w: number, h: number): boolean {
   if (!hwdecCurrent || hwdecCurrent === 'no') return false;
-  return w > 0 && h > 0 && w * h <= SWAP_MAX_PIXELS;
+  return w > 0 && h > 0;
 }
 
 export interface ReverseInputs {
@@ -67,11 +70,17 @@ export interface ReverseInputs {
   slow: boolean | null;
   /// Backward playback already misbehaved on this file.
   broken: boolean;
-  /// A local file. A stream would decode backward through the network.
-  local: boolean;
+  /// The file is on this disk: a local file, or a torrent whose file has fully
+  /// arrived. A stream would decode backward through the network, and a torrent
+  /// still downloading has holes that read back as zeros.
+  onDisk: boolean;
   /// Both A–B loop points are set: mpv loops in the playing direction, so
   /// backward it would wrap from A to B.
   abLoop: boolean;
+  /// Several audio tracks are mixed through `lavfi-complex`: the graph owns the
+  /// tracks (an `aid` write is ignored while it stands), so the track could not
+  /// be switched off for the turn, and a graph decoded backward was never tried.
+  audioGraph: boolean;
   /// mpv is decoding in software right now. Backward decoding in hardware keeps
   /// the frames in GPU memory that the buffer does not count.
   software: boolean;
@@ -81,7 +90,9 @@ export interface ReverseInputs {
 }
 
 export function shouldReverse(i: ReverseInputs): boolean {
-  if (!i.enabled || i.slow !== true || i.broken || !i.local || i.abLoop || !i.software) return false;
+  if (!i.enabled || i.slow !== true || i.broken || !i.onDisk || i.abLoop || i.audioGraph || !i.software) {
+    return false;
+  }
   return i.need !== null && i.need > 0 && i.need <= i.budget;
 }
 
@@ -91,10 +102,11 @@ export function frameDuration(fps: number | null | undefined): number {
 }
 
 /// Did a step land where it should have? A buffer that overflowed lands
-/// seconds off (measured: 39.9 → 33.5 on a 4K file, 39.9 → 35.4 on AV1), so
-/// the tolerance can be generous — three frames, or a quarter of a second —
-/// and still never mistake a variable frame rate for an overflow.
+/// seconds off (measured: 39.9 → 33.5 on a 4K file, 39.9 → 35.4 on AV1), and a
+/// step that skipped frames lands a few frames off (209 ms, five frames at
+/// 23.976, with an audio track decoding backward beside it). Two and a half
+/// frames, or 0.1 s, catches both and still lets a variable frame rate through.
 export function landedRight(expected: number, landed: number | null, frame: number): boolean {
   if (landed === null || !Number.isFinite(landed)) return false;
-  return Math.abs(landed - expected) <= Math.max(3 * frame, 0.25);
+  return Math.abs(landed - expected) <= Math.max(2.5 * frame, 0.1);
 }

@@ -47,6 +47,7 @@ import {
   swapsDecoder,
 } from './frame-step-plan';
 import { isNetworkSource, player, waitPlaybackSettled, waitTimePosChange } from './player.svelte';
+import { parseTorrentUrl } from './source';
 
 const PREFS_KEY = 'frameplayer.frameStep';
 /// A step that never reports must not hold the keys for ever.
@@ -94,8 +95,10 @@ export function setFastBackStep(on: boolean) {
 /// What is known about the file being stepped through.
 interface FileState {
   path: string;
-  /// The first native step back was slow (null: not measured yet).
+  /// A native step back was slow (null: not measured yet).
   slow: boolean | null;
+  /// The bytes are on this disk (see `diskPath`); known once the probe ran.
+  onDisk: boolean;
   probe: Promise<GopProbe | null> | null;
   /// Backward playback misbehaved here; native from now on.
   broken: boolean;
@@ -111,6 +114,8 @@ let resumedSinceSwap = false;
 /// Giving it back is an exact seek in hardware; a step waits for it rather
 /// than have mpv drop the step's seek while that one runs.
 let restoring: Promise<void> | null = null;
+/// The audio track to give back, while backward decoding has it switched off.
+let audioFrom: string | null = null;
 /// Steps back in a row, reset by a step forward.
 let backRun = 0;
 /// One step at a time; a held key drops presses instead of queueing them.
@@ -124,7 +129,7 @@ let superseded = false;
 let leaving: Promise<void> | null = null;
 
 function fileState(path: string): FileState {
-  if (!file || file.path !== path) file = { path, slow: null, probe: null, broken: false };
+  if (!file || file.path !== path) file = { path, slow: null, onDisk: false, probe: null, broken: false };
   return file;
 }
 
@@ -160,6 +165,35 @@ function probe(path: string, pos: number): Promise<GopProbe | null> {
   return invoke<GopProbe>('frame_step_probe', { path, pos }).catch(() => null);
 }
 
+/**
+ * Where the bytes of what mpv plays sit on this disk, or null.
+ *
+ * A local file is its own path. A torrent is played from the loopback server,
+ * but once its file has **fully** arrived it is an ordinary file in the cache —
+ * `torrent_local_path` says where, and whether it is complete. A file still
+ * downloading is sparse: a stretch that has not arrived reads back as zeros
+ * rather than failing, so a probe over it would measure nonsense, which is why
+ * it answers null until the file is whole (the same rule as the storyboard's,
+ * thumbs.svelte.ts). Any other network source has no bytes here at all.
+ */
+async function diskPath(path: string): Promise<string | null> {
+  if (!isNetworkSource(path)) return path;
+  const ref = parseTorrentUrl(path);
+  if (!ref) return null;
+  const local = await invoke<{ path: string; complete: boolean } | null>('torrent_local_path', {
+    infoHash: ref.infoHash,
+    index: ref.index,
+  }).catch(() => null);
+  return local?.complete ? local.path : null;
+}
+
+function probeFile(f: FileState, pos: number): Promise<GopProbe | null> {
+  return diskPath(f.path).then((p) => {
+    f.onDisk = p !== null;
+    return p ? probe(p, pos) : null;
+  });
+}
+
 export async function frameStepBy(delta: number) {
   const path = player.filePath;
   if (!player.hasFile || !path || busy) return;
@@ -171,7 +205,7 @@ export async function frameStepBy(delta: number) {
     const f = fileState(path);
     backRun = delta > 0 ? 0 : backRun + 1;
     if (delta > 0) await stepForward();
-    else await stepBack(f, path);
+    else await stepBack(f);
   } finally {
     stepping = false;
     busy = false;
@@ -190,7 +224,7 @@ async function stepForward() {
   await waitMovedFrom(before, STEP_TIMEOUT_MS);
 }
 
-async function stepBack(f: FileState, path: string) {
+async function stepBack(f: FileState) {
   const frame = frameDuration(await fps());
   const here = (await fresh('time-pos')) ?? player.timePos;
   // Nothing before the first frame — and backward, mpv would take the start of
@@ -208,7 +242,7 @@ async function stepBack(f: FileState, path: string) {
   }
   // The group length is asked for once per file, beside the first step, so
   // that by the second press the decision has what it needs.
-  if (!f.probe && !isNetworkSource(path)) f.probe = probe(path, here);
+  f.probe ??= probeFile(f, here);
   const settled = waitPlaybackSettled(STEP_TIMEOUT_MS);
   const startedAt = performance.now();
   await command('frame-back-step', []).catch(() => {});
@@ -268,6 +302,7 @@ async function reverseBudgetFor(f: FileState): Promise<number | null> {
   if (!frameStep.enabled || f.slow !== true || f.broken || !f.probe) return null;
   const gop = await f.probe;
   const decoder = await getProperty('hwdec-current', 'string').catch(() => null);
+  const graph = await getProperty('lavfi-complex', 'string').catch(() => null);
   const [w, h, bpp, rate] = await Promise.all([
     fresh('video-params/w'),
     fresh('video-params/h'),
@@ -281,8 +316,9 @@ async function reverseBudgetFor(f: FileState): Promise<number | null> {
     enabled: frameStep.enabled,
     slow: f.slow,
     broken: f.broken,
-    local: !isNetworkSource(f.path),
+    onDisk: f.onDisk,
     abLoop: player.loopA !== null && player.loopB !== null,
+    audioGraph: !!graph,
     software: !decoder || decoder === 'no',
     need,
     budget,
@@ -292,6 +328,7 @@ async function reverseBudgetFor(f: FileState): Promise<number | null> {
 
 async function enterReverse(f: FileState, here: number, frame: number, budget: number) {
   await setProperty('file-local-options/video-reversal-buffer', String(budget)).catch(() => {});
+  await silenceTrack();
   const settled = waitPlaybackSettled(ENTER_TIMEOUT_MS);
   // The turn is an exact seek to the current position, decoded backward: it
   // lands on the frame already shown, and the step proper follows.
@@ -304,6 +341,38 @@ async function enterReverse(f: FileState, here: number, frame: number, budget: n
     return;
   }
   await reverseStep(f, here, frame);
+}
+
+/**
+ * Switch the audio track off for backward decoding, for the rest of the session.
+ *
+ * mpv decodes audio backward too, and measured on a 4K release with a 5.1 E-AC3
+ * track that tripled the entry (2.0 s against 0.7 s without it) and made one
+ * step out of forty skip five frames instead of one. The steps are muted
+ * anyway (`frame-step … mute`), so nothing audible is lost. It stays off for
+ * the forward steps after the turn too — giving it back is a seek, and a step
+ * sent while one runs is undone — and comes back where the session ends: the
+ * play controls, a seek, a resume by anyone (`restoreTrack`).
+ */
+async function silenceTrack() {
+  if (audioFrom !== null) return;
+  const aid = await getProperty('aid', 'string').catch(() => null);
+  if (!aid || aid === 'no') return;
+  await setProperty('file-local-options/aid', 'no').catch(() => {});
+  audioFrom = aid;
+}
+
+/**
+ * Give the audio track back — **only once mpv is turned forward**. Selecting a
+ * track queues a seek to the current position, and written while mpv still
+ * decodes backward that seek is resolved backward-style: measured, it landed on
+ * the *next* keyframe (599.349 → 600.600, 600.809 → 602.602). After the turn's
+ * `play-direction` write it lands where it should. Every caller turns first.
+ */
+async function restoreTrack() {
+  const aid = audioFrom;
+  audioFrom = null;
+  if (aid) await setProperty('file-local-options/aid', aid).catch(() => {});
 }
 
 /// Backward, a step in the playing direction is a step back in time — played
@@ -348,7 +417,9 @@ function leaveReverse(untilShown: boolean): Promise<void> {
  * the common path, so callers stay synchronous outside a stepping session.
  */
 export function frameStepBeforeSeek(): Promise<void> | null {
-  if (!frameStep.reverse && !leaving && (swappedFrom === null || !player.paused)) return null;
+  if (!frameStep.reverse && !leaving && audioFrom === null && (swappedFrom === null || !player.paused)) {
+    return null;
+  }
   if (busy) {
     // Mid-step: turn forward so the seek is not lost, and leave the decoder to
     // the next resume — the step is still using it.
@@ -357,6 +428,7 @@ export function frameStepBeforeSeek(): Promise<void> | null {
   }
   return (async () => {
     await leaveReverse(false);
+    await restoreTrack();
     // Paused, the seek that follows replaces the exact seek the change queues,
     // so the decoder comes back for free. Playing, it waits for the next pause.
     if (swappedFrom !== null && player.paused) await restoreHardware(false);
@@ -377,13 +449,14 @@ export function frameStepBeforeSeek(): Promise<void> | null {
  * falls back to giving the decoder back at the next pause.
  */
 export function frameStepBeforePlay(): Promise<void> | null {
-  if (!frameStep.reverse && !leaving && swappedFrom === null) return null;
+  if (!frameStep.reverse && !leaving && swappedFrom === null && audioFrom === null) return null;
   return (async () => {
     if (restoring) await restoring;
     const hardware = swappedFrom !== null;
     // Before the commands, so the restart they cause cannot slip past.
     const settled = hardware ? waitPlaybackSettled(STEP_TIMEOUT_MS) : null;
     await leaveReverse(false);
+    await restoreTrack();
     if (hardware) {
       await restoreHardware(false);
       await settled;
@@ -395,6 +468,7 @@ export function frameStepBeforePlay(): Promise<void> | null {
 export function frameStepFileChanged() {
   frameStep.reverse = false;
   swappedFrom = null;
+  audioFrom = null;
   resumedSinceSwap = false;
   backRun = 0;
   file = null;
@@ -432,6 +506,8 @@ export function frameStepNoteRestart() {
 /// software until the next pause.
 function resumed() {
   backRun = 0;
-  if (frameStep.reverse) void leaveReverse(false);
+  // Playing without its sound is not a state to leave anyone in; turned first,
+  // for the reason in `restoreTrack`.
+  void leaveReverse(false).then(restoreTrack);
   if (swappedFrom !== null) resumedSinceSwap = true;
 }

@@ -51,10 +51,10 @@ describe('swapsDecoder', () => {
     expect(swapsDecoder(null, 1920, 1080)).toBe(false);
   });
 
-  it('takes hardware to software up to 1440p and not above', () => {
+  it('takes hardware to software at any size, 4K included', () => {
     expect(swapsDecoder('videotoolbox', 1920, 1080)).toBe(true);
     expect(swapsDecoder('d3d11va', 2560, 1440)).toBe(true);
-    expect(swapsDecoder('videotoolbox', 3840, 2160)).toBe(false);
+    expect(swapsDecoder('videotoolbox', 3840, 2160)).toBe(true);
   });
 
   it('does nothing before the decoder has reported a size', () => {
@@ -67,8 +67,9 @@ describe('shouldReverse', () => {
     enabled: true,
     slow: true,
     broken: false,
-    local: true,
+    onDisk: true,
     abLoop: false,
+    audioGraph: false,
     software: true,
     need: GiB,
     budget: 2 * GiB,
@@ -83,8 +84,9 @@ describe('shouldReverse', () => {
     ['the first step was fast', { slow: false }],
     ['nothing was measured yet', { slow: null }],
     ['it already misbehaved here', { broken: true }],
-    ['the source is a stream', { local: false }],
+    ['the file is not on this disk', { onDisk: false }],
     ['an A–B loop is set', { abLoop: true }],
+    ['several audio tracks are mixed', { audioGraph: true }],
     ['decoding is in hardware', { software: false }],
     ['the group was not measured', { need: null }],
     ['the group does not fit', { need: 3 * GiB }],
@@ -104,6 +106,10 @@ describe('landedRight', () => {
   it('catches an overflowed buffer, which lands seconds away', () => {
     expect(landedRight(39.9, 33.542, 1 / 24)).toBe(false);
     expect(landedRight(39.9, 35.383, frame)).toBe(false);
+  });
+
+  it('catches a step that skipped frames', () => {
+    expect(landedRight(600.308, 600.141, 1 / 23.976)).toBe(false);
   });
 
   it('treats a missing reading as a bad landing', () => {
