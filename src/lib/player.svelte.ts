@@ -1000,9 +1000,25 @@ export function setVolume(v: number): number {
   return clamped;
 }
 
-export function toggleMute() {
-  void setProperty('mute', !player.muted);
-  showOsd(t(player.muted ? 'osd.sound_on' : 'osd.sound_off'));
+/**
+ * Mute, as a `cycle` and never as the mirror's opposite (gotcha 3): a mirror
+ * that went stale sets the value mpv already has, and the popup says "sound
+ * off" over sound that plays on.
+ *
+ * And not at all while the sound is a bitstream to a receiver: mpv's mute and
+ * volume act on decoded audio, which passthrough does not have, so the button
+ * would announce a change that cannot happen. The receiver's volume is the
+ * only one there is then, and the popup says so.
+ */
+export async function toggleMute() {
+  const out = await getProperty('audio-out-params/format', 'string').catch(() => null);
+  if (out?.startsWith('spdif')) {
+    showOsd(t('osd.volume_spdif'));
+    return;
+  }
+  const was = await getProperty('mute', 'flag').catch(() => player.muted);
+  await command('cycle', ['mute']).catch(() => {});
+  showOsd(t(was ? 'osd.sound_on' : 'osd.sound_off'));
 }
 
 // ---- Repeat ---------------------------------------------------------------
