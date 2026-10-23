@@ -237,9 +237,9 @@ export function selectTrack(kind: 'audio' | 'sub', track: Track | null) {
   // local switch above still runs, so the handback and the menu's check mark
   // stay in agreement with what the TV plays.
   if (cast.remote && kind === 'audio' && track) void castSwitchAudio(track);
-  // Over AirPlay a subtitle has no way to the set yet, and the viewer is told
-  // so; over Cast and DLNA the choice stays as it always was.
-  if (cast.remote && kind === 'sub') castSwitchSub(track);
+  // Over AirPlay a subtitle reaches the set inside its HLS rendition
+  // (cast.svelte.ts, `airplaySwitch`); over Cast and DLNA the choice stays local.
+  if (cast.remote && kind === 'sub') void castSwitchSub(track);
 }
 
 /**

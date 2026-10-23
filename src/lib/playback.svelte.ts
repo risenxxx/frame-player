@@ -180,10 +180,10 @@ class Playback {
     return {
       volume: !remote || cast.volumeAdjustable,
       trackChoice: !remote || cast.transport !== 'dlna',
-      // Over AirPlay no subtitle reaches the set (measured on an LG: none, in
-      // any form an MP4 can carry), so a pick would change only the paused
-      // player behind the casting screen.
-      subChoice: !remote || cast.transport !== 'airplay',
+      // Over AirPlay a subtitle reaches the set only inside the HLS rendition;
+      // on the MP4 copy (the "original" mode, or a receiver that refused HLS)
+      // a pick would change only the paused player behind the casting screen.
+      subChoice: !remote || cast.transport !== 'airplay' || cast.airplayTracks,
       speed: !remote,
       frameStep: !remote,
       zoom: !remote,

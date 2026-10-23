@@ -568,6 +568,14 @@ struct ServeShared {
     /// order of first request. Who asks is the one thing that tells a URL handed to
     /// a receiver from a file the Mac is playing itself — AirPlay reads it.
     peers: Mutex<Vec<IpAddr>>,
+    /// The address the server is bound to, which is this machine's own.
+    own_ip: IpAddr,
+    /// Requests for the current registration from anybody but this machine.
+    /// AirPlay's player fetches the URL itself while the viewer chooses a
+    /// receiver, so `hits` cannot say whether the receiver went past an HLS
+    /// master playlist — and a receiver that refuses a variant fetches the
+    /// master and nothing else (measured), which is the whole signal.
+    remote_hits: AtomicU64,
 }
 
 struct Server {
@@ -681,6 +689,9 @@ async fn serve_cast(shared: Arc<ServeShared>, req: Request<hyper::body::Incoming
         if peers.len() < 16 && !peers.contains(&peer) {
             peers.push(peer);
         }
+    }
+    if peer != shared.own_ip {
+        shared.remote_hits.fetch_add(1, Ordering::Relaxed);
     }
     if !crate::logs::verbose() {
         return serve_cast_inner(shared, req).await;
@@ -847,6 +858,52 @@ pub(crate) fn server_hits(service: &Arc<CastService>) -> u64 {
         .as_ref()
         .map(|s| s.shared.hits.load(Ordering::Relaxed))
         .unwrap_or(0)
+}
+
+/// What the LAN server is answering for right now — a file, or a session
+/// directory — so a sweep of leftovers never takes the one being played.
+pub(crate) fn served_path(service: &Arc<CastService>) -> Option<PathBuf> {
+    let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
+    let server = inner.server.as_ref()?;
+    let reg = server.shared.reg.lock().unwrap_or_else(|p| p.into_inner());
+    reg.as_ref().map(|r| r.path.clone())
+}
+
+/// Requests for the current file from anybody but this machine.
+pub(crate) fn server_remote_hits(service: &Arc<CastService>) -> u64 {
+    let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
+    inner
+        .server
+        .as_ref()
+        .map(|s| s.shared.remote_hits.load(Ordering::Relaxed))
+        .unwrap_or(0)
+}
+
+/// Serve a whole flat directory behind one fresh token — an HLS rendition,
+/// whose playlists name their segments by bare file name. The directory
+/// server answers one path component and nothing with a leading dot, so the
+/// token reaches nothing outside it.
+pub(crate) async fn serve_dir(
+    service: &Arc<CastService>,
+    device_ip: IpAddr,
+    dir: &std::path::Path,
+    entry: &str,
+) -> Result<String, String> {
+    let (ip, port, shared) = ensure_server(service, device_ip).await?;
+    let token = format!("{:032x}", rand::random::<u128>());
+    let url = format!("http://{ip}:{port}/c/{token}/{entry}");
+    let mut reg = shared.reg.lock().unwrap_or_else(|p| p.into_inner());
+    *reg = Some(Registered {
+        token,
+        path: dir.to_path_buf(),
+        mime: "application/x-mpegURL",
+        dir: true,
+        torrent: None,
+    });
+    shared.hits.store(0, Ordering::Relaxed);
+    shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clear();
+    shared.remote_hits.store(0, Ordering::Relaxed);
+    Ok(url)
 }
 
 /// The addresses that have sent a request to the LAN server for the current file.
@@ -1673,6 +1730,7 @@ pub async fn cast_load(
         });
         shared.hits.store(0, Ordering::Relaxed);
         shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        shared.remote_hits.store(0, Ordering::Relaxed);
         old
     };
     // A displaced HLS session (the audio switch) leaves its segment directory
@@ -1735,6 +1793,7 @@ pub(crate) async fn serve_one_file(
         });
         shared.hits.store(0, Ordering::Relaxed);
         shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        shared.remote_hits.store(0, Ordering::Relaxed);
     }
     Ok(url)
 }
@@ -1814,6 +1873,7 @@ pub async fn cast_serve_torrent(
         *shared.torrents.lock().unwrap_or_else(|p| p.into_inner()) = Some(torrents.inner().clone());
         shared.hits.store(0, Ordering::Relaxed);
         shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        shared.remote_hits.store(0, Ordering::Relaxed);
     }
     Ok(url)
 }
@@ -1857,6 +1917,8 @@ async fn ensure_server(
         torrents: Mutex::new(None),
         hits: AtomicU64::new(0),
         peers: Mutex::new(Vec::new()),
+        own_ip: lan_ip,
+        remote_hits: AtomicU64::new(0),
     });
     let serve_shared = shared.clone();
     let task = tauri::async_runtime::spawn(async move {
@@ -2107,7 +2169,7 @@ const PREPARE_EVENT: &str = "frameplayer://cast-prepare";
 /// HLS sessions live under this dot-dir inside the cast cache: transient by
 /// contract (removed at disconnect, swept at the next HLS start), and the
 /// dot name keeps them out of the file-only LRU maths.
-const HLS_DIR: &str = ".hls";
+pub(crate) const HLS_DIR: &str = ".hls";
 
 #[cfg(windows)]
 const FFMPEG_BIN: &str = "ffmpeg.exe";
@@ -2120,7 +2182,7 @@ const FFMPEG_BIN: &str = "ffmpeg";
 /// resources in `Contents/Resources`, so "next to the exe" is not one place on
 /// both platforms. The source tree is the last resort, for a dev build that
 /// predates the copy step.
-fn ffmpeg_bin(app: &tauri::AppHandle) -> Option<PathBuf> {
+pub(crate) fn ffmpeg_bin(app: &tauri::AppHandle) -> Option<PathBuf> {
     use tauri::Manager as _;
 
     let mut candidates: Vec<PathBuf> = Vec::new();
@@ -2694,7 +2756,7 @@ fn run_prepare(
 /// Spawn one ffmpeg, park it for cancellation, forward its progress, reap it.
 /// Shared by the MP4 prepare and the HLS generation — one place for the child
 /// bookkeeping, the stderr drain and the µs-progress quirk.
-fn run_ffmpeg_job(
+pub(crate) fn run_ffmpeg_job(
     app: &tauri::AppHandle,
     service: &Arc<CastService>,
     mut cmd: std::process::Command,

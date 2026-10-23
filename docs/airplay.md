@@ -214,7 +214,7 @@ after its own scan, not from the window.)
 - An Apple TV's answer to the two things the LG refused: a track selection
   made on the Mac, and `mov_text` subtitles.
 
-## To research: tracks over HLS (option B)
+## Tracks over HLS (option B) — built; measured on one set up to 1080p SDR
 
 **What option A found.** The first attempt was one MP4 carrying every audio
 track and every text subtitle track as `mov_text`, switched on the receiver
@@ -224,35 +224,109 @@ correctly — one audible group, and each subtitle twice in the legible group
 half worked: the set played the first audio track whatever the Mac selected,
 and showed no subtitle at all — including a file whose only subtitle track was
 flagged default, and one flagged default+forced, each sent untouched. What
-shipped instead is one chosen audio track per copy and no subtitles; an Apple
-TV is still unmeasured on both counts.
+shipped instead is one chosen audio track per copy and no subtitles.
 
-The alternative, and the way streaming services reach an Apple TV, is HLS: a
-master playlist with the video, each audio track as an `EXT-X-MEDIA
-TYPE=AUDIO` rendition and each subtitle track as a WebVTT `TYPE=SUBTITLES`
-rendition. What it could buy and what has to be measured before it is worth
-building:
+**What HLS does on the same set: both halves work.** One research run on the
+LG UR78006LK, through the shipping AirPlay path (an `AVPlayer`, the system's
+picker, the LAN server serving a flat directory behind one token):
 
-- **Whether the LG shows WebVTT at all.** It is the question everything else
-  waits on: the set refused `mov_text` outright, and a subtitle rendition in HLS
-  reaches a different part of its player. Measure one H.264 + AAC + WebVTT VOD
-  rendition before building anything.
-- **Whether a rendition choice reaches the set.** The LG ignored a selection
-  made on the Mac for an MP4; HLS renditions are selected the same way, through
-  `selectMediaOption`, so this may fail identically.
-- **Styling and timing.** WebVTT keeps positioning that `mov_text` loses, and a
-  subtitle rendition can be regenerated with a delay without touching the
-  video — the copy cannot apply `sub-delay` at all today.
-- **No copy on disk for the tracks.** Audio renditions are separate segments,
-  so adding a track or a subtitle file is a new playlist entry rather than a
-  new film-sized MP4. Measure the segmenting cost against the remux.
-- **Receivers.** The Cast HLS rung measured H.264-only on its receiver; whether
-  an AirPlay receiver (an Apple TV, and the LG this was built against) plays
-  HEVC in fMP4 HLS, E-AC-3 renditions and WebVTT has to be measured per set.
+- The rendition: H.264 video stream-copied into 6 s MPEG-TS segments, each
+  audio track (AAC, copied) as its own audio-only TS playlist under an
+  `EXT-X-MEDIA TYPE=AUDIO` group, each subtitle track as WebVTT segments cut on
+  the video's segment boundaries under an `EXT-X-MEDIA TYPE=SUBTITLES` group,
+  and a master playlist written by hand. ffmpeg's own HLS muxer could not do
+  it in one run — it refuses several subtitle variants (`No streams to mux`) —
+  so each piece was its own ffmpeg run and the subtitles were cut in code.
+- **Every WebVTT segment carries `X-TIMESTAMP-MAP=MPEGTS:126000,LOCAL:00:00:00.000`**:
+  ffmpeg's TS segments start at 1.4 s (`start: 1.400000`), and without the map
+  the cues would sit 1.4 s early.
+- The set fetched the master, the video and the default audio rendition's
+  segments itself, and played. On `selectMediaOption` for the audible group it
+  fetched the other rendition's playlist and segments **from the next segment
+  on**, and the tone changed by ear; on the legible group it fetched that
+  language's `.vtt` segments, and the subtitles appeared on screen, switched
+  language, and went away on a nil selection. The server log is the objective
+  half of the measurement: a selection that reaches the set is a fetch of the
+  new rendition within a second.
+- Locally AVFoundation lists an HLS rendition's subtitles once each — no forced
+  twins, unlike `mov_text` — and honours `DEFAULT=YES` as the group's default
+  option.
+
+**What was built from it** is in [`rules/casting.md`](rules/casting.md): the
+rendition cut in one ffmpeg run (`airplay_hls.rs`), the selection on the
+receiver, the refusal read from the server's own log, a fresh fallback to the
+MP4 copy, and a per-receiver memory of what was refused, with the choice of
+mode under the AirPlay row's gear. Two things the research did not show and
+the first build found: AVFoundation refuses an HDR variant that declares a
+range but no `FRAME-RATE` (`-1002`), and a new item on the player whose
+rendition the set refused does not wake the set — the item has to be taken
+away first.
+
+**Measured since, on the same set — HEVC, E-AC-3 and seeking all work.** A
+second rendition built like a real 4K release: HEVC Main 10 (`hvc1`, 10-bit)
+in fMP4 segments with an `EXT-X-MAP` init segment, and two E-AC-3 5.1 audio
+renditions, also fMP4:
+
+- **HEVC in fMP4 HLS plays on the LG** — unlike the Cast receiver, which
+  refused HEVC-in-HLS outright. The master carried no `CODECS` attribute and
+  the set did not need one.
+- **E-AC-3 5.1 renditions switch** like the AAC ones: the set fetched the other
+  rendition's init segment and media segments on `selectMediaOption`, and the
+  tone changed by ear "without any loading".
+- **WebVTT over fMP4 needs `X-TIMESTAMP-MAP=MPEGTS:0`**, not the TS run's
+  126000: ffmpeg's fMP4 segments start at zero. Subtitles appeared, switched
+  and went away exactly as with TS.
+- **Seeking works, playing and paused**: forward while playing (28.6 → 88.6 s,
+  the set fetched the segment holding 84–90 s at once), back while paused
+  (102.9 → 12.9 s, it fetched that segment and held the frame), playback after
+  that seek resumed from 13.8 s, and back while playing to the start. A seek
+  past the end of the stream is the end of the item, and the set came back from
+  it confused (a later seek reported, then the end again, then playback from
+  an older position) — `castSeek` already clamps to the duration, and that is
+  the rule to keep.
+
+**4K and HDR: the LG refuses both over HLS.** A 4K HDR10 web release (HEVC
+Main 10, PQ, two E-AC-3 5.1 tracks) cut into the same kind of rendition, then
+bisected with short clips:
+
+| Rendition | AVPlayer on the Mac | The LG |
+|---|---|---|
+| 720p SDR HEVC Main 10, fMP4 | plays | plays, tracks and subtitles switch |
+| 1080p SDR HEVC, fMP4 | plays | plays |
+| 1080p HDR10 HEVC (`VIDEO-RANGE=PQ`) | plays | fetches the master and nothing else; AirPlay's splash screen stays |
+| 4K SDR HEVC (`RESOLUTION=3840x2160`) | plays | the same refusal |
+| 4K HDR10, the release itself | plays | the same refusal |
+
+- The refusal is **of the variant as declared**: offered one master with four
+  variants of the same 4K SDR video, the set took only the one declaring
+  1280x720 and skipped the one with the same bandwidth declaring 3840x2160.
+  Given real 4K segments under that 720p label it played unsteadily and fell
+  back to its home screen after a while — so lying about the resolution is not
+  a way round it.
+- **AVFoundation itself refuses an HDR rendition declared without
+  `VIDEO-RANGE=PQ`** (`CoreMediaErrorDomain -12927`, before any receiver is
+  involved), so the attribute is not optional for HDR; it is the set that turns
+  it down.
+- The same set plays a 4K HEVC release over the **MP4** copy, so the limit is
+  its AirPlay HLS player's, not its decoder's.
+- Cutting the rendition costs next to nothing when nothing is transcoded: ten
+  minutes of the 4K release, video and both audio tracks, in about a second.
+
+**What it decides.** On this set HLS — and with it switchable tracks and
+subtitles — covers **1080p and below, SDR**. A 4K or HDR file stays on the MP4
+copy (one chosen audio track, no subtitles), which is what plays it at its own
+quality. An Apple TV may well take 4K HDR over HLS; that is unmeasured, and
+the choice between the two paths should be made per receiver once there is a
+second one to measure.
+
+**Still to measure before it ships.**
+
+- **ASS styling** survives WebVTT only partly (positioning, no fonts); a
+  conversion from ASS has to be checked on a styled release.
+- **The segmenting cost with a transcode**: an audio track in DTS or TrueHD
+  becomes an E-AC-3 pass of its own, which is the slow part; copying is a
+  second for ten minutes of 4K.
+- **An Apple TV**, for all of the above.
 - **A torrent still downloading.** HLS segments can be produced as pieces
   arrive, which a single MP4 copy cannot — the one path by which AirPlay could
   stream a torrent before it finishes (feature bit 4, `VideoHTTPLiveStreams`).
-- **The existing segmenter.** `cast_hls_prepare` already writes a VOD rendition
-  for Cast; the work is renditions per track and a master playlist, and the
-  research is whether AVPlayer's external playback carries the selection to the
-  set the way it does for an MP4.

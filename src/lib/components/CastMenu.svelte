@@ -23,6 +23,14 @@
     stopCastDiscovery,
     type TvDevice,
   } from '$lib/cast.svelte';
+  import {
+    airplayMode,
+    airplayRefusals,
+    forgetRefusals,
+    setAirPlayMode,
+    type AirPlayMode,
+    type PictureKind,
+  } from '$lib/airplay-choice';
   import { t } from '$lib/i18n.svelte';
   import { IS_MAC } from '$lib/platform';
   import CastIcon from './CastIcon.svelte';
@@ -60,13 +68,30 @@
   });
 </script>
 
+{#snippet gearGlyph()}
+  <svg
+    viewBox="0 0 24 24"
+    width="15"
+    height="15"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linecap="round"
+    aria-hidden="true"
+  >
+    <path d="M4 8h8.4M17.6 8H20M4 16h4.4M13.6 16H20" />
+    <circle cx="15" cy="8" r="2.6" />
+    <circle cx="11" cy="16" r="2.6" />
+  </svg>
+{/snippet}
+
 <div class="menu castmenu">
   <MenuBody>
     <MenuBack />
     <div class="menu-title">{t('cast.title')}</div>
     {#if cast.active}
       <div class="cast-current">
-        {#if cast.kind}<CastIcon kind={cast.kind} />{/if}
+        {#if cast.kind}<CastIcon kind={cast.kind} size={26} />{/if}
         <span class="cast-text">
           <span class="cast-name">{cast.deviceName}</span>
           <span class="cast-state">{castStateLabel()}</span>
@@ -118,20 +143,7 @@
               onclick={() =>
                 (tvSettingsFor = tvSettingsFor === device.key ? null : device.key)}
             >
-              <svg
-                viewBox="0 0 24 24"
-                width="15"
-                height="15"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                aria-hidden="true"
-              >
-                <path d="M4 8h8.4M17.6 8H20M4 16h4.4M13.6 16H20" />
-                <circle cx="15" cy="8" r="2.6" />
-                <circle cx="11" cy="16" r="2.6" />
-              </svg>
+              {@render gearGlyph()}
             </button>
           {/if}
         </div>
@@ -223,10 +235,74 @@
             <CastIcon kind="airplay" />
             <span class="cast-text">
               <span class="cast-name">{t('cast.airplay_row')}</span>
-              <span class="cast-model">{airplaySummary()}</span>
+              <span class="cast-model">{(cast.airplayRevision, airplaySummary())}</span>
             </span>
           </button>
+          <button
+            class="tv-gear"
+            class:open={tvSettingsFor === 'airplay'}
+            aria-label={t('cast.airplay_settings')}
+            data-tip={t('cast.airplay_settings')}
+            onclick={() => (tvSettingsFor = tvSettingsFor === 'airplay' ? null : 'airplay')}
+          >
+            {@render gearGlyph()}
+          </button>
         </div>
+        {#if tvSettingsFor === 'airplay'}
+          <!-- One setting for every AirPlay receiver, since the system's list
+               is where a receiver is chosen; what each one has been found to
+               refuse is shown under it, by the name it announces. -->
+          {@const mode = (cast.airplayRevision, airplayMode())}
+          {@const known = (cast.airplayRevision, Object.entries(airplayRefusals()))}
+          <div class="tv-settings">
+            <div class="tv-block">
+              <div class="tv-settings-label">{t('cast.transport')}</div>
+              <div class="segmented">
+                {#each [['auto', t('cast.airplay_mode_auto')], ['tracks', t('cast.airplay_mode_tracks')], ['original', t('cast.airplay_mode_original')]] as [value, label] (value)}
+                  <button
+                    class="segopt"
+                    class:sel={mode === value}
+                    onclick={() => {
+                      setAirPlayMode(value as AirPlayMode);
+                      cast.airplayRevision++;
+                    }}
+                  >
+                    {label}
+                  </button>
+                {/each}
+              </div>
+              <div class="tv-settings-hint">
+                {mode === 'tracks'
+                  ? t('cast.airplay_mode_tracks_hint')
+                  : mode === 'original'
+                    ? t('cast.airplay_mode_original_hint')
+                    : t('cast.airplay_mode_auto_hint')}
+              </div>
+            </div>
+            {#each known as [name, kinds] (name)}
+              <div class="tv-block tv-trouble">
+                <span class="tv-trouble-q">
+                  {t('cast.airplay_known', {
+                    name,
+                    what: (['sd', 'uhd', 'hdr'] as PictureKind[])
+                      .filter((k) => kinds[k])
+                      .map((k) => t(`cast.airplay_kind_${k}`))
+                      .join(', '),
+                  })}
+                </span>
+                <button
+                  class="tv-check"
+                  onclick={() => {
+                    forgetRefusals(name);
+                    cast.airplayRevision++;
+                  }}
+                >
+                  {t('cast.airplay_forget')}
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
       {/if}
       <!-- The number-one cause of "casting doesn't work" is the network,
            not the code, so the panel says so up front: the Defender prompt

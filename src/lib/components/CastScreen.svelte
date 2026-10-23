@@ -47,6 +47,9 @@
     {#if cast.busy}
       <span class="castscreen-state">{stateLabel}</span>
     {/if}
+    {#if cast.notice}
+      <span class="castscreen-note">{cast.notice}</span>
+    {/if}
   </div>
 </div>
 
@@ -70,6 +73,13 @@
   .castscreen-title {
     font-size: 15px;
     font-weight: 600;
+  }
+
+  .castscreen-note {
+    font-size: 12px;
+    line-height: 1.4;
+    color: rgba(232, 232, 236, 0.55);
+    max-width: min(440px, 80vw);
   }
 
   .castscreen-sub {

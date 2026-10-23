@@ -122,6 +122,20 @@ mod mac {
         /// that never went away — so a position that moves is the stronger
         /// evidence.
         last_pos: Option<(f64, Instant)>,
+        /// An HLS session directory being served (`airplay_hls`), deleted when
+        /// the next file replaces it or the session ends — transient by
+        /// contract, as the Cast HLS sessions are.
+        hls_dir: Option<std::path::PathBuf>,
+        /// The tracks to play from an HLS rendition — `(audio, subtitle)` as
+        /// indices in its master's groups, subtitle `-1` for none — waiting for
+        /// the item to be ready, since its selection groups are only there
+        /// once the asset has loaded.
+        selection: Option<(i64, i64)>,
+        /// A fresh replace is under way: the item was taken away on purpose,
+        /// and the external route drops with it, which must read as loading
+        /// rather than as the viewer stopping AirPlay. Until the route is back
+        /// or this moment has passed.
+        swapping_until: Option<Instant>,
     }
 
     static SHARED: Mutex<Option<Shared>> = Mutex::new(None);
@@ -378,6 +392,7 @@ mod mac {
             s.duration = 0.0;
             s.seek_target = None;
             s.last_pos = None;
+            s.selection = None;
             s.live = true;
         });
         let result = present(&picker);
@@ -390,6 +405,7 @@ mod mac {
     fn close_on_main() -> f64 {
         SESSION.with(|s| {
             let Some(s) = s.borrow_mut().take() else { return 0.0 };
+            drop_session_dir(shared(|sh| sh.hls_dir.take()), None);
             let time = seconds(unsafe { s.player.currentTime() });
             unsafe {
                 s.player.pause();
@@ -401,6 +417,10 @@ mod mac {
             s.picker.removeFromSuperview();
             time.max(0.0)
         })
+    }
+
+    fn p_has_item(p: &AVPlayer) -> bool {
+        unsafe { p.currentItem() }.is_some()
     }
 
     fn seconds(t: CMTime) -> f64 {
@@ -416,6 +436,14 @@ mod mac {
                 return AirPlayStatus { state: "idle".into(), ..Default::default() };
             };
             let p = &s.player;
+            if let Some((audio, sub)) = shared(|sh| sh.selection) {
+                if let Some(said) = apply_selection(p, audio, sub) {
+                    shared(|sh| sh.selection = None);
+                    if crate::logs::verbose() {
+                        eprintln!("{TAG} selected {said}");
+                    }
+                }
+            }
             let external = unsafe { p.isExternalPlaybackActive() };
             if external && !s.unmuted {
                 unsafe { p.setMuted(false) };
@@ -424,6 +452,14 @@ mod mac {
             let saw = shared(|sh| {
                 sh.saw_external |= external;
                 sh.saw_external
+            });
+            let swapping = shared(|sh| match sh.swapping_until {
+                Some(until) if Instant::now() < until && !(external && p_has_item(p)) => true,
+                Some(_) => {
+                    sh.swapping_until = None;
+                    false
+                }
+                None => false,
             });
             let item = unsafe { p.currentItem() };
             let reported_time = seconds(unsafe { p.currentTime() });
@@ -458,7 +494,9 @@ mod mac {
             });
             let waiting_reason = unsafe { p.reasonForWaitingToPlay() }.map(|r| r.to_string());
 
-            let (state, error) = if failed {
+            let (state, error) = if swapping {
+                ("loading", None)
+            } else if failed {
                 ("error", Some("load_failed"))
             } else if !external {
                 if saw {
@@ -515,11 +553,74 @@ mod mac {
         })
     }
 
+    /// A file, or an HLS session directory served whole with its master as
+    /// the entry. The directory being replaced goes once the new one is up.
     async fn serve(app: &tauri::AppHandle, path: &str, hidden: bool) -> Result<String, String> {
         let ip = lan_ip().ok_or("no usable network interface")?;
         shared(|s| s.lan_ip = Some(ip));
         let cast = app.state::<Arc<CastService>>().inner().clone();
-        crate::cast::serve_one_file(&cast, ip, std::path::Path::new(path), hidden).await
+        let p = std::path::Path::new(path);
+        let (url, dir) = if p.is_dir() && crate::airplay_hls::is_session_dir(p) {
+            (crate::cast::serve_dir(&cast, ip, p, "master.m3u8").await?, Some(p.to_path_buf()))
+        } else {
+            (crate::cast::serve_one_file(&cast, ip, p, hidden).await?, None)
+        };
+        let previous = shared(|s| std::mem::replace(&mut s.hls_dir, dir));
+        drop_session_dir(previous, Some(p));
+        Ok(url)
+    }
+
+    fn drop_session_dir(dir: Option<std::path::PathBuf>, keep: Option<&std::path::Path>) {
+        if let Some(d) = dir {
+            if Some(d.as_path()) != keep && crate::airplay_hls::is_session_dir(&d) {
+                let _ = std::fs::remove_dir_all(&d);
+            }
+        }
+    }
+
+    /// Select tracks of an HLS rendition on the current item, once it is ready.
+    /// Indices count the master's groups in order; a legible option that only
+    /// carries forced subtitles is skipped, should AVFoundation list one.
+    #[allow(deprecated)]
+    fn apply_selection(p: &AVPlayer, audio: i64, sub: i64) -> Option<String> {
+        use objc2_av_foundation::{
+            AVMediaCharacteristicAudible, AVMediaCharacteristicContainsOnlyForcedSubtitles,
+            AVMediaCharacteristicLegible,
+        };
+        let item = unsafe { p.currentItem() }?;
+        if unsafe { item.status() } != AVPlayerItemStatus::ReadyToPlay {
+            return None;
+        }
+        let asset = unsafe { item.asset() };
+        let mut said = Vec::new();
+        if let Some(audible) = unsafe { AVMediaCharacteristicAudible } {
+            if let Some(group) = unsafe { asset.mediaSelectionGroupForMediaCharacteristic(audible) } {
+                let options = unsafe { group.options() };
+                if let Some(option) = usize::try_from(audio).ok().and_then(|i| options.iter().nth(i)) {
+                    unsafe { item.selectMediaOption_inMediaSelectionGroup(Some(&option), &group) };
+                    said.push(format!("audio {audio} {}", unsafe { option.displayName() }));
+                }
+            }
+        }
+        if let (Some(legible), Some(forced)) =
+            (unsafe { AVMediaCharacteristicLegible }, unsafe { AVMediaCharacteristicContainsOnlyForcedSubtitles })
+        {
+            if let Some(group) = unsafe { asset.mediaSelectionGroupForMediaCharacteristic(legible) } {
+                let full: Vec<_> =
+                    unsafe { group.options() }.iter().filter(|o| !unsafe { o.hasMediaCharacteristic(forced) }).collect();
+                match usize::try_from(sub).ok().and_then(|i| full.get(i)) {
+                    Some(option) => {
+                        unsafe { item.selectMediaOption_inMediaSelectionGroup(Some(option), &group) };
+                        said.push(format!("subtitle {sub} {}", unsafe { option.displayName() }));
+                    }
+                    None => {
+                        unsafe { item.selectMediaOption_inMediaSelectionGroup(None, &group) };
+                        said.push("subtitles off".into());
+                    }
+                }
+            }
+        }
+        Some(said.join(", "))
     }
 
     pub async fn open(
@@ -541,13 +642,36 @@ mod mac {
     /// Another file on the live route — the next episode, or the same film
     /// prepared with another audio track. The player and its route stay; only
     /// the item changes.
-    pub async fn replace(app: &tauri::AppHandle, path: String, position: f64, hidden: bool) -> Result<(), String> {
+    pub async fn replace(
+        app: &tauri::AppHandle,
+        path: String,
+        position: f64,
+        hidden: bool,
+        fresh: bool,
+    ) -> Result<(), String> {
+        // After a receiver refused an HLS rendition, a new item on the same
+        // player was not enough: the set stayed on its AirPlay splash screen,
+        // fetched the copy once and nothing after (measured). Taking the item
+        // away first lets the set close the session it refused.
+        if fresh {
+            shared(|s| s.swapping_until = Some(Instant::now() + Duration::from_secs(12)));
+            on_main(app, |_| {
+                SESSION.with(|s| {
+                    if let Some(s) = s.borrow().as_ref() {
+                        unsafe { s.player.replaceCurrentItemWithPlayerItem(None) };
+                    }
+                })
+            })
+            .await?;
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+        }
         let url = serve(app, &path, hidden).await?;
         shared(|s| {
             s.duration = 0.0;
             // Held like any seek until the set reports it (see `seek_target`).
             s.seek_target = (position > 0.5).then(|| (position, Instant::now()));
             s.last_pos = None;
+            s.selection = None;
         });
         on_main(app, move |mtm| {
             let item = item_for(&url, position, mtm)?;
@@ -574,7 +698,10 @@ mod mac {
     pub async fn status(app: &tauri::AppHandle) -> AirPlayStatus {
         let cast = app.state::<Arc<CastService>>().inner().clone();
         let peers = crate::cast::server_peers(&cast);
-        let hits = crate::cast::server_hits(&cast);
+        // The receiver's requests only: AVPlayer fetches the URL itself while
+        // the viewer chooses, and an HLS refusal is a receiver that fetched
+        // the master and nothing after it.
+        let hits = crate::cast::server_remote_hits(&cast);
         let lan_ip = shared(|s| s.lan_ip);
         on_main(app, move |_| status_on_main(lan_ip, peers, hits))
             .await
@@ -607,6 +734,25 @@ mod mac {
             })
         })
         .await?
+    }
+
+    /// Which of an HLS rendition's tracks play. Applied by the status poll as
+    /// soon as the item is ready; immediately when it already is.
+    pub async fn select(app: &tauri::AppHandle, audio: i64, sub: i64) -> Result<(), String> {
+        shared(|s| s.selection = Some((audio, sub)));
+        on_main(app, move |_| {
+            SESSION.with(|s| {
+                if let Some(s) = s.borrow().as_ref() {
+                    if let Some(said) = apply_selection(&s.player, audio, sub) {
+                        shared(|sh| sh.selection = None);
+                        if crate::logs::verbose() {
+                            eprintln!("{TAG} selected {said}");
+                        }
+                    }
+                }
+            })
+        })
+        .await
     }
 
     pub async fn disconnect(app: &tauri::AppHandle) -> f64 {
@@ -736,12 +882,18 @@ pub async fn airplay_open(
 }
 
 #[tauri::command]
-pub async fn airplay_replace(app: tauri::AppHandle, path: String, position: f64, hidden: bool) -> Result<(), String> {
+pub async fn airplay_replace(
+    app: tauri::AppHandle,
+    path: String,
+    position: f64,
+    hidden: bool,
+    fresh: Option<bool>,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    return mac::replace(&app, path, position, hidden).await;
+    return mac::replace(&app, path, position, hidden, fresh.unwrap_or(false)).await;
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, path, position, hidden);
+        let _ = (app, path, position, hidden, fresh);
         Err(UNSUPPORTED.into())
     }
 }
@@ -764,6 +916,17 @@ pub async fn airplay_control(app: tauri::AppHandle, action: String, value: Optio
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, action, value);
+        Err(UNSUPPORTED.into())
+    }
+}
+
+#[tauri::command]
+pub async fn airplay_select(app: tauri::AppHandle, audio: i64, sub: i64) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    return mac::select(&app, audio, sub).await;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, audio, sub);
         Err(UNSUPPORTED.into())
     }
 }

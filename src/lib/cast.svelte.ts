@@ -16,6 +16,21 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 
+import {
+  AIRPLAY_AUDIO_COPY,
+  airplayMode,
+  airplayRefusals,
+  hlsRefused,
+  hlsWorthIt,
+  isTextSub,
+  pictureKind,
+  rememberRefusal,
+  tracksPlan,
+  videoRange,
+  wantsHls,
+  type PictureKind,
+  type TrackSource,
+} from './airplay-choice';
 import { frameStepBeforeSeek } from './frame-step.svelte';
 import { isPrivatePath } from './history.svelte';
 import { t } from './i18n.svelte';
@@ -172,6 +187,14 @@ class Cast {
   /// The system sees at least one AirPlay receiver — the AirPlay row is shown
   /// only then. Which ones is not something macOS will say.
   airplayRoutes = $state(false);
+  /// The AirPlay session plays an HLS rendition carrying every track, so the
+  /// track menus switch the receiver itself — subtitles included.
+  airplayTracks = $state(false);
+  /// Bumped when the AirPlay settings or the receivers' memory change.
+  airplayRevision = $state(0);
+  /// A standing line on the casting screen for what the session gave up —
+  /// a popup lasts a second while the viewer is looking at the television.
+  notice = $state<string | null>(null);
 
   /// One row per television: the two discoveries merged by address.
   get tvs(): TvDevice[] {
@@ -262,6 +285,15 @@ let sawPlayback = false;
 /// still choosing in the system's list and the local player keeps playing —
 /// so the fetch timeouts, which count from the handover, have not started.
 let airplayLive = false;
+/// The HLS rendition's tracks by mpv id, in its master's order; null while the
+/// session plays the MP4 copy or the original file.
+let airplayHls: { audioIds: number[]; subIds: number[] } | null = null;
+/// The receiver chosen, by the name it announces — what refusals are filed under.
+let airplayReceiver: string | null = null;
+/// The kind of picture this session sends, for the refusal memory.
+let airplayKind: PictureKind = 'sd';
+/// One fallback per file: a copy that is refused too is the session's end.
+let airplayFellBack = false;
 /// Whether local playback was running when the cast started — what the
 /// handback resumes to.
 let resumeUnpaused = false;
@@ -833,7 +865,6 @@ export async function castVerdict(src: string): Promise<CastVerdict> {
 /// receiver's. VP8/VP9 and Opus/Vorbis are not in it, so WebM stops being a
 /// container that plays as it is; FLAC and ALAC ride along in MP4.
 const AIRPLAY_VIDEO = ['h264', 'hevc', 'av1'];
-const AIRPLAY_AUDIO_COPY = ['aac', 'mp3', 'flac', 'alac', 'ac3', 'eac3'];
 const AIRPLAY_DIRECT = ['mp4', 'm4v', 'mov'];
 
 /**
@@ -869,6 +900,10 @@ export function airplaySummary(): string {
   const verdict = plan.airplayVerdict;
   if (!verdict) return t('cast.airplay_sum');
   if (verdict.kind === 'refuse') return t('cast.sum_refuse');
+  // Tracks and subtitles mean an HLS rendition is cut first — seconds, but a
+  // preparation all the same.
+  const tracks = hlsWorthIt(tracksPlan(player.audioTracks, player.subTracks));
+  if (airplayMode() !== 'original' && tracks) return t('cast.airplay_sum_tracks');
   return verdict.kind === 'prepare' ? t('cast.sum_prepare') : t('cast.sum_direct');
 }
 
@@ -1044,15 +1079,6 @@ async function withPrepareProgress<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-interface TrackSource {
-  file: string | null;
-  index: number;
-  lang: string | null;
-  title: string | null;
-  transcode: boolean;
-  channels: number;
-}
-
 /**
  * Where an audio track comes from, as `cast_prepare_tracks` addresses it: an
  * embedded track by its position among the container's audio streams, an
@@ -1106,6 +1132,54 @@ async function prepareAirPlayCopy(src: string, track?: Track): Promise<string> {
     (await withPrepareProgress(() => invoke<string | null>('cast_prepare_tracks', { ...args, probe: false })));
   if (!path) throw new Error('no copy');
   return path;
+}
+
+/**
+ * Cut the HLS rendition with every audio track and every text subtitle. The
+ * master declares the picture's size and range, which is what a receiver
+ * decides by (docs/airplay.md: one refuses 4K and HDR from the declaration
+ * alone), and AVFoundation itself refuses an HDR rendition without a range.
+ */
+async function prepareAirPlayHls(src: string): Promise<string> {
+  const plan = tracksPlan(player.audioTracks, player.subTracks);
+  const video = (await getProperty('video-format', 'string').catch(() => null)) ?? '';
+  // The container's rate, else the decoder's estimate; the master needs one
+  // for an HDR picture (airplay_hls.rs, `frame_rate`).
+  const fps =
+    (await getProperty('container-fps', 'double').catch(() => null)) ??
+    (await getProperty('estimated-vf-fps', 'double').catch(() => null)) ??
+    0;
+  const dir = await withPrepareProgress(() =>
+    invoke<string>('airplay_hls_prepare', {
+      path: src,
+      plan: {
+        audio: plan.audio,
+        subs: plan.subs,
+        hevcTag: video === 'hevc',
+        width: player.videoW,
+        height: player.videoH,
+        frameRate: Number.isFinite(fps) ? fps : 0,
+        range: videoRange(player.sourceTransfer),
+        hidden: isPrivatePath(src),
+      },
+      duration: player.duration,
+    }),
+  );
+  airplayHls = { audioIds: plan.audioIds, subIds: plan.subIds };
+  cast.airplayTracks = true;
+  return dir;
+}
+
+/// The rendition's indices for a choice: `audio`/`sub` override the current
+/// selection (the mirror lags a pick by a round trip), a `null` sub is none.
+function airplaySelection(over: { audio?: Track; sub?: Track | null } = {}): { audio: number; sub: number } {
+  const ids = airplayHls ?? { audioIds: [], subIds: [] };
+  const audio = over.audio ?? player.audioTracks.find((tr) => tr.selected);
+  const sub = 'sub' in over ? over.sub : player.subTracks.find((tr) => tr.selected);
+  return {
+    audio: Math.max(0, audio ? ids.audioIds.indexOf(audio.id) : 0),
+    sub: sub ? ids.subIds.indexOf(sub.id) : -1,
+  };
 }
 
 /**
@@ -1539,18 +1613,31 @@ export async function castOverAirPlay(anchor: Anchor | null, keep = false): Prom
 
   const hidden = isPrivatePath(src);
   let castPath = src;
-  if (verdict.kind === 'prepare' || airplayNeedsCopy()) {
+  airplayHls = null;
+  cast.airplayTracks = false;
+  airplayFellBack = false;
+  airplayKind = pictureKind(player.videoW, player.videoH, player.sourceTransfer);
+  // HLS where it buys tracks or subtitles and the receiver is not known to
+  // refuse this kind of picture; the copy otherwise (see airplay-choice.ts).
+  const worth = hlsWorthIt(tracksPlan(player.audioTracks, player.subTracks));
+  const hls = wantsHls(airplayMode(), worth, airplayRefusals(), airplayReceiver, airplayKind);
+  // Going to the copy because this receiver refused this kind before is the
+  // same loss as the fallback, and is said the same way.
+  cast.notice = !hls && worth && airplayMode() === 'auto' ? t('cast.airplay_original_note') : null;
+  if (hls || verdict.kind === 'prepare' || airplayNeedsCopy()) {
     if (!keep) cast.state = 'preparing';
     try {
-      castPath = await prepareAirPlayCopy(src);
+      castPath = hls ? await prepareAirPlayHls(src) : await prepareAirPlayCopy(src);
     } catch (e) {
       console.warn('airplay prepare failed:', e);
       if (cast.active) await endCast({ osd: t('cast.prepare_failed'), resumeLocal: false });
       return false;
     }
     if (!cast.active) return false;
-    preparedPath = castPath;
-    preparedHidden = hidden;
+    if (!hls) {
+      preparedPath = castPath;
+      preparedHidden = hidden;
+    }
     if (!keep) cast.state = 'connecting';
   }
 
@@ -1564,6 +1651,7 @@ export async function castOverAirPlay(anchor: Anchor | null, keep = false): Prom
       showOsd(t('cast.airplay_pick'), { sticky: true });
       await invoke('airplay_open', { path: castPath, position: player.timePos, hidden, anchor });
     }
+    if (airplayHls) await invoke('airplay_select', airplaySelection());
   } catch (e) {
     console.warn('airplay open failed:', e);
     const key = String(e) === 'picker_unavailable' ? 'cast.airplay_unavailable' : 'cast.err_load';
@@ -1641,6 +1729,17 @@ async function poll() {
     const tv = status.peer ? cast.tvs.find((d) => d.ip === status.peer) : undefined;
     if (tv && !status.device) cast.deviceName = tv.name;
     if (tv) cast.kind = deviceKind(tv);
+    const receiver = status.device ?? tv?.name ?? null;
+    if (receiver) airplayReceiver = receiver;
+    // A receiver that refuses the rendition fetches its master and nothing
+    // after it — or is already known to refuse this kind of picture.
+    if (airplayLive && airplayHls && !airplayFellBack) {
+      const known = !!(airplayReceiver && airplayRefusals()[airplayReceiver]?.[airplayKind]);
+      if (known || hlsRefused(Date.now() - loadStartedAt, status.fetches)) {
+        await airplayFallback(known);
+        return;
+      }
+    }
   }
 
   switch (status.state) {
@@ -1669,6 +1768,12 @@ async function poll() {
       return;
     case 'error': {
       if (cast.transport === 'dlna' && !sawPlayback && (await fallbackToCast('refused'))) return;
+      // The Mac's own player could not open the rendition — nothing about the
+      // receiver, so nothing is remembered, but the copy may still play.
+      if (cast.transport === 'airplay' && airplayHls && !airplayFellBack && status.error === 'load_failed') {
+        await airplayFallback(true);
+        return;
+      }
       const kind = status.error ?? 'closed';
       const key =
         kind === 'unreachable' ? 'cast.err_unreachable'
@@ -1742,6 +1847,10 @@ export async function endCast(opts: {
   preparedHidden = false;
   castSrcPath = null;
   sessionHls = null;
+  airplayHls = null;
+  cast.airplayTracks = false;
+  cast.notice = null;
+  airplayReceiver = null;
   currentDevice = null;
   cast.transport = 'cast';
   showOsd(opts.osd);
@@ -1957,7 +2066,7 @@ export async function castSwitchAudio(track: Track): Promise<void> {
     return;
   }
   if (cast.transport === 'airplay') {
-    await airplaySwitch(track);
+    await airplaySwitch({ audio: track });
     return;
   }
   const codec = track.codec?.toLowerCase() ?? null;
@@ -1999,17 +2108,78 @@ export async function castSwitchAudio(track: Track): Promise<void> {
 }
 
 /**
- * An audio track picked while AirPlay plays: the copy with that track, swapped
- * in at the television's position. The receiver cannot be told to switch (see
- * `prepareAirPlayCopy`), so this is a reload of a few seconds — instant to
- * prepare when the track's copy is already cached.
+ * The receiver turned the HLS rendition down. Under "auto" the session goes on
+ * as the MP4 copy at the set's position — the original picture, the chosen
+ * audio track, no subtitles — and the refusal is filed under this receiver and
+ * this kind of picture, so the next such file goes straight to the copy.
+ * Under "tracks" the viewer asked for HLS and gets the reason instead.
  */
-async function airplaySwitch(track: Track): Promise<void> {
+async function airplayFallback(known: boolean): Promise<void> {
+  const src = castSrcPath;
+  if (!src) return;
+  airplayFellBack = true;
+  if (airplayMode() === 'tracks') {
+    await endCast({ osd: t('cast.airplay_hls_refused'), resumeLocal: true });
+    return;
+  }
+  if (airplayReceiver && !known) {
+    rememberRefusal(airplayReceiver, airplayKind);
+    cast.airplayRevision++;
+  }
+  console.warn(`airplay: ${airplayReceiver ?? 'the receiver'} refused HLS for ${airplayKind}, falling back to the copy`);
+  airplayHls = null;
+  cast.airplayTracks = false;
+  cast.notice = t('cast.airplay_original_note');
+  showOsd(t('cast.airplay_hls_fallback'), { sticky: true });
+  try {
+    const verdict = await airplayVerdict(src);
+    const hidden = isPrivatePath(src);
+    const path = verdict.kind === 'prepare' || airplayNeedsCopy() ? await prepareAirPlayCopy(src) : src;
+    if (!cast.active) return;
+    await invoke('airplay_replace', { path, position: cast.time, hidden, fresh: true });
+    if (path !== src) {
+      preparedPath = path;
+      preparedHidden = hidden;
+    }
+    loadStartedAt = Date.now();
+    showOsd(t('cast.airplay_hls_fallback'));
+  } catch (e) {
+    console.warn('airplay fallback failed:', e);
+    if (cast.active) await endCast({ osd: t('cast.prepare_failed'), resumeLocal: true });
+  }
+}
+
+/**
+ * A track picked while AirPlay plays. On an HLS rendition that carries it, a
+ * selection on the receiver — instant, no reload. A track the rendition does
+ * not carry (a file loaded after it was cut) means a new rendition swapped in
+ * at the set's position. On the MP4 copy, an audio track is that track's copy
+ * swapped in (the receiver cannot be told to switch), and a subtitle cannot go.
+ */
+async function airplaySwitch(over: { audio?: Track; sub?: Track | null }): Promise<void> {
   const src = castSrcPath;
   if (!cast.remote || !src) return;
   const hidden = isPrivatePath(src);
+  const label = over.audio?.label ?? (over.sub ? over.sub.label : t('osd.subs_off'));
   try {
-    const prepared = await prepareAirPlayCopy(src, track);
+    if (airplayHls) {
+      const carried = over.audio
+        ? airplayHls.audioIds.includes(over.audio.id)
+        : !over.sub || airplayHls.subIds.includes(over.sub.id);
+      if (!carried) {
+        const dir = await prepareAirPlayHls(src);
+        if (!cast.active) return;
+        await invoke('airplay_replace', { path: dir, position: cast.time, hidden });
+      }
+      await invoke('airplay_select', airplaySelection(over));
+      showOsd(label);
+      return;
+    }
+    if (!over.audio) {
+      showOsd(t('cast.airplay_no_subs'));
+      return;
+    }
+    const prepared = await prepareAirPlayCopy(src, over.audio);
     if (!cast.active) return;
     await invoke('airplay_replace', { path: prepared, position: cast.time, hidden });
     const previous = preparedPath;
@@ -2018,20 +2188,22 @@ async function airplaySwitch(track: Track): Promise<void> {
     if (hidden && previous && previous !== prepared) {
       void invoke('cast_forget_prepared', { path: previous }).catch(() => {});
     }
-    showOsd(track.label);
+    showOsd(label);
   } catch (e) {
     console.warn('airplay track switch failed:', e);
     if (cast.active) showOsd(t('cast.prepare_failed'));
   }
 }
 
-/// A subtitle picked while AirPlay plays. Nothing carries one to the receiver
-/// yet: measured, an LG set shows no MP4 subtitle at all, and what the HLS
-/// route would do is still to be researched (docs/airplay.md). Said, rather
-/// than a menu that silently changes only the paused local player.
-export function castSwitchSub(track: Track | null): void {
-  if (!cast.remote || cast.transport !== 'airplay' || !track) return;
-  showOsd(t('cast.airplay_no_subs'));
+/// A subtitle picked while a television plays. Only AirPlay's HLS rendition
+/// carries one there; an image subtitle cannot go, and is said so.
+export async function castSwitchSub(track: Track | null): Promise<void> {
+  if (!cast.remote || cast.transport !== 'airplay') return;
+  if (track && !isTextSub(track)) {
+    showOsd(t('cast.airplay_sub_image'));
+    return;
+  }
+  await airplaySwitch({ sub: track });
 }
 
 export function castToggleMute() {

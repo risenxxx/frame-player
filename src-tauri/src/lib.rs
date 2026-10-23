@@ -8,6 +8,7 @@ mod macos_chrome;
 #[cfg(target_os = "macos")]
 mod macos_menu;
 mod airplay;
+mod airplay_hls;
 mod audio_output;
 mod cast;
 mod color;
@@ -1284,7 +1285,9 @@ pub fn run() {
             airplay::airplay_replace,
             airplay::airplay_status,
             airplay::airplay_control,
+            airplay::airplay_select,
             airplay::airplay_disconnect,
+            airplay_hls::airplay_hls_prepare,
             airplay::airplay_detect,
             airplay::airplay_routes,
             now_playing::now_playing_start,

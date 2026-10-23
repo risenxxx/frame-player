@@ -4,14 +4,16 @@
   /// that opens the system's list.
   import type { DeviceKind } from '$lib/cast.svelte';
 
-  let { kind }: { kind: DeviceKind | 'airplay' } = $props();
+  /// 18 beside a row of the picker; larger beside the current device, whose
+  /// name and state stand in two lines of bigger text.
+  let { kind, size = 18 }: { kind: DeviceKind | 'airplay'; size?: number } = $props();
 </script>
 
 <svg
   class="cast-icon"
   viewBox="0 0 24 24"
-  width="18"
-  height="18"
+  width={size}
+  height={size}
   fill="none"
   stroke="currentColor"
   stroke-width="1.6"
