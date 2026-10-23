@@ -1,8 +1,14 @@
+import { installConsoleLog } from '$lib/console-log';
+
 // Tauri doesn't have a Node.js server to do proper SSR
 // so we use adapter-static with a fallback to index.html to put the site in SPA mode
 // See: https://svelte.dev/docs/kit/single-page-apps
 // See: https://v2.tauri.app/start/frontend/sveltekit/ for more info
 export const ssr = false;
+
+// Before anything else logs: the issue report keeps the console's last lines,
+// and the ones from starting up are the ones a report about not starting needs.
+installConsoleLog();
 
 /// Long enough for a file read from the bundle, short enough that a font that
 /// never comes costs a beat rather than a blank window.

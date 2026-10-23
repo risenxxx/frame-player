@@ -46,6 +46,9 @@ pub struct AirPlayStatus {
     pub fetches: u64,
     pub device: Option<String>,
     pub peer: Option<String>,
+    /// The receiver's `model` as its own announcement spells it — what a bug
+    /// report records instead of the name somebody gave the set.
+    pub model: Option<String>,
 }
 
 #[cfg(target_os = "macos")]
@@ -137,7 +140,9 @@ mod mac {
     const AIRPLAY_SERVICE: &str = "_airplay._tcp.local.";
 
     static NAMES_DAEMON: Mutex<Option<mdns_sd::ServiceDaemon>> = Mutex::new(None);
-    static NAMES: Mutex<Option<HashMap<IpAddr, String>>> = Mutex::new(None);
+    /// Address → (name, model) from the receiver's own announcement.
+    type Names = HashMap<IpAddr, (String, Option<String>)>;
+    static NAMES: Mutex<Option<Names>> = Mutex::new(None);
 
     /// Browse while the menu is up and while a session lives; the answers are
     /// kept after it stops, so a later session on the same set is named at once.
@@ -157,10 +162,16 @@ mod mac {
                         .unwrap_or(&info.fullname)
                         .replace("\\.", ".")
                         .to_string();
+                    crate::logs::remember("device", &name);
+                    let model = info
+                        .txt_properties
+                        .get_property_val_str("model")
+                        .filter(|m| !m.is_empty())
+                        .map(str::to_string);
                     let mut names = NAMES.lock().unwrap_or_else(|p| p.into_inner());
                     let names = names.get_or_insert_with(HashMap::new);
                     for addr in info.addresses.iter() {
-                        names.insert(addr.to_ip_addr(), name.clone());
+                        names.insert(addr.to_ip_addr(), (name.clone(), model.clone()));
                     }
                 }
             }
@@ -176,7 +187,11 @@ mod mac {
     }
 
     fn name_of(ip: IpAddr) -> Option<String> {
-        NAMES.lock().unwrap_or_else(|p| p.into_inner()).as_ref()?.get(&ip).cloned()
+        NAMES.lock().unwrap_or_else(|p| p.into_inner()).as_ref()?.get(&ip).map(|(n, _)| n.clone())
+    }
+
+    fn model_of(ip: IpAddr) -> Option<String> {
+        NAMES.lock().unwrap_or_else(|p| p.into_inner()).as_ref()?.get(&ip)?.1.clone()
     }
 
     fn shared<T>(f: impl FnOnce(&mut Shared) -> T) -> T {
@@ -197,7 +212,7 @@ mod mac {
         unsafe impl AVRoutePickerViewDelegate for PickerDelegate {
             #[unsafe(method(routePickerViewWillBeginPresentingRoutes:))]
             fn will_begin(&self, _picker: &AVRoutePickerView) {
-                if crate::cast::cast_debug() {
+                if crate::logs::verbose() {
                     eprintln!("{TAG} the system's list is open");
                 }
                 shared(|s| s.picker_closed_at = None);
@@ -205,7 +220,7 @@ mod mac {
 
             #[unsafe(method(routePickerViewDidEndPresentingRoutes:))]
             fn did_end(&self, picker: &AVRoutePickerView) {
-                if crate::cast::cast_debug() {
+                if crate::logs::verbose() {
                     eprintln!("{TAG} the system's list closed");
                 }
                 shared(|s| s.picker_closed_at = Some(Instant::now()));
@@ -460,7 +475,7 @@ mod mac {
                     _ => ("buffering", None),
                 }
             };
-            if crate::cast::cast_debug() {
+            if crate::logs::verbose() {
                 let line = format!(
                     "{state} {} peer={} waiting={}",
                     error.unwrap_or("-"),
@@ -491,6 +506,7 @@ mod mac {
                 fetches: if peer.is_some() { hits } else { 0 },
                 device: peer.and_then(name_of),
                 peer: peer.map(|p| p.to_string()),
+                model: peer.and_then(model_of),
             }
         })
     }
@@ -510,7 +526,7 @@ mod mac {
         anchor: Option<super::Anchor>,
     ) -> Result<(), String> {
         let url = serve(app, &path, hidden).await?;
-        if crate::cast::cast_debug() {
+        if crate::logs::verbose() {
             eprintln!("{TAG} open {url} at {position:.1}");
         }
         names_start();
@@ -554,7 +570,7 @@ mod mac {
     }
 
     pub async fn control(app: &tauri::AppHandle, action: String, value: Option<f64>) -> Result<(), String> {
-        if crate::cast::cast_debug() {
+        if crate::logs::verbose() {
             eprintln!("{TAG} control {action} {value:?}");
         }
         on_main(app, move |_| {
@@ -585,7 +601,7 @@ mod mac {
         let t = on_main(app, |_| close_on_main()).await.unwrap_or(0.0);
         shared(|s| s.live = false);
         names_stop();
-        if crate::cast::cast_debug() {
+        if crate::logs::verbose() {
             eprintln!("{TAG} disconnect at {t:.1}");
         }
         t

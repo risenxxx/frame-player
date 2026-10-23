@@ -101,6 +101,8 @@ interface CastStatusMsg {
   device: string | null;
   /// AirPlay only: the address fetching the file, i.e. the receiver chosen.
   peer?: string | null;
+  /// AirPlay only: that receiver's `model`, from its own announcement.
+  model?: string | null;
 }
 
 /// The TV never fetched a byte this long after the LOAD was accepted: the
@@ -278,6 +280,96 @@ function refusedKey(device: TvDevice, container: string): string {
 /// one file** — the queue moves under it, so advancing an episode is a re-LOAD
 /// rather than a disconnect and a fresh connect.
 let currentDevice: TvDevice | null = null;
+
+/**
+ * The current or the last session, as an issue report describes it: the
+ * transport, the device by its **model** — what the device announces itself
+ * as (`md` for Cast, `modelName` for DLNA, `model` for AirPlay), which the
+ * rules record behaviour by — and never by the name somebody gave it, what it
+ * said it can do, and the last state it reported. Kept after the session ends:
+ * a report is usually collected right after something went wrong.
+ */
+export interface CastRecord {
+  transport: Transport;
+  model: string;
+  /// Which protocols the row had, and what each said it accepts.
+  capabilities: string;
+  container: string | null;
+  verdict: string | null;
+  state: string;
+  error: string | null;
+  fetches: number;
+  startedAt: number;
+  endedAt: number | null;
+  /// What the session ended with, as the viewer was told.
+  ending: string | null;
+}
+
+let castRecord: CastRecord | null = null;
+
+export function lastCastSession(): CastRecord | null {
+  return castRecord;
+}
+
+function deviceCapabilities(device: TvDevice | null): string {
+  if (!device) return '';
+  const parts: string[] = [];
+  if (device.airplay) parts.push('AirPlay (the system route)');
+  if (device.cast) {
+    const video = device.cast.video;
+    parts.push(`Cast (video out: ${video === undefined || video === null ? 'not announced' : video ? 'yes' : 'no'})`);
+  }
+  if (device.dlna) {
+    const video = device.dlna.mimes.filter((m) => m.startsWith('video/'));
+    parts.push(
+      `DLNA (${device.dlna.mimes.length} formats${video.length ? `; video: ${[...new Set(video)].join(' ')}` : ''}${device.dlna.rendering_url ? '; volume control' : ''})`,
+    );
+  }
+  return parts.join(' + ');
+}
+
+function verdictText(v: CastVerdict | null | undefined): string | null {
+  if (!v) return null;
+  if (v.kind === 'refuse') return `refuse (${v.reason})`;
+  return `${v.kind}${v.transcodeAudio ? ' + audio transcode' : ''}`;
+}
+
+function noteSession(status: Pick<CastStatusMsg, 'state' | 'error' | 'fetches' | 'model'> | null, ending?: string) {
+  if (!castRecord || castRecord.endedAt !== null) {
+    if (!status) return;
+    castRecord = {
+      transport: cast.transport,
+      model: '',
+      capabilities: '',
+      container: null,
+      verdict: null,
+      state: status.state,
+      error: null,
+      fetches: 0,
+      startedAt: Date.now(),
+      endedAt: null,
+      ending: null,
+    };
+  }
+  const r = castRecord;
+  r.transport = cast.transport;
+  if (status?.model) r.model = status.model;
+  else if (currentDevice && !currentDevice.airplay) r.model = currentDevice.model;
+  if (currentDevice) r.capabilities = deviceCapabilities(currentDevice);
+  if (cast.plan) {
+    r.container = cast.plan.container;
+    r.verdict = verdictText(r.transport === 'airplay' ? cast.plan.airplayVerdict : cast.plan.verdict);
+  }
+  if (status) {
+    r.state = status.state;
+    r.error = status.error;
+    r.fetches = status.fetches;
+  }
+  if (ending !== undefined) {
+    r.endedAt = Date.now();
+    r.ending = ending;
+  }
+}
 
 // ---- Per-device profile ------------------------------------------------------
 
@@ -1451,6 +1543,7 @@ async function poll() {
   if (!cast.active || advancing) return;
   const status = await invoke<CastStatusMsg>(transportCommand('status')).catch(() => null);
   if (!status || !cast.active) return;
+  noteSession(status);
 
   cast.state = status.state;
   cast.time = status.time;
@@ -1555,6 +1648,9 @@ export async function endCast(opts: {
 }): Promise<void> {
   stopPoll();
   suspendThumbs(false);
+  // A session that failed before its first poll still gets a record.
+  if (!castRecord || castRecord.endedAt !== null) noteSession({ state: cast.state, error: null, fetches: 0 });
+  noteSession(null, opts.osd);
   const wasActive = cast.active;
   cast.active = false;
   cast.state = 'idle';

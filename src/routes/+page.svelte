@@ -19,6 +19,8 @@
   import StartScreen from '$lib/components/StartScreen.svelte';
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import LicensesDialog from '$lib/components/LicensesDialog.svelte';
+  import ReportDialog from '$lib/components/ReportDialog.svelte';
+  import { syncDebugLog } from '$lib/report.svelte';
   import RoomDialog from '$lib/components/RoomDialog.svelte';
   import ContextMenu from '$lib/components/ContextMenu.svelte';
   import TopBar from '$lib/components/TopBar.svelte';
@@ -565,6 +567,9 @@
     // dialog it raises is a decision the viewer has to make anyway — nothing
     // before the first frame depends on it.
     void initDeepLinks();
+    // Whether the verbose log is on: `FP_CAST_DEBUG` may have turned it on
+    // before the window existed, and the console ring follows it.
+    void syncDebugLog();
     // "Open with" file and the post-update resume: both are learned BEFORE the
     // window is shown — if a file is on its way, the start screen must not
     // flash in front of the video (a black background holds until it loads).
@@ -1626,6 +1631,7 @@
       onSetRoute={(route) => void applyRoute(route)}
       onClearTorrentCache={() => void clearTorrentCache()}
       onLicenses={() => (overlays.licenses = true)}
+      onReport={() => (overlays.report = true)}
     />
   {/if}
 
@@ -1645,6 +1651,10 @@
        encodes. Rendered after, so it also paints on top. -->
   {#if overlays.licenses}
     <LicensesDialog onclose={() => (overlays.licenses = false)} />
+  {/if}
+
+  {#if overlays.report}
+    <ReportDialog onclose={() => (overlays.report = false)} />
   {/if}
 
   {#if tooltip}

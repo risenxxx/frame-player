@@ -20,6 +20,7 @@ mod frame_step;
 mod install_count;
 mod lan_sweep;
 mod libmpv_load;
+mod logs;
 mod net_route;
 mod now_playing;
 mod opensubtitles;
@@ -1160,12 +1161,15 @@ fn deliver_deep_links(app: &tauri::AppHandle, args: &[String]) {
 /// library means inheriting the obligation. The hard limit under launchd is
 /// unlimited, and the crate knows the stricter ceiling macOS keeps in
 /// `kern.maxfilesperproc`, so this is one call and not a negotiation.
-fn raise_fd_limit() {
+///
+/// Returns the line to log rather than logging it: stderr is captured only
+/// after this has run, and the limit is exactly what a report has to say.
+fn raise_fd_limit() -> String {
     match librqbit::try_increase_nofile_limit() {
-        Ok(limit) => eprintln!("[startup] open-file limit: {limit}"),
+        Ok(limit) => format!("[startup] open-file limit: {limit}"),
         // Not fatal: the player still runs, it is the torrent session that will
         // be living dangerously — so say which of the two this is.
-        Err(e) => eprintln!("[startup] could not raise the open-file limit: {e:#}"),
+        Err(e) => format!("[startup] could not raise the open-file limit: {e:#}"),
     }
 }
 
@@ -1173,7 +1177,11 @@ fn raise_fd_limit() {
 pub fn run() {
     // First, and before any of it: a descriptor spent before this runs is spent
     // against 256.
-    raise_fd_limit();
+    let fd_limit = raise_fd_limit();
+    // Second, so every line after it reaches the report: stderr into a ring
+    // (logs.rs), and the verbose flag from `FP_CAST_DEBUG`.
+    logs::install();
+    eprintln!("{fd_limit}");
 
     // Before the builder, because the single-instance guard is set up inside
     // it: a copy relaunched by an in-place update has to let its predecessor
@@ -1260,6 +1268,11 @@ pub fn run() {
             primary_button_down,
             webview_version,
             libmpv_load::libmpv_load_error,
+            logs::debug_log_set,
+            logs::debug_log_state,
+            logs::diag_mpv_log_path,
+            logs::diag_collect,
+            logs::diag_save,
             hdr_status,
             window_buttons,
             window_enter_fullscreen,

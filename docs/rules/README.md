@@ -20,7 +20,7 @@ worth walking into twice. Where the two disagree, this wins.
 | [casting.md](casting.md) | Google Cast, DLNA and AirPlay: the ladders, the LAN server, the remote-control rules, what one television taught us |
 | [sync.md](sync.md) | Watching together: the wire, the reconciler, readiness, what a room may know |
 | [catalog.md](catalog.md) | The metadata proxy, the indexer, and what leaves this machine when somebody searches |
-| [sources-and-privacy.md](sources-and-privacy.md) | What a source *is* against how it is reached, files arriving from the system, the watch history and the eight privacy enforcement points |
+| [sources-and-privacy.md](sources-and-privacy.md) | What a source *is* against how it is reached, files arriving from the system, the watch history and the nine privacy enforcement points |
 | [window.md](window.md) | The transparent window, the macOS title bar, fullscreen, the mini player, geometry, the idle and cursor rules |
 | [ui-surfaces.md](ui-surfaces.md) | The settings sheet, the context menu, the start screen, tooltips, the OSD, and the arithmetic that places anything floating |
 | [css.md](css.md) | The box model, the cascade between borrowed classes, and the rendering traps measured in both engines |

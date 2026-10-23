@@ -756,6 +756,18 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
     ...loopOptions(player.loopMode),
   };
 
+  // mpv's own log, for the issue report (report.svelte.ts). libmpv writes
+  // nothing anywhere unless asked — `terminal` is off — so without this every
+  // decoder fallback and every refused option is gone the moment it happens.
+  // A file rather than log messages over the plugin: those would cross the
+  // IPC bridge one event per line, and mpv's file writer has a thread of its
+  // own. mpv writes a log file at `debug` whatever `msg-level` says (msg.c
+  // raises every module to at least that while a file is open), truncates it
+  // when it opens it, and a `log-file` in the viewer's mpv.conf wins, as every
+  // line of theirs does.
+  const logFile = await invoke<string>('diag_mpv_log_path').catch(() => null);
+  if (logFile) initialOptions['log-file'] = logFile;
+
   // The user's mpv.conf (%APPDATA%/<app>/mpv.conf) goes on top of the defaults,
   // mpv-style: the last line wins. Kept as a map of its own rather than merged
   // in place, because it is the half that may be wrong — see `start` below.
@@ -1559,6 +1571,12 @@ let userConfKeys = new Set<string>();
 /// would set on its own initiative steps aside for it.
 export function isUserConfKey(name: string): boolean {
   return userConfKeys.has(name);
+}
+
+/// The option names the viewer's mpv.conf set, for the issue report — names
+/// only: a value may be a path.
+export function userConfOptionNames(): string[] {
+  return [...userConfKeys].sort();
 }
 /// What is in force in mpv right now. Ours, for the reason `normalize` is:
 /// `vf` answers in its own form, and the three options may be the user's.

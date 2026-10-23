@@ -183,6 +183,12 @@ windows-sys = { version = "0.61.2", features = [
     # frame_step.rs: physical memory (GlobalMemoryStatusEx), the budget for
     # holding a group of decoded frames during backward stepping.
     "Win32_System_SystemInformation",
+    # logs.rs: stderr into a pipe (CreatePipe, SetStdHandle) for the issue
+    # report, and the console the dev run still prints to (WriteConsoleW).
+    "Win32_System_Console",
+    "Win32_System_Pipes",
+    # CreatePipe's security-attributes parameter lives behind this one.
+    "Win32_Security",
 ] }
 # audio_output.rs: the default output device (IMMDeviceEnumerator) and its
 # name, for the per-device audio offset. The version is the one WebView2's

@@ -381,6 +381,8 @@ impl Discovery {
                                 friendly
                             }
                         };
+                        // A name the owner gave it; a report replaces it.
+                        crate::logs::remember("device", &name);
                         let device = CastDeviceInfo {
                             id: info.fullname.clone(),
                             name,
@@ -438,7 +440,7 @@ async fn sweep_loop(
 ) {
     loop {
         let targets = crate::lan_sweep::sweep_targets(&hints);
-        if cast_debug() {
+        if crate::logs::verbose() {
             eprintln!("[cast] unicast sweep of {} addresses", targets.len());
         }
         let found: Vec<CastDeviceInfo> = futures_util::stream::iter(targets)
@@ -450,7 +452,7 @@ async fn sweep_loop(
         {
             let mut map = sink.lock().unwrap_or_else(|p| p.into_inner());
             for device in found {
-                if cast_debug() && !map.contains_key(&device.id) {
+                if crate::logs::verbose() && !map.contains_key(&device.id) {
                     eprintln!("[cast] unicast: {} at {}", device.name, device.ip);
                 }
                 map.insert(device.id.clone(), (device, Instant::now()));
@@ -499,7 +501,10 @@ async fn probe_cast(ip: Ipv4Addr) -> Option<CastDeviceInfo> {
     };
     let (name, udn) = eureka_identity(info.as_ref());
     let name = match name {
-        Some(name) => name,
+        Some(name) => {
+            crate::logs::remember("device", &name);
+            name
+        }
         None => {
             tls_connect(addr, 8009).await.ok()?;
             ip.to_string()
@@ -628,17 +633,6 @@ fn simple(status: StatusCode) -> Response<Body> {
         .unwrap()
 }
 
-/// `FP_CAST_DEBUG=1` turns on the wire and server logs. Off by default: a
-/// playing HLS session is a request every few seconds and a status frame every
-/// second, which would bury everything else in the dev console — the same
-/// reasoning as the `log::set_level(Error)` next to `ffmpeg_the_third::init()`.
-pub(crate) fn cast_debug() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| {
-        std::env::var("FP_CAST_DEBUG").map(|v| v != "0").unwrap_or(false)
-    })
-}
-
 /// A failed LOAD is the one thing worth printing unconditionally: the receiver
 /// names its own reason and we otherwise collapse every failure into
 /// `load_failed`, which is the same sentence for a codec it cannot decode and a
@@ -674,8 +668,8 @@ fn log_media_error(what: &str, payload: &Value) {
 /// that is not the currently registered one — is 404.
 ///
 /// Wrapper over the handler so that every answer is logged in one place under
-/// `FP_CAST_DEBUG`: *what the TV asked for* is half of any load diagnosis —
-/// a receiver that fetched the playlist and stopped failed at parsing it, one
+/// the verbose log (`logs::verbose`): *what the TV asked for* is half of any
+/// load diagnosis — a receiver that fetched the playlist and stopped failed at parsing it, one
 /// that fetched init.mp4 and a segment failed at decoding, and one that asked
 /// for nothing at all is the firewall case the connect flow already warns about.
 async fn serve_cast(shared: Arc<ServeShared>, req: Request<hyper::body::Incoming>, peer: IpAddr) -> Response<Body> {
@@ -688,7 +682,7 @@ async fn serve_cast(shared: Arc<ServeShared>, req: Request<hyper::body::Incoming
             peers.push(peer);
         }
     }
-    if !cast_debug() {
+    if !crate::logs::verbose() {
         return serve_cast_inner(shared, req).await;
     }
     let line = format!(
@@ -1009,7 +1003,7 @@ struct Pump {
 impl Pump {
     async fn send(&mut self, namespace: &str, destination: &str, payload: Value) -> Result<(), String> {
         let text = payload.to_string();
-        if cast_debug() && namespace != NS_HEARTBEAT {
+        if crate::logs::verbose() && namespace != NS_HEARTBEAT {
             eprintln!("[cast] -> {namespace} {text}");
         }
         let frame = wire::encode(SENDER_ID, destination, namespace, &text);
@@ -1166,7 +1160,7 @@ impl Pump {
     async fn handle_msg(&mut self, msg: wire::Decoded) -> Result<bool, String> {
         let payload: Value = serde_json::from_str(&msg.payload).unwrap_or(Value::Null);
         let kind = payload["type"].as_str().unwrap_or("");
-        if cast_debug() && msg.namespace != NS_HEARTBEAT {
+        if crate::logs::verbose() && msg.namespace != NS_HEARTBEAT {
             eprintln!("[cast] <- {} {}", msg.namespace, msg.payload);
         }
         match msg.namespace.as_str() {

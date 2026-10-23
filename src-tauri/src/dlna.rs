@@ -96,7 +96,7 @@ async fn ssdp_search(
     if sockets.is_empty() {
         eprintln!("[dlna] no usable network interface for SSDP");
     }
-    if crate::cast::cast_debug() {
+    if crate::logs::verbose() {
         let names: Vec<String> = sockets.iter().map(|(ip, _)| ip.to_string()).collect();
         eprintln!("[dlna] searching from {}", names.join(", "));
     }
@@ -133,7 +133,7 @@ async fn ssdp_search(
                 let text = String::from_utf8_lossy(&buf[..n]);
                 if let Some(loc) = header(&text, "location") {
                     if !heard.contains(&loc) {
-                        if crate::cast::cast_debug() {
+                        if crate::logs::verbose() {
                             eprintln!("[dlna] {from} -> {loc}");
                         }
                         heard.push(loc.clone());
@@ -204,7 +204,7 @@ async fn ssdp_sweep(
         let text = String::from_utf8_lossy(&buf[..n]);
         if let Some(loc) = header(&text, "location") {
             if !heard.contains(&loc) {
-                if crate::cast::cast_debug() {
+                if crate::logs::verbose() {
                     eprintln!("[dlna] unicast {from} -> {loc}");
                 }
                 heard.push(loc.clone());
@@ -553,7 +553,11 @@ async fn describe(client: &reqwest::Client, location: &str) -> Option<Renderer> 
         .text()
         .await
         .ok()?;
-    Some(parse_description(location, &xml))
+    let renderer = parse_description(location, &xml);
+    // The name its owner gave it, whichever path read the description — the
+    // picker, the device check, the recon probe. A report replaces it.
+    crate::logs::remember("device", &renderer.friendly_name);
+    Some(renderer)
 }
 
 /// `GetProtocolInfo` — the renderer's own list of what it will accept, which is
@@ -1290,7 +1294,7 @@ async fn collect_renderers(
 async fn renderer_at(location: String) -> Option<DlnaDeviceInfo> {
     let client = http();
     let Some(r) = describe(client, &location).await else {
-        if crate::cast::cast_debug() {
+        if crate::logs::verbose() {
             eprintln!("[dlna] {location}: no description");
         }
         return None;
@@ -1409,7 +1413,7 @@ pub fn dlna_connect(
                 continue;
             }
             if let Ok(info) = soap(client, &control, AVTRANSPORT, "GetTransportInfo", "").await {
-                if crate::cast::cast_debug() {
+                if crate::logs::verbose() {
                     eprintln!("[dlna] GetTransportInfo -> {}", info.replace('\n', " "));
                 }
                 let transport = tag(&info, "CurrentTransportState").unwrap_or("").to_string();
@@ -1511,13 +1515,13 @@ pub fn dlna_connect(
                 let args = "<Channel>Master</Channel>";
                 let reading = match soap(client, rc, RENDERING_CONTROL, "GetVolume", args).await {
                     Ok(v) => {
-                        if crate::cast::cast_debug() {
+                        if crate::logs::verbose() {
                             eprintln!("[dlna] GetVolume -> {}", v.replace('\n', " "));
                         }
                         tag(&v, "CurrentVolume").and_then(|s| s.parse::<f64>().ok())
                     }
                     Err(e) => {
-                        if crate::cast::cast_debug() {
+                        if crate::logs::verbose() {
                             eprintln!("[dlna] {e}");
                         }
                         None

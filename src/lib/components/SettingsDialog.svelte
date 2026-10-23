@@ -95,6 +95,7 @@
   import { proxyLooksValid } from '$lib/source';
   import { castCacheCapGb, setCastCacheCapGb } from '$lib/cast.svelte';
   import { showOsd } from '$lib/osd.svelte';
+  import { debugLog, setDebugLog } from '$lib/report.svelte';
   import {
     AUTO_HIDE_CHOICES,
     HIDE_DELAY_CHOICES,
@@ -144,6 +145,8 @@
     /// callback rather than reaching for `overlays`: no component in this
     /// project opens a dialog by itself — the page owns the surface stack.
     onLicenses: () => void;
+    /// Raises the issue report, a layer above this sheet like the notices.
+    onReport: () => void;
     /// The section to open on, when the viewer was sent here for one setting.
     initialTab?: string | null;
   }
@@ -157,6 +160,7 @@
     onSetRoute,
     onClearTorrentCache,
     onLicenses,
+    onReport,
     initialTab = null,
   }: Props =
     $props();
@@ -1491,6 +1495,36 @@
            offered, inside that dialog. No rules between the parts: the panel
            already says where the section starts and stops, and a line between
            four short items read as a list of separate settings. -->
+    <!-- Reporting a problem, beside the version it is about. The switch is
+         here as well as in the report itself because the order of use is
+         "turn it on, reproduce, collect": somebody following that from an
+         issue's instructions meets it here first. -->
+    <div class="set-group">{t('sec.report')}</div>
+    <div class="set-panel">
+      <div class="setting">
+        <div class="row-toggle">
+          <div class="row-text">
+            <div class="setting-label">{t('report.verbose')}</div>
+            <div class="setting-hint">{t('report.verbose_hint')}</div>
+          </div>
+          <button
+            class="switch"
+            class:on={debugLog.on}
+            role="switch"
+            aria-checked={debugLog.on}
+            aria-label={t('report.verbose')}
+            onclick={() => void setDebugLog(!debugLog.on)}
+          >
+            <span class="switch-knob"></span>
+          </button>
+        </div>
+      </div>
+      <div class="report-row">
+        <button class="btn-outline" onclick={onReport}>{t('report.open')}</button>
+      </div>
+      <div class="settings-foot">{t('report.foot')}</div>
+    </div>
+
     <div class="set-group">{t('sec.about')}</div>
     <div class="set-panel about">
       <div class="about-head">
@@ -2988,6 +3022,11 @@
   }
 
   /* The About panel: a name and a version, two links, two notes. */
+  .report-row {
+    display: flex;
+    margin-bottom: 4px;
+  }
+
   .about-head {
     display: flex;
     align-items: center;

@@ -51,6 +51,9 @@ class Overlays {
   /// *above* the sheet rather than a replacement for it — Escape has to give the
   /// settings back rather than close everything.
   licenses = $state(false);
+  /// The issue report. Opened from the settings, a layer above them like the
+  /// notices, for the same reason.
+  report = $state(false);
   /// The control bar is folded into its overflow button, so whichever OSC menu
   /// is open was opened from a row in `more` and has somewhere to go back to.
   /// Written by `Controls`, which is the only thing that measures the bar; read
@@ -69,6 +72,7 @@ class Overlays {
     this.menu !== null ||
       this.settings ||
       this.licenses ||
+      this.report ||
       this.room ||
       catalog.open ||
       net.ask !== null,
@@ -87,7 +91,12 @@ export function initOverlays() {
   $effect(() => {
     chrome.overlayOpen = overlays.any;
     chrome.sheetOpen =
-      overlays.settings || overlays.licenses || overlays.room || catalog.open || net.ask !== null;
+      overlays.settings ||
+      overlays.licenses ||
+      overlays.report ||
+      overlays.room ||
+      catalog.open ||
+      net.ask !== null;
   });
 }
 
@@ -175,6 +184,10 @@ export function closeTopmost() {
   }
   if (overlays.licenses) {
     overlays.licenses = false;
+    return;
+  }
+  if (overlays.report) {
+    overlays.report = false;
     return;
   }
   if (overlays.settings) {
