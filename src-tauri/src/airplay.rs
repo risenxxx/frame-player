@@ -64,8 +64,7 @@ mod mac {
     use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{NSButton, NSView, NSWindow};
     use objc2_av_foundation::{
-        AVPlayer, AVPlayerItem, AVPlayerItemStatus, AVPlayerStatus, AVPlayerTimeControlStatus,
-        AVRouteDetector,
+        AVPlayer, AVPlayerItem, AVPlayerItemStatus, AVPlayerStatus, AVPlayerTimeControlStatus, AVRouteDetector,
     };
     use objc2_av_kit::{AVRoutePickerView, AVRoutePickerViewDelegate};
     use objc2_core_media::CMTime;
@@ -350,6 +349,11 @@ mod mac {
             // and the Mac makes no sound of its own meanwhile. Unmuted the
             // moment the route is external.
             player.setMuted(true);
+            // Left to itself AVPlayer picks a file's subtitles from the system's
+            // language settings, and on a receiver that is a film with
+            // subtitles nobody asked for: the track that plays is the one the
+            // copy was made with (see the frontend's `prepareAirPlayCopy`).
+            player.setAppliesMediaSelectionCriteriaAutomatically(false);
         }
 
         let anchor = anchor.unwrap_or(Anchor { x: 90.0, y: 8.0, w: 40.0, h: 40.0 });
@@ -541,7 +545,8 @@ mod mac {
         let url = serve(app, &path, hidden).await?;
         shared(|s| {
             s.duration = 0.0;
-            s.seek_target = None;
+            // Held like any seek until the set reports it (see `seek_target`).
+            s.seek_target = (position > 0.5).then(|| (position, Instant::now()));
             s.last_pos = None;
         });
         on_main(app, move |mtm| {
@@ -551,6 +556,13 @@ mod mac {
                 let s = s.as_ref().ok_or("not connected")?;
                 unsafe {
                     s.player.replaceCurrentItemWithPlayerItem(Some(&item));
+                    // The item's own seek is not enough here: on a route that is
+                    // already external, a replaced item started from zero
+                    // (measured on an audio switch at 312 s), where a fresh
+                    // player's first item honours it. So the player seeks too.
+                    if position > 0.5 {
+                        s.player.seekToTime(CMTime::with_seconds(position, 600));
+                    }
                     s.player.play();
                 }
                 Ok(())

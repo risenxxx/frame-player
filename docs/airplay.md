@@ -211,3 +211,48 @@ paused holds**: paused at 13.4, sought to 99.7, played from 99.8. (An earlier
 run that resumed near the pause point had been resumed from the set's remote
 after its own scan, not from the window.)
 - Whether AV1 plays on a receiver with the hardware for it.
+- An Apple TV's answer to the two things the LG refused: a track selection
+  made on the Mac, and `mov_text` subtitles.
+
+## To research: tracks over HLS (option B)
+
+**What option A found.** The first attempt was one MP4 carrying every audio
+track and every text subtitle track as `mov_text`, switched on the receiver
+through AVFoundation's selection groups. Locally AVFoundation lists such a copy
+correctly — one audible group, and each subtitle twice in the legible group
+(the track and a "forced" twin of its own making). On the LG UR78006LK neither
+half worked: the set played the first audio track whatever the Mac selected,
+and showed no subtitle at all — including a file whose only subtitle track was
+flagged default, and one flagged default+forced, each sent untouched. What
+shipped instead is one chosen audio track per copy and no subtitles; an Apple
+TV is still unmeasured on both counts.
+
+The alternative, and the way streaming services reach an Apple TV, is HLS: a
+master playlist with the video, each audio track as an `EXT-X-MEDIA
+TYPE=AUDIO` rendition and each subtitle track as a WebVTT `TYPE=SUBTITLES`
+rendition. What it could buy and what has to be measured before it is worth
+building:
+
+- **Whether the LG shows WebVTT at all.** It is the question everything else
+  waits on: the set refused `mov_text` outright, and a subtitle rendition in HLS
+  reaches a different part of its player. Measure one H.264 + AAC + WebVTT VOD
+  rendition before building anything.
+- **Whether a rendition choice reaches the set.** The LG ignored a selection
+  made on the Mac for an MP4; HLS renditions are selected the same way, through
+  `selectMediaOption`, so this may fail identically.
+- **Styling and timing.** WebVTT keeps positioning that `mov_text` loses, and a
+  subtitle rendition can be regenerated with a delay without touching the
+  video — the copy cannot apply `sub-delay` at all today.
+- **No copy on disk for the tracks.** Audio renditions are separate segments,
+  so adding a track or a subtitle file is a new playlist entry rather than a
+  new film-sized MP4. Measure the segmenting cost against the remux.
+- **Receivers.** The Cast HLS rung measured H.264-only on its receiver; whether
+  an AirPlay receiver (an Apple TV, and the LG this was built against) plays
+  HEVC in fMP4 HLS, E-AC-3 renditions and WebVTT has to be measured per set.
+- **A torrent still downloading.** HLS segments can be produced as pieces
+  arrive, which a single MP4 copy cannot — the one path by which AirPlay could
+  stream a torrent before it finishes (feature bit 4, `VideoHTTPLiveStreams`).
+- **The existing segmenter.** `cast_hls_prepare` already writes a VOD rendition
+  for Cast; the work is renditions per track and a master playlist, and the
+  research is whether AVPlayer's external playback carries the selection to the
+  set the way it does for an MP4.

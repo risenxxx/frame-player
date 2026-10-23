@@ -1366,6 +1366,7 @@ pub fn run() {
             cast::cast_connect,
             cast::cast_load,
             cast::cast_prepare,
+            cast::cast_prepare_tracks,
             cast::cast_prepare_cached,
             cast::cast_prepare_cancel,
             cast::cast_hls_prepare,

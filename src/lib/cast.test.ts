@@ -16,7 +16,15 @@ vi.mock('tauri-plugin-libmpv-api', () => ({
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => undefined) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 
-import { airplayVerdict, castVerdict, deviceIsVideoCapable, deviceKind, type TvDevice } from './cast.svelte';
+import {
+  airplayAudioSource,
+  airplayVerdict,
+  castVerdict,
+  deviceIsVideoCapable,
+  deviceKind,
+  type TvDevice,
+} from './cast.svelte';
+import type { Track } from './player.svelte';
 
 function file(video: string, audio: string) {
   props = { 'video-format': video, 'audio-codec-name': audio };
@@ -99,5 +107,39 @@ describe('deviceKind', () => {
   it('lets a renderer with video outvote a Cast half without it', () => {
     const both = tv({ cast: castHalf('', false), dlna: dlnaHalf(['video/mp4']) });
     expect(deviceKind(both)).toBe('tv');
+  });
+});
+
+describe('airplayAudioSource', () => {
+  const tr = (id: number, codec: string, extra: Partial<Track> = {}): Track => ({
+    id,
+    selected: false,
+    label: `t${id}`,
+    lang: null,
+    title: null,
+    codec,
+    forced: false,
+    external: false,
+    path: null,
+    channels: 2,
+    ...extra,
+  });
+
+  it('addresses an embedded track among the embedded ones only', () => {
+    const dub = tr(1, 'aac', { external: true, path: '/r/dub.mka', lang: 'rus' });
+    const list = [dub, tr(2, 'eac3', { channels: 6 }), tr(3, 'dts', { channels: 8 })];
+    // The external dub sits first in mpv's list but is no stream of the film.
+    expect(airplayAudioSource(list[2], list)).toMatchObject({ file: null, index: 1, transcode: true, channels: 8 });
+    expect(airplayAudioSource(list[1], list)).toMatchObject({ file: null, index: 0, transcode: false });
+  });
+
+  it('takes a dub from its own file, with its language', () => {
+    const dub = tr(1, 'aac', { external: true, path: '/r/dub.mka', lang: 'rus' });
+    expect(airplayAudioSource(dub, [dub])).toMatchObject({ file: '/r/dub.mka', index: 0, lang: 'rus', transcode: false });
+  });
+
+  it('refuses an external track with no file behind it', () => {
+    const lost = tr(1, 'aac', { external: true, path: null });
+    expect(airplayAudioSource(lost, [lost])).toBeNull();
   });
 });

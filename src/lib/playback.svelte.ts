@@ -107,6 +107,7 @@ export const VOLUME_SCALE = 100;
 export type Feature =
   | 'volume'
   | 'trackChoice'
+  | 'subChoice'
   | 'speed'
   | 'frameStep'
   | 'zoom'
@@ -179,6 +180,10 @@ class Playback {
     return {
       volume: !remote || cast.volumeAdjustable,
       trackChoice: !remote || cast.transport !== 'dlna',
+      // Over AirPlay no subtitle reaches the set (measured on an LG: none, in
+      // any form an MP4 can carry), so a pick would change only the paused
+      // player behind the casting screen.
+      subChoice: !remote || cast.transport !== 'airplay',
       speed: !remote,
       frameStep: !remote,
       zoom: !remote,

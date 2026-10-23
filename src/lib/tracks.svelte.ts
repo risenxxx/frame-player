@@ -26,7 +26,7 @@
 
 import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 
-import { cast, castSwitchAudio } from './cast.svelte';
+import { cast, castSwitchAudio, castSwitchSub } from './cast.svelte';
 import { publishTrack, wire } from './sync/wire.svelte';
 import { withFileDialog } from './chrome.svelte';
 import {
@@ -237,6 +237,9 @@ export function selectTrack(kind: 'audio' | 'sub', track: Track | null) {
   // local switch above still runs, so the handback and the menu's check mark
   // stay in agreement with what the TV plays.
   if (cast.remote && kind === 'audio' && track) void castSwitchAudio(track);
+  // Over AirPlay a subtitle has no way to the set yet, and the viewer is told
+  // so; over Cast and DLNA the choice stays as it always was.
+  if (cast.remote && kind === 'sub') castSwitchSub(track);
 }
 
 /**

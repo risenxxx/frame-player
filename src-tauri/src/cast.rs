@@ -2246,6 +2246,199 @@ pub async fn cast_prepare(
     Ok(out.to_string_lossy().into_owned())
 }
 
+/// One track of a multi-track copy: which input it comes from (`None` is the
+/// video file itself, `Some` an external file mpv loaded beside it), its index
+/// among that input's streams of its kind, and what the copy needs to know.
+#[derive(Deserialize, Hash, Clone, Debug)]
+pub struct TrackSource {
+    pub file: Option<String>,
+    pub index: i64,
+    pub lang: Option<String>,
+    pub title: Option<String>,
+    /// Audio only: the codec is one the receiver does not take, so E-AC-3.
+    #[serde(default)]
+    pub transcode: bool,
+    #[serde(default)]
+    pub channels: i64,
+}
+
+/// A copy with exactly the tracks asked for: the video stream-copied, the
+/// audio tracks in the order given (each copied, or E-AC-3 where the receiver
+/// lacks the codec), the first flagged default, and any text subtitle tracks as
+/// `mov_text`. External files — a dub from the release's own folders, a
+/// subtitle file — are extra inputs.
+///
+/// AirPlay asks for **one** audio track, the chosen one, and no subtitles:
+/// measured on an LG set, the receiver played its first audio track whatever
+/// the Mac selected and showed no `mov_text` subtitle at all, so the choice has
+/// to be made in the copy (docs/airplay.md has the measurements and the HLS
+/// route still to be researched). The subtitle half stays because it is the
+/// same ffmpeg invocation and is pinned by the tests below.
+///
+/// `probe` answers only from the cache: `Some` if this exact copy exists.
+#[tauri::command]
+pub async fn cast_prepare_tracks(
+    app: tauri::AppHandle,
+    service: tauri::State<'_, Arc<CastService>>,
+    path: String,
+    audio: Vec<TrackSource>,
+    subs: Vec<TrackSource>,
+    hevc_tag: bool,
+    duration: f64,
+    cap_bytes: u64,
+    probe: bool,
+) -> Result<Option<String>, String> {
+    let src = PathBuf::from(&path);
+    let meta = src.metadata().map_err(|e| format!("{e}"))?;
+    let dir = crate::portable::cache_dir(&app)?.join("cast");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let key = tracks_key(&src, &meta, &audio, &subs, hevc_tag);
+    let out = dir.join(format!("{key}.mp4"));
+    if out.is_file() && out.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+        return Ok(Some(out.to_string_lossy().into_owned()));
+    }
+    if probe {
+        return Ok(None);
+    }
+    let ffmpeg = ffmpeg_bin(&app).ok_or("no ffmpeg binary")?;
+    let tmp = dir.join(format!("{key}.part"));
+    let cmd = tracks_command(&ffmpeg, &src, &tmp, &audio, &subs, hevc_tag);
+    let service = service.inner().clone();
+    let out_result = out.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(e) = run_ffmpeg_job(&app, &service, cmd, duration) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+        std::fs::rename(&tmp, &out_result).map_err(|e| format!("{e}"))?;
+        prune_cast_cache(out_result.parent().unwrap_or(std::path::Path::new(".")), &out_result, cap_bytes);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(Some(out.to_string_lossy().into_owned()))
+}
+
+/// The source's identity, every external file's identity, and the plan — a
+/// subtitle file added later is a different copy.
+fn tracks_key(
+    src: &std::path::Path,
+    meta: &std::fs::Metadata,
+    audio: &[TrackSource],
+    subs: &[TrackSource],
+    hevc_tag: bool,
+) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    "tracks-v1".hash(&mut h);
+    prepare_key(src, meta, -1, false).hash(&mut h);
+    for t in audio.iter().chain(subs) {
+        t.hash(&mut h);
+        if let Some(f) = &t.file {
+            if let Ok(m) = std::fs::metadata(f) {
+                m.len().hash(&mut h);
+                if let Ok(d) = m.modified().map(|t| t.duration_since(std::time::UNIX_EPOCH)) {
+                    d.map(|d| d.as_secs()).unwrap_or(0).hash(&mut h);
+                }
+            }
+        }
+    }
+    audio.len().hash(&mut h);
+    hevc_tag.hash(&mut h);
+    format!("t{:015x}", h.finish() >> 4)
+}
+
+/// Pure, so the argument list is pinned by a test: inputs deduplicated in
+/// order of first use, one `-map` per track, per-stream codecs, and metadata
+/// written only where the stream itself has none to carry (an external file).
+fn tracks_args(src: &str, tmp: &str, audio: &[TrackSource], subs: &[TrackSource], hevc_tag: bool) -> Vec<String> {
+    let mut inputs: Vec<String> = vec![src.to_string()];
+    let mut input_of = |file: &Option<String>| -> usize {
+        match file {
+            None => 0,
+            Some(f) => match inputs.iter().position(|i| i == f) {
+                Some(n) => n,
+                None => {
+                    inputs.push(f.clone());
+                    inputs.len() - 1
+                }
+            },
+        }
+    };
+    let audio_maps: Vec<(usize, i64)> = audio.iter().map(|t| (input_of(&t.file), t.index)).collect();
+    let sub_maps: Vec<(usize, i64)> = subs.iter().map(|t| (input_of(&t.file), t.index)).collect();
+
+    let mut a: Vec<String> = ["-y", "-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1"]
+        .map(String::from)
+        .to_vec();
+    for i in &inputs {
+        a.push("-i".into());
+        a.push(i.clone());
+    }
+    a.extend(["-map".into(), "0:v:0".into()]);
+    for (n, i) in &audio_maps {
+        a.extend(["-map".into(), format!("{n}:a:{i}")]);
+    }
+    for (n, i) in &sub_maps {
+        a.extend(["-map".into(), format!("{n}:s:{i}")]);
+    }
+    a.extend(["-c:v".into(), "copy".into()]);
+    if hevc_tag {
+        a.extend(["-tag:v".into(), "hvc1".into()]);
+    }
+    for (k, t) in audio.iter().enumerate() {
+        if t.transcode {
+            a.extend([format!("-c:a:{k}"), "eac3".into(), format!("-b:a:{k}"), "640k".into()]);
+            // E-AC-3 tops out at 5.1; a stereo source must not be upmixed.
+            if t.channels > 6 {
+                a.extend([format!("-ac:a:{k}"), "6".into()]);
+            }
+        } else {
+            a.extend([format!("-c:a:{k}"), "copy".into()]);
+        }
+    }
+    if !subs.is_empty() {
+        a.extend(["-c:s".into(), "mov_text".into()]);
+    }
+    for (kind, tracks) in [("a", audio), ("s", subs)] {
+        for (k, t) in tracks.iter().enumerate() {
+            if t.file.is_none() {
+                continue;
+            }
+            if let Some(lang) = t.lang.as_deref().filter(|l| !l.is_empty()) {
+                a.extend([format!("-metadata:s:{kind}:{k}"), format!("language={lang}")]);
+            }
+            if let Some(title) = t.title.as_deref().filter(|l| !l.is_empty()) {
+                a.extend([format!("-metadata:s:{kind}:{k}"), format!("title={title}")]);
+            }
+        }
+    }
+    // A receiver that cannot be told which track to play takes the default
+    // one, so the first — the chosen — is it, and no other is.
+    if !audio.is_empty() {
+        a.extend(["-disposition:a".into(), "0".into(), "-disposition:a:0".into(), "default".into()]);
+    }
+    if !subs.is_empty() {
+        a.extend(["-disposition:s".into(), "0".into()]);
+    }
+    a.extend(["-movflags".into(), "+faststart".into(), "-f".into(), "mp4".into(), tmp.to_string()]);
+    a
+}
+
+fn tracks_command(
+    ffmpeg: &std::path::Path,
+    src: &std::path::Path,
+    tmp: &std::path::Path,
+    audio: &[TrackSource],
+    subs: &[TrackSource],
+    hevc_tag: bool,
+) -> std::process::Command {
+    let mut cmd = std::process::Command::new(ffmpeg);
+    cmd.args(tracks_args(&src.to_string_lossy(), &tmp.to_string_lossy(), audio, subs, hevc_tag));
+    cmd
+}
+
 /// Generate a complete HLS rendition of the file: a VOD playlist plus
 /// keyframe-cut segments, video stream-copied, audio per the usual rung.
 ///
@@ -2703,6 +2896,51 @@ mod tests {
         buf.extend_from_slice(&[1, 2, 3, 4]);
         let decoded = wire::decode(&buf).expect("decodes");
         assert_eq!(decoded.namespace, "test");
+    }
+
+    #[test]
+    fn tracks_args_map_every_track_and_dedupe_inputs() {
+        let t = |file: Option<&str>, index: i64, transcode: bool, channels: i64| TrackSource {
+            file: file.map(String::from),
+            index,
+            lang: file.map(|_| "rus".to_string()),
+            title: None,
+            transcode,
+            channels,
+        };
+        let audio = vec![t(None, 0, false, 2), t(Some("/r/dub.mka"), 0, true, 8), t(None, 1, true, 2)];
+        let subs = vec![t(None, 2, false, 0), t(Some("/r/dub.mka"), 0, false, 0), t(Some("/r/e.srt"), 0, false, 0)];
+        let a = tracks_args("/r/film.mkv", "/c/x.part", &audio, &subs, true);
+        let s = a.join(" ");
+        // The external file shared by a dub and a subtitle is one input.
+        assert_eq!(a.iter().filter(|x| *x == "-i").count(), 3);
+        assert!(s.contains("-i /r/film.mkv -i /r/dub.mka -i /r/e.srt"));
+        assert!(s.contains("-map 0:v:0 -map 0:a:0 -map 1:a:0 -map 0:a:1 -map 0:s:2 -map 1:s:0 -map 2:s:0"));
+        assert!(s.contains("-tag:v hvc1"));
+        assert!(s.contains("-c:a:0 copy"));
+        assert!(s.contains("-c:a:1 eac3 -b:a:1 640k -ac:a:1 6"));
+        // A stereo source transcoded is not upmixed.
+        assert!(s.contains("-c:a:2 eac3 -b:a:2 640k"));
+        assert!(!s.contains("-ac:a:2"));
+        assert!(s.contains("-c:s mov_text"));
+        // Metadata only for streams from external files.
+        assert!(s.contains("-metadata:s:a:1 language=rus"));
+        assert!(!s.contains("-metadata:s:a:0"));
+        assert!(s.contains("-metadata:s:s:2 language=rus"));
+        assert!(s.contains("-disposition:a 0 -disposition:a:0 default -disposition:s 0"));
+        assert!(s.ends_with("-movflags +faststart -f mp4 /c/x.part"));
+    }
+
+    #[test]
+    fn tracks_args_without_subtitles_leave_them_out() {
+        let audio = vec![TrackSource { file: None, index: 0, lang: None, title: None, transcode: false, channels: 2 }];
+        let s = tracks_args("/f.mp4", "/t", &audio, &[], false).join(" ");
+        assert!(!s.contains("mov_text"));
+        assert!(!s.contains("-disposition:s"));
+        // The one audio track is the default one, for a receiver that cannot
+        // be told which to play.
+        assert!(s.contains("-disposition:a 0 -disposition:a:0 default"));
+        assert!(!s.contains("hvc1"));
     }
 
     #[test]

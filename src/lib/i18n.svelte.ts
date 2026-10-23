@@ -541,6 +541,7 @@ const ru = {
     'AirPlay не начал показ. Если телевизор был выбран, проверьте, что AirPlay включён в его настройках',
   'cast.airplay_stream': 'Через AirPlay нужен целый файл — дождитесь, пока торрент докачается',
   'cast.airplay_unavailable': 'Не удалось открыть список AirPlay',
+  'cast.airplay_no_subs': 'Субтитры через AirPlay пока не передаются',
   'cast.not_while_casting': 'Недоступно во время трансляции',
 
   'ctx.open': 'Открыть файлы…',
@@ -1629,6 +1630,7 @@ const en: Record<MessageKey, string> = {
     'AirPlay did not start. If you chose a TV, check that AirPlay is turned on in its settings',
   'cast.airplay_stream': 'AirPlay needs the whole file — wait for the torrent to finish',
   'cast.airplay_unavailable': 'Could not open the AirPlay list',
+  'cast.airplay_no_subs': 'Subtitles cannot be sent over AirPlay yet',
   'cast.not_while_casting': 'Not available while casting',
 
   'ctx.open': 'Open files…',
@@ -2627,6 +2629,7 @@ const zh: Record<MessageKey, string> = {
   'cast.airplay_not_started': 'AirPlay 未开始播放。如果已选择电视，请检查电视设置中是否已开启 AirPlay',
   'cast.airplay_stream': '通过 AirPlay 投屏需要完整文件，请等待种子下载完成',
   'cast.airplay_unavailable': '无法打开 AirPlay 列表',
+  'cast.airplay_no_subs': '暂不支持通过 AirPlay 传输字幕',
   'cast.not_while_casting': '投屏时不可用',
   'ctx.open': '打开文件…',
   'ctx.open_link': '打开链接…',

@@ -1007,6 +1007,22 @@ async function prepareForCast(
   if (cached) return cached;
 
   const video = (await getProperty('video-format', 'string').catch(() => null)) ?? '';
+  return withPrepareProgress(() =>
+    invoke<string>('cast_prepare', {
+      path,
+      audioIndex,
+      transcodeAudio,
+      channels,
+      hevcTag: video === 'hevc',
+      duration: player.duration,
+      capBytes: castCacheCapGb() * 1024 ** 3,
+    }),
+  );
+}
+
+/// ffmpeg's progress on the sticky OSD for as long as `run` takes. The popup is
+/// up before the work starts and every caller replaces it on every exit path.
+async function withPrepareProgress<T>(run: () => Promise<T>): Promise<T> {
   showOsd(t('cast.preparing', { pct: 0 }), { sticky: true, progress: 0 });
   // `live` guards against a progress event already dispatched into the JS
   // queue landing AFTER the caller's final popup: a resurrected sticky has no
@@ -1021,19 +1037,88 @@ async function prepareForCast(
     });
   });
   try {
-    return await invoke<string>('cast_prepare', {
-      path,
-      audioIndex,
-      transcodeAudio,
-      channels,
-      hevcTag: video === 'hevc',
-      duration: player.duration,
-      capBytes: castCacheCapGb() * 1024 ** 3,
-    });
+    return await run();
   } finally {
     live = false;
     unlisten();
   }
+}
+
+interface TrackSource {
+  file: string | null;
+  index: number;
+  lang: string | null;
+  title: string | null;
+  transcode: boolean;
+  channels: number;
+}
+
+/**
+ * Where an audio track comes from, as `cast_prepare_tracks` addresses it: an
+ * embedded track by its position among the container's audio streams, an
+ * external one (a dub from the release's own folders) as its file's first
+ * stream. Null for an external track mpv names no file for. Pure, so tested.
+ */
+export function airplayAudioSource(track: Track, audioTracks: Track[]): TrackSource | null {
+  let source: { file: string | null; index: number } | null;
+  if (track.external) {
+    source = track.path ? { file: track.path, index: 0 } : null;
+  } else {
+    source = { file: null, index: audioTracks.filter((tr) => !tr.external).indexOf(track) };
+  }
+  if (!source || source.index < 0) return null;
+  const codec = track.codec?.toLowerCase() ?? '';
+  return {
+    ...source,
+    lang: track.lang,
+    title: track.title,
+    transcode: !!codec && !AIRPLAY_AUDIO_COPY.includes(codec),
+    channels: track.channels ?? 6,
+  };
+}
+
+/**
+ * The copy AirPlay plays: the video copied and **the one audio track the
+ * viewer chose**, flagged default. A copy carrying every track and switching
+ * them on the receiver was built and measured — an LG television played its
+ * first track whatever the Mac selected, and showed no `mov_text` subtitle at
+ * all, not even as the copy's only track flagged default — so the choice is
+ * made in the copy, where every receiver has to honour it. Cached per track,
+ * as the Cast rung's copies are.
+ */
+async function prepareAirPlayCopy(src: string, track?: Track): Promise<string> {
+  const audio = track ?? player.audioTracks.find((tr) => tr.selected) ?? player.audioTracks[0];
+  const source = audio ? airplayAudioSource(audio, player.audioTracks) : null;
+  const video = (await getProperty('video-format', 'string').catch(() => null)) ?? '';
+  const args = {
+    path: src,
+    audio: source ? [source] : [],
+    subs: [],
+    hevcTag: video === 'hevc',
+    duration: player.duration,
+    capBytes: castCacheCapGb() * 1024 ** 3,
+  };
+  // A copy already in the cache needs no popup: "preparing 0%" over work that
+  // takes no time reads as a glitch.
+  const cached = await invoke<string | null>('cast_prepare_tracks', { ...args, probe: true }).catch(() => null);
+  const path =
+    cached ??
+    (await withPrepareProgress(() => invoke<string | null>('cast_prepare_tracks', { ...args, probe: false })));
+  if (!path) throw new Error('no copy');
+  return path;
+}
+
+/**
+ * Whether a file AirPlay could take as it is goes as a copy anyway: the viewer
+ * is listening to an audio track the receiver would not pick by itself — any
+ * but the file's first, or one from an external file. A film watched as it
+ * was made goes untouched and costs no disk.
+ */
+function airplayNeedsCopy(): boolean {
+  const audio = player.audioTracks.find((tr) => tr.selected);
+  if (!audio) return false;
+  const firstEmbedded = player.audioTracks.find((tr) => !tr.external);
+  return audio.external || audio.id !== firstEmbedded?.id;
 }
 
 /**
@@ -1048,29 +1133,16 @@ async function prepareHls(
   channels: number,
   fmp4: boolean,
 ): Promise<string> {
-  showOsd(t('cast.preparing', { pct: 0 }), { sticky: true, progress: 0 });
-  let live = true;
-  const unlisten = await listen<number>(PREPARE_EVENT, (event) => {
-    if (!live) return;
-    const frac = Math.max(0, Math.min(1, event.payload));
-    showOsd(t('cast.preparing', { pct: Math.round(frac * 100) }), {
-      sticky: true,
-      progress: frac,
-    });
-  });
-  try {
-    return await invoke<string>('cast_hls_prepare', {
+  return withPrepareProgress(() =>
+    invoke<string>('cast_hls_prepare', {
       path,
       audioIndex,
       transcodeAudio,
       channels,
       fmp4,
       duration: player.duration,
-    });
-  } finally {
-    live = false;
-    unlisten();
-  }
+    }),
+  );
 }
 
 /// The selected audio track as the prepare rung needs it: its index among the
@@ -1467,11 +1539,10 @@ export async function castOverAirPlay(anchor: Anchor | null, keep = false): Prom
 
   const hidden = isPrivatePath(src);
   let castPath = src;
-  if (verdict.kind === 'prepare') {
+  if (verdict.kind === 'prepare' || airplayNeedsCopy()) {
     if (!keep) cast.state = 'preparing';
     try {
-      const { audioIndex, channels } = await selectedAudioParams();
-      castPath = await prepareForCast(src, verdict.transcodeAudio, audioIndex, channels);
+      castPath = await prepareAirPlayCopy(src);
     } catch (e) {
       console.warn('airplay prepare failed:', e);
       if (cast.active) await endCast({ osd: t('cast.prepare_failed'), resumeLocal: false });
@@ -1885,6 +1956,10 @@ export async function castSwitchAudio(track: Track): Promise<void> {
     showOsd(t('cast.track_on_tv'));
     return;
   }
+  if (cast.transport === 'airplay') {
+    await airplaySwitch(track);
+    return;
+  }
   const codec = track.codec?.toLowerCase() ?? null;
   const transcode = !(codec && CAST_AUDIO_COPY.includes(codec));
   const audioIndex = Math.max(0, player.audioTracks.indexOf(track));
@@ -1899,18 +1974,13 @@ export async function castSwitchAudio(track: Track): Promise<void> {
       ? await prepareHls(src, transcode, audioIndex, channels, sessionHls === 'fmp4')
       : await prepareForCast(src, transcode, audioIndex, channels);
     if (!cast.active) return;
-    if (cast.transport === 'airplay') {
-      // A new item on the same route: the television stays chosen.
-      await invoke('airplay_replace', { path: prepared, position: cast.time, hidden });
-    } else {
-      await invoke('cast_load', {
-        path: prepared,
-        position: cast.time,
-        title: hidden ? null : player.displayTitle,
-        hidden,
-        hls: sessionHls,
-      });
-    }
+    await invoke('cast_load', {
+      path: prepared,
+      position: cast.time,
+      title: hidden ? null : player.displayTitle,
+      hidden,
+      hls: sessionHls,
+    });
     if (!sessionHls) {
       preparedPath = prepared;
       preparedHidden = hidden;
@@ -1926,6 +1996,42 @@ export async function castSwitchAudio(track: Track): Promise<void> {
     // The session survives on the old track; the popup must still be replaced.
     if (cast.active) showOsd(t('cast.prepare_failed'));
   }
+}
+
+/**
+ * An audio track picked while AirPlay plays: the copy with that track, swapped
+ * in at the television's position. The receiver cannot be told to switch (see
+ * `prepareAirPlayCopy`), so this is a reload of a few seconds — instant to
+ * prepare when the track's copy is already cached.
+ */
+async function airplaySwitch(track: Track): Promise<void> {
+  const src = castSrcPath;
+  if (!cast.remote || !src) return;
+  const hidden = isPrivatePath(src);
+  try {
+    const prepared = await prepareAirPlayCopy(src, track);
+    if (!cast.active) return;
+    await invoke('airplay_replace', { path: prepared, position: cast.time, hidden });
+    const previous = preparedPath;
+    preparedPath = prepared;
+    preparedHidden = hidden;
+    if (hidden && previous && previous !== prepared) {
+      void invoke('cast_forget_prepared', { path: previous }).catch(() => {});
+    }
+    showOsd(track.label);
+  } catch (e) {
+    console.warn('airplay track switch failed:', e);
+    if (cast.active) showOsd(t('cast.prepare_failed'));
+  }
+}
+
+/// A subtitle picked while AirPlay plays. Nothing carries one to the receiver
+/// yet: measured, an LG set shows no MP4 subtitle at all, and what the HLS
+/// route would do is still to be researched (docs/airplay.md). Said, rather
+/// than a menu that silently changes only the paused local player.
+export function castSwitchSub(track: Track | null): void {
+  if (!cast.remote || cast.transport !== 'airplay' || !track) return;
+  showOsd(t('cast.airplay_no_subs'));
 }
 
 export function castToggleMute() {

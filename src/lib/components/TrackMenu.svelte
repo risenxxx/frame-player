@@ -72,6 +72,8 @@
          a switch made on the TV's own remote never reaches us. -->
     {#if !playback.can.trackChoice}
       <div class="cast-hint">{t('cast.tracks_on_tv')}</div>
+    {:else if kind === 'sub' && !playback.can.subChoice}
+      <div class="cast-hint">{t('cast.airplay_no_subs')}</div>
     {/if}
     {#each kind === 'audio' ? player.audioTracks : player.subTracks as track (track.id)}
       <!-- The × appears for external subtitle tracks only. An embedded one
@@ -83,6 +85,7 @@
             class="menu-item chapter-item"
             class:sel={track.selected}
             data-tip={track.label}
+            disabled={!playback.can.subChoice}
             onclick={() => onSelect('sub', track)}
           >
             <span class="chapter-name">{track.label}</span>
@@ -115,7 +118,12 @@
           <span class="mix-name">{track.label}</span>
         </button>
       {:else}
-        <button class="menu-item" class:sel={track.selected} onclick={() => onSelect(kind!, track)}>
+        <button
+          class="menu-item"
+          class:sel={track.selected}
+          disabled={kind === 'sub' && !playback.can.subChoice}
+          onclick={() => onSelect(kind!, track)}
+        >
           {track.label}
         </button>
       {/if}
@@ -124,6 +132,7 @@
       <button
         class="menu-item"
         class:sel={!player.subTracks.some((track) => track.selected)}
+        disabled={!playback.can.subChoice}
         onclick={() => onSelect('sub', null)}
       >
         {t('osc.subs_off')}
