@@ -114,6 +114,12 @@ mod mac {
         /// without this the knob jumps to the target, back, and to the target
         /// again — measured on the first seeks from the window.
         seek_target: Option<(f64, Instant)>,
+        /// The position at the previous poll. A receiver may keep AVPlayer
+        /// "waiting to play" while its own screen plays on — reported from a
+        /// set other than the one the transport was measured on, as a spinner
+        /// that never went away — so a position that moves is the stronger
+        /// evidence.
+        last_pos: Option<(f64, Instant)>,
     }
 
     static SHARED: Mutex<Option<Shared>> = Mutex::new(None);
@@ -352,6 +358,7 @@ mod mac {
             s.last_logged.clear();
             s.duration = 0.0;
             s.seek_target = None;
+            s.last_pos = None;
             s.live = true;
         });
         let result = present(&picker);
@@ -421,6 +428,17 @@ mod mac {
             let failed = unsafe { p.status() } == AVPlayerStatus::Failed
                 || item.as_ref().is_some_and(|i| unsafe { i.status() } == AVPlayerItemStatus::Failed);
 
+            // Moving at least a quarter of real time since the last poll.
+            let advancing = shared(|sh| {
+                let moved = sh.last_pos.is_some_and(|(pos, at)| {
+                    let dt = at.elapsed().as_secs_f64();
+                    dt > 0.0 && reported_time - pos > 0.25 * dt && reported_time - pos < 4.0 * dt + 1.0
+                });
+                sh.last_pos = Some((reported_time, Instant::now()));
+                moved
+            });
+            let waiting_reason = unsafe { p.reasonForWaitingToPlay() }.map(|r| r.to_string());
+
             let (state, error) = if failed {
                 ("error", Some("load_failed"))
             } else if !external {
@@ -438,11 +456,17 @@ mod mac {
                         ("ended", None)
                     }
                     AVPlayerTimeControlStatus::Paused => ("paused", None),
+                    _ if advancing => ("playing", None),
                     _ => ("buffering", None),
                 }
             };
             if crate::cast::cast_debug() {
-                let line = format!("{state} {} peer={}", error.unwrap_or("-"), peer.map(|p| p.to_string()).unwrap_or("-".into()));
+                let line = format!(
+                    "{state} {} peer={} waiting={}",
+                    error.unwrap_or("-"),
+                    peer.map(|p| p.to_string()).unwrap_or("-".into()),
+                    waiting_reason.as_deref().unwrap_or("-"),
+                );
                 shared(|sh| {
                     if sh.last_logged != line {
                         eprintln!("{TAG} {line} t={time:.1} dur={duration:.1}");
@@ -502,6 +526,7 @@ mod mac {
         shared(|s| {
             s.duration = 0.0;
             s.seek_target = None;
+            s.last_pos = None;
         });
         on_main(app, move |mtm| {
             let item = item_for(&url, position, mtm)?;
