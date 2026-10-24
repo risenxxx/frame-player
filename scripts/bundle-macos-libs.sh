@@ -49,6 +49,40 @@ deps_of() {
     | grep -vxF "${own:-/dev/null}" || true
 }
 
+# The dependencies `deps_of` leaves out because they are already relative —
+# resolved the way dyld would, through the file's own run paths, but only
+# those the set does not hold yet. A Homebrew library names its neighbours from
+# the same formula this way: libbrotlidec asks for
+# `@rpath/libbrotlicommon.1.dylib` and finds it through its own LC_RPATH, so
+# when freetype started linking brotli the closure copied libbrotlidec (named
+# by absolute path) and never saw libbrotlicommon — a set in which freetype,
+# and through it libass and libmpv, could not load.
+rel_deps_of() {
+  local f="$1" dir own d name rp
+  dir="$(dirname "$f")"
+  own="$(otool -D "$f" | tail -n +2 | head -1 || true)"
+  otool -L "$f" | tail -n +2 \
+    | sed 's/ (compatibility.*//; s/^[[:space:]]*//' \
+    | grep -E '^@(rpath|loader_path)/' \
+    | grep -vxF "${own:-/dev/null}" \
+    | while read -r d; do
+        name="${d#*/}"
+        [ -f "$lib_dir/$name" ] && continue
+        case "$d" in
+          @loader_path/*) [ -f "$dir/$name" ] && echo "$dir/$name" ;;
+          @rpath/*)
+            otool -l "$f" | awk '/cmd LC_RPATH/{getline;getline;print $2}' | while read -r rp; do
+              case "$rp" in
+                @loader_path*) rp="$dir${rp#@loader_path}" ;;
+                @*) continue ;;
+              esac
+              if [ -f "$rp/$name" ]; then echo "$rp/$name"; break; fi
+            done
+            ;;
+        esac
+      done || true
+}
+
 echo "==> MoltenVK"
 # Not part of the closure: the Vulkan loader finds the driver through a JSON
 # manifest at runtime rather than through a Mach-O reference. Without it
@@ -92,10 +126,16 @@ fi
 echo "==> Transitive closure"
 seen="$(mktemp)"; queue="$(mktemp)"
 trap 'rm -f "$seen" "$queue"; rm -rf "$cli_stage"' EXIT
-for root in "$lib_dir"/*.dylib; do deps_of "$root" >> "$queue"; done
+for root in "$lib_dir"/*.dylib; do
+  deps_of "$root" >> "$queue"
+  rel_deps_of "$root" >> "$queue"
+done
 # The CLI is a root of the closure too: it pulls in libraries libmpv does not
 # (libvmaf came in this way), and a missing one is a binary that dies at exec.
-[ -f "$cli_stage/ffmpeg" ] && deps_of "$cli_stage/ffmpeg" >> "$queue"
+if [ -f "$cli_stage/ffmpeg" ]; then
+  deps_of "$cli_stage/ffmpeg" >> "$queue"
+  rel_deps_of "$cli_stage/ffmpeg" >> "$queue"
+fi
 
 while [ -s "$queue" ]; do
   dep="$(head -1 "$queue")"
@@ -108,6 +148,7 @@ while [ -s "$queue" ]; do
   fi
   echo "$dep" >> "$seen"
   deps_of "$dep" >> "$queue"
+  rel_deps_of "$dep" >> "$queue"
 done
 
 echo "==> Copying ($(wc -l < "$seen" | tr -d ' ') found)"
@@ -198,6 +239,32 @@ if [ -f "$cli_stage/ffmpeg" ]; then
   if [ "$left" -gt 0 ]; then
     echo "  ! $left dependency(ies) still point at Homebrew — the bundle will not run elsewhere" >&2
   fi
+fi
+
+echo "==> Checking the set resolves within itself"
+# Every library the set names must be in it, under the name it is asked for:
+# with @loader_path as the only run path there is nowhere else for dyld to look.
+# A gap does not fail any step before this one — the closure reports what it
+# cannot find and goes on, and a name it never followed is not reported at all
+# — and on a machine without Homebrew it is a libmpv that will not load.
+unresolved=0
+for f in "$lib_dir"/*.dylib "$ffmpeg_dir/bin/ffmpeg"; do
+  [ -f "$f" ] || continue
+  own="$(otool -D "$f" | tail -n +2 | head -1 || true)"
+  while read -r d; do
+    [ -n "$d" ] || continue
+    [ "$d" = "$own" ] && continue
+    case "$d" in
+      /usr/lib/*|/System/*) continue ;;
+      @rpath/*|@loader_path/*) [ -f "$lib_dir/${d#*/}" ] && continue ;;
+    esac
+    echo "  ! $(basename "$f") needs $d, which the set does not hold" >&2
+    unresolved=$((unresolved + 1))
+  done < <(otool -L "$f" | tail -n +2 | sed 's/ (compatibility.*//; s/^[[:space:]]*//')
+done
+if [ "$unresolved" -gt 0 ]; then
+  echo "$unresolved unresolved dependency(ies) — the set would not load elsewhere" >&2
+  exit 1
 fi
 
 count=$(ls -1 "$lib_dir"/*.dylib | wc -l | tr -d ' ')

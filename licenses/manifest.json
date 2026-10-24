@@ -91,6 +91,17 @@
       "note": "Dual-licensed FTL or GPL-2.0-or-later; the FreeType License is the option taken."
     },
     {
+      "id": "brotli",
+      "name": "Brotli",
+      "license": "MIT",
+      "text": "brotli",
+      "url": "https://github.com/google/brotli",
+      "source": "https://github.com/google/brotli",
+      "libs": ["libbrotlidec", "libbrotlicommon"],
+      "platforms": ["macos"],
+      "note": "Brought in by Homebrew's FreeType, which decodes WOFF2 fonts with it."
+    },
+    {
       "id": "harfbuzz",
       "name": "HarfBuzz",
       "license": "MIT",

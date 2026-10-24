@@ -37,7 +37,7 @@ GPL-only component appears.
 
 ## Contents
 
-- [Native libraries](#native-libraries) (44)
+- [Native libraries](#native-libraries) (45)
 - [Rust crates](#rust-crates) (442)
 - [JavaScript packages](#javascript-packages) (7)
 - [Online services](#online-services)
@@ -55,6 +55,7 @@ GPL-only component appears.
 | libmpv-wrapper | LGPL-2.1-only | [github.com/nini22P/libmpv-wrapper](https://github.com/nini22P/libmpv-wrapper) |
 | libass | ISC | [github.com/libass/libass](https://github.com/libass/libass) |
 | FreeType | FTL | [gitlab.freedesktop.org/freetype/freetype](https://gitlab.freedesktop.org/freetype/freetype) |
+| Brotli (macos only) | MIT | [github.com/google/brotli](https://github.com/google/brotli) |
 | HarfBuzz | MIT | [github.com/harfbuzz/harfbuzz](https://github.com/harfbuzz/harfbuzz) |
 | GNU FriBidi | LGPL-2.1-or-later | [github.com/fribidi/fribidi](https://github.com/fribidi/fribidi) |
 | libplacebo | LGPL-2.1-or-later | [code.videolan.org/videolan/libplacebo](https://code.videolan.org/videolan/libplacebo) |
@@ -100,6 +101,7 @@ Notes on individual components:
 - **mpv** — Built with -Dgpl=false, which is what makes it LGPL rather than GPL-2.0-or-later. On macOS by scripts/build-macos-libs.sh, with the modifications listed above; on Windows this is upstream's own LGPL build, whose embedded configuration string records the same flag.
 - **FFmpeg** — Built with --disable-gpl --disable-version3 --disable-nonfree, so no GPL-only component (libx264, libx265, libxvid, librubberband, libvidstab) is present. scripts/check-macos-licenses.sh enforces that before any set is published.
 - **FreeType** — Dual-licensed FTL or GPL-2.0-or-later; the FreeType License is the option taken.
+- **Brotli** — Brought in by Homebrew's FreeType, which decodes WOFF2 fonts with it.
 - **GNU FriBidi** — The project is distributed as GPL-2.0-or-later AND LGPL-2.1-or-later; the GPL half covers the command-line tool, which is not shipped. The library is LGPL.
 - **uchardet** — Tri-licensed MPL-1.1 or GPL-2.0-or-later or LGPL-2.1-or-later; MPL-1.1 is the option taken.
 - **Vulkan-Loader** — On Windows, vulkan-1.dll is the loader from LunarG's Vulkan Runtime, unmodified, and is used only on a system that has no loader of its own.
@@ -2322,6 +2324,32 @@ Legal Terms
     https://freetype.org
 
 --- end of FTL.TXT ---
+```
+
+### Brotli
+
+MIT — <https://github.com/google/brotli>
+
+```
+Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 ```
 
 ### HarfBuzz

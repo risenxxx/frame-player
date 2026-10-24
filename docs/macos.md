@@ -182,6 +182,19 @@ cannot see this, because the runner has Homebrew and the wrong copies load just
 as well. Swift's runtime is linked by absolute `/usr/lib/swift/...` paths and
 needs no run path.
 
+**And with one search path, every name the set asks for has to be in it.** The
+closure used to follow absolute paths only. That was enough while every
+Homebrew library named its dependencies that way, and it stopped being enough
+when Homebrew's FreeType began linking Brotli: FreeType names
+`/opt/homebrew/opt/brotli/lib/libbrotlidec.1.dylib`, which was copied, and
+libbrotlidec names its neighbour as `@rpath/libbrotlicommon.1.dylib`, which was
+not — a set in which FreeType, and through it libass and libmpv, cannot load
+anywhere but on a machine that has the formula. It was caught by the notices
+gate, which knew nothing of brotli, not by anything that looks at loading. The
+closure now also follows `@rpath` and `@loader_path` names the set does not
+hold, resolved through the library's own run paths, and the script fails when
+any library or the ffmpeg CLI names a library the set does not have.
+
 One rule follows from where things end up: inside the bundle the executable is
 in `Contents/MacOS` and the libraries are in `Contents/Resources/lib`, while in
 a development build they are side by side. Anything that looks for a bundled
