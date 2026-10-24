@@ -259,7 +259,13 @@
   import { loadSeekSteps } from '$lib/seek-steps.svelte';
   import { restoreCrop } from '$lib/crop.svelte';
   import { restoreAdjust } from '$lib/picture-adjust.svelte';
-  import { initUpscale, restoreUpscale, upscaleSourceChanged } from '$lib/upscale.svelte';
+  import {
+    initUpscale,
+    initUpscaleWatch,
+    restoreUpscale,
+    upscale,
+    upscaleSourceChanged,
+  } from '$lib/upscale.svelte';
   import {
     attachTorrentSubtitles,
     releaseTorrent,
@@ -1192,6 +1198,9 @@
   // Measures how late this process's own timer runs, which is the only way to
   // tell a block of the whole machine from one inside mpv — see stall.svelte.ts.
   initStallWatch();
+  // Says so while mpv compiles the upscaler, which stops the picture for
+  // seconds the first time on Windows — see upscale.svelte.ts.
+  initUpscaleWatch();
   // Restores the remembered audio/subtitle choice as the track list fills up —
   // a standing effect, not a one-shot, because external subtitles arrive after
   // `file-loaded`.
@@ -1440,6 +1449,13 @@
       label={opening.label}
       sub={opening.swarmAdvice ?? opening.torrentLabel ?? (sync.opening ? t('sync.opening') : null)}
       since={opening.since}
+    />
+  {:else if upscale.preparingSince}
+    <LoadingOverlay
+      label={t('upscale.preparing')}
+      sub={t('upscale.preparing_sub')}
+      since={upscale.preparingSince}
+      shade
     />
   {/if}
 

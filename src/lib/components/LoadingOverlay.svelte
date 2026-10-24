@@ -1,7 +1,8 @@
 <script lang="ts">
   /// Shown while a network source is resolving and buffering — and while the
   /// room's own content is being opened, which is the longest of those waits
-  /// and the one that used to show nothing at all.
+  /// and the one that used to show nothing at all. And, veiled, while mpv
+  /// compiles the upscaler with the picture stopped (upscale.svelte.ts).
   ///
   /// It reports a real figure rather than a guess: mpv's `cache-buffering-state`
   /// is the cache fill and is *absent* while there is no cache yet, which means
@@ -19,9 +20,12 @@
     /// When the wait began, for a wait with nothing to count but seconds. Zero
     /// for one that reports a figure of its own, where a clock adds nothing.
     since?: number;
+    /// Dim what is underneath: for a wait over a picture that has stopped,
+    /// where the frame left on screen is stale and often stretched.
+    shade?: boolean;
   }
 
-  let { label, sub, since = 0 }: Props = $props();
+  let { label, sub, since = 0, shade = false }: Props = $props();
 
   /// Seconds on screen. A timer rather than something derived, because while a
   /// magnet resolves **nothing else on this box changes** — no percentage, no
@@ -46,7 +50,7 @@
   });
 </script>
 
-<div class="overlay loading-overlay afloat">
+<div class="overlay loading-overlay afloat" class:shade>
   <div class="loading-box">
     <span class="loading-spin"></span>
     <!-- The two lines are ONE flex item, not two siblings of the spinner.
@@ -74,6 +78,12 @@
      own: there is nothing underneath to dim. */
   .loading-overlay {
     pointer-events: none;
+  }
+
+  /* Over a stopped picture there is something to dim, and it is better dimmed:
+     the frame left there is stale, and after a resize it is stretched. */
+  .loading-overlay.shade {
+    background: rgba(0, 0, 0, 0.55);
   }
 
   /* The shared floating-surface fill comes with a hairline and a shadow, and

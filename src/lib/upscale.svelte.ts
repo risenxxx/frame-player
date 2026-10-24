@@ -31,7 +31,9 @@
  */
 
 import { join } from '@tauri-apps/api/path';
-import { command } from 'tauri-plugin-libmpv-api';
+import { untrack } from 'svelte';
+import { SvelteSet } from 'svelte/reactivity';
+import { command, getProperty } from 'tauri-plugin-libmpv-api';
 
 import { upscaleScopes, writeUpscale, type UpscaleScope } from './history.svelte';
 import { locale, t } from './i18n.svelte';
@@ -77,7 +79,32 @@ class Upscale {
   get engaged(): boolean {
     return upscaleEngaged(this.shader, this.ratio);
   }
+
+  /// mpv is compiling the shader and the picture stands still: since when, in
+  /// `Date.now()` terms, or 0. See `initUpscaleWatch`.
+  preparingSince = $state(0);
+
+  /// The shader whose first run this session may still be ahead, and so may
+  /// still cost a compile; null once it has run, or with nothing to run. A
+  /// derived value rather than a getter so that the watch restarts when this
+  /// changes, not at every step of a resize that moves `ratio`.
+  pending = $derived.by((): ShaderMode | null => {
+    const shader = this.given;
+    if (!shader || !player.hasFile || this.userShaders) return null;
+    return ran.has(shader) ? null : shader;
+  });
+
+  /// The shader in mpv's list, as of the last change to it that mpv took —
+  /// which is not always `shader`: the list outlives `loadfile`, and the next
+  /// file's own is sent only once it has loaded, after its first frame may
+  /// already have compiled the previous file's shader.
+  given = $state<ShaderMode | null>(null);
 }
+
+/// The shaders that have run in this session. libplacebo keeps a compiled pass
+/// for as long as the video output lives, so a shader that has run once does
+/// not compile again until the player is restarted. Written by the watch.
+const ran = new SvelteSet<ShaderMode>();
 
 export const upscale = new Upscale();
 
@@ -114,10 +141,124 @@ async function apply() {
       const path = await join(shaderDir, UPSCALE_SHADERS[shader].file);
       await command('change-list', ['glsl-shaders', 'append', path]);
     }
+    upscale.given = shader;
   } catch (e) {
     sent = undefined;
     console.warn('upscaler: mpv refused the shader list:', e);
   }
+}
+
+/// How often the watch looks. Every look asks mpv a question and reads the
+/// position.
+const WATCH_EVERY_MS = 250;
+/// How long a question may go unanswered before the picture is said to be
+/// waiting. Above the Mac's whole compile (~0.27 s) and above anything a warm
+/// cache costs, so the plate appears only where there is a wait to explain.
+const STALL_MS = 500;
+/// How long the position may stand still in playback before the same is said.
+const FROZEN_MS = 700;
+/// How long the shader has to have been engaged before the picture moving
+/// again means it has run. `engaged` is read off the mirrors, and they get
+/// there first: the size that starts a compile is reported before the frame
+/// that compiles, and a file opening into a large window is engaged before its
+/// first frame.
+const SETTLED_MS = 1000;
+/// Position updates in the last second that make a picture moving: at 24 fps
+/// mpv reports a couple of dozen, and one arrives now and then from inside a
+/// compile.
+const FLOWING_MOVES = 3;
+
+/**
+ * Say so while mpv compiles the shader. Under D3D11 the first run of ArtCNN is
+ * 12 s of FXC on the render thread — the picture stands still, stretched to
+ * whatever the window has become — and a compiled shader is kept on disk
+ * (`gpu-shader-cache-dir`), so this is once on a machine, and it is the one
+ * moment in the feature that looks like a hang.
+ *
+ * Nothing announces a compile, and it shows in two ways, both measured. Started
+ * by a resize or by a redraw while paused, it holds **mpv's core**: a
+ * `getProperty` sent as it began came back 12.4 s later, so a question left
+ * unanswered for `STALL_MS` is the sign. Started by the first frame of a file
+ * opening into a large window, the core goes on answering and only **the
+ * position stands still**, so in playback a position frozen for `FROZEN_MS`
+ * while the shader is engaged is the other. A paused file opening into a
+ * compile shows neither, and goes unexplained.
+ *
+ * It runs only while mpv holds a shader that has not run yet this session
+ * (`pending`): the switch off — the default — costs nothing, and neither does
+ * a shader that has already run.
+ */
+function watchRenderer(shader: ShaderMode): () => void {
+  let stopped = false;
+  let next: ReturnType<typeof setTimeout> | undefined;
+  /// When the mirrors first said the shader is engaged, 0 while they do not.
+  let engagedAt = 0;
+  let pos = player.timePos;
+  /// When the position changed, the latest last.
+  let moves: number[] = [Date.now()];
+  const running = () => upscaleEngaged(shader, upscale.ratio);
+  const playing = () => !player.paused && !player.stalled && !player.eofReached;
+
+  const look = async () => {
+    const now = Date.now();
+    if (player.timePos !== pos) {
+      pos = player.timePos;
+      moves.push(now);
+    }
+    moves = moves.filter((t) => now - t < 1000 || t === moves[moves.length - 1]);
+    const flowing = moves.filter((t) => now - t < 1000).length >= FLOWING_MOVES;
+    if (!running()) engagedAt = 0;
+    else if (!engagedAt) engagedAt = now;
+
+    // In playback, up for a frozen position and down only once it flows again:
+    // a single report from inside the compile must not drop the plate.
+    if (engagedAt && playing()) {
+      const still = now - moves[moves.length - 1] >= FROZEN_MS;
+      if (!upscale.preparingSince && still) upscale.preparingSince = moves[moves.length - 1];
+      else if (upscale.preparingSince && flowing) upscale.preparingSince = 0;
+    } else {
+      upscale.preparingSince = 0;
+    }
+
+    const stall = setTimeout(() => {
+      if (!stopped && !upscale.preparingSince) upscale.preparingSince = now;
+    }, STALL_MS);
+    try {
+      await getProperty('pause', 'flag');
+    } catch {
+      // An answer all the same: mpv is there to refuse.
+    }
+    clearTimeout(stall);
+    if (stopped) return;
+    // Answered, so a plate up for an unanswered question comes down; one up for
+    // a frozen position waits for it to flow.
+    if (!(engagedAt && playing())) upscale.preparingSince = 0;
+
+    // Engaged for a while, answering, and in playback moving: it has run, and
+    // will not compile again this session. This ends the watch.
+    const settled = engagedAt && now - engagedAt >= SETTLED_MS && running();
+    if (settled && !upscale.preparingSince && (!playing() || flowing)) {
+      ran.add(shader);
+      return;
+    }
+    next = setTimeout(() => void look(), WATCH_EVERY_MS);
+  };
+  void look();
+  return () => {
+    stopped = true;
+    clearTimeout(next);
+    upscale.preparingSince = 0;
+  };
+}
+
+/// The standing effect behind `preparingSince`, started by the page.
+export function initUpscaleWatch() {
+  $effect(() => {
+    const shader = upscale.pending;
+    // Untracked: the first question is asked synchronously and reads
+    // `engaged`, which would otherwise restart the watch at every change of it.
+    if (shader) return untrack(() => watchRenderer(shader));
+  });
 }
 
 /// The decoder reported the frame's size, which decides what `strong` puts in.
