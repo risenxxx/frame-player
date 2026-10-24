@@ -4,7 +4,7 @@
 
 Double-clicking the top bar on Windows maximizes and restores reliably
 
-A double click on the bar at the top of the window could make the window
-flicker and stay as it was, so it seemed stuck at full size. The bar now
-starts moving the window only once you drag it, and a double click always
-maximizes or restores it.
+A double click on the bar at the top of the window could take the player into
+full screen as well as maximizing it, and the next double click then only
+flickered and left it stuck at full size. A double click on the bar now
+maximizes or restores the window every time.

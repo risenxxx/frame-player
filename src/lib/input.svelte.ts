@@ -106,8 +106,17 @@ const activation = new ActivationGate(IS_MAC);
 
 export function initInput(): () => void {
   const onFocus = () => activation.activated(performance.now());
+  // Capture, so that a control stopping its own press cannot leave the
+  // previous one recorded.
+  const onPress = (e: PointerEvent) => {
+    if (e.button === 0) pressTarget = e.target;
+  };
   window.addEventListener('focus', onFocus);
-  return () => window.removeEventListener('focus', onFocus);
+  window.addEventListener('pointerdown', onPress, true);
+  return () => {
+    window.removeEventListener('focus', onFocus);
+    window.removeEventListener('pointerdown', onPress, true);
+  };
 }
 
 function clickActivatesWindow(): boolean {
@@ -146,6 +155,23 @@ let panLast: { x: number; y: number } | null = null;
 
 /// The pending single-click toggle while casting, if any.
 let castClickTimer: ReturnType<typeof setTimeout> | null = null;
+
+/// Where the last press landed. A click and a double click belong to the
+/// element the press was on, and the browser does not see it that way: it
+/// sends `click` to the common ancestor of the press and the release, and
+/// `dblclick` to wherever the release was. A double click on the Windows title
+/// bar maximizes the window on its second press, the window grows before the
+/// button comes up, and the release lands on the picture — which took the
+/// double click for fullscreen and the click for a pause. The fullscreen mirror
+/// stayed set over a window that had only maximized, and the next double click
+/// on the bar went to leaving fullscreen instead of restoring: a flicker and a
+/// window stuck at full size, every other time.
+let pressTarget: EventTarget | null = null;
+
+/// The gesture ended on, or inside, what it started on.
+function releasedWherePressed(e: MouseEvent): boolean {
+  return pressTarget instanceof Node && e.target instanceof Node && pressTarget.contains(e.target);
+}
 
 export function onVideoPointerDown(e: PointerEvent) {
   if (e.button !== 0 || !player.hasFile) return;
@@ -208,7 +234,7 @@ export function onVideoClick(e: MouseEvent) {
   // A click that dismisses a menu does not also pause: closing is what the
   // click was for.
   if (dismissTopmostOnClick()) return;
-  if (e.target !== e.currentTarget) return;
+  if (e.target !== e.currentTarget || !releasedWherePressed(e)) return;
   // The viewer who gave the click to the double click alone — see `VideoClick`.
   if (windowPrefs.videoClick === 'fullscreen') return;
   // The click that brought the window forward, or the second half of a double
@@ -299,7 +325,9 @@ export function onContextMenu(e: MouseEvent) {
   overlays.ctxAt = { x: e.clientX, y: e.clientY };
 }
 
-export function onVideoDblClick() {
+export function onVideoDblClick(e: MouseEvent) {
+  // The second press was somewhere else — see `pressTarget`.
+  if (!releasedWherePressed(e)) return;
   // "Pause only": the double click has no meaning of its own. Its two clicks
   // have already paused and resumed, or, casting, left one pause pending —
   // which must then go through, so the cancel below is skipped as well.
