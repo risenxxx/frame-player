@@ -1,7 +1,0 @@
----
-"frameplayer": minor
----
-
-Sharper upscaling for low-resolution video
-
-The Picture menu can enlarge a video with a neural network instead of plain scaling — one tuned for films and series, one for animation — for a single file or for its whole playlist. It works only when the picture is shown larger than its own size, such as a 720p episode in full screen, and the menu says when the current size makes it unnecessary.
