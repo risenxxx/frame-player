@@ -59,6 +59,7 @@ import {
   castSeek,
   castSeekBy,
   castSetVolume,
+  castUnmute,
   castToggleMute,
   castTogglePause,
 } from './cast.svelte';
@@ -79,6 +80,7 @@ import {
   seekChapter,
   setVolume as mpvSetVolume,
   toggleMute as mpvToggleMute,
+  unmute as mpvUnmute,
 } from './player.svelte';
 import { type PlaylistEntry, playEntry } from './playlist.svelte';
 import { seekPercent, seekRelative } from './seek.svelte';
@@ -372,12 +374,15 @@ export function osdVolume(v: number) {
 
 /// Set the volume outright: the slider. Silent on purpose — the bar is its own
 /// readout, and a popup over a control the viewer is already looking at is
-/// noise.
+/// noise. Anything above zero also takes the mute off: the bar of a muted
+/// player stands at zero, and moving it up is asking for sound.
 export function setVolume(v: number) {
   if (cast.remote) {
+    if (v > 0) castUnmute();
     castSetVolume(v / VOLUME_SCALE);
     return;
   }
+  if (v > 0) mpvUnmute();
   mpvSetVolume(v);
 }
 
@@ -386,9 +391,11 @@ export function setVolume(v: number) {
 /// of silently doing nothing (`castNudgeVolume` owns that message).
 export function nudgeVolume(delta: number) {
   if (cast.remote) {
+    if (delta > 0) castUnmute();
     castNudgeVolume(delta / VOLUME_SCALE);
     return;
   }
+  if (delta > 0) mpvUnmute();
   osdVolume(mpvSetVolume(player.volume + delta));
 }
 

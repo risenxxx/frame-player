@@ -1105,6 +1105,17 @@ export async function toggleMute() {
   showOsd(t(was ? 'osd.sound_on' : 'osd.sound_off'));
 }
 
+/**
+ * Sound back on, because the volume was just raised: a muted player shows its
+ * bar at zero, so a drag or a key up from there that left the mute on would
+ * move a bar that snaps straight back. An absolute write, not a toggle — it
+ * asks for one state rather than the mirror's opposite, so a stale mirror
+ * costs at most a write of what mpv already has.
+ */
+export function unmute() {
+  if (player.muted) void setProperty('mute', false);
+}
+
 // ---- Repeat ---------------------------------------------------------------
 
 const LOOP_KEY = 'frameplayer.loop';

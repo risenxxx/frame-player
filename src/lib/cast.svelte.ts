@@ -2206,6 +2206,14 @@ export async function castSwitchSub(track: Track | null): Promise<void> {
   await airplaySwitch({ sub: track });
 }
 
+/// The receiver's sound back on as its volume is raised — `unmute` in
+/// player.svelte.ts says why.
+export function castUnmute() {
+  if (!cast.muted || !cast.volumeAdjustable) return;
+  cast.muted = false;
+  void invoke(controlCommand(), { action: 'mute', value: 0 }).catch(() => {});
+}
+
 export function castToggleMute() {
   // Mute is part of the volume control, not a separate capability: a receiver
   // that declares its volume fixed (or, over DLNA, never reports a usable one)

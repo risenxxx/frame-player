@@ -10,13 +10,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 let props: Record<string, unknown> = {};
 const commands: string[][] = [];
 const osd: string[] = [];
+const writes: [string, unknown][] = [];
 
 vi.mock('tauri-plugin-libmpv-api', () => ({
   command: vi.fn(async (name: string, args: string[]) => {
     commands.push([name, ...args]);
   }),
   getProperty: vi.fn(async (name: string) => props[name] ?? null),
-  setProperty: vi.fn(async () => undefined),
+  setProperty: vi.fn(async (name: string, value: unknown) => {
+    writes.push([name, value]);
+  }),
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => undefined) }));
 vi.mock('./osd.svelte', async (orig) => ({
@@ -25,12 +28,13 @@ vi.mock('./osd.svelte', async (orig) => ({
 }));
 
 import { t } from './i18n.svelte';
-import { player, toggleMute } from './player.svelte';
+import { player, toggleMute, unmute } from './player.svelte';
 
 beforeEach(() => {
   props = {};
   commands.length = 0;
   osd.length = 0;
+  writes.length = 0;
 });
 
 describe('toggleMute', () => {
@@ -48,5 +52,21 @@ describe('toggleMute', () => {
     await toggleMute();
     expect(commands).toEqual([]);
     expect(osd).toEqual([t('osd.volume_spdif')]);
+  });
+});
+
+describe('unmute', () => {
+  // The bar of a muted player stands at zero, so raising it has to bring the
+  // sound back, or the bar snaps back to zero under the pointer.
+  it('takes the mute off as an absolute write', () => {
+    player.muted = true;
+    unmute();
+    expect(writes).toEqual([['mute', false]]);
+  });
+
+  it('writes nothing when the sound is already on', () => {
+    player.muted = false;
+    unmute();
+    expect(writes).toEqual([]);
   });
 });

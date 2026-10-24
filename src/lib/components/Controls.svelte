@@ -40,8 +40,10 @@
 
   const hasFile = $derived(player.hasFile);
   /// Rounded once: the readout, the tooltip and the label are the same number
-  /// and must not disagree by a unit at a rounding boundary.
-  const volume = $derived(Math.round(playback.volume));
+  /// and must not disagree by a unit at a rounding boundary. Zero while muted,
+  /// as the icon beside it says: the level is kept, and comes back with the
+  /// sound (raising the bar is what takes the mute off — `setVolume`).
+  const volume = $derived(playback.muted ? 0 : Math.round(playback.volume));
 
   // ---- Which right-hand tools this file offers ---------------------------
   //
