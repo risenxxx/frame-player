@@ -552,6 +552,18 @@ fn third_party_notices(app: tauri::AppHandle) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// Where mpv keeps the shaders it has compiled (`gpu-shader-cache-dir`, set by
+/// the frontend before `init`). The mpv CLI has this cache on by default;
+/// libmpv has no directory to put it in and so compiles every shader afresh in
+/// every session — which for the upscaler is seconds of a frozen picture on
+/// Windows (see the upscaler line in docs/rules/mpv-playback.md).
+#[tauri::command]
+fn mpv_shader_cache_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = portable::cache_dir(&app)?.join("shaders");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
 /// mpv.conf in the app config directory: created from the template on first
 /// run, parsed as `key=value` (comments and blank lines are skipped).
 #[tauri::command]
@@ -1304,6 +1316,7 @@ pub fn run() {
             ytdlp_install,
             ytdlp_update,
             user_mpv_conf,
+            mpv_shader_cache_dir,
             third_party_notices,
             mpv_conf_set,
             frame_step::frame_step_probe,

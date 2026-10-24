@@ -819,6 +819,16 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
   const logFile = await invoke<string>('diag_mpv_log_path').catch(() => null);
   if (logFile) initialOptions['log-file'] = logFile;
 
+  // The compiled shaders, kept across sessions as the mpv CLI keeps them.
+  // libmpv has nowhere to put them by default, so every session compiled every
+  // shader afresh on the render thread, and the picture stands still for as
+  // long as that takes: under D3D11 the upscaler's ArtCNN took 12 s the first
+  // time a window grew past its threshold (FXC, ~2.2 s for each of its five
+  // compute passes; measured on an RTX 5080), and 0 s from the cache. A
+  // `gpu-shader-cache-dir` in the viewer's mpv.conf wins, as every line does.
+  const shaderCache = await invoke<string>('mpv_shader_cache_dir').catch(() => null);
+  if (shaderCache) initialOptions['gpu-shader-cache-dir'] = shaderCache;
+
   // The user's mpv.conf (%APPDATA%/<app>/mpv.conf) goes on top of the defaults,
   // mpv-style: the last line wins. Kept as a map of its own rather than merged
   // in place, because it is the half that may be wrong — see `start` below.
