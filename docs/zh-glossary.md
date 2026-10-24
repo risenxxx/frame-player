@@ -14,7 +14,9 @@ quotes a label must quote that label's zh exactly), then an independent review
 by a model trained mostly on Chinese, adjudicated against this file — its
 suggestions were right about idiom far more often than about terms. The terms
 marked *verified* were checked against qBittorrent's own zh_CN translation,
-which settled two disagreements the reviews could not.
+which settled two disagreements the reviews could not. After the release a
+native speaker read every string; they kept all the terms below and their
+wording fixes are in, with the rows they added marked *native review*.
 
 The macOS menu bar (`src-tauri/src/macos_menu.rs`) is the one exception to
 these rules: it follows Apple's zh-CN menu wording (全屏幕, 缩放, 打开位置…).
@@ -83,6 +85,7 @@ Frame Player, mpv, mpv.conf, FFmpeg, yt-dlp, OpenSubtitles, BitTorrent, DHT, MSE
 | media information | 媒体信息 | |
 | A/V sync (the desync value in media info) | 音画偏差 | |
 | dropped frames | 丢帧 | |
+| stalls (a process stopping) | 卡顿 | *native review*; not 停顿 |
 | buffered | 已缓冲 | |
 
 ### Tracks and subtitles
@@ -132,6 +135,7 @@ Frame Player, mpv, mpv.conf, FFmpeg, yt-dlp, OpenSubtitles, BitTorrent, DHT, MSE
 | private network | 专用网络 | Windows zh-CN wording |
 | firewall | 防火墙 | |
 | transport (Cast vs DLNA) | 传输方式 | |
+| prepared copy (repacked for the TV) | 兼容副本 | *native review*; the cache of them is 兼容副本缓存, never 准备好的… |
 
 ### Watching together
 | English | zh-CN | Note |
