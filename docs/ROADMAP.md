@@ -44,6 +44,7 @@ nothing about watching a film.
 | 35 | Seek steps the viewer sets, for the arrows and for J/L |
 | 36 | Brightness, contrast, saturation and gamma, per file, per playlist or for every file, set in a menu that turns see-through while a slider moves |
 | 37 | AirPlay on the Mac, through the system's own player and list of receivers; deliberately not on Windows ([airplay.md](airplay.md)) |
+| 38 | Upscaling by neural-network shaders, for one file or a whole playlist, saying when the size on screen makes it unnecessary |
 
 Details for the larger ones: [torrents.md](torrents.md), [casting.md](casting.md),
 [watch-together.md](watch-together.md), [catalog.md](catalog.md).

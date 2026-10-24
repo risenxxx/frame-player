@@ -82,6 +82,7 @@ export type ActionId =
   | 'gamma_down'
   | 'gamma_up'
   | 'adjust_reset'
+  | 'upscale_cycle'
   | 'open_file'
   | 'open_link'
   | 'screenshot'
@@ -190,6 +191,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'gamma_down', group: 'picture', def: [], quiet: true },
   { id: 'gamma_up', group: 'picture', def: [], quiet: true },
   { id: 'adjust_reset', group: 'picture', def: [], noRepeat: true, quiet: true },
+  { id: 'upscale_cycle', group: 'picture', def: [], noRepeat: true, quiet: true },
 
   // File and frames
   { id: 'open_file', group: 'file', def: ['KeyO'], noRepeat: true, menuMac: 'meta+KeyO' },

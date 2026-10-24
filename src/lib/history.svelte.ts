@@ -17,6 +17,7 @@ import { showOsd } from './osd.svelte';
 import { type Attempt, latest } from './latest';
 import { isNetworkSource, player, type TrackWish } from './player.svelte';
 import { parseTorrentUrl, sourceId, torrentFolderKey } from './source';
+import type { UpscaleMode } from './upscale-plan';
 
 /// Seconds to rewind when resuming, so playback starts just before where the
 /// viewer left off rather than exactly on it.
@@ -101,6 +102,10 @@ type TrackEntry = {
   /// the file store when it applies to one file, in the folder store when it
   /// applies to the playlist.
   adjust?: Adjust;
+  /// The upscaler (upscale.svelte.ts), in the same two stores as `adjust` and
+  /// for the same reason; 'off' is kept in the file store only where the
+  /// playlist would otherwise show through.
+  upscale?: UpscaleMode;
   ts: number;
 };
 
@@ -546,6 +551,47 @@ export function writeAdjust(path: string, scope: AdjustScope, value: Adjust | nu
   const entry: TrackEntry = { ...map[id], ts: Date.now() };
   if (value) entry.adjust = value;
   else delete entry.adjust;
+  map[id] = entry;
+  entriesSave(key, map, limit as number);
+}
+
+// ---- The upscaler -----------------------------------------------------------
+// Two scopes, this file and its playlist, in the stores the picture
+// adjustments use. There is no global one: whether a picture is worth
+// enlarging is a property of a source, and a season shares one.
+
+export type UpscaleScope = 'file' | 'folder';
+
+/// What each scope holds for this source, and whether it has a folder scope at
+/// all (a link does not).
+export function upscaleScopes(path: string): {
+  file: UpscaleMode | null;
+  folder: UpscaleMode | null;
+  hasFolder: boolean;
+} {
+  const folderKey = folderScopeKey(path);
+  const priv = isPrivatePath(path);
+  return {
+    file: priv ? null : (entriesLoad(TRACKS_KEY)[sourceId(path)]?.upscale ?? null),
+    folder: priv || !folderKey ? null : (entriesLoad(FOLDER_TRACKS_KEY)[folderKey]?.upscale ?? null),
+    hasFolder: !!folderKey,
+  };
+}
+
+/// Write one scope for this source; null deletes it. Nothing is kept for a
+/// file under a private root.
+export function writeUpscale(path: string, scope: UpscaleScope, value: UpscaleMode | null) {
+  if (isPrivatePath(path)) return;
+  const [key, id, limit] =
+    scope === 'file'
+      ? [TRACKS_KEY, sourceId(path), 300]
+      : [FOLDER_TRACKS_KEY, folderScopeKey(path), 200];
+  if (!id) return;
+  const map = entriesLoad(key);
+  if (!value && !map[id]?.upscale) return;
+  const entry: TrackEntry = { ...map[id], ts: Date.now() };
+  if (value) entry.upscale = value;
+  else delete entry.upscale;
   map[id] = entry;
   entriesSave(key, map, limit as number);
 }

@@ -49,6 +49,7 @@ import { copyScreenshot, saveScreenshot } from './screenshot';
 import { scrubBy } from './seek.svelte';
 import { seekSteps } from './seek-steps.svelte';
 import { ADJUST_KEY_STEP, nudgeAdjust, resetAdjust } from './picture-adjust.svelte';
+import { cycleUpscale } from './upscale.svelte';
 import { stepBy } from './step-engine.svelte';
 import { trashCurrentFile } from './trash';
 import { nudgeDelayHere } from './tracks.svelte';
@@ -475,6 +476,7 @@ export function runAction(id: ActionId) {
     case 'gamma_down': nudgeAdjust('gamma', -ADJUST_KEY_STEP); break;
     case 'gamma_up': nudgeAdjust('gamma', ADJUST_KEY_STEP); break;
     case 'adjust_reset': resetAdjust(); break;
+    case 'upscale_cycle': cycleUpscale(); break;
     case 'open_file': void openFileDialog(); break;
     case 'open_link': void openLinkDialog(); break;
     case 'screenshot': void saveScreenshot(false); break;

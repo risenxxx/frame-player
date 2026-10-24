@@ -50,6 +50,7 @@
       "ffmpeg/bin/*.dll": "./",
       "ffmpeg/bin/ffmpeg.*": "./",
       "lua/*.lua": "lua/",
+      "shaders/*.glsl": "shaders/",
       "../THIRD-PARTY-NOTICES.md": "./",
       "../LICENSE": "./"
     },

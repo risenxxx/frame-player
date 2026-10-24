@@ -65,15 +65,22 @@ fn copy_ffmpeg_cli() {
 #[cfg(not(target_os = "macos"))]
 fn copy_ffmpeg_cli() {}
 
-/// mpv Lua scripts have to sit next to the dev binary (resource_dir in dev).
-fn copy_lua_scripts() {
+/// What mpv loads from `resource_dir` — the Lua scripts and the upscaling
+/// shaders — has to sit next to the dev binary, since that is `resource_dir`
+/// in dev. `bundle.resources` places the same directories in a build.
+fn copy_mpv_resources() {
+    copy_resource_dir("lua", "lua");
+    copy_resource_dir("shaders", "glsl");
+}
+
+fn copy_resource_dir(dir: &str, ext: &str) {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let profile = std::env::var("PROFILE").unwrap();
-    let src = Path::new(&manifest).join("lua");
+    let src = Path::new(&manifest).join(dir);
     let dst = Path::new(&manifest)
         .join("target")
         .join(&profile)
-        .join("lua");
+        .join(dir);
     if !src.exists() {
         return;
     }
@@ -81,14 +88,14 @@ fn copy_lua_scripts() {
     if let Ok(rd) = std::fs::read_dir(&src) {
         for entry in rd.flatten() {
             let p = entry.path();
-            if p.extension().map(|x| x == "lua").unwrap_or(false) {
+            if p.extension().map(|x| x == ext).unwrap_or(false) {
                 if let Some(name) = p.file_name() {
                     let _ = std::fs::copy(&p, dst.join(name));
                 }
             }
         }
     }
-    println!("cargo:rerun-if-changed=lua");
+    println!("cargo:rerun-if-changed={dir}");
 }
 
 /// macOS: tauri-plugin-libmpv dlopens libmpv-wrapper.dylib, looking next to the
@@ -165,7 +172,7 @@ fn copy_wrapper_dylib() {}
 /// are only copied at bundle time — so in dev `resolve_resource` points next to
 /// the exe, where nothing put them. The settings footer's link would then do
 /// nothing in dev and work in the shipped app, which is the wrong way round for
-/// a control whose whole job is to be verifiable. Same as `copy_lua_scripts`.
+/// a control whose whole job is to be verifiable. Same as `copy_mpv_resources`.
 fn copy_notices() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let profile = std::env::var("PROFILE").unwrap();
@@ -183,7 +190,7 @@ fn copy_notices() {
 fn main() {
     copy_ffmpeg_dlls();
     copy_ffmpeg_cli();
-    copy_lua_scripts();
+    copy_mpv_resources();
     copy_wrapper_dylib();
     copy_notices();
     // The icon is embedded into the exe as a resource during build.rs — without

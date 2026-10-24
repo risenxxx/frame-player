@@ -463,6 +463,26 @@
       "source": "https://github.com/googlefonts/rubik",
       "libs": [],
       "note": "The interface typeface, shipped as woff2 subsets in static/fonts/ so the player carries its own copy and renders identically offline. Not a library, hence no `libs`: the coverage check is about the dylib closure, and a font ships as an asset — which is exactly why it had no entry here until somebody looked. The OFL requires the copyright notice and licence to travel with the font, which is what this entry is for. The relay page does not redistribute it; it links to Google Fonts."
+    },
+    {
+      "id": "artcnn",
+      "name": "ArtCNN",
+      "license": "MIT",
+      "text": "artcnn",
+      "url": "https://github.com/Artoriuz/ArtCNN",
+      "source": "https://github.com/Artoriuz/ArtCNN",
+      "libs": [],
+      "note": "The \"video\" upscaler (src/lib/upscale.svelte.ts): GLSL/ArtCNN_C4F16.glsl, shipped verbatim as src-tauri/shaders/ArtCNN_C4F16.glsl from commit 0837e5326e710f49e2ab0a8d995da0708047442e. A shader mpv compiles at run time rather than a library, hence no `libs`; its own copy of the MIT notice is at the top of the file."
+    },
+    {
+      "id": "anime4k",
+      "name": "Anime4K",
+      "license": "MIT",
+      "text": "anime4k",
+      "url": "https://github.com/bloc97/Anime4K",
+      "source": "https://github.com/bloc97/Anime4K",
+      "libs": [],
+      "note": "The \"anime\" upscaler (src/lib/upscale.svelte.ts): glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl, shipped verbatim as src-tauri/shaders/Anime4K_Upscale_CNN_x2_M.glsl from commit 7684e9586f8dcc738af08a1cdceb024cc184f426. A shader rather than a library, hence no `libs`; its own copy of the MIT notice is at the top of the file."
     }
   ]
 }

@@ -186,6 +186,8 @@ Frame Player, mpv, mpv.conf, FFmpeg, yt-dlp, OpenSubtitles, BitTorrent, DHT, MSE
 | snap (mini player to edges) | 贴边吸附 | not Windows' own Snap feature, so not 贴靠 |
 | autoplay next | 自动连播 | |
 | forced subtitles | 强制字幕 | |
+| upscaling (the picture panel's neural-network scaler) / shader | 超分辨率 / 着色器 | not yet read by the native reviewer; 超分辨率 is the term Chinese players use for the same switch |
+| off (as a mode pill) / animation | 关闭 / 动画 | the Pills rule; 动画, not 动漫, since the mode is for drawn animation of any origin |
 
 ### Rejected suggestions (so they are not re-litigated)
 | Suggestion | Why not |

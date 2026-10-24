@@ -37,7 +37,7 @@ GPL-only component appears.
 
 ## Contents
 
-- [Native libraries](#native-libraries) (45)
+- [Native libraries](#native-libraries) (47)
 - [Rust crates](#rust-crates) (442)
 - [JavaScript packages](#javascript-packages) (7)
 - [Online services](#online-services)
@@ -95,6 +95,8 @@ GPL-only component appears.
 | libaom | BSD-2-Clause | [aomedia.googlesource.com/aom/](https://aomedia.googlesource.com/aom/) |
 | libvpx | BSD-3-Clause | [github.com/webmproject/libvpx](https://github.com/webmproject/libvpx) |
 | Rubik | OFL-1.1 | [github.com/googlefonts/rubik](https://github.com/googlefonts/rubik) |
+| ArtCNN | MIT | [github.com/Artoriuz/ArtCNN](https://github.com/Artoriuz/ArtCNN) |
+| Anime4K | MIT | [github.com/bloc97/Anime4K](https://github.com/bloc97/Anime4K) |
 
 Notes on individual components:
 
@@ -109,6 +111,8 @@ Notes on individual components:
 - **GNU gettext runtime (libintl)** — Only the runtime library is shipped. The GPL-3.0 text in the gettext distribution covers its command-line tools, which are not.
 - **Graphite2** — Quad-licensed LGPL-2.1-or-later, MPL-2.0, GPL-2.0-or-later or MIT; LGPL-2.1-or-later is the option taken.
 - **Rubik** — The interface typeface, shipped as woff2 subsets in static/fonts/ so the player carries its own copy and renders identically offline. Not a library, hence no `libs`: the coverage check is about the dylib closure, and a font ships as an asset — which is exactly why it had no entry here until somebody looked. The OFL requires the copyright notice and licence to travel with the font, which is what this entry is for. The relay page does not redistribute it; it links to Google Fonts.
+- **ArtCNN** — The "video" upscaler (src/lib/upscale.svelte.ts): GLSL/ArtCNN_C4F16.glsl, shipped verbatim as src-tauri/shaders/ArtCNN_C4F16.glsl from commit 0837e5326e710f49e2ab0a8d995da0708047442e. A shader mpv compiles at run time rather than a library, hence no `libs`; its own copy of the MIT notice is at the top of the file.
+- **Anime4K** — The "anime" upscaler (src/lib/upscale.svelte.ts): glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl, shipped verbatim as src-tauri/shaders/Anime4K_Upscale_CNN_x2_M.glsl from commit 7684e9586f8dcc738af08a1cdceb024cc184f426. A shader rather than a library, hence no `libs`; its own copy of the MIT notice is at the top of the file.
 
 ---
 
@@ -10465,6 +10469,62 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+```
+
+### ArtCNN
+
+MIT — <https://github.com/Artoriuz/ArtCNN>
+
+```
+MIT License
+
+Copyright (c) 2024 João Chrisóstomo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### Anime4K
+
+MIT — <https://github.com/bloc97/Anime4K>
+
+```
+MIT License
+
+Copyright (c) 2019 bloc97
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ### Rust and JavaScript dependencies

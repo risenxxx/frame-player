@@ -34,6 +34,7 @@ import { LANG_ALIASES } from './languages';
 import { latest } from './latest';
 import { showOsd } from './osd.svelte';
 import { IS_MAC } from './platform';
+import type { OsdBox } from './upscale-plan';
 import type { DecodedPicture } from './window-fit';
 
 /// Amplification ceiling, in percent. Above 100 the player is amplifying and
@@ -278,6 +279,16 @@ const OBSERVED = [
   ['video-params/dw', 'int64', 'none'],
   ['video-params/dh', 'int64', 'none'],
   ['video-params/rotate', 'int64', 'none'],
+  // The VO's surface in device pixels and the picture's margins inside it:
+  // how far the picture is enlarged on screen, which is what decides whether
+  // an upscaling shader runs at all (upscale-plan.ts). Reported on every
+  // resize, so the six arrive together as the window moves.
+  ['osd-dimensions/w', 'int64', 'none'],
+  ['osd-dimensions/h', 'int64', 'none'],
+  ['osd-dimensions/ml', 'int64', 'none'],
+  ['osd-dimensions/mr', 'int64', 'none'],
+  ['osd-dimensions/mt', 'int64', 'none'],
+  ['osd-dimensions/mb', 'int64', 'none'],
 ] as const satisfies ReadonlyArray<MpvObservableProperty>;
 
 export type ObservedName = (typeof OBSERVED)[number][0];
@@ -352,6 +363,15 @@ const RESYNC: Record<ObservedName, boolean> = {
   'video-params/dw': true,
   'video-params/dh': true,
   'video-params/rotate': true,
+  // Re-reported at the next resize, but a window left alone after the lost
+  // one never resizes again: the panel would go on saying the upscaler is not
+  // needed in a window that has since been made full screen.
+  'osd-dimensions/w': true,
+  'osd-dimensions/h': true,
+  'osd-dimensions/ml': true,
+  'osd-dimensions/mr': true,
+  'osd-dimensions/mt': true,
+  'osd-dimensions/mb': true,
 
   // Re-reported by mpv on its own, so a dropped one costs a tick at most.
   'time-pos': false,
@@ -488,6 +508,9 @@ class Player {
   /// ahead of the VO; zeros with no frame decoded. What the window's shape is
   /// made of (`decodedShape`), together with `videoCrop`.
   decoded = $state<DecodedPicture>({ w: 0, h: 0, dw: 0, dh: 0, rotate: 0 });
+  /// `osd-dimensions/{w,h,ml,mr,mt,mb}` — the VO's surface in device pixels
+  /// and the margins around the picture in it (negative when it overflows).
+  osd = $state<OsdBox>({ w: 0, h: 0, ml: 0, mr: 0, mt: 0, mb: 0 });
 
   /// Picture geometry, per file. `aspectOverride` is negative for "from the
   /// container" — mpv's default is -2, and any negative value means auto.
@@ -983,6 +1006,12 @@ function applyProperty(ev: PropertyChange) {
     case 'video-params/dw': player.decoded.dw = ev.data ?? 0; break;
     case 'video-params/dh': player.decoded.dh = ev.data ?? 0; break;
     case 'video-params/rotate': player.decoded.rotate = ev.data ?? 0; break;
+    case 'osd-dimensions/w': player.osd.w = ev.data ?? 0; break;
+    case 'osd-dimensions/h': player.osd.h = ev.data ?? 0; break;
+    case 'osd-dimensions/ml': player.osd.ml = ev.data ?? 0; break;
+    case 'osd-dimensions/mr': player.osd.mr = ev.data ?? 0; break;
+    case 'osd-dimensions/mt': player.osd.mt = ev.data ?? 0; break;
+    case 'osd-dimensions/mb': player.osd.mb = ev.data ?? 0; break;
   }
 }
 

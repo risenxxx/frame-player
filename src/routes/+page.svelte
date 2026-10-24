@@ -259,6 +259,7 @@
   import { loadSeekSteps } from '$lib/seek-steps.svelte';
   import { restoreCrop } from '$lib/crop.svelte';
   import { restoreAdjust } from '$lib/picture-adjust.svelte';
+  import { initUpscale, restoreUpscale } from '$lib/upscale.svelte';
   import {
     attachTorrentSubtitles,
     releaseTorrent,
@@ -710,6 +711,7 @@
     } catch (e) {
       console.warn('zoompan.lua not loaded, zoom falls back:', e);
     }
+    initUpscale(await join(await resourceDir(), 'shaders'));
 
     // Position bookkeeping rides the same timer as the resync: it needs fresh
     // mirrors, and one interval is easier to reason about than two.
@@ -1105,6 +1107,7 @@
     resetPicture();
     restoreCrop();
     restoreAdjust();
+    restoreUpscale();
     resetAbLoop();
     applyTiming();
     // Subtitles the torrent itself carries. `sub-auto` finds nothing here —

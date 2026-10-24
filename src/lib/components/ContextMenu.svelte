@@ -42,6 +42,14 @@
     type AdjustParam,
   } from '$lib/picture-adjust.svelte';
   import { chrome } from '$lib/chrome.svelte';
+  import {
+    setUpscale,
+    setUpscaleScope,
+    upscale,
+    upscaleModeLabel,
+    upscaleStatus,
+  } from '$lib/upscale.svelte';
+  import { UPSCALE_MODES } from '$lib/upscale-plan';
   import { openSubsDialog } from '$lib/subs.svelte';
   import {
     fitWindowToVideo,
@@ -547,6 +555,44 @@
   >
     {t('ctx.panscan')}
   </button>
+  <div class="menu-sep"></div>
+  <div class="menu-title">{t('upscale.title')}</div>
+  {#if upscale.userShaders}
+    <div class="crop-note">{t('upscale.user_conf')}</div>
+  {:else}
+    <div class="speedrow">
+      {#each UPSCALE_MODES as m (m)}
+        <button
+          class="speedopt"
+          class:sel={upscale.mode === m}
+          data-tip={t(`upscale.${m}_tip`)}
+          onclick={() => setUpscale(m)}
+        >
+          {upscaleModeLabel(m)}
+        </button>
+      {/each}
+    </div>
+    <!-- Whether the shader runs is its own per-frame decision from the size
+         on screen, so a mode that is on can still be doing nothing — and says
+         so, or the switch would look broken exactly where it is not needed. -->
+    {#if upscale.mode !== 'off'}
+      <div class="crop-note">{upscaleStatus(chrome.fullscreen)}</div>
+    {/if}
+    <div class="speedrow">
+      {#each ['file', 'folder'] as const as scope (scope)}
+        {@const off = scope === 'folder' && !upscale.hasFolder}
+        <button
+          class="speedopt"
+          class:sel={upscale.scope === scope}
+          disabled={off}
+          data-tip={t(off ? 'adj.scope_folder_none' : `adj.scope_${scope}_tip`)}
+          onclick={() => setUpscaleScope(scope)}
+        >
+          {t(`adj.scope_${scope}`)}
+        </button>
+      {/each}
+    </div>
+  {/if}
   <div class="menu-sep"></div>
   <div class="menu-title">{t('ctx.color')}</div>
   <div class="adjust">
