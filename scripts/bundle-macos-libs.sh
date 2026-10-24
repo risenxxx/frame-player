@@ -130,8 +130,22 @@ for f in "$lib_dir"/*.dylib; do
     [ -f "$lib_dir/$(basename "$d")" ] || continue
     install_name_tool -change "$d" "@rpath/$(basename "$d")" "$f" 2>/dev/null || true
   done
-  # @loader_path is the library's own directory, so the set stays relocatable.
-  install_name_tool -add_rpath "@loader_path" "$f" 2>/dev/null || true
+  # Every run path the linker left goes, and @loader_path — the library's own
+  # directory — is the only one put back, so the set stays relocatable AND is
+  # the only place its @rpath names resolve. The build leaves its own: meson
+  # writes one per dependency directory (libmpv carried ten, Homebrew Cellar
+  # and the runner's temp prefix among them), and libjpeg and LuaJIT arrive
+  # with theirs. dyld takes the first match in order, so with @loader_path
+  # added *after* them, a machine with those formulae installed loaded
+  # Homebrew's libplacebo, Vulkan loader, lcms2, libass, uchardet and libjpeg
+  # instead of ours (measured with DYLD_PRINT_LIBRARIES). A signed release is
+  # saved by library validation, which rejects the foreign copies and lets dyld
+  # fall through; an ad-hoc build has no such guard. Relative ones go too:
+  # LuaJIT's `@loader_path/../../../../lib` points outside the bundle.
+  otool -l "$f" | awk '/cmd LC_RPATH/{getline;getline;print $2}' | while read -r rp; do
+    install_name_tool -delete_rpath "$rp" "$f" 2>/dev/null || true
+  done
+  install_name_tool -add_rpath "@loader_path" "$f"
   # Editing Mach-O breaks the signature, and Apple Silicon will not load unsigned code.
   codesign --force --sign - "$f" 2>/dev/null || true
 done

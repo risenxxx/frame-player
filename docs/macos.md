@@ -163,6 +163,25 @@ library a search path of its own directory. The same script relinks the ffmpeg
 command-line binary the casting prepare step spawns, which is a small shim over
 those same libraries.
 
+**Its own directory has to be the only search path, not merely one of them.**
+The build leaves run paths of its own — meson writes one per dependency
+directory, so libmpv carried ten (Homebrew `Cellar` and `opt` directories, the
+runner's temporary FFmpeg prefix, the toolchain's Swift directory), libjpeg and
+LuaJIT one each — and the script used to add `@loader_path` after them. dyld
+tries run paths in order and takes the first file that exists, so on a machine
+with the same Homebrew formulae installed a process loading the set took
+Homebrew's libplacebo, Vulkan loader, lcms2, libass, uchardet and libjpeg
+instead of the bundled ones (measured with `DYLD_PRINT_LIBRARIES`). The signed
+release was not affected, and only by luck of configuration: the hardened
+runtime's library validation rejects a library signed by another team, and dyld
+then falls through to the next run path, which is the bundle (measured on the
+installed app with `lsof`). An ad-hoc build has no such guard. The script now
+deletes every run path and adds back `@loader_path` alone, and the libraries
+workflow fails a set where any library has another — the `dlopen` it also does
+cannot see this, because the runner has Homebrew and the wrong copies load just
+as well. Swift's runtime is linked by absolute `/usr/lib/swift/...` paths and
+needs no run path.
+
 One rule follows from where things end up: inside the bundle the executable is
 in `Contents/MacOS` and the libraries are in `Contents/Resources/lib`, while in
 a development build they are side by side. Anything that looks for a bundled

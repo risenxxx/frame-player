@@ -111,6 +111,21 @@ jobs:
             esac
           done
           echo "decoders and encoders present"
+          # Every library resolves its @rpath names next to itself and nowhere
+          # else. The dlopen below cannot catch a leaked run path: this runner
+          # has Homebrew, so a library found through /opt/homebrew loads just
+          # as well — and on a viewer's machine with the same formulae, dyld
+          # took those ahead of ours whenever @loader_path came last.
+          bad=0
+          for f in src-tauri/lib/*.dylib; do
+            rpaths="$(otool -l "$f" | awk '/cmd LC_RPATH/{getline;getline;print $2}' | tr '\n' ' ')"
+            if [ "$rpaths" != "@loader_path " ]; then
+              echo "run paths other than @loader_path in $f: $rpaths" >&2
+              bad=1
+            fi
+          done
+          [ "$bad" -eq 0 ] || exit 1
+          echo "every library resolves only beside itself"
           # libmpv actually loads, resolving its whole @rpath closure — which is
           # what catches a broken path rewrite. `otool -L` only reports what the
           # header says; dlopen is the thing that has to succeed at runtime.
