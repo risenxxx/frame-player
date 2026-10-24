@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fitWindow, floorForShape, pictureShape, pinchResizes, placeAround, shapeFits, shapeKey, videoPixel } from './window-fit';
+import { decodedShape, fitWindow, floorForShape, pictureShape, pinchResizes, placeAround, shapeFits, shapeKey, videoPixel } from './window-fit';
 
 const MIN = { w: 480, h: 320 };
 const HD = { w: 1920, h: 1080 };
@@ -22,6 +22,36 @@ describe('pictureShape', () => {
     expect(pictureShape(0, 0, 0)).toBeNull();
     expect(pictureShape(1920, 0, 0)).toBeNull();
     expect(pictureShape(Number.NaN, 1080, 0)).toBeNull();
+  });
+});
+
+describe('decodedShape', () => {
+  const film = { w: 1920, h: 1080, dw: 1920, dh: 1080, rotate: 0 };
+
+  it('is the display size, turned', () => {
+    expect(decodedShape(film, null)).toEqual(HD);
+    expect(decodedShape({ ...film, rotate: 90 }, null)).toEqual(UPRIGHT);
+  });
+
+  it('has no shape before a frame is decoded', () => {
+    // `w`/`h` come from the codec before that; `dw`/`dh` do not.
+    expect(decodedShape({ ...film, dw: 0, dh: 0 }, null)).toBeNull();
+  });
+
+  it('takes the crop as mpv draws it', () => {
+    expect(decodedShape(film, { x: 0, y: 140, w: 1920, h: 800 })).toEqual({ w: 1920, h: 800 });
+    // Measured on 0.41: 1920×1200 at aspect 2.0 is 2400×1200; a 1200×1200
+    // crop of it reads `dwidth` 1500.
+    expect(decodedShape({ w: 1920, h: 1200, dw: 2400, dh: 1200, rotate: 0 }, { x: 0, y: 0, w: 1200, h: 1200 })).toEqual({
+      w: 1500,
+      h: 1200,
+    });
+    // The crop is in the frame's own pixels, and turns with it.
+    expect(decodedShape({ ...film, rotate: 270 }, { x: 0, y: 140, w: 1920, h: 800 })).toEqual({ w: 800, h: 1920 });
+  });
+
+  it('ignores a crop outside the frame, as mpv does', () => {
+    expect(decodedShape(film, { x: 100, y: 0, w: 1920, h: 800 })).toEqual(HD);
   });
 });
 

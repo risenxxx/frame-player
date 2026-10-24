@@ -25,8 +25,9 @@
  * reset stays behind the same "only if we touched it" guard as the rest of the
  * picture geometry.
  *
- * `dwidth`/`dheight` follow the crop (measured), so fit-to-video and the hover
- * preview's shape come along without anything here telling them. What does
+ * `dwidth`/`dheight` follow the crop (measured), so the hover preview's shape
+ * comes along without anything here telling it; the window's shape is the
+ * decoder's and applies the crop itself (`decodedShape`). What does
  * need telling is where the kept part sits inside the full-frame thumbnail,
  * which is `objectPosition`.
  */

@@ -162,14 +162,21 @@ async function settle(ms = 200) {
   await vi.advanceTimersByTimeAsync(ms);
 }
 
+/// A file whose picture has reached the VO: the decoder and the VO agree.
 function show(path: string, w: number, h: number, rotate = 0) {
   player.filename = path.split('/').pop() ?? null;
   player.filePath = path;
   player.videoW = w;
   player.videoH = h;
   player.voRotate = rotate;
-  // The decoder's word that there is a picture at all.
+  decode(w, h, rotate);
+}
+
+/// The decoder's word alone — what a file says before its first frame has
+/// reached the VO, which goes on reporting whatever it painted last.
+function decode(w: number, h: number, rotate = 0) {
   player.sourceTransfer = w > 0 ? 'bt.1886' : null;
+  player.decoded = { w, h, dw: w, dh: h, rotate };
 }
 
 const ratio = () => win.w / win.h;
@@ -237,11 +244,11 @@ describe('the window follows the picture', () => {
     show('/a.mkv', 1920, 1080);
     await settle();
     calls.length = 0;
-    // The three properties of the next file, one event each.
-    player.videoW = 1080;
+    // The properties of the next file, one event each.
+    player.decoded.dw = 1080;
     changed();
     await vi.advanceTimersByTimeAsync(5);
-    player.videoH = 1920;
+    player.decoded.dh = 1920;
     await settle();
     expect(calls.filter((c) => c.startsWith('size'))).toHaveLength(1);
     expect(ratio()).toBeCloseTo(9 / 16, 2);
@@ -307,7 +314,7 @@ describe('the window follows the picture', () => {
     // The VO reconfiguring: mpv reports both as unavailable.
     player.videoW = 0;
     player.videoH = 0;
-    player.sourceTransfer = null;
+    decode(0, 0);
     await settle();
     expect(calls).toEqual([]);
     expect(locked).toEqual({ width: 1920, height: 1080 });
@@ -326,10 +333,56 @@ describe('the window follows the picture', () => {
     // What mpv reports for a file with no picture, and for every file until
     // its first frame: the size of `force-window`'s own field.
     show('/album.flac', 960, 540);
-    player.sourceTransfer = null;
+    decode(0, 0);
     await settle();
     expect(calls).toEqual([]);
     expect(locked).toBeNull();
+  });
+
+  it('does not take that field for the film the decoder has already reported', async () => {
+    // A file resumed mid-way: the decoder throws frames away up to the
+    // position and has reported the film, while the VO still paints its field
+    // (measured: 160 ms apart at `start=30`).
+    show('/album.flac', 960, 540);
+    decode(0, 0);
+    await settle();
+    player.filePath = '/film.mp4';
+    decode(1920, 1200);
+    await settle();
+    expect(ratio()).toBeCloseTo(16 / 10, 2);
+    calls.length = 0;
+    // The VO catches up.
+    player.videoW = 1920;
+    player.videoH = 1200;
+    await settle();
+    expect(calls.filter((c) => c.startsWith('size'))).toEqual([]);
+  });
+
+  it('takes the shape of the crop, which only the VO applies', async () => {
+    show('/film.mkv', 1920, 1080);
+    player.videoCrop = '1920x800+0+140';
+    await settle();
+    expect(ratio()).toBeCloseTo(1920 / 800, 2);
+    player.videoCrop = '';
+  });
+
+  it('crops an anamorphic frame in display units', async () => {
+    show('/dvd.mkv', 720, 576);
+    player.decoded = { w: 720, h: 576, dw: 1024, dh: 576, rotate: 0 };
+    player.videoCrop = '720x432+0+72';
+    await settle();
+    expect(ratio()).toBeCloseTo(1024 / 432, 2);
+    player.videoCrop = '';
+  });
+
+  it('takes the VO`s word for a crop it cannot read', async () => {
+    // mpv.conf may say `video-crop=50%x50%`; mpv applies it, this cannot.
+    show('/film.mkv', 1920, 1080);
+    player.videoCrop = '50%x100%';
+    player.videoW = 960;
+    await settle();
+    expect(ratio()).toBeCloseTo(960 / 1080, 2);
+    player.videoCrop = '';
   });
 });
 
@@ -417,7 +470,7 @@ describe('saying when the picture has its window', () => {
 
   it('says nothing for a file with no picture', async () => {
     show('/album.flac', 960, 540);
-    player.sourceTransfer = null;
+    decode(0, 0);
     await settle();
     expect(settled).toEqual([]);
   });

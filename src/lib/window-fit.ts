@@ -30,6 +30,59 @@ export function pictureShape(w: number, h: number, rotate: number): Size | null 
   return Math.abs(rotate) % 180 === 90 ? { w: h, h: w } : { w, h };
 }
 
+/** What the decoder says about the frame: `video-params/{w,h,dw,dh,rotate}`. */
+export interface DecodedPicture {
+  /** The frame in its own pixels. */
+  w: number;
+  h: number;
+  /** The frame at its display aspect; zero until a frame is decoded. */
+  dw: number;
+  dh: number;
+  rotate: number;
+}
+
+/** A `video-crop` rectangle, in the frame's own pixels. */
+export interface CropRect extends Size {
+  x: number;
+  y: number;
+}
+
+/**
+ * The picture as it will be drawn, worked out from the decoder rather than
+ * read off the VO: what `dwidth`×`dheight` and `video-out-params/rotate` will
+ * say once the VO has the frame, and before it does.
+ *
+ * The VO is late by however long the first frame takes to reach it. A file
+ * opened at a remembered position decodes from the keyframe before it and
+ * throws those frames away, and all that time the VO reports the 960×540
+ * field `force-window` paints while the decoder already reports the film — so
+ * the window, taking the VO's word, went to 16:9 and back on every resumed
+ * file of any other shape.
+ *
+ * `video-crop` is applied by the VO and so is not in the decoder's numbers;
+ * it is applied here the way mpv does (`mp_image_params_get_dsize`): the
+ * rectangle's own size, stretched by the frame's pixel aspect — and ignored
+ * where it does not fit inside the frame, as mpv ignores it.
+ */
+export function decodedShape(d: DecodedPicture, crop: CropRect | null): Size | null {
+  if (!(d.dw > 0) || !(d.dh > 0)) return null;
+  let w = d.dw;
+  let h = d.dh;
+  const fits =
+    crop !== null &&
+    d.w > 0 &&
+    d.h > 0 &&
+    crop.w > 0 &&
+    crop.h > 0 &&
+    crop.x + crop.w <= d.w &&
+    crop.y + crop.h <= d.h;
+  if (fits) {
+    w = Math.max(1, Math.round((crop.w * d.dw) / d.w));
+    h = Math.max(1, Math.round((crop.h * d.dh) / d.h));
+  }
+  return pictureShape(w, h, d.rotate);
+}
+
 /**
  * How many physical pixels one pixel of video takes at "100 %".
  *

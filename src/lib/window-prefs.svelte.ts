@@ -12,12 +12,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { LogicalSize, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
 import { currentMonitor, getCurrentWindow } from '@tauri-apps/api/window';
 
+import { parseRect } from './crop-geometry';
 import { t } from './i18n.svelte';
 import { latest, type Attempt } from './latest';
 import { showOsd } from './osd.svelte';
 import { IS_MAC } from './platform';
 import { player } from './player.svelte';
 import {
+  decodedShape,
   fitWindow,
   floorForShape,
   PINCH_CHOICES,
@@ -628,13 +630,20 @@ function currentShape(): Size | null {
   // of its own to paint black — before the first frame of every file, and for
   // the whole of a file that has no picture — and `dwidth`/`dheight` report
   // that field as readily as a film (measured: an audio file reads 960×540).
-  // What says a picture exists is the decoder, which `sourceTransfer` mirrors;
-  // taking the size alone reshaped the window twice on opening anything that
-  // is not 16:9, once for the field and once for the film.
+  // Nor does the decoder having a frame mean the VO has it: a file resumed
+  // mid-way decodes up to its position and drops the frames on the way, with
+  // the VO on its field all the while, and taking the VO's size the moment
+  // the decoder spoke widened every resumed 16:10 film to 16:9 and back. So
+  // the shape is the decoder's, with the crop applied here (`decodedShape`).
+  // A crop this cannot read — a percentage from the viewer's own mpv.conf —
+  // leaves the VO's word as the only one, behind the old guard.
+  const crop = player.videoCrop ? parseRect(player.videoCrop) : null;
   const now =
-    player.sourceTransfer !== null
-      ? pictureShape(player.videoW, player.videoH, player.voRotate)
-      : null;
+    player.videoCrop && !crop
+      ? player.sourceTransfer !== null
+        ? pictureShape(player.videoW, player.videoH, player.voRotate)
+        : null
+      : decodedShape(player.decoded, crop);
   if (now) {
     known = { path: player.filePath, shape: now };
     return now;

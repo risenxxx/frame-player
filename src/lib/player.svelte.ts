@@ -34,6 +34,7 @@ import { LANG_ALIASES } from './languages';
 import { latest } from './latest';
 import { showOsd } from './osd.svelte';
 import { IS_MAC } from './platform';
+import type { DecodedPicture } from './window-fit';
 
 /// Amplification ceiling, in percent. Above 100 the player is amplifying and
 /// can clip, so this stays well short of mpv's 1000 maximum. mpv's own default
@@ -238,7 +239,8 @@ const OBSERVED = [
   ['video-aspect-override', 'double', 'none'],
   ['panscan', 'double', 'none'],
   // `WxH+X+Y`, or empty for none. dwidth/dheight follow it (measured), which is
-  // what lets the window fit and the hover preview take the cropped shape.
+  // what lets the hover preview take the cropped shape; the window applies it
+  // to the decoder's size itself (`decodedShape`).
   ['video-crop', 'string', 'none'],
   // Frames that were lost, and where. Observed rather than read when the media
   // info panel opens, and that is the whole point of them: a stall lasts a
@@ -261,6 +263,21 @@ const OBSERVED = [
   // touch the picture at all (`syncSdrColor`), and it is observed rather than
   // read on `file-loaded` because the decoder has reported nothing by then.
   ['video-params/gamma', 'string', 'none'],
+  // The picture as the decoder hands it to the filter chain: the frame, its
+  // display size (aspect applied) and its turn. The window's shape is built
+  // from these and not from `dwidth`/`dheight`, which are the *VO's* and lag
+  // behind: a file opened mid-way decodes from the keyframe up to the start
+  // position and throws those frames away, and for all that time the VO is
+  // still painting `force-window`'s 960×540 field while these — and `gamma`
+  // with them — already describe the film (measured on 0.41, `start=30`: 160
+  // ms between the two). One struct on mpv's side, so the five arrive in one
+  // batch. `w`/`h` are reported before the first frame too, from the codec;
+  // `dw`, `dh` and `rotate` are not, and are what says a frame exists.
+  ['video-params/w', 'int64', 'none'],
+  ['video-params/h', 'int64', 'none'],
+  ['video-params/dw', 'int64', 'none'],
+  ['video-params/dh', 'int64', 'none'],
+  ['video-params/rotate', 'int64', 'none'],
 ] as const satisfies ReadonlyArray<MpvObservableProperty>;
 
 export type ObservedName = (typeof OBSERVED)[number][0];
@@ -328,6 +345,13 @@ const RESYNC: Record<ObservedName, boolean> = {
   // an SDR one would be drawn through a filter that re-labels it as gamma 2.2.
   // The sweep is cheap here because `syncSdrColor` only acts on a change.
   'video-params/gamma': true,
+  // Set once per file and then stand, and the window's shape is held to them:
+  // lost, the window keeps the previous file's shape until the next one.
+  'video-params/w': true,
+  'video-params/h': true,
+  'video-params/dw': true,
+  'video-params/dh': true,
+  'video-params/rotate': true,
 
   // Re-reported by mpv on its own, so a dropped one costs a tick at most.
   'time-pos': false,
@@ -460,6 +484,10 @@ class Player {
   /// The current video's transfer function before any filter
   /// (`video-params/gamma`), mpv's guess included; null with no video.
   sourceTransfer = $state<string | null>(null);
+  /// `video-params/{w,h,dw,dh,rotate}` — the picture the decoder produces,
+  /// ahead of the VO; zeros with no frame decoded. What the window's shape is
+  /// made of (`decodedShape`), together with `videoCrop`.
+  decoded = $state<DecodedPicture>({ w: 0, h: 0, dw: 0, dh: 0, rotate: 0 });
 
   /// Picture geometry, per file. `aspectOverride` is negative for "from the
   /// container" — mpv's default is -2, and any negative value means auto.
@@ -950,6 +978,11 @@ function applyProperty(ev: PropertyChange) {
       player.sourceTransfer = ev.data;
       syncSdrColor();
       break;
+    case 'video-params/w': player.decoded.w = ev.data ?? 0; break;
+    case 'video-params/h': player.decoded.h = ev.data ?? 0; break;
+    case 'video-params/dw': player.decoded.dw = ev.data ?? 0; break;
+    case 'video-params/dh': player.decoded.dh = ev.data ?? 0; break;
+    case 'video-params/rotate': player.decoded.rotate = ev.data ?? 0; break;
   }
 }
 
