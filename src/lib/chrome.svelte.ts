@@ -568,15 +568,50 @@ function wakeEffect() {
 // isFullscreen() keeps answering true — the mirror and the fullscreen button
 // get stuck. Our handler exits fullscreen honestly via exitFullscreen (and
 // does not let a fullscreen window be dragged by the titlebar).
+//
+// **The drag starts once the pointer has moved, never on the press.**
+// `startDragging` hands the press to the system as a press on a caption
+// (`WM_NCLBUTTONDOWN` / `HTCAPTION`), and a second press inside the
+// double-click interval can then be the *system's* caption double click —
+// which toggles maximize by itself — as well as reaching the page as
+// `detail === 2`, which toggles it again: the window flickers and stays as it
+// was. Reported as a double click on the bar that "gets stuck" most of the
+// time, which is the shape of a race. A press that does not move is the
+// page's alone, the same rule the picture's drag already follows
+// (`onVideoPointerMove`).
+let barPress: { x: number; y: number } | null = null;
+
+function endBarPress() {
+  barPress = null;
+  window.removeEventListener('mousemove', onBarPressMove);
+  window.removeEventListener('mouseup', endBarPress);
+}
+
+function onBarPressMove(e: MouseEvent) {
+  if (!barPress) return;
+  if ((e.buttons & 1) === 0) {
+    endBarPress();
+    return;
+  }
+  const dx = e.clientX - barPress.x;
+  const dy = e.clientY - barPress.y;
+  if (dx * dx + dy * dy <= 25) return;
+  endBarPress();
+  void getCurrentWindow().startDragging();
+}
+
 export function onTitlebarMouseDown(e: MouseEvent) {
   if (IS_MAC || e.button !== 0 || e.target !== e.currentTarget) return;
   if (e.detail !== 1 && e.detail !== 2) return;
   e.preventDefault();
+  endBarPress();
   if (e.detail === 2) {
     if (chrome.fullscreen) void exitFullscreen();
     else void getCurrentWindow().toggleMaximize();
   } else if (!chrome.fullscreen) {
-    void getCurrentWindow().startDragging();
+    barPress = { x: e.clientX, y: e.clientY };
+    window.addEventListener('mousemove', onBarPressMove);
+    window.addEventListener('mouseup', endBarPress);
   }
 }
 
