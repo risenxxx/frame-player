@@ -1,7 +1,10 @@
 /**
  * The upscaler: a neural-network shader that mpv runs over the picture when it
  * is drawn larger than it was decoded, chosen from the context menu's picture
- * panel or stepped through by an unbound hotkey.
+ * panel or stepped through by an unbound hotkey. Three of them: one that
+ * reconstructs filmed video, one for animation, and a generative one that
+ * draws detail in and is only offered for sources up to 720p (upscale-plan.ts
+ * says what each costs and why).
  *
  * **Two scopes, and the narrower wins.** A mode is kept for this file or for
  * its playlist (the folder, or the torrent — the key the picture adjustments
@@ -38,9 +41,11 @@ import {
   fileRecord,
   nextUpscale,
   resolveUpscale,
+  shaderFor,
   UPSCALE_SHADERS,
   upscaleEngaged,
   upscaleRatio,
+  type ShaderMode,
   type UpscaleMode,
 } from './upscale-plan';
 
@@ -62,9 +67,15 @@ class Upscale {
     return upscaleRatio(player.osd, player.decoded, player.voRotate);
   }
 
-  /// The mode's shader is actually running at this size.
+  /// The shader the mode puts in for this source: `strong` is `video` above
+  /// 720p (`STRONG_MAX`).
+  get shader(): ShaderMode | null {
+    return shaderFor(this.mode, player.decoded);
+  }
+
+  /// That shader is actually running at this size.
   get engaged(): boolean {
-    return upscaleEngaged(this.mode, this.ratio);
+    return upscaleEngaged(this.shader, this.ratio);
   }
 }
 
@@ -72,38 +83,47 @@ export const upscale = new Upscale();
 
 /// Where the shaders are, once `initUpscale` has been told.
 let shaderDir: string | null = null;
-/// What mpv has been given, so a file change with the same mode sends nothing.
-/// Null when unknown: before the first send, and after one that failed.
-let sent: UpscaleMode | null = null;
+/// The shader mpv has been given (null: none), so a file change that keeps it
+/// sends nothing. Undefined when unknown: before the first send, and after one
+/// that failed.
+let sent: ShaderMode | null | undefined;
 
 /// Called once mpv is up: the shader directory (`resource_dir/shaders`), and
 /// whether the viewer's own configuration already owns the option.
 export function initUpscale(dir: string) {
   shaderDir = dir;
-  sent = null;
+  sent = undefined;
   upscale.userShaders = userConfOptionNames().some((n) => n.startsWith('glsl-shader'));
   // A file that finished loading before the directory was known.
-  if (player.hasFile) void send(upscale.mode);
+  if (player.hasFile) void apply();
 }
 
 /**
- * Give mpv the shader list for `mode`. `clr` then `append` rather than one
- * `set`, because `set` splits its value on the platform's path separator and
- * `append` takes one path whole, whatever it contains.
+ * Give mpv the shader list the mode calls for on this source. `clr` then
+ * `append` rather than one `set`, because `set` splits its value on the
+ * platform's path separator and `append` takes one path whole, whatever it
+ * contains.
  */
-async function send(mode: UpscaleMode) {
-  if (upscale.userShaders || !shaderDir || sent === mode) return;
-  sent = mode;
+async function apply() {
+  const shader = upscale.shader;
+  if (upscale.userShaders || !shaderDir || sent === shader) return;
+  sent = shader;
   try {
     await command('change-list', ['glsl-shaders', 'clr', '']);
-    if (mode !== 'off') {
-      const path = await join(shaderDir, UPSCALE_SHADERS[mode].file);
+    if (shader) {
+      const path = await join(shaderDir, UPSCALE_SHADERS[shader].file);
       await command('change-list', ['glsl-shaders', 'append', path]);
     }
   } catch (e) {
-    sent = null;
+    sent = undefined;
     console.warn('upscaler: mpv refused the shader list:', e);
   }
+}
+
+/// The decoder reported the frame's size, which decides what `strong` puts in.
+/// From the page's `property` hook, on `video-params/w` and `/h`.
+export function upscaleSourceChanged() {
+  if (upscale.mode === 'strong' && player.hasFile) void apply();
 }
 
 /// Write the mode on screen to the scope on screen.
@@ -126,14 +146,14 @@ export function restoreUpscale() {
   upscale.hasFolder = s.hasFolder;
   upscale.mode = r.mode;
   upscale.scope = r.scope;
-  void send(r.mode);
+  void apply();
 }
 
 export function setUpscale(mode: UpscaleMode) {
   const path = player.filePath;
   if (!player.hasFile || !path || upscale.userShaders) return;
   upscale.mode = mode;
-  void send(mode);
+  void apply();
   save(path);
 }
 
@@ -164,6 +184,12 @@ export function upscaleStatus(fullscreen: boolean): string {
   const ratio = upscale.ratio;
   if (upscale.engaged && ratio) return t('upscale.engaged', { ratio: factor(ratio) });
   return t(fullscreen ? 'upscale.idle_screen' : 'upscale.idle_window');
+}
+
+/// Said beside the status when `strong` is standing in as `video`, null
+/// otherwise.
+export function upscaleNote(): string | null {
+  return upscale.mode === 'strong' && upscale.shader === 'video' ? t('upscale.strong_fallback') : null;
 }
 
 /// The hotkey: the next mode, and a popup saying which and whether it runs.

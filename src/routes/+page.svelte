@@ -259,7 +259,7 @@
   import { loadSeekSteps } from '$lib/seek-steps.svelte';
   import { restoreCrop } from '$lib/crop.svelte';
   import { restoreAdjust } from '$lib/picture-adjust.svelte';
-  import { initUpscale, restoreUpscale } from '$lib/upscale.svelte';
+  import { initUpscale, restoreUpscale, upscaleSourceChanged } from '$lib/upscale.svelte';
   import {
     attachTorrentSubtitles,
     releaseTorrent,
@@ -1033,6 +1033,10 @@
         break;
       case 'duration':
         maybeStartThumbs();
+        break;
+      case 'video-params/w':
+      case 'video-params/h':
+        upscaleSourceChanged();
         break;
       case 'filename':
         clearTimeout(emptyTimer);

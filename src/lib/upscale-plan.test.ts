@@ -6,7 +6,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { fileRecord, nextUpscale, resolveUpscale, upscaleEngaged, upscaleRatio, type OsdBox } from './upscale-plan';
+import {
+  fileRecord,
+  nextUpscale,
+  resolveUpscale,
+  shaderFor,
+  upscaleEngaged,
+  upscaleRatio,
+  type OsdBox,
+} from './upscale-plan';
 
 const box = (w: number, h: number, mx = 0, my = 0): OsdBox => ({ w, h, ml: mx, mr: mx, mt: my, mb: my });
 
@@ -54,7 +62,8 @@ describe('upscaleEngaged', () => {
     expect(upscaleEngaged('video', { x: 1.25, y: 1.25 })).toBe(false);
     expect(upscaleEngaged('video', { x: 1.375, y: 1.375 })).toBe(true);
     expect(upscaleEngaged('anime', { x: 1.25, y: 1.25 })).toBe(true);
-    expect(upscaleEngaged('off', { x: 3, y: 3 })).toBe(false);
+    expect(upscaleEngaged('strong', { x: 1.25, y: 1.25 })).toBe(true);
+    expect(upscaleEngaged(null, { x: 3, y: 3 })).toBe(false);
   });
 });
 
@@ -73,6 +82,32 @@ describe('scopes', () => {
   });
 
   it('cycles through every mode back to off', () => {
-    expect([nextUpscale('off'), nextUpscale('video'), nextUpscale('anime')]).toEqual(['video', 'anime', 'off']);
+    expect(['off', 'video', 'anime', 'strong'].map((m) => nextUpscale(m as never))).toEqual([
+      'video',
+      'anime',
+      'strong',
+      'off',
+    ]);
+  });
+});
+
+describe('shaderFor', () => {
+  it('runs the generative shader only on sources up to 720p', () => {
+    expect(shaderFor('strong', { w: 854, h: 480 })).toBe('strong');
+    expect(shaderFor('strong', { w: 1280, h: 720 })).toBe('strong');
+    // Phone video, upright: the long side is the height.
+    expect(shaderFor('strong', { w: 720, h: 1280 })).toBe('strong');
+    expect(shaderFor('strong', { w: 1920, h: 1080 })).toBe('video');
+    expect(shaderFor('strong', { w: 1440, h: 720 })).toBe('video');
+  });
+
+  it('takes the mode as asked before the source is measured', () => {
+    expect(shaderFor('strong', { w: 0, h: 0 })).toBe('strong');
+  });
+
+  it('leaves the other modes alone', () => {
+    expect(shaderFor('off', { w: 854, h: 480 })).toBeNull();
+    expect(shaderFor('video', { w: 3840, h: 2160 })).toBe('video');
+    expect(shaderFor('anime', { w: 854, h: 480 })).toBe('anime');
   });
 });

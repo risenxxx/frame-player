@@ -29,27 +29,62 @@
  */
 
 /// Which shader enlarges the picture: none, the one for filmed video, the one
-/// for drawn animation.
-export type UpscaleMode = 'off' | 'video' | 'anime';
+/// for drawn animation, or the generative one that draws detail in.
+export type UpscaleMode = 'off' | 'video' | 'anime' | 'strong';
 
-export const UPSCALE_MODES: readonly UpscaleMode[] = ['off', 'video', 'anime'];
+/// A mode that puts a shader in.
+export type ShaderMode = Exclude<UpscaleMode, 'off'>;
+
+export const UPSCALE_MODES: readonly UpscaleMode[] = ['off', 'video', 'anime', 'strong'];
 
 /**
  * The shader for each mode and the factor its `//!WHEN` lines demand, copied
  * from the files in `src-tauri/shaders/`.
  *
- * Both are ×2 networks, and the lightest of their families. Measured on an M3
- * Max, 1080p into 3400×2000, the GPU time per frame (`vo-passes`, the sum of
- * the averages): 2.5 ms without a shader, 8.8 ms for ArtCNN C4F16, 37 ms for
- * C4F32 — past a 24 fps frame on the fastest Mac there is — and 6.4 / 8.6 /
- * 15 ms for Anime4K M / L / VL. An integrated GPU has a fraction of that
- * machine's cores, so the light ones are the only ones that can be offered as a
- * switch rather than as a gamble.
+ * All three are ×2 networks. Measured on an M3 Max into 3400×2000, the GPU time
+ * per frame (`vo-passes`, the sum of the averages), for a 720p and a 1080p
+ * source: 2.3 / 2.9 ms without a shader; ArtCNN C4F16 DS 7.2 / 8.5; Anime4K CNN
+ * M 3.9 / 6.4; Anime4K GAN x2 M 9.9 / 20.7. The heavier members of each family
+ * are not a switch: ArtCNN C4F32 is 37 ms at 1080p, Anime4K's Restore GAN UL +
+ * GAN x2 M 44 ms and GAN x4 UL 39 ms — past a 24 fps frame on the fastest Mac
+ * there is, and an integrated GPU has a fraction of its cores.
+ *
+ * `video` is the DS variant (trained to denoise and sharpen as it enlarges):
+ * the same cost as plain C4F16 and visibly crisper. `strong` is the only one
+ * that invents texture rather than reconstructing edges, which is what reads as
+ * detail across the whole frame — and it pays for it twice: faces pick up
+ * artifacts, since the network was trained on animation, and the invented
+ * texture differs from frame to frame (two consecutive frames of a 480p film
+ * were 35.4 dB apart in PSNR plain, 33.9 dB with it). Hence `STRONG_MAX`.
  */
-export const UPSCALE_SHADERS: Record<Exclude<UpscaleMode, 'off'>, { file: string; threshold: number }> = {
-  video: { file: 'ArtCNN_C4F16.glsl', threshold: 1.3 },
+export const UPSCALE_SHADERS: Record<ShaderMode, { file: string; threshold: number }> = {
+  video: { file: 'ArtCNN_C4F16_DS.glsl', threshold: 1.3 },
   anime: { file: 'Anime4K_Upscale_CNN_x2_M.glsl', threshold: 1.2 },
+  strong: { file: 'Anime4K_Upscale_GAN_x2_M.glsl', threshold: 1.2 },
 };
+
+/**
+ * The largest source the generative mode runs on, by its long and its short
+ * side. Its cost follows the source's pixels, 20.7 ms a frame at 1080p on the
+ * fastest Mac, and a picture that large has the least to gain from invented
+ * detail; above this the mode falls back to `video`, so that a playlist set to
+ * it mixes 720p and 1080p episodes without either dropping frames or losing
+ * the upscaler.
+ */
+export const STRONG_MAX = { long: 1280, short: 720 };
+
+/**
+ * The shader a mode puts in for this source, or null for none. A source not
+ * measured yet (`w`/`h` zero) takes the mode as asked: they arrive from the
+ * codec before the first frame, and a later report re-decides.
+ */
+export function shaderFor(mode: UpscaleMode, plane: { w: number; h: number }): ShaderMode | null {
+  if (mode === 'off') return null;
+  if (mode !== 'strong') return mode;
+  const long = Math.max(plane.w, plane.h);
+  const short = Math.min(plane.w, plane.h);
+  return long > STRONG_MAX.long || short > STRONG_MAX.short ? 'video' : 'strong';
+}
 
 /// `osd-dimensions/{w,h,ml,mr,mt,mb}`: the VO's surface in device pixels and
 /// the margins between it and the picture.
@@ -80,9 +115,9 @@ export function upscaleRatio(
   return { x: w / pw, y: h / ph };
 }
 
-/// Whether the mode's shader runs at this ratio.
-export function upscaleEngaged(mode: UpscaleMode, ratio: { x: number; y: number } | null): boolean {
-  if (mode === 'off' || !ratio) return false;
+/// Whether a shader runs at this ratio.
+export function upscaleEngaged(mode: ShaderMode | null, ratio: { x: number; y: number } | null): boolean {
+  if (!mode || !ratio) return false;
   const { threshold } = UPSCALE_SHADERS[mode];
   return ratio.x > threshold && ratio.y > threshold;
 }

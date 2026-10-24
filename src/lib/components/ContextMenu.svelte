@@ -47,6 +47,7 @@
     setUpscaleScope,
     upscale,
     upscaleModeLabel,
+    upscaleNote,
     upscaleStatus,
   } from '$lib/upscale.svelte';
   import { UPSCALE_MODES } from '$lib/upscale-plan';
@@ -576,6 +577,10 @@
          on screen, so a mode that is on can still be doing nothing — and says
          so, or the switch would look broken exactly where it is not needed. -->
     {#if upscale.mode !== 'off'}
+      {@const note = upscaleNote()}
+      {#if note}
+        <div class="crop-note">{note}</div>
+      {/if}
       <div class="crop-note">{upscaleStatus(chrome.fullscreen)}</div>
     {/if}
     <div class="speedrow">

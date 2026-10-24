@@ -472,7 +472,7 @@
       "url": "https://github.com/Artoriuz/ArtCNN",
       "source": "https://github.com/Artoriuz/ArtCNN",
       "libs": [],
-      "note": "The \"video\" upscaler (src/lib/upscale.svelte.ts): GLSL/ArtCNN_C4F16.glsl, shipped verbatim as src-tauri/shaders/ArtCNN_C4F16.glsl from commit 0837e5326e710f49e2ab0a8d995da0708047442e. A shader mpv compiles at run time rather than a library, hence no `libs`; its own copy of the MIT notice is at the top of the file."
+      "note": "The \"video\" upscaler (src/lib/upscale.svelte.ts): GLSL/ArtCNN_C4F16_DS.glsl, shipped verbatim as src-tauri/shaders/ArtCNN_C4F16_DS.glsl from commit 0837e5326e710f49e2ab0a8d995da0708047442e. A shader mpv compiles at run time rather than a library, hence no `libs`; its own copy of the MIT notice is at the top of the file."
     },
     {
       "id": "anime4k",
@@ -482,7 +482,7 @@
       "url": "https://github.com/bloc97/Anime4K",
       "source": "https://github.com/bloc97/Anime4K",
       "libs": [],
-      "note": "The \"anime\" upscaler (src/lib/upscale.svelte.ts): glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl, shipped verbatim as src-tauri/shaders/Anime4K_Upscale_CNN_x2_M.glsl from commit 7684e9586f8dcc738af08a1cdceb024cc184f426. A shader rather than a library, hence no `libs`; its own copy of the MIT notice is at the top of the file."
+      "note": "The \"anime\" and \"strong\" upscalers (src/lib/upscale.svelte.ts): glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl and glsl/Upscale/Anime4K_Upscale_GAN_x2_M.glsl, shipped verbatim under the same names in src-tauri/shaders/ from commit 7684e9586f8dcc738af08a1cdceb024cc184f426. Shaders rather than libraries, hence no `libs`; each carries its own copy of the MIT notice at the top."
     }
   ]
 }

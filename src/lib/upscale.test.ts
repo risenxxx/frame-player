@@ -20,7 +20,15 @@ vi.mock('@tauri-apps/api/path', () => ({ join: vi.fn(async (...p: string[]) => p
 
 import { history, upscaleScopes } from './history.svelte';
 import { player } from './player.svelte';
-import { initUpscale, restoreUpscale, setUpscale, setUpscaleScope, upscale } from './upscale.svelte';
+import {
+  initUpscale,
+  restoreUpscale,
+  setUpscale,
+  setUpscaleScope,
+  upscale,
+  upscaleNote,
+  upscaleSourceChanged,
+} from './upscale.svelte';
 
 const A = '/Films/Show/e01.mkv';
 const B = '/Films/Show/e02.mkv';
@@ -48,6 +56,7 @@ beforeEach(async () => {
   history.prefs = { enabled: true, excluded: [] };
   player.filePath = null;
   player.filename = null;
+  player.decoded = { w: 0, h: 0, dw: 0, dh: 0, rotate: 0 };
   initUpscale('/res/shaders');
   calls.length = 0;
   await open(OTHER);
@@ -59,7 +68,7 @@ describe('the upscaler', () => {
     expect(upscale.scope).toBe('file');
     setUpscale('video');
     await settle();
-    expect(shaders()).toEqual(['/res/shaders/ArtCNN_C4F16.glsl']);
+    expect(shaders()).toEqual(['/res/shaders/ArtCNN_C4F16_DS.glsl']);
     await open(B);
     expect(upscale.mode).toBe('off');
     expect(shaders()).toEqual([]);
@@ -122,5 +131,23 @@ describe('the upscaler', () => {
     expect(upscale.hasFolder).toBe(false);
     setUpscaleScope('folder');
     expect(upscale.scope).toBe('file');
+  });
+
+  it('stands in with the video shader above 720p, and re-decides when the size arrives', async () => {
+    await open(A);
+    setUpscale('strong');
+    await settle();
+    expect(shaders()).toEqual(['/res/shaders/Anime4K_Upscale_GAN_x2_M.glsl']);
+    player.decoded = { w: 1920, h: 1080, dw: 1920, dh: 1080, rotate: 0 };
+    upscaleSourceChanged();
+    await settle();
+    expect(shaders()).toEqual(['/res/shaders/ArtCNN_C4F16_DS.glsl']);
+    expect(upscale.mode).toBe('strong');
+    expect(upscaleNote()).not.toBeNull();
+    player.decoded = { w: 854, h: 480, dw: 854, dh: 480, rotate: 0 };
+    upscaleSourceChanged();
+    await settle();
+    expect(shaders()).toEqual(['/res/shaders/Anime4K_Upscale_GAN_x2_M.glsl']);
+    expect(upscaleNote()).toBeNull();
   });
 });
