@@ -645,18 +645,143 @@ fn media_duration(path: &std::path::Path) -> Option<f64> {
 /// with an ampersand in its name ("Tom & Jerry" is not an edge case) produced
 /// metadata that a strict renderer rejects outright and a lenient one silently
 /// mangles. The `<`/`>` half is the same story for a name in angle brackets.
-fn didl(url: &str, mime: &str, title: &str, size: u64, duration: Option<f64>) -> String {
+///
+/// **An external subtitle is said two ways, because renderers read two.** A
+/// second `<res>` of a subtitle type after the video's is the generic form
+/// (the one LG and most others take); Samsung reads its own
+/// `sec:CaptionInfoEx` element instead — and, for a set that asks, the
+/// `CaptionInfo.sec` header on the video's answer (cast.rs). Both appear only
+/// when there is a subtitle, so the metadata of every other file is what it
+/// always was.
+fn didl(
+    url: &str,
+    mime: &str,
+    title: &str,
+    size: u64,
+    duration: Option<f64>,
+    caption: Option<(&str, &str)>,
+) -> String {
     let flags = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000";
     let duration_attr = duration
         .map(|d| format!(r#" duration="{}""#, didl_duration(d)))
         .unwrap_or_default();
+    let (sec_ns, caption_xml) = match caption {
+        Some((sub_url, sub_mime)) => {
+            let kind = sub_mime.rsplit('/').next().unwrap_or("srt");
+            let kind = if kind == "caption" { "smi" } else { kind };
+            (
+                r#" xmlns:sec="http://www.sec.co.kr/""#,
+                format!(
+                    r#"<res protocolInfo="{}">{url}</res><sec:CaptionInfoEx sec:type="{kind}">{url}</sec:CaptionInfoEx>"#,
+                    escape_attr(&format!("http-get:*:{sub_mime}:*")),
+                    url = escape_text(sub_url),
+                ),
+            )
+        }
+        None => ("", String::new()),
+    };
     let item = format!(
-        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="-1" restricted="1"><dc:title>{}</dc:title><upnp:class>object.item.videoItem</upnp:class><res protocolInfo="{}" size="{size}"{duration_attr}>{}</res></item></DIDL-Lite>"#,
+        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"{sec_ns}><item id="0" parentID="-1" restricted="1"><dc:title>{}</dc:title><upnp:class>object.item.videoItem</upnp:class><res protocolInfo="{}" size="{size}"{duration_attr}>{}</res>{caption_xml}</item></DIDL-Lite>"#,
         escape_text(title),
         escape_attr(&format!("http-get:*:{mime}:{flags}")),
         escape_text(url),
     );
     escape_text(&item)
+}
+
+/// What the renderer is handed for an external subtitle. SubRip and SAMI go
+/// as they are — byte for byte, whatever their encoding, which is what the
+/// television meets on a USB stick and copes with the same way; anything else
+/// in text (ASS, WebVTT, MicroDVD…) is turned into SubRip first, the one
+/// format every renderer that takes a subtitle at all reads. The converted
+/// copy lives in the casting cache under a name derived from the source, so it
+/// says nothing about the file, and only for as long as the session: it is a
+/// copy of what a private file contains, and making it again takes a moment.
+async fn caption_file(app: &tauri::AppHandle, sub: &std::path::Path) -> Option<std::path::PathBuf> {
+    if !sub.is_file() {
+        return None;
+    }
+    let ext = sub.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    if matches!(ext.as_str(), "srt" | "smi" | "sami") {
+        return Some(sub.to_path_buf());
+    }
+    let ffmpeg = crate::cast::ffmpeg_bin(app)?;
+    let dir = crate::portable::cache_dir(app).ok()?.join("cast").join(crate::cast::CAPTION_DIR);
+    std::fs::create_dir_all(&dir).ok()?;
+    let out = dir.join(format!("{}.srt", caption_key(sub)));
+    if out.is_file() {
+        return Some(out);
+    }
+    // One session's worth at a time: whatever an earlier one left (a switch to
+    // another subtitle, a session that never reached its disconnect) goes now.
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    let src = sub.to_path_buf();
+    let target = out.clone();
+    let made = tauri::async_runtime::spawn_blocking(move || {
+        let partial = target.with_extension("part.srt");
+        let mut cmd = std::process::Command::new(ffmpeg);
+        cmd.args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
+            .arg(&src)
+            // `text`, not `srt`: the SubRip encoder carries an ASS style over
+            // as `<font size="20">`, a size in the script's own coordinates
+            // that a television draws as it likes or prints as written. Plain
+            // lines with their breaks are what every renderer shows right.
+            .args(["-map", "0:s:0", "-c:s", "text", "-f", "srt"])
+            .arg(&partial)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt as _;
+            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
+        let output = cmd.output().ok()?;
+        if !output.status.success() {
+            eprintln!(
+                "[dlna] subtitle conversion failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            let _ = std::fs::remove_file(&partial);
+            return None;
+        }
+        std::fs::rename(&partial, &target).ok()
+    })
+    .await
+    .ok()
+    .flatten();
+    made.map(|_| out)
+}
+
+/// The source's identity (path, size, mtime), the convention the casting and
+/// thumbnail caches already share.
+fn caption_key(path: &std::path::Path) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    path.to_string_lossy().hash(&mut h);
+    if let Ok(meta) = std::fs::metadata(path) {
+        meta.len().hash(&mut h);
+        if let Ok(d) = meta.modified().map(|m| m.duration_since(std::time::UNIX_EPOCH)) {
+            d.map(|d| d.as_secs()).unwrap_or(0).hash(&mut h);
+        }
+    }
+    format!("{:016x}", h.finish())
+}
+
+/// The subtitle beside the registration that was just made, if there is one
+/// and it can be sent: its URL and type, for the metadata.
+async fn attach_subtitle(
+    app: &tauri::AppHandle,
+    cast_service: &Arc<crate::cast::CastService>,
+    subtitle: Option<String>,
+) -> Option<(String, &'static str)> {
+    let file = caption_file(app, std::path::Path::new(&subtitle?)).await?;
+    let url = crate::cast::attach_caption(cast_service, &file)?;
+    Some((url, crate::cast::caption_mime(&file)))
 }
 
 /// Print what the network has. Called at startup only under `FP_DLNA_PROBE=1`.
@@ -1004,7 +1129,7 @@ mod tests {
 
     #[test]
     fn didl_escapes_twice_so_the_receiver_sees_valid_xml() {
-        let x = didl("http://h/f.mkv", "video/x-matroska", "Tom & Jerry <2>", 42, None);
+        let x = didl("http://h/f.mkv", "video/x-matroska", "Tom & Jerry <2>", 42, None, None);
         // What the receiver un-escapes once and hands to its DIDL parser.
         let inner = x.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&");
         assert!(inner.contains("<dc:title>Tom &amp; Jerry &lt;2&gt;</dc:title>"), "{inner}");
@@ -1033,10 +1158,24 @@ mod tests {
     #[test]
     fn didl_res_declares_seekability() {
         // The three things the renderer reads before it fetches anything.
-        let x = didl("http://h/f.mkv", "video/x-matroska", "t", 42, Some(60.0));
+        let x = didl("http://h/f.mkv", "video/x-matroska", "t", 42, Some(60.0), None);
         assert!(x.contains("DLNA.ORG_OP=01"));
         assert!(x.contains(r#"size=&quot;42&quot;"#) || x.contains("size=\"42\"") || x.contains("size="));
         assert!(x.contains("0:01:00.000"));
+        // No subtitle, no trace of one: the metadata every other file gets.
+        assert!(!x.contains("sec:") && !x.contains("text/srt"));
+    }
+
+    #[test]
+    fn didl_names_an_external_subtitle_both_ways() {
+        let x = didl("http://h/c/a/f.mkv", "video/x-matroska", "t", 42, None, Some(("http://h/c/b/b.srt", "text/srt")));
+        let inner = x.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&amp;", "&");
+        // The video's `res` stays first — a renderer plays the first one it takes.
+        let video = inner.find("f.mkv</res>").expect("video res");
+        let generic = inner.find(r#"<res protocolInfo="http-get:*:text/srt:*">http://h/c/b/b.srt</res>"#).expect("generic res");
+        assert!(video < generic, "{inner}");
+        assert!(inner.contains(r#"xmlns:sec="http://www.sec.co.kr/""#), "{inner}");
+        assert!(inner.contains(r#"<sec:CaptionInfoEx sec:type="srt">http://h/c/b/b.srt</sec:CaptionInfoEx>"#), "{inner}");
     }
 
     #[test]
@@ -1558,12 +1697,14 @@ pub fn dlna_connect(
 
 #[tauri::command]
 pub async fn dlna_load(
+    app: tauri::AppHandle,
     service: tauri::State<'_, Arc<DlnaService>>,
     cast_service: tauri::State<'_, Arc<crate::cast::CastService>>,
     path: String,
     position: f64,
     title: Option<String>,
     hidden: bool,
+    subtitle: Option<String>,
 ) -> Result<(), String> {
     let (ip, advertised) = {
         let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
@@ -1586,26 +1727,33 @@ pub async fn dlna_load(
     );
     let size = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
     let duration = media_duration(&file);
-    load_url(&service, url, mime, size, duration, position, title).await
+    let caption = attach_subtitle(&app, &cast_service, subtitle).await;
+    load_url(&service, url, mime, size, duration, position, title, caption).await
 }
 
 /// The same load for a URL somebody else registered — the torrent stream, where
 /// there is no file to open and the size and duration come from the torrent and
 /// from mpv instead of from a container header.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn dlna_load_url(
+    app: tauri::AppHandle,
     service: tauri::State<'_, Arc<DlnaService>>,
+    cast_service: tauri::State<'_, Arc<crate::cast::CastService>>,
     url: String,
     mime: String,
     size: u64,
     duration: f64,
     position: f64,
     title: Option<String>,
+    subtitle: Option<String>,
 ) -> Result<(), String> {
     let duration = (duration > 0.0).then_some(duration);
-    load_url(&service, url, mime, size, duration, position, title).await
+    let caption = attach_subtitle(&app, &cast_service, subtitle).await;
+    load_url(&service, url, mime, size, duration, position, title, caption).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn load_url(
     service: &Arc<DlnaService>,
     url: String,
@@ -1614,6 +1762,7 @@ async fn load_url(
     duration: Option<f64>,
     position: f64,
     title: Option<String>,
+    caption: Option<(String, &'static str)>,
 ) -> Result<(), String> {
     let (control, state, advertised) = {
         let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
@@ -1652,7 +1801,14 @@ async fn load_url(
     let args = format!(
         "<CurrentURI>{}</CurrentURI><CurrentURIMetaData>{}</CurrentURIMetaData>",
         escape_text(&url),
-        didl(&url, &mime, &name, size, duration)
+        didl(
+            &url,
+            &mime,
+            &name,
+            size,
+            duration,
+            caption.as_ref().map(|(u, m)| (u.as_str(), *m))
+        )
     );
     if let Err(e) = soap(client, &control, AVTRANSPORT, "SetAVTransportURI", &args).await {
         eprintln!("[dlna] {e}");
@@ -1932,8 +2088,8 @@ pub async fn dlna_disconnect(
 
 /// Drive the real command surface without the GUI: discover, connect, load,
 /// watch, disconnect. Off unless `FP_DLNA_PLAY=<file>` is set (with an optional
-/// `FP_DLNA_TARGET=<ip>`), and deliberately calling the same functions the
-/// frontend invokes rather than a parallel copy — a self-test of a private
+/// `FP_DLNA_TARGET=<ip>`, and `FP_DLNA_SUB=<subtitle file>` to send one
+/// along), and deliberately calling the same functions the frontend invokes rather than a parallel copy — a self-test of a private
 /// re-implementation proves nothing about what ships.
 pub async fn selftest(app: &tauri::AppHandle, target: Option<String>, path: String) {
     use tauri::Manager as _;
@@ -1972,12 +2128,16 @@ pub async fn selftest(app: &tauri::AppHandle, target: Option<String>, path: Stri
         return;
     }
     if let Err(e) = dlna_load(
+        app.clone(),
         service.clone(),
         cast_service.clone(),
         path,
         0.0,
         Some("Frame Player".into()),
         false,
+        // An external subtitle to send along — the one half of a load the
+        // renderer's own menu cannot show us from here.
+        std::env::var("FP_DLNA_SUB").ok(),
     )
     .await
     {

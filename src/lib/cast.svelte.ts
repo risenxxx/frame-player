@@ -1017,6 +1017,22 @@ let sessionHls: 'ts' | 'fmp4' | null = null;
 /// not outlive the session (casting.md, privacy).
 let preparedPath: string | null = null;
 let preparedHidden = false;
+/// The external subtitle a DLNA renderer was handed with the file, if any —
+/// what a pick in the track menu is compared with before the file is sent again.
+let dlnaSubPath: string | null = null;
+
+/**
+ * The subtitle a DLNA renderer gets beside the file: the external one chosen
+ * in the player, if it is text. The television lists the file's own subtitles
+ * itself and switches between them from its own menu, but it cannot know about
+ * a file next to the video unless it is told — so only the viewer's choice of
+ * one travels, and a choice of nothing, or of an embedded track, sends nothing
+ * extra.
+ */
+function dlnaSubtitle(): string | null {
+  const sub = player.subTracks.find((tr) => tr.selected);
+  return sub?.external && sub.path && isTextSub(sub) ? sub.path : null;
+}
 
 /**
  * Run the prepare rung with its progress on the sticky OSD.
@@ -1461,9 +1477,11 @@ async function castTorrentStream(
 
   await setProperty('pause', true).catch(() => {});
   loadStartedAt = Date.now();
+  dlnaSubPath = dlnaTakes ? dlnaSubtitle() : null;
   try {
     if (dlnaTakes) {
       await invoke('dlna_load_url', {
+        subtitle: dlnaSubPath,
         url,
         position: player.timePos,
         title: hidden ? null : player.displayTitle,
@@ -1536,12 +1554,14 @@ async function castOverDlna(device: TvDevice, src: string, keep = false): Promis
   await setProperty('pause', true).catch(() => {});
   loadStartedAt = Date.now();
   const hidden = isPrivatePath(src);
+  dlnaSubPath = dlnaSubtitle();
   try {
     await invoke('dlna_load', {
       path: src,
       position: player.timePos,
       title: hidden ? null : player.displayTitle,
       hidden,
+      subtitle: dlnaSubPath,
     });
   } catch (e) {
     console.warn('dlna_load failed:', e);
@@ -1847,6 +1867,7 @@ export async function endCast(opts: {
   preparedHidden = false;
   castSrcPath = null;
   sessionHls = null;
+  dlnaSubPath = null;
   airplayHls = null;
   cast.airplayTracks = false;
   cast.notice = null;
@@ -2198,12 +2219,54 @@ async function airplaySwitch(over: { audio?: Track; sub?: Track | null }): Promi
 /// A subtitle picked while a television plays. Only AirPlay's HLS rendition
 /// carries one there; an image subtitle cannot go, and is said so.
 export async function castSwitchSub(track: Track | null): Promise<void> {
+  if (cast.remote && cast.transport === 'dlna') {
+    await dlnaSwitchSub(track);
+    return;
+  }
   if (!cast.remote || cast.transport !== 'airplay') return;
   if (track && !isTextSub(track)) {
     showOsd(t('cast.airplay_sub_image'));
     return;
   }
   await airplaySwitch({ sub: track });
+}
+
+/**
+ * A subtitle picked in the player while a DLNA renderer plays. An external
+ * one is news to the television, so the file goes again with it, from where
+ * the television is — the one way to tell a renderer about a subtitle is the
+ * metadata of a load. Anything else is the television's own to switch: the
+ * file's subtitles are in its menu already, and so is turning them off.
+ */
+async function dlnaSwitchSub(track: Track | null): Promise<void> {
+  const src = castSrcPath;
+  const next = track?.external && track.path && isTextSub(track) ? track.path : null;
+  if (!next || !src) {
+    showOsd(t('cast.sub_on_tv'));
+    return;
+  }
+  if (next === dlnaSubPath) return;
+  const hidden = isPrivatePath(src);
+  dlnaSubPath = next;
+  // The load begins with a Stop, and the poll must not read that as the
+  // viewer stopping the film — the same guard as moving to the next episode.
+  advancing = true;
+  try {
+    await invoke('dlna_load', {
+      path: src,
+      position: cast.time,
+      title: hidden ? null : player.displayTitle,
+      hidden,
+      subtitle: next,
+    });
+    showOsd(track!.label);
+  } catch (e) {
+    console.warn('dlna subtitle switch failed:', e);
+    advancing = false;
+    if (cast.active) await endCast({ osd: t('cast.err_load'), resumeLocal: true });
+  } finally {
+    advancing = false;
+  }
 }
 
 /// The receiver's sound back on as its volume is raised — `unmute` in

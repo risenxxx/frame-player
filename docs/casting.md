@@ -181,6 +181,25 @@ and 3D are what make that conclusive rather than an omission. The file goes over
 with every track in it and the set picks; the player says so instead of showing
 a selection it cannot vouch for.
 
+**A subtitle next to the file has to be announced; one inside it does not.**
+The television lists a container's own subtitle tracks and switches between
+them itself, but an `.srt` beside the video exists only on this disk. Reported
+by a viewer on a Samsung: embedded subtitles showed and switched, the external
+file never appeared. There is no action for adding one to a session that is
+already playing, so the subtitle travels in the load: the LAN server serves it
+under a token of its own beside the video, and the metadata names it twice —
+as a second `<res>` of type `text/srt` after the video's (the generic form) and
+as Samsung's `sec:CaptionInfoEx` — while a Samsung that sends
+`getcaptionInfo.sec: 1` with its request for the video also finds the URL in a
+`CaptionInfo.sec` header on the answer. Only the external subtitle chosen in
+the player goes, since the set already offers the rest; picking another one
+mid-session sends the file again from the television's position. SubRip and
+SAMI go byte for byte, as the set would read them off a USB stick; ASS, WebVTT
+and the other text formats become plain SubRip first (ffmpeg's `text` encoder,
+because its `srt` one carries an ASS style over as `<font size>` in the
+script's own coordinates), and that copy lives only as long as the session.
+Not yet measured against either television at the time of writing.
+
 **Volume may be declared and not honoured.** One television answers `GetVolume`
 with a valid `0` while playing at almost full, and refuses the action to another
 client outright. A level is therefore trusted only once a non-zero one has been

@@ -553,6 +553,18 @@ struct Registered {
     /// sparse file on disk is not an option — a stretch that has not arrived
     /// reads back as zeros, and the television would play them without a word.
     torrent: Option<(String, usize, String)>,
+    /// A subtitle file handed to a DLNA renderer beside the video, under a
+    /// token of its own (`attach_caption`). It dies with the registration it
+    /// was attached to, like everything else this server answers for.
+    caption: Option<Caption>,
+}
+
+struct Caption {
+    token: String,
+    path: PathBuf,
+    /// Where the renderer fetches it — also what the video's answer names in
+    /// `CaptionInfo.sec` when a Samsung asks for it.
+    url: String,
 }
 
 struct ServeShared {
@@ -731,13 +743,33 @@ async fn serve_cast_inner(shared: Arc<ServeShared>, req: Request<hyper::body::In
         return simple(StatusCode::NOT_FOUND);
     };
 
-    let (base, base_mime, is_dir, torrent) = {
+    let (base, base_mime, is_dir, torrent, caption) = {
         let reg = shared.reg.lock().unwrap_or_else(|p| p.into_inner());
         match reg.as_ref() {
-            Some(r) if r.token == token => (r.path.clone(), r.mime, r.dir, r.torrent.clone()),
+            Some(r) if r.token == token => (
+                r.path.clone(),
+                r.mime,
+                r.dir,
+                r.torrent.clone(),
+                r.caption.as_ref().map(|c| c.url.clone()),
+            ),
+            Some(Registered { caption: Some(c), .. }) if c.token == token => {
+                (c.path.clone(), caption_mime(&c.path), false, None, None)
+            }
             _ => return simple(StatusCode::NOT_FOUND),
         }
     };
+    // **Samsung asks for the subtitle in a request header, not in the
+    // metadata.** A set that sends `getcaptionInfo.sec: 1` with its request
+    // for the video reads the subtitle's URL off `CaptionInfo.sec` in the
+    // answer — the convention every DLNA server that serves one to a Samsung
+    // follows. Answered only when asked: nobody else knows the header.
+    let caption_header = caption.filter(|_| {
+        req.headers()
+            .get("getcaptionInfo.sec")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.trim() == "1")
+    });
     if let Some((hash, index, name)) = torrent {
         let Some(service) = shared.torrents.lock().unwrap_or_else(|p| p.into_inner()).clone() else {
             return simple(StatusCode::INTERNAL_SERVER_ERROR);
@@ -748,9 +780,13 @@ async fn serve_cast_inner(shared: Arc<ServeShared>, req: Request<hyper::body::In
             .get(header::RANGE)
             .and_then(|v| v.to_str().ok())
             .map(|v| v.to_string());
-        return service
+        let mut res = service
             .serve_file(&hash, index, &name, range, req.method() == Method::HEAD)
             .await;
+        if let Some(value) = caption_header.and_then(|u| hyper::header::HeaderValue::from_str(&u).ok()) {
+            res.headers_mut().insert("CaptionInfo.sec", value);
+        }
+        return res;
     }
     let (file_path, mime) = if is_dir {
         // One flat component inside the session dir, nothing else: no dots at
@@ -829,7 +865,10 @@ async fn serve_cast_inner(shared: Arc<ServeShared>, req: Request<hyper::body::In
         None => (StatusCode::OK, 0, total),
     };
 
-    let res = res.status(status).header(header::CONTENT_LENGTH, len);
+    let mut res = res.status(status).header(header::CONTENT_LENGTH, len);
+    if let Some(url) = &caption_header {
+        res = res.header("CaptionInfo.sec", url.as_str());
+    }
     if req.method() == Method::HEAD {
         return res.body(empty()).unwrap();
     }
@@ -899,6 +938,7 @@ pub(crate) async fn serve_dir(
         mime: "application/x-mpegURL",
         dir: true,
         torrent: None,
+        caption: None,
     });
     shared.hits.store(0, Ordering::Relaxed);
     shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clear();
@@ -914,6 +954,36 @@ pub(crate) fn server_peers(service: &Arc<CastService>) -> Vec<IpAddr> {
         .as_ref()
         .map(|s| s.shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clone())
         .unwrap_or_default()
+}
+
+/// Serve a subtitle file beside whatever is registered now, under a token of
+/// its own, and hand back its URL — the external subtitle a DLNA renderer is
+/// told about alongside the video. Always named by its token, whatever the
+/// file is called: the renderer reads the format off the extension and has no
+/// use for the name, which therefore never leaves the machine.
+pub(crate) fn attach_caption(service: &Arc<CastService>, file: &std::path::Path) -> Option<String> {
+    let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
+    let server = inner.server.as_ref()?;
+    let mut reg = server.shared.reg.lock().unwrap_or_else(|p| p.into_inner());
+    let r = reg.as_mut()?;
+    let token = format!("{:032x}", rand::random::<u128>());
+    let ext = file
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_else(|| "srt".into());
+    let url = format!("http://{}:{}/c/{token}/{token}.{ext}", server.ip, server.port);
+    r.caption = Some(Caption { token, path: file.to_path_buf(), url: url.clone() });
+    Some(url)
+}
+
+/// The subtitle formats a renderer is handed, by the types DLNA servers
+/// announce them under.
+pub(crate) fn caption_mime(file: &std::path::Path) -> &'static str {
+    match file.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref() {
+        Some("smi") | Some("sami") => "smi/caption",
+        Some("vtt") => "text/vtt",
+        _ => "text/srt",
+    }
 }
 
 /// Content types inside an HLS session directory.
@@ -1727,6 +1797,7 @@ pub async fn cast_load(
             mime,
             dir: is_hls,
             torrent: None,
+            caption: None,
         });
         shared.hits.store(0, Ordering::Relaxed);
         shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clear();
@@ -1790,6 +1861,7 @@ pub(crate) async fn serve_one_file(
             mime,
             dir: false,
             torrent: None,
+            caption: None,
         });
         shared.hits.store(0, Ordering::Relaxed);
         shared.peers.lock().unwrap_or_else(|p| p.into_inner()).clear();
@@ -1869,6 +1941,7 @@ pub async fn cast_serve_torrent(
             mime: cast_mime(&name),
             dir: false,
             torrent: Some((info_hash.to_ascii_lowercase(), index, name)),
+            caption: None,
         });
         *shared.torrents.lock().unwrap_or_else(|p| p.into_inner()) = Some(torrents.inner().clone());
         shared.hits.store(0, Ordering::Relaxed);
@@ -2054,12 +2127,29 @@ fn stop_server(server: Option<Server>) {
         .take();
     *server.shared.torrents.lock().unwrap_or_else(|p| p.into_inner()) = None;
     server.task.abort();
-    // HLS segments are transient by contract — they die with the session.
+    // HLS segments are transient by contract — they die with the session, and
+    // so does a subtitle converted for a DLNA renderer (never the viewer's own
+    // file, which is served from where it lies).
     if let Some(reg) = reg {
         if reg.dir {
             let _ = std::fs::remove_dir_all(&reg.path);
         }
+        if let Some(c) = reg.caption {
+            if is_converted_caption(&c.path) {
+                let _ = std::fs::remove_file(&c.path);
+            }
+        }
     }
+}
+
+/// Converted subtitles live under this dot-dir of the casting cache, like the
+/// HLS sessions, and like them are transient: one session's worth at a time.
+pub(crate) const CAPTION_DIR: &str = ".subs";
+
+fn is_converted_caption(path: &std::path::Path) -> bool {
+    path.parent()
+        .and_then(|p| p.file_name())
+        .is_some_and(|n| n == CAPTION_DIR)
 }
 
 /// Which of our addresses a device on `device_ip` would fetch from — the same
@@ -3194,6 +3284,7 @@ mod tests {
                 mime,
                 dir: is_hls,
                 torrent: None,
+                caption: None,
             });
         }
         println!(
