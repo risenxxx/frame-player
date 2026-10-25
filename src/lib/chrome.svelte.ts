@@ -568,12 +568,20 @@ function wakeEffect() {
 // isFullscreen() keeps answering true — the mirror and the fullscreen button
 // get stuck. Our handler exits fullscreen honestly via exitFullscreen (and
 // does not let a fullscreen window be dragged by the titlebar).
+//
+// With a file open, the double click is fullscreen, the same as on the
+// picture: the bar is a gradient over the video, and a viewer who maximized
+// from it took that for fullscreen and tried to leave with a double click on
+// the picture — which went into real fullscreen and back out to maximized,
+// never to the window they started from. A window already maximized (Snap,
+// Win+Up, the button) is restored, so a double click always leads back.
 export function onTitlebarMouseDown(e: MouseEvent) {
   if (IS_MAC || e.button !== 0 || e.target !== e.currentTarget) return;
   if (e.detail !== 1 && e.detail !== 2) return;
   e.preventDefault();
   if (e.detail === 2) {
     if (chrome.fullscreen) void exitFullscreen();
+    else if (player.hasFile && !chrome.isMaximized) void toggleFullscreen();
     else void getCurrentWindow().toggleMaximize();
   } else if (!chrome.fullscreen) {
     void getCurrentWindow().startDragging();
