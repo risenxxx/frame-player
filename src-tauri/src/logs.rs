@@ -470,7 +470,7 @@ unsafe fn redirect_crt(pipe: windows_sys::Win32::Foundation::HANDLE) -> String {
     macro_rules! sym {
         ($name:literal, $ty:ty) => {
             match GetProcAddress(module, concat!($name, "\0").as_ptr()) {
-                Some(f) => std::mem::transmute::<_, $ty>(f),
+                Some(f) => std::mem::transmute::<unsafe extern "system" fn() -> isize, $ty>(f),
                 None => return format!("no {}", $name),
             }
         };

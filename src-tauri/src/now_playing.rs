@@ -66,6 +66,7 @@ const HANDLER_SUCCESS: isize = 0;
 /// What the frontend knows about what is playing. `playing` false means there
 /// is nothing: the listing is taken down rather than shown stopped.
 #[derive(serde::Deserialize)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct NowPlaying {
     pub playing: bool,
     pub title: String,

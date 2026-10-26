@@ -1550,7 +1550,7 @@ impl TorrentService {
                 });
             }
         }
-        out.sort_by(|a, b| b.size.cmp(&a.size));
+        out.sort_by_key(|t| std::cmp::Reverse(t.size));
         out
     }
 
@@ -2074,7 +2074,9 @@ fn compact_peers(body: &[u8]) -> Vec<SocketAddr> {
         return Vec::new();
     }
     rest[colon + 1..colon + 1 + len]
-        .chunks_exact(6)
+        .as_chunks::<6>()
+        .0
+        .iter()
         .map(|c| {
             SocketAddr::V4(SocketAddrV4::new(
                 Ipv4Addr::new(c[0], c[1], c[2], c[3]),
@@ -4175,17 +4177,14 @@ pub fn torrent_offline_file(
     let info = parsed.info.data.validate().ok()?;
 
     // Single-file torrents have no file list; the torrent itself is the file.
-    let (rel, length) = match info.iter_file_details().nth(index) {
-        Some(f) => (
-            f.filename
-                .iter_components()
-                .map(|c| c.to_string())
-                .collect::<Vec<_>>()
-                .join(std::path::MAIN_SEPARATOR_STR),
-            f.len,
-        ),
-        None => return None,
-    };
+    let f = info.iter_file_details().nth(index)?;
+    let rel = f
+        .filename
+        .iter_components()
+        .map(|c| c.to_string())
+        .collect::<Vec<_>>()
+        .join(std::path::MAIN_SEPARATOR_STR);
+    let length = f.len;
     let path = folder_for(&dirs, &hash, None).join(&rel);
     let Ok(meta) = std::fs::metadata(&path) else {
         eprintln!("[poster] {hash}/{index}: no file at {}", path.display());
