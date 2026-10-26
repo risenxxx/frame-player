@@ -98,8 +98,13 @@ scripts/macos-notarize.sh "src-tauri/target/release/bundle/macos/Frame Player.ap
 Rust validation while the user's dev instance may be running (target/ is locked by the running exe):
 
 ```bash
-cd src-tauri && CARGO_TARGET_DIR=/some/tmp/target-check cargo check
+cd src-tauri && CARGO_TARGET_DIR=/some/tmp/target-check cargo check -q
+# macOS: .cargo/config.toml points FFMPEG_DIR/LIBCLANG_PATH at the Windows SDKs, which a fresh target dir needs
+cd src-tauri && FFMPEG_DIR=$PWD/ffmpeg-macos LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib \
+  CARGO_TARGET_DIR=/some/tmp/target-check cargo check -q
 ```
+
+`-q` drops the few hundred `Checking` lines and keeps every warning and error.
 
 Sidecar smoke tests (both engines: stepping + thumbnails). Generate the fixture with the bundled ffmpeg:
 
