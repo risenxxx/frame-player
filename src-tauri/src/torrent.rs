@@ -955,7 +955,7 @@ impl TorrentService {
             Some(bytes) => Some(bytes),
             None => hinted_hash
                 .as_ref()
-                .and_then(|h| std::fs::read(meta_path(&dir, h)).ok()),
+                .and_then(|h| std::fs::read(meta_path(dir, h)).ok()),
         };
         let from_cache = meta_bytes.is_some() && !local_file;
 
@@ -1001,7 +1001,7 @@ impl TorrentService {
         // this one goes wrong from here.
         if let (Some(hash), Some(bytes)) = (hinted_hash.as_deref(), meta_bytes.as_deref()) {
             if !from_cache {
-                let path = meta_path(&dir, hash);
+                let path = meta_path(dir, hash);
                 if let Some(parent) = path.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
@@ -1132,7 +1132,7 @@ impl TorrentService {
         let mut trackers = Vec::new();
         if let Ok(bytes) = handle.with_metadata(|m| m.torrent_bytes.clone()) {
             trackers = trackers_of(&bytes);
-            let path = meta_path(&dir, &handle.info_hash().as_string());
+            let path = meta_path(dir, &handle.info_hash().as_string());
             if !path.is_file() {
                 if let Some(parent) = path.parent() {
                     let _ = std::fs::create_dir_all(parent);
@@ -2401,11 +2401,7 @@ fn sanitize_name(name: &str) -> String {
     ];
 
     let mut out = String::with_capacity(name.len().min(MAX_CHARS * 4));
-    let mut chars = 0;
-    for c in name.chars() {
-        if chars >= MAX_CHARS {
-            break;
-        }
+    for c in name.chars().take(MAX_CHARS) {
         // The Windows set, plus the control range, plus the separators — a name
         // is one path component and may not grow another.
         let safe = match c {
@@ -2417,7 +2413,6 @@ fn sanitize_name(name: &str) -> String {
             c => c,
         };
         out.push(safe);
-        chars += 1;
     }
 
     // Runs of spaces collapse, because the substitutions above make them.
@@ -2938,6 +2933,17 @@ pub(crate) fn dir_size(path: &std::path::Path) -> u64 {
 mod tests {
     use super::*;
 
+    /// Held by every test that builds a session. `listen_port` probes a port
+    /// and the session binds it a moment later, so two sessions starting at
+    /// once both see 42800 free and the second fails with "address already in
+    /// use" — a race the player never runs (it has one session), but the test
+    /// harness runs tests on parallel threads and it failed about one run in
+    /// two. Poisoning is ignored: one failed test must not fail the rest.
+    fn one_session_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+        static SESSION: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        SESSION.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// The Range header is the whole seek contract with ffmpeg: get it wrong and
     /// the picture is either garbage or the seekbar stops working, both of which
     /// look like a torrent problem rather than a parsing one.
@@ -3000,6 +3006,7 @@ mod tests {
         let Ok(arg) = std::env::var("FP_TEST_MAGNET") else {
             return;
         };
+        let _session = one_session_at_a_time();
         const SINTEL: &str = "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10\
             &dn=Sintel&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce\
             &tr=udp%3A%2F%2Fexplodie.org%3A6969";
@@ -3199,6 +3206,7 @@ mod tests {
         let Ok(magnet) = std::env::var("FP_TEST_SWARM") else {
             return;
         };
+        let _session = one_session_at_a_time();
         tauri::async_runtime::block_on(async {
             let dir = std::env::temp_dir().join("frameplayer-swarm-probe");
             std::fs::create_dir_all(&dir).unwrap();
@@ -3630,6 +3638,7 @@ mod tests {
     /// that never had the problem.
     #[test]
     fn an_unopened_torrent_allocates_nothing() {
+        let _session = one_session_at_a_time();
         tauri::async_runtime::block_on(async {
             let base = std::env::temp_dir().join("frameplayer-prealloc-torrent");
             let _ = std::fs::remove_dir_all(&base);
@@ -3707,6 +3716,7 @@ mod tests {
     /// ever contacted) and the bytes served are the right ones.
     #[test]
     fn complete_file_needs_no_swarm() {
+        let _session = one_session_at_a_time();
         tauri::async_runtime::block_on(async {
             let base = std::env::temp_dir().join("frameplayer-offline-torrent");
             let _ = std::fs::remove_dir_all(&base);
@@ -3844,6 +3854,7 @@ mod tests {
     /// open, holes included.
     #[test]
     fn restored_torrents_start_paused() {
+        let _session = one_session_at_a_time();
         tauri::async_runtime::block_on(async {
             let base = std::env::temp_dir().join("frameplayer-resume-test");
             let _ = std::fs::remove_dir_all(&base);
@@ -3924,6 +3935,7 @@ mod tests {
     /// it, and it is not coming back.
     #[test]
     fn deleted_torrent_does_not_come_back() {
+        let _session = one_session_at_a_time();
         tauri::async_runtime::block_on(async {
             let base = std::env::temp_dir().join("frameplayer-ghost-test");
             let _ = std::fs::remove_dir_all(&base);
@@ -3999,6 +4011,7 @@ mod tests {
     /// builds of the player share the data and not the names.
     #[test]
     fn disk_names_itself() {
+        let _session = one_session_at_a_time();
         tauri::async_runtime::block_on(async {
             let base = std::env::temp_dir().join("frameplayer-naming-test");
             let _ = std::fs::remove_dir_all(&base);
@@ -4049,6 +4062,7 @@ mod tests {
     /// `add` puts anything.
     #[test]
     fn forget_removes_a_restored_torrent_from_the_store() {
+        let _session = one_session_at_a_time();
         tauri::async_runtime::block_on(async {
             let base = std::env::temp_dir().join("frameplayer-forget-test");
             let _ = std::fs::remove_dir_all(&base);

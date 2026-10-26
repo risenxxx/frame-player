@@ -239,9 +239,8 @@ pub fn now_playing_start(app: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let handle = app.clone();
-        return app
-            .run_on_main_thread(move || INSTALLED.call_once(|| install(handle)))
-            .map_err(|e| e.to_string());
+        app.run_on_main_thread(move || INSTALLED.call_once(|| install(handle)))
+            .map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -255,9 +254,8 @@ pub fn now_playing_start(app: AppHandle) -> Result<(), String> {
 pub fn now_playing_set(app: AppHandle, info: NowPlaying) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        return app
-            .run_on_main_thread(move || apply(&info))
-            .map_err(|e| e.to_string());
+        app.run_on_main_thread(move || apply(&info))
+            .map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {

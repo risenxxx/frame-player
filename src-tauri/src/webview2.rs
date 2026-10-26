@@ -35,9 +35,11 @@
 /// Microsoft's permanent link to the Evergreen bootstrapper. A redirector
 /// rather than a versioned file, which is the point: it is the address
 /// Microsoft documents for exactly this and does not go stale.
+#[cfg(windows)]
 const BOOTSTRAPPER: &str = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
 
 /// Where somebody sent here by hand would go.
+#[cfg(windows)]
 const DOWNLOAD_PAGE: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
 
 /// Ensure there is a WebView2 runtime, or explain why there is not.

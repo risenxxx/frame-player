@@ -1371,7 +1371,7 @@ fn looks_like_same_release(a: &str, b: &str) -> bool {
 /// none to read — an unparseable magnet is still its own identity.
 fn magnet_hash(magnet: &str) -> String {
     magnet
-        .split(|c| c == '&' || c == '?')
+        .split(['&', '?'])
         .find_map(|part| part.strip_prefix("xt=urn:btih:"))
         .map(|h| h.to_lowercase())
         .unwrap_or_else(|| magnet.to_lowercase())
