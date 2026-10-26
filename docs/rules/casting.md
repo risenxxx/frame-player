@@ -2,8 +2,9 @@
 
 The three transports, what each can carry, and the rules the player keeps while a television owns playback.
 
-Part of the rule book: [`CLAUDE.md`](../../CLAUDE.md) carries the one-line
-version of each rule here, this file carries the whole of it — the identifiers,
+Part of the rule book: its short form, [`.claude/rules/casting.md`](../../.claude/rules/casting.md),
+carries each rule here in one paragraph (and [`CLAUDE.md`](../../CLAUDE.md) the
+few that hold anywhere); this file carries the whole of it — the identifiers,
 the measurements and the failure the rule was written against.
 The *why* behind it — what was tried, what was measured — is in
 [`../casting.md`](../casting.md).

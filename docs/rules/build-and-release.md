@@ -2,8 +2,9 @@
 
 What ships inside the application, the LGPL and GPL obligations that follow, code signing on both platforms and the release workflow.
 
-Part of the rule book: [`CLAUDE.md`](../../CLAUDE.md) carries the one-line
-version of each rule here, this file carries the whole of it — the identifiers,
+Part of the rule book: its short form, [`.claude/rules/build-and-release.md`](../../.claude/rules/build-and-release.md),
+carries each rule here in one paragraph (and [`CLAUDE.md`](../../CLAUDE.md) the
+few that hold anywhere); this file carries the whole of it — the identifiers,
 the measurements and the failure the rule was written against.
 The *why* behind it — what was tried, what was measured — is in
 [`../distribution.md`](../distribution.md).

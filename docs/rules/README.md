@@ -1,9 +1,14 @@
 # The rule book
 
 What is true of the code right now, and what breaks if it stops being true.
-[`CLAUDE.md`](../../CLAUDE.md) in the repository root carries one line per rule —
-enough to know a rule exists — and links here for the whole of it: the
+Each chapter has a short form, [`.claude/rules/<chapter>.md`](../../.claude/rules/),
+that carries its rules one paragraph each together with the modules and the
+commands of its area, and links here for the whole of each rule: the
 identifiers, the measurements, and the failure the rule was written against.
+[`CLAUDE.md`](../../CLAUDE.md) in the repository root is the index, and holds
+in full only the rules that apply whatever is being changed. It is sent with
+every request an agent makes in this repository; a short form is loaded with
+the files its `paths:` cover, or read by hand before changing them.
 
 These chapters answer **what**. The documents one level up in [`docs/`](../)
 answer **why**: what was tried, what was measured, and which approaches are not
@@ -31,9 +36,11 @@ worth walking into twice. Where the two disagree, this wins.
 
 A finding earns a line here when breaking it would break the player; it belongs
 one level up, in [`docs/`](../), when its value is saving the next
-investigation. A rule added here earns its one-line form in
-[`CLAUDE.md`](../../CLAUDE.md) at the same time — a chapter nothing points at is
-a chapter nobody reads.
+investigation. A rule added here earns its paragraph in the chapter's short form
+under [`.claude/rules/`](../../.claude/rules/) at the same time — a chapter nothing
+points at is a chapter nobody reads — and a line in [`CLAUDE.md`](../../CLAUDE.md)
+only if it holds whatever is being changed. A new area gets a chapter, a short
+form whose `paths:` cover its code, and a row in the layout table of `CLAUDE.md`.
 
 **The repository is public.** Nothing written here may name a host, an account,
 a machine, a person or an address on somebody's network. Device behavior is

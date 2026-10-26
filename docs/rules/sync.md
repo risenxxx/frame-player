@@ -2,8 +2,9 @@
 
 One shared timeline over a small relay: the wire, the reconciler, readiness and what a room may know.
 
-Part of the rule book: [`CLAUDE.md`](../../CLAUDE.md) carries the one-line
-version of each rule here, this file carries the whole of it — the identifiers,
+Part of the rule book: its short form, [`.claude/rules/sync.md`](../../.claude/rules/sync.md),
+carries each rule here in one paragraph (and [`CLAUDE.md`](../../CLAUDE.md) the
+few that hold anywhere); this file carries the whole of it — the identifiers,
 the measurements and the failure the rule was written against.
 The *why* behind it — what was tried, what was measured — is in
 [`../watch-together.md`](../watch-together.md).

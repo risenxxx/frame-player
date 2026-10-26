@@ -3,7 +3,8 @@
 A coding agent works in this repository every day, and everything in
 `CLAUDE.md` is sent with every one of its requests. This is the measurement of
 what that costs, and the plan for spending less of it without the agent
-checking its work any worse. Status: **plan, not yet applied.**
+checking its work any worse. Status: **stages A and B applied on 2026-10-27; C is
+the user's settings plus two instructions in `CLAUDE.md`.** Results at the end.
 
 ## The measurement (2026-10-27)
 
@@ -127,3 +128,24 @@ that area.
 Same method a week after Stage B: the forty newest session logs, the four
 metrics above, plus the count of sessions that edited an area and loaded or
 read its rule file.
+
+## Results (2026-10-27)
+
+| | Before | After |
+|---|---|---|
+| `CLAUDE.md` | 462 lines, 104 385 bytes, ≈ 26 000 tokens | 186 lines, 22 300 bytes, ≈ 5 600 tokens |
+| M1, estimated from the file alone | 70 458 tokens | ≈ 50 000 tokens — to be confirmed from a new session's first request |
+| Short forms in `.claude/rules/` | — | 16 files, 102 807 bytes in all, loaded with the files their `paths:` cover |
+| M3, `cargo check` after a pull | 15 390 bytes | 467 bytes (`-q`), errors still shown in full |
+| M3, `bun run gates` | 1 162 bytes | unchanged |
+
+Of the 414 non-empty lines of the old file, 403 are found verbatim in
+`CLAUDE.md`, `.claude/rules/` or `docs/`. The other eleven were rewritten on
+purpose: the paragraph describing the rule book (now three layers instead of
+two), the heading of the conventions section, and two cross-references that said
+"below" about rules that moved.
+
+Stage C went in as two lines of `CLAUDE.md` — suggest `/clear` when a request is
+unrelated to the session so far; send work whose output is not needed, only its
+answer, to a subagent — and the user-level settings stay the user's.
+

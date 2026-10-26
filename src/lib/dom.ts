@@ -7,7 +7,7 @@
 
 /// The system's own context menu is the only way to copy or paste in a text
 /// field once the app has replaced the menu bar's Copy item (see the macOS menu
-/// notes in CLAUDE.md), so the player must never take that offer away.
+/// notes in docs/rules/window.md), so the player must never take that offer away.
 /// Suppressing it there is how the link field ended up with no way to paste at
 /// all.
 export function inTextField(e: Event): boolean {

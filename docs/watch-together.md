@@ -99,7 +99,7 @@ misses messages at all.
 This is the part the roadmap warned about, and the warning was right.
 
 An exact seek costs decoding from the preceding keyframe. Measured elsewhere in
-this project (see *Seek flags are a performance contract* in `CLAUDE.md`): on a
+this project (see *Seek flags are a performance contract* in `.claude/rules/mpv-playback.md`): on a
 4K60 VP9 file with a 5 s GOP an `absolute+exact` seek is **1.9 s**, against
 0.05 s for a keyframe seek. So a player that seeks to correct 300 ms of drift
 stops for nearly two seconds to fix a third of one, and comes out further from
@@ -265,7 +265,7 @@ playback for everybody in the room.
 
 ## Privacy: the seventh enforcement point
 
-`CLAUDE.md` states the rule that generated this section: *every new path by
+[The rule book](rules/sources-and-privacy.md) states the rule that generated this section: *every new path by
 which something about a file leaves this machine is another enforcement point*.
 A room is such a path, and the most direct of the seven — the other six speak to
 a service or to a device on the same network, and this one speaks to other

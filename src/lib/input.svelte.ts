@@ -563,7 +563,7 @@ export function onKeydown(e: KeyboardEvent) {
   if (e.code === 'Escape') {
     // **The one reserved key that was not consuming its event**, and the only
     // one where that showed. A bound chord gets `preventDefault` unconditionally
-    // (see the note in CLAUDE.md); Escape skipped it, so on macOS it was handled
+    // (see the note in docs/rules/frontend.md); Escape skipped it, so on macOS it was handled
     // twice — once here, closing the settings sheet, and once by AppKit, which
     // answers `cancelOperation:` in a fullscreen window by leaving fullscreen.
     // Both happened, so closing a dialog also dropped the window out of

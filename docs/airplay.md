@@ -75,7 +75,7 @@ the fetch after it says which address was chosen.
 
 *Kept as the self-test `FP_AIRPLAY_PLAY=<file>`, which now drives a session
 through the shipping commands rather than through code of its own (the command
-is in `CLAUDE.md`). What follows is the spike as it ran.*
+is in `.claude/rules/casting.md`). What follows is the spike as it ran.*
 
 Written: `src-tauri/src/airplay.rs`, macOS only, off unless
 `FP_AIRPLAY_PLAY=<file>` is set. It serves the file through `serve_one_file`

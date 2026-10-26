@@ -139,7 +139,7 @@
   }
 
   /* Two classes of equal weight decide `display`, and which one wins is source
-     order — the queue rows lost that fight once already (see CLAUDE.md). Written
+     order — the queue rows lost that fight once already (see .claude/rules/css.md). Written
      to win rather than left to chance. */
   .menu-item.torrent-file {
     display: flex;
