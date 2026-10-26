@@ -1,0 +1,153 @@
+---
+title: A Stremio alternative that is a player first — Frame Player
+description: Stremio streams what its add-ons find. Frame Player is a video player for any file that also streams torrents, browses a catalog and casts. An honest comparison.
+heading: Frame Player or Stremio?
+lede: Stremio and Frame Player meet in the same place — browse a film, pick a torrent, watch it while it downloads — and arrive there from opposite ends. Stremio is a media center whose catalogs and streams come from add-ons. Frame Player is a video player for whatever is on your disk, with the catalog and the torrents built on top. Here is where each is the better choice.
+eyebrow: Comparison
+short: Frame Player vs Stremio
+updated: 2026-10-26
+order: 48
+related:
+  - torrent-streaming
+  - watch-together
+  - cast-to-tv
+  - compare/plex-jellyfin
+faq:
+  - q: Does Frame Player need add-ons like Stremio?
+    a: "No. Everything is part of the player — torrent streaming, the catalog, subtitle search, casting and watching together. The one thing it does not ship is a source of releases: for the catalog's release list you point it at your own Torznab server, such as Jackett or Prowlarr. Without one the catalog still browses posters and descriptions, and every other feature works as usual."
+  - q: Do I need an account?
+    a: Not in Frame Player — there is no account at all, and the player reports one thing, once, that it was installed. Stremio has a guest mode that needs no account; its own site says guest mode does not sync your library between devices, which is what the account is for.
+  - q: Can Frame Player play files that are already on my computer?
+    a: That is what it is first of all. Any file mpv plays — MKV, HEVC, AV1, HDR, Dolby Vision — opens with a double click or a drop, the folder around it becomes the queue, and it resumes where you stopped with the dub and subtitles you chose.
+  - q: Does Frame Player upload while I watch a torrent?
+    a: Not unless you turn it on. Seeding is off by default, so the player downloads and never serves pieces to other peers. Connection encryption, a SOCKS5 proxy and the choice of which network interface torrents use are in Settings › Torrents.
+  - q: Is there Frame Player for Android, iPhone or a TV?
+    a: No — it runs on Windows 10 and 11 and on Macs with Apple Silicon. A television is reached by casting from the computer, with no app on the set. If you want the same library on a phone and a smart TV, that is where Stremio is the one to use.
+---
+
+import Mock from '../../../components/prose/Mock.astro'
+import Note from '../../../components/prose/Note.astro'
+
+[Stremio](https://www.stremio.com/) is what a lot of people install to watch a
+film from a torrent without downloading it first. It describes itself as a
+modern media center, and the shape of it is the add-on: you install add-ons, and
+they supply the catalogs you browse and the streams you play — Stremio says it
+provides no content itself. [Frame Player](/) gets to a similar place from the
+other end. It is a video player for Windows and macOS, built on mpv, that plays
+any file you give it — and it streams torrents, browses a catalog of films and
+series, and sends them to the television, all without anything to install on
+top.
+
+<Mock kind="playing">
+  A torrent playing while it downloads. The readout shows the rate, the peers and
+  how much of the file is already on disk.
+</Mock>
+
+## At a glance
+
+| Compared | [Frame Player](/) | Stremio |
+|---|---|---|
+| What it is | A video player, with torrents and a catalog built in | A media center whose catalogs and streams come from add-ons |
+| Runs on | Windows 10 and 11, macOS on Apple Silicon | Windows, macOS, Linux, Android, Android TV, several smart TVs, a web app; iOS in a limited form |
+| Engine on the desktop | libmpv | mpv in its Windows shell |
+| Files on your disk | Anything mpv plays, the folder as a queue | Built around what add-ons list |
+| Torrents | Built in, magnet links, `.torrent` files and RSS feeds | Magnet links and `.torrent` files |
+| Where releases come from | Your own Torznab server (Jackett, Prowlarr); none ships with the player | Add-ons, most of them made by the community |
+| Uploading while you watch | Off unless you turn it on | — |
+| Cast to a TV | Chromecast and DLNA; AirPlay from a Mac | Chromecast, from the desktop and Android apps |
+| Watch together | Built in | Through third-party browser extensions for the web app |
+| Account | None | Optional; needed to sync the library between devices |
+| Price | Free, GPL-3.0 | Free; the web interface is GPL-2.0 |
+
+<p class="table-note">Checked against Stremio 5.0.24 for Windows, 5.1.26 for macOS and Stremio's own site in October 2026. "—" means we could not find it documented either way.</p>
+
+## What is the same
+
+**The engine on the desktop.** Stremio's current Windows shell is
+[open source](https://github.com/Stremio/stremio-shell-ng) and plays video
+through mpv, which is the engine Frame Player is built on. Format support,
+hardware decoding and HDR come from the same place.
+
+**Watching a torrent before it has arrived.** Both play a magnet link or a
+`.torrent` file seconds after it is opened, without waiting for the whole file.
+
+**Posters, seasons and a "continue watching" row.** Both start from a catalog of
+films and series rather than a list of file names, and both remember where you
+stopped.
+
+## Where Frame Player goes further
+
+**It is a player for the files you already have.** Frame Player does not need a
+film to be in a catalog to play it. Double-click a file, drop a folder, paste a
+link — the episode opens, the rest of the folder becomes the queue in natural
+order (episode 2 before episode 10), and it resumes where you left it with the
+dub and the subtitles you picked, remembered by their language rather than their
+track number. The torrents and the catalog are things the player can also do,
+not the reason it exists.
+
+**One place for releases, and it is yours.** The catalog takes posters, localized
+titles and seasons from TMDB through the project's own proxy, so the player
+carries no API key, and the release list for a film comes from a Torznab server
+you run — Jackett or Prowlarr. The player ships with no source and suggests none.
+Releases are sorted by quality, then dynamic range, then seeders, and the one you
+pick opens as a torrent, with resume and the season as a queue.
+
+**Torrent streaming that says what it is doing.** The pieces just ahead of the
+playhead are fetched first and nothing is fetched speculatively — opening episode
+three of a season torrent downloads episode three. The parts already on disk are
+shaded on the seekbar, the readout tells "no peers" from "slow peers", and
+uploading is off by default. When a network gets in the way, connection
+encryption gets past filters that recognize BitTorrent, a SOCKS5 proxy gets past
+blocking by destination, and **Torrent route** can send the swarm out through a
+chosen network interface ([how it works](/torrent-streaming)).
+
+**A television without an app on it.** Besides Chromecast, Frame Player sends a
+film to a DLNA television's own built-in player, and from a Mac to an AirPlay
+receiver. Before you choose a set, each one says whether this particular file
+will play on it as it is, needs a quick repack, or cannot play — and the picture
+is never re-encoded ([how casting works](/cast-to-tv)).
+
+<Mock kind="cast">
+  The cast panel. Each television says what will happen to this particular file
+  on it.
+</Mock>
+
+**Watching together is part of the player.** A six-character code keeps friends
+in other places on the same frame. A torrent is picked up by everybody's player
+automatically, and each person watches their own copy at full quality — the room
+carries the timeline and nothing else ([how it works](/watch-together)).
+
+**The rest of a good player.** Seekbar previews that sharpen to the exact frame,
+subtitles searched by the file's own fingerprint, skip intro from the file's
+chapters, frame steps in both directions, black bars cropped away, neural-network
+upscaling, and a mini player that stays on top.
+
+**No account, and one feature that talks about what you watch.** Frame Player
+has no sign-in. The catalog is the one feature that sends what you search for —
+to the metadata proxy and to your own Torznab server — so it has an off switch in
+the settings, and everything else works without it.
+
+## Where Stremio is the better choice
+
+<Note>
+  **If you want the same library on your phone, your TV and your computer**, use
+  Stremio. Frame Player runs on Windows and the Mac only.
+</Note>
+
+- **Every screen.** Stremio has apps for Android, Android TV, several smart-TV
+  platforms, Linux and the web, alongside Windows and macOS. Frame Player reaches a
+  television only by casting from a computer.
+- **A synced library.** With an account, Stremio keeps your library and your
+  progress across all your devices. Frame Player keeps both on the one computer.
+- **The add-on ecosystem.** Add-ons can bring in sources Frame Player has no
+  equivalent for — community add-ons connect debrid services, and Stremio 5 on
+  the desktop added Usenet, FTP and videos inside archives as stream sources.
+- **Nothing to set up for releases.** Many people install a ready-made add-on
+  and are watching in minutes. Frame Player's catalog needs a Torznab server you
+  run yourself before it can list releases.
+- **Intel Macs and Linux.** Frame Player's macOS build is for Apple Silicon, and
+  there is no Linux build.
+
+Many people would use both: Stremio on the television and the phone, and Frame
+Player on the computer, for the files that are already there and the torrents
+you open on it.

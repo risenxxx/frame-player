@@ -1,0 +1,204 @@
+---
+title: Anime4K and ArtCNN upscaling, without config files — Frame Player
+description: "Upscale 480p and 720p video with the Anime4K and ArtCNN neural-network shaders on Windows and Mac: one menu, per file or per playlist, no mpv.conf to edit."
+heading: Neural-network upscaling, without writing a config file
+lede: An old 480p series or a 720p anime on a large screen looks soft, because ordinary scaling can only spread the pixels it has. Frame Player can enlarge it with a neural network instead — ArtCNN for filmed video, Anime4K for animation — chosen from a menu for one file or a whole season, and only ever run when the picture is actually being enlarged.
+eyebrow: Upscaling
+short: Upscaling
+updated: 2026-10-26
+order: 25
+related:
+  - guides/remove-black-bars
+  - guides/darker-than-quicktime
+  - compare/iina
+  - compare/potplayer
+faq:
+  - q: Will it make a 1080p film sharper on a 1080p screen?
+    a: No, and it does not try. The shaders only run when the picture on screen is at least 1.3 times its own size (1.2 for the Anime4K ones) in both directions. A 1080p film at its own size, or anything 4K, is left to ordinary scaling and costs nothing; the Picture panel says "Not needed" instead of looking broken.
+  - q: Which mode should I pick?
+    a: Video for filmed material — films, series, home video. Anime for drawn animation. Strong when the source is 720p or smaller and you want detail drawn in across the frame, accepting some shimmer and the odd artifact on faces; above 720p it works as Video.
+  - q: Does it work on Windows?
+    a: Yes, on both systems. On Windows the Video mode needs ten seconds or more of preparation the first time it starts on a computer, and the player says "Preparing upscaling" while it does. After that the prepared shader is kept, so it is instant in later sessions.
+  - q: Does it need a powerful graphics card?
+    a: It runs on the GPU, and the modes were chosen to be the lightest of their families. On a 720p source the most expensive one measured 9.9 ms a frame on an M3 Max, where a 24 fps film has 42 ms. A much weaker GPU, such as an older integrated one, may not keep up with Strong; if playback stutters, choose Video or Anime, or turn it off.
+  - q: Is my video sent anywhere to be upscaled?
+    a: No. The networks are small shaders that ship inside the player and run on your own graphics card, frame by frame, while the video plays. Nothing is uploaded and nothing is saved.
+  - q: Can I still use my own shaders from mpv.conf?
+    a: Yes. If your mpv.conf sets glsl-shaders, the player leaves them alone — the Picture panel says "Shaders are set in mpv.conf, so the player leaves them alone" and the upscaling switch steps aside.
+---
+
+import Mock from '../../components/prose/Mock.astro'
+import Note from '../../components/prose/Note.astro'
+
+Ordinary scaling, however good, can only interpolate: it decides what goes between
+two pixels from the pixels around them, which is why an enlarged 480p picture
+reads as soft rather than blocky. A neural network trained on pairs of small and
+large pictures can do better — it has learned what an edge, a line of an ink
+drawing or the grain of a wall tends to look like, and puts it back. In mpv that
+has long been possible with shaders such as Anime4K, at the price of downloading
+them, writing them into a config file and binding keys to switch them.
+[Frame Player](/) ships three of them and puts them in a menu.
+
+## How to turn it on
+
+1. Right-click the picture and open **Picture**, or press **C**.
+2. Under **Upscaling**, choose **Video**, **Anime** or **Strong**. **Off** is the
+   default.
+3. Choose whether the choice holds for **This file** or for the **Playlist** — the
+   folder the file is in, or the torrent it came from.
+
+There is also a shortcut, **Upscaling: next mode**, which steps through the four;
+it has no key until you give it one in the shortcut editor.
+
+<Mock kind="picture">
+  The Picture panel, opened with a right click or C. The scene shows its crop
+  and color rows; Upscaling sits between them, with the same choice of this file
+  or the playlist.
+</Mock>
+
+## The three modes
+
+| Mode | Network | Made for | What it does |
+|---|---|---|---|
+| **Video** | ArtCNN C4F16 DS | Films, series, filmed video | Enlarges ×2, removing noise and sharpening as it goes |
+| **Anime** | Anime4K Upscale CNN x2 M | Drawn animation | Enlarges ×2, tuned for line art and flat color |
+| **Strong** | Anime4K Upscale GAN x2 M | Sources up to 720p | Draws texture in across the whole frame |
+
+**Video and Anime reconstruct; Strong invents.** The first two put back edges that
+are there in the picture, only blurred. Strong is a generative network: it adds
+texture where the source has none, and that is what makes a whole frame read as
+detailed rather than just its outlines. It pays for that twice. It was trained on
+animation, so on live action faces can pick up artifacts. And the texture it
+invents is not quite the same from one frame to the next, so a still scene
+shimmers. We measured that on two consecutive frames of a 480p film, as the
+difference between them in PSNR — the lower, the more the two frames differ:
+
+| Two consecutive frames, 480p film | PSNR between them |
+|---|---|
+| Ordinary scaling | 35.4 dB |
+| Video (ArtCNN) | 34.6 dB |
+| Strong (Anime4K GAN) | 33.9 dB |
+| A restoring GAN in front of Strong (not shipped) | 31.3 dB |
+
+The frames differ to begin with, because things move; what the table shows is how
+much each network adds on top of that. That is why Strong is meant for small,
+soft sources, where it has the most to give. **On anything larger than 720p** —
+by either its long or its short side — it works as Video, and the panel says
+"Above 720p this works as “Video”". A playlist set to Strong can therefore mix
+720p and 1080p episodes without either losing the upscaler or dropping frames.
+
+## Why these three, and not the bigger ones
+
+Each family comes in several sizes, and the larger ones are not a sharper switch
+— they are a slower one. We measured the GPU time per frame on an M3 Max, drawing
+into a 3400×2000 window:
+
+| GPU time per frame | 720p source | 1080p source |
+|---|---|---|
+| No shader | 2.3 ms | 2.9 ms |
+| **Video** — ArtCNN C4F16 DS | 7.2 ms | 8.5 ms |
+| **Anime** — Anime4K CNN x2 M | 3.9 ms | 6.4 ms |
+| **Strong** — Anime4K GAN x2 M | 9.9 ms | 20.7 ms |
+| Anime4K CNN x2 L | | 8.6 ms |
+| Anime4K CNN x2 VL | | 15 ms |
+| ArtCNN C4F32 | | 37 ms |
+| Anime4K GAN x4 UL | | 39 ms |
+| Anime4K Restore GAN UL + GAN x2 M | | 44 ms |
+
+<p class="table-note">GPU time per frame, the sum of the render passes mpv reports, with mpv 0.41.</p>
+
+A 24 fps film has 42 ms for each frame and a 60 fps one 17 ms. The heaviest
+variants take most or all of that on the fastest Mac there is, and an integrated
+graphics chip has a fraction of its cores — so the player offers the variant of
+each family that leaves room to spare, and does not offer the rest.
+
+## It runs only when the picture is enlarged
+
+Each shader decides for itself, on every frame, whether to run: only when the
+picture on screen is more than 1.3 times its own size in both directions (1.2 for
+the two Anime4K modes). So with upscaling on:
+
+- a **720p episode in full screen** on a 1080p display is 1.5 times its size, and
+  is upscaled;
+- a **1080p film** on a 1080p display is drawn at its own size, and is left alone;
+- **anything 4K** is left alone on practically any screen;
+- **a small window** may not be enlarged enough — the same file starts being
+  upscaled when the window grows or goes full screen.
+
+Sizes are counted in the screen's real pixels, so on a Retina display a window
+holds twice as many in each direction as it seems to. Cropping the black bars
+away or zooming in does not count as enlarging: the shaders compare the whole
+decoded frame with the part of the picture inside the window.
+
+A switch that is on and doing nothing would look broken, so the panel says which
+it is: **"Active: the picture is 1.6× its own size"**, **"Not active now: the
+picture is barely enlarged"**, or **"Not needed: the video is no smaller than the
+screen"**.
+
+## This file, or the whole season
+
+Whether a picture is worth enlarging is a property of the video — a season ripped
+from DVD is soft in every episode — so the choice is kept per file or per
+playlist, and the file's own choice wins. Set the playlist to Anime and every
+episode in the folder or torrent opens with it, including ones you have not
+watched yet; set one episode back to Off and only that one is. A link has no
+playlist, so for a link the choice is the file's.
+
+There is deliberately no setting for every file. A network left on everywhere
+would run over every 4K film it could not improve, and on a laptop you would pay
+for that on battery.
+
+## The first time on Windows
+
+A shader has to be compiled for the graphics card before it can run, and mpv
+does that the first time the picture is large enough for it. On a Mac that takes
+about a quarter of a second — we measured 0.27 s and three dropped frames — the
+same for every mode.
+
+On Windows the Video mode is the expensive one. Its passes are compiled by
+Microsoft's shader compiler for Direct3D 11, which took over twelve seconds for
+ArtCNN on a current desktop graphics card, against a tenth of a second for Anime
+and a third of a second for Strong. Two things keep that from mattering more than
+once:
+
+- **It happens once per computer.** The compiled shaders are kept between
+  sessions, so the next time the player starts, upscaling begins at once.
+- **The player says so.** While the first compile runs the picture stands still,
+  so the player dims it and shows "Preparing upscaling — Only the first time on
+  this computer" with a running clock, instead of looking frozen.
+
+<Note>
+  The compile usually lands at the moment the picture first grows past the
+  threshold — while you drag the window larger or switch to full screen — because
+  that is when the shader is first needed.
+</Note>
+
+## Compared with setting glsl-shaders in mpv by hand
+
+If you have used Anime4K with mpv, you know the routine: download the shaders,
+list them in `glsl-shaders` in mpv.conf or bind modes to keys in input.conf, and
+remember which one suits which file. Frame Player does the same thing underneath
+— the same mpv, the same shader files, unmodified — and changes four things:
+
+- **Nothing to download or write.** The shaders ship inside the player.
+- **The choice is remembered** per file or per playlist rather than being one
+  global line, so a live-action film after an anime season does not inherit the
+  anime shader.
+- **The panel says whether it is running**, and why not.
+- **The compiled shaders are cached** between sessions. mpv does that by default
+  on its own; the library form of mpv that players are built on does not, which is
+  why the first Windows release of this feature compiled again in every session.
+
+If you prefer your own chain, keep it: when your mpv.conf sets `glsl-shaders`,
+the player sends none of its own and the panel says "Shaders are set in mpv.conf,
+so the player leaves them alone".
+
+## Where it does not apply
+
+- **Casting.** The television decodes the video itself, so nothing the computer's
+  GPU does can reach it; the picture settings are unavailable while casting.
+- **Watching together.** The choice is your own and is not shared with the room;
+  everyone picks what suits their screen.
+
+ArtCNN and Anime4K are both MIT-licensed, and their licenses ship with the player
+alongside its other third-party notices.

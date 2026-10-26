@@ -1,0 +1,208 @@
+---
+title: Step a video back one frame at a time, without the wait — Frame Player
+description: Stepping back one frame is slow in most players and slower with hardware decoding. Why, what it costs on real files, and how Frame Player makes every step quick.
+heading: Stepping back one frame at a time, and why it is usually slow
+lede: A step forward is one frame of work for any player. A step back is not — it can mean decoding hundreds of frames to show one, and on a file with long gaps between keyframes that is a second or more per press. Here is where that cost comes from, what we measured, and the two things Frame Player does so a step back takes about as long as a step forward.
+eyebrow: Guide
+short: Step back one frame
+updated: 2026-10-26
+order: 57
+related:
+  - compare/iina
+  - compare/potplayer
+  - torrent-streaming
+  - upscaling
+faq:
+  - q: Which keys step one frame?
+    a: Comma steps one frame back and period one frame forward, on Windows and macOS alike. Both can be held down to keep stepping, and both can be moved to other keys in the shortcut editor. A step pauses the video if it was playing.
+  - q: Why is the first step back slower than the ones after it?
+    a: "The first step back is an ordinary one, decoded from the previous keyframe, and the player times it. If it was slow and you step back again, the player decodes the whole stretch back to the keyframe once and keeps it, so every press after that is about one frame's worth of work. That one-time decode is the wait you notice: 0.7 s on the 4K film we measured, longer on files whose keyframes are further apart."
+  - q: Why does pressing play after stepping take a moment?
+    a: While you step, the video is decoded in software, because that is several times faster for a step back. Pressing play hands decoding back to the graphics hardware first, which on files with long keyframe gaps takes up to a second and a half. Staying in software instead would cost three to four times the power for the rest of the film.
+  - q: How much memory does fast stepping use?
+    a: As much as the stretch of video back to the keyframe takes once decoded, and never more than a quarter of your computer's memory or 4 GB, whichever is less. When a file's keyframes are too far apart to fit, the player steps back the ordinary way instead. The fast way can be switched off under Settings › Video › Fast stepping back by frame.
+  - q: Why do the subtitles disappear while I step back?
+    a: Subtitles stored inside the video file are not read while the player decodes backward, so they are absent for those steps. They return as soon as you step forward or press play.
+  - q: Can I step frame by frame while casting to a TV?
+    a: No. While a video is casting, the television decodes it and there is no frame on the computer to step through, so the player says frame stepping is not available until the cast ends.
+---
+
+import Note from '../../../components/prose/Note.astro'
+
+Going through a video one frame at a time is how an animator checks timing, how
+a coach finds the exact moment a foot leaves the ground, how a reviewer marks a
+cut, and how anyone gets the one sharp frame worth saving. Forward is easy. Back
+is where most players stall: press the key and wait, press again and wait again.
+That is not a bug in any one player. It follows from how video is compressed —
+and it can be worked around.
+
+## Why a step back costs more than a step forward
+
+Almost no frame in a modern video file is stored whole. Every so often there is
+a **keyframe**, a complete picture; every frame after it, until the next
+keyframe, is stored only as the difference from the frames around it. The
+keyframe and the frames that depend on it are called a group of pictures, and a
+group can be anything from half a second to ten seconds long.
+
+So the decoder can only ever go forward from a keyframe. To show the next frame
+it applies one more difference. To show the previous one, it has nothing to
+apply the difference *backward* to — it has to go back to the keyframe and decode
+forward again, up to the frame before the one on screen:
+
+| To show | What the decoder has to do |
+|---|---|
+| The next frame | Decode one frame |
+| The previous frame, just after a keyframe | Decode a handful of frames from that keyframe |
+| The previous frame, at the end of a 10-second group at 60 fps | Decode the group again from its keyframe — up to 600 frames, to show one |
+
+That is why the cost of a step back depends on the **file**, not on the player:
+a film from a disc with two-second groups is cheap to step through, and the
+long-group files that video sites hand out are expensive. And a player that
+does nothing about it pays the full cost again at every single press.
+
+## What a step back costs, measured
+
+mpv — the engine inside Frame Player, IINA, mpv.net and a few others — steps
+back exactly that way: each press is an exact seek to the previous frame, so a
+decode from the keyframe. We timed it on five test files, with the decoder in
+software and in the Mac's hardware decoder:
+
+| One step back | Software decoding | Hardware decoding |
+|---|---|---|
+| 1080p, 24 fps, H.264, 2-second groups | 60 ms | 190 ms |
+| 1080p, 60 fps, H.264, 10-second groups | 160 ms | 1.9 s |
+| 1080p, 60 fps, VP9, 5-second groups | 260 ms | 1.3 s |
+| 1080p, 60 fps, AV1, 10-second groups | 1.0 s | 2.3 s |
+| 4K HEVC, 10-second groups | 1.6 s | 1.8 s |
+
+<p class="table-note">Measured with mpv 0.41 on an Apple Silicon Mac (M3 Max), on generated 60-second files, so the absolute numbers are optimistic and the ratios are what carry over. A step forward costs one frame period in every case: 17 ms at 60 fps, 42 ms at 24.</p>
+
+The second column is the surprise. **Hardware decoding makes a step back two to
+ten times slower**, even though it is faster for watching. A hardware decoder is
+built to stream frames out steadily, and it hands them back with a latency that
+a seek of one frame cannot hide. Most players, and most mpv setups, play with
+hardware decoding on — so the slowest case is the usual one.
+
+## What Frame Player does about it
+
+Two things, each measured before it shipped, and each switched on only where it
+helps.
+
+### 1. Software decoding while you step
+
+The first step back of a session moves the decoder from the graphics hardware to
+software. The switch itself takes about 10 ms, and the very next step already
+runs at software speed. On a real 4K HEVC release with two-second groups, that
+alone took a step back from 230–410 ms down to 130–220 ms.
+
+The hardware comes back when you press play — and **only while the video is
+still paused**, which is the part that took the longest to get right. A decoder
+switched during playback is fed the data already on its way, from the middle of
+a group, without the keyframe it depends on. A hardware AV1 or VP9 decoder fails
+on that, and mpv then quietly stays in software for the rest of the file. So
+the play button, the space bar, a click on the picture and the media keys all
+wait for the hardware to be back before the video moves.
+
+That wait is a real cost: 0.4–0.6 s on the VP9 file, 0.7–0.8 s on an H.264 film
+and 1.4–1.6 s on the AV1 file, against 5–50 ms for an ordinary resume. We measured the alternative — simply playing on in software — and it is
+worse for longer:
+
+| Playing on after stepping | Software | Hardware |
+|---|---|---|
+| H.264 film | 25 % of a core | 10 % |
+| 1080p, 60 fps, VP9 | 33–42 % | 8–12 % |
+| 1080p, 60 fps, AV1 | 46 % | 9–11 % |
+| 1440p, 60 fps, VP9 | 45 % | 11 % |
+
+<p class="table-note">Same machine, no frames dropped in either. The power the system reports follows the same ratios.</p>
+
+Three to four times the power for the rest of the film, to save a second once,
+is not a trade worth making on a laptop.
+
+### 2. Decoding backward, once, on files where a step is still slow
+
+Software decoding fixes a film with short groups. It does not fix a file whose
+groups are ten seconds long, where even software needs a second per press. For
+those, Frame Player switches mpv into **backward decoding**: mpv decodes the
+whole group once, keeps the frames, and hands them out in reverse. The first
+press pays for the group; every press after it costs one frame period, like a
+step forward.
+
+Turning that on and off has its own cost, so the player is careful about when:
+
+- **Only on a file that has shown itself slow.** Any step back that takes longer
+  than 100 ms marks the file, and no later fast step clears the mark — a step
+  just after a keyframe is always quick and says nothing about the next one.
+- **Only from the second step back in a row.** A single step back, or steps that
+  alternate with steps forward, stay the ordinary kind: turning around costs
+  more than one ordinary step, and paying it at every change of direction would
+  make rocking back and forth slower, not faster.
+- **Only inside a memory budget.** Holding a decoded group is expensive — a
+  ten-second group of 8-bit 4K at 24 fps is 3 GB, and we measured mpv's
+  footprint at exactly what the arithmetic predicts. Before turning, the player
+  measures how long the groups around your position are (it reads only the
+  packet headers, which takes milliseconds) and how much memory the computer
+  has, and goes ahead only if the longest group fits in a quarter of it, capped
+  at 4 GB. Otherwise it keeps stepping the ordinary way.
+- **With the sound off.** mpv would otherwise decode the audio backward too. On a
+  4K release with a 5.1 soundtrack that tripled the wait to get started (2.0 s
+  against 0.7 s) and made one step in forty skip five frames. The track comes
+  back when you play — and only after the decoder has turned forward again,
+  because a track switched on while decoding backward lands on the next
+  keyframe instead of the current frame.
+
+<Note>
+  **Every landing is checked.** When the decoded group does not fit, mpv does
+  not report an error — it drops frames and the picture lands seconds away from
+  where it should (we watched a 4K file jump from 39.9 s to 33.5 s). So after
+  every step the player compares where it landed with where one frame back
+  should be. If they differ, it turns forward, seeks to the right frame and
+  steps that file the ordinary way from then on.
+</Note>
+
+The result, on the 4K HEVC release with a 5.1 soundtrack: 0.69 s to get started,
+then 37–48 ms a step, about the same as a step forward — with one step of
+340 ms where the walk crosses into the previous group. Pressing play resumes
+from the frame you stopped on, with the soundtrack and hardware decoding back.
+
+### And everything else has to know
+
+A player that decodes backward has to make sure nothing is left that way. A seek
+from the seekbar or the keys first turns mpv forward and gives the decoder back,
+because mpv lets a pending seek replace another and the viewer's seek would
+otherwise be the one lost; anything else that moves the picture — a chapter, a
+watch-together room — is noticed the moment it lands, and mpv is turned forward at once. And all of these settings are
+made for the current file only, so mpv itself resets them when the next one
+opens: the next episode can never start out playing backward from its last
+frame.
+
+## Torrents
+
+Backward decoding runs only on a file that is on this computer's disk, so it
+covers local files and torrents — including one still downloading, where it
+needs more care. A part of
+a torrent that has not arrived yet does not fail when read: it reads back as
+zeros. So on a torrent still downloading, the player checks its map of what has
+arrived before every step backward, and uses backward decoding only where that
+covers the groups being decoded. What you have just watched has always arrived;
+the gap is the stretch before a jump ahead into what had not. There the player
+steps the ordinary way, and if a step has to wait for the swarm, it says so
+rather than appearing to hang. Online streams always step the ordinary way.
+
+## Using it
+
+- **Comma** steps one frame back and **period** one frame forward, on both
+  systems; hold either to keep going. Both can be rebound in the shortcut editor.
+- **S** saves the frame on screen, **Shift+S** saves it with the subtitles, and
+  **Ctrl+C** (**⌘C** on a Mac) copies it to the clipboard. The frame is saved as
+  the player decoded it, HDR tone mapping included.
+- Backward decoding can be switched off under **Settings › Video › Fast stepping
+  back by frame**; software decoding while stepping has no switch, since it
+  changes nothing but the speed.
+- While casting to a television there is nothing on the computer to step through,
+  so the player says frame stepping is not available until the cast ends.
+
+The numbers on this page were measured on a Mac. On Windows the player does the
+same things — software decoding while stepping, backward decoding inside the
+same memory budget — with the graphics card's own decoder instead of Apple's,
+and we have not timed it there.

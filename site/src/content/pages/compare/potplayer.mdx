@@ -1,0 +1,157 @@
+---
+title: PotPlayer for Mac? One player on both systems — Frame Player
+description: PotPlayer runs only on Windows. Frame Player runs on Windows and macOS alike, built on mpv, free and open source. What carries over from PotPlayer and what does not.
+heading: Looking for PotPlayer on a Mac?
+lede: PotPlayer is Windows only, and there is no Mac version. Frame Player runs on both systems with the same features on each, so it can be the one player on a Windows PC and a Mac. Here is what carries over from PotPlayer, what Frame Player adds, and what you would be giving up.
+eyebrow: Comparison
+short: PotPlayer for Mac
+updated: 2026-10-26
+order: 42
+related:
+  - compare/iina
+  - compare/vlc
+  - compare/infuse
+  - upscaling
+  - guides/step-back-one-frame
+faq:
+  - q: Is there a PotPlayer for Mac?
+    a: No. PotPlayer's official site offers Windows installers only — 32-bit, 64-bit and, since August 2026, ARM64 — for Windows 7 to 11. There is no macOS, Linux or mobile version, and running it on a Mac means a Windows virtual machine.
+  - q: Is Frame Player free, like PotPlayer?
+    a: Yes, and it is also open source, under the GPL-3.0, with its code public. PotPlayer is free to use but its source is not published. Frame Player has no account, no subscription and no advertising; the one thing it reports, once, is that it was installed.
+  - q: Can Frame Player use madVR?
+    a: No. madVR is a DirectShow renderer for Windows, and Frame Player's picture comes from mpv's own renderer, libplacebo, on both systems. For enlarging a low-resolution video it has neural-network upscalers of its own, which run on a Mac as well as on Windows.
+  - q: Does Frame Player step frame by frame, and backwards too?
+    a: Yes, forwards with the period key and backwards with the comma. Stepping back is the hard direction for any player, because a video is stored as groups of frames that decode forwards; Frame Player switches to backward decoding on the files where stepping back would otherwise be slow.
+  - q: Will Frame Player read my PotPlayer settings or playlists?
+    a: No. Settings, hotkeys and bookmarks do not carry over. Frame Player's hotkeys are rebindable, J, K and L work as they do in most players, and opening one episode puts the rest of the folder in the queue by itself.
+  - q: Does Frame Player run on Windows on ARM or an Intel Mac?
+    a: Not at the moment. It runs on Windows 10 and 11 on Intel and AMD processors, and on Macs with Apple Silicon. On a Windows ARM laptop PotPlayer has a build; on an Intel Mac, IINA or VLC is the one to use.
+---
+
+import Mock from '../../../components/prose/Mock.astro'
+import Note from '../../../components/prose/Note.astro'
+
+PotPlayer has a loyal following on Windows, and it has earned it: a player that
+starts quickly, plays nearly anything without a codec pack and has a setting for
+everything somebody has ever wanted to change. The trouble starts when you get a
+Mac, or use one at work, because PotPlayer has never been made for one. The
+usual suggestions are a different player on each system, or one with half of
+what you were used to. [Frame Player](/) is built to be the same player on
+both — the same features, the same shortcuts and the same settings on Windows
+and on macOS.
+
+<Mock kind="preview">
+  Hovering the seekbar shows the frame you would land on, and the chapter it
+  belongs to.
+</Mock>
+
+## At a glance
+
+| Compared | [Frame Player](/) | PotPlayer |
+|---|---|---|
+| Runs on | Windows 10 and 11, macOS on Apple Silicon | Windows 7 to 11, including ARM64 |
+| Engine | libmpv, with FFmpeg's decoders and libplacebo's renderer | Its own, with built-in codecs; more through OpenCodec |
+| Video renderers | mpv's, the same on both systems | Built-in Direct3D 9 and 11, madVR, MPC Video Renderer |
+| Upscaling | Neural-network shaders, on any graphics card | GPU Super Resolution in the D3D11 renderer, NVIDIA RTX Video, madVR's scalers |
+| Frame by frame | Forwards and backwards | Yes |
+| A–B repeat | Yes | Yes, with lists of sections and repeat counts |
+| Subtitle search | Built in, OpenSubtitles, matched to the exact release | Built in, with online translation |
+| Subtitles from speech | — | Whisper, including in real time |
+| Cast to a TV | Chromecast, DLNA, and AirPlay on the Mac | Not built in |
+| Torrents | Built in, watch while downloading | Not built in |
+| Watch together | Built in | Not built in |
+| 3D and 360° video | — | Yes |
+| Recording and capture | Saves or copies a frame | Video, stream, screen and game capture |
+| Licence | GPL-3.0, open source | Freeware, source not published |
+
+<p class="table-note">Checked against PotPlayer's site and its update history up to the build of 21 October 2026.</p>
+
+## What is the same
+
+**It plays what you throw at it.** Both players carry their own decoders, so
+MKV, HEVC, AV1, 10-bit and HDR files play without installing anything, with
+hardware decoding where the graphics card has it.
+
+**The everyday tools.** Playback speed, an A–B loop, frame-by-frame stepping,
+audio and subtitle delay, picking the output device, volume above 100 %, saving
+the current frame — the things a PotPlayer user reaches for daily are all here,
+each on a key you can rebind.
+
+**Free.** Neither costs anything, and neither needs an account.
+
+## Where Frame Player goes further
+
+**It is on the Mac.** The point of this page, but worth spelling out: the same
+player, with the same shortcuts, on a Windows PC and on a Mac with Apple Silicon.
+A file you stopped in halfway on one machine is a file you know how to drive on
+the other.
+
+**An interface you do not have to configure first.** PotPlayer's strength is a
+preferences window with a setting for everything, and the price is finding the
+one you need. Frame Player keeps what you use on the video and in a context
+menu, and the rest in one settings sheet. Underneath, it still reads an mpv.conf,
+so an option the interface does not offer can be written by hand.
+
+**Stepping back, made fast.** Any player can step forwards; stepping back means
+decoding a whole group of frames to show the one before. Frame Player measures
+the file and, where that would be slow, decodes it backwards instead — so
+holding the key walks back through a scene rather than stalling on each frame.
+[How it works](/guides/step-back-one-frame).
+
+**The picture, cropped and enlarged without a renderer to set up.** Auto crop
+measures frames across the whole file and removes the black bars baked into the
+video, each episode measured on its own ([how](/guides/remove-black-bars)).
+Upscaling uses neural-network shaders made for live action or for animation, and
+the panel says when the window is too small for them to make any difference
+([how](/upscaling)). Both work the same on a Mac, where there is no madVR.
+
+<Mock kind="picture">
+  The picture panel: brightness and contrast set for the whole playlist, then
+  auto crop — and the window takes the film's own shape.
+</Mock>
+
+**Subtitles matched to your release.** The search goes by the file's own
+fingerprint first, which finds subtitles made for exactly that copy, and a
+subtitle made for a different frame rate is flagged before you download it —
+that is the one that [drifts further out of sync](/guides/subtitles-out-of-sync)
+the longer you watch.
+
+**Torrents, casting and watching together.** A magnet link plays while it
+downloads ([how](/torrent-streaming)); a film goes to a Chromecast or a DLNA
+television without being re-encoded, and from a Mac to an AirPlay one
+([how](/cast-to-tv)); and a six-character code keeps friends in other places on
+the same frame ([how](/watch-together)). None of the three is built into
+PotPlayer.
+
+## Where PotPlayer is the better choice
+
+<Note>
+  **On a Windows ARM laptop**, PotPlayer has a native build and Frame Player does
+  not.
+</Note>
+
+- **Depth of configuration.** If you want to choose the decoder per codec, chain
+  video filters or tune the renderer in detail, PotPlayer exposes far more of
+  that than Frame Player ever will.
+- **madVR and the MPC Video Renderer.** Some viewers have settled on madVR's
+  scaling and tone mapping and want nothing else; PotPlayer can use it, and
+  Frame Player cannot.
+- **Subtitles from speech.** PotPlayer can generate subtitles from the audio with
+  Whisper, even while a live stream plays, and translate subtitles online. Frame
+  Player finds subtitles but does not make or translate them.
+- **More than files.** 3D output for 3D televisions and glasses, 360° video, TV
+  tuners and capture cards, and recording video, streams, the screen or a game.
+  Frame Player plays files and links, and does none of that.
+- **Older Windows.** PotPlayer still installs on Windows 7 and 8.1; Frame Player
+  needs Windows 10 or 11.
+
+## And the other Mac players
+
+If the Mac is all you need a player for, there are good ones that are not
+cross-platform. **IINA** is a native Mac front end on the same mpv engine as Frame
+Player, and the one to use on an Intel Mac ([compared](/compare/iina)). **VLC**
+runs everywhere and plays nearly anything ([compared](/compare/vlc)). **Infuse**
+is a polished player built around a library of posters, with a paid Pro tier
+([compared](/compare/infuse)). IINA and Infuse stop at the Mac, so neither can
+be the player on the Windows machine next to it — which is the gap Frame Player
+fills.

@@ -1,0 +1,173 @@
+---
+title: A free Infuse alternative for Mac and Windows — Frame Player
+description: Infuse Pro is $16.99 a year, Movist Pro and Elmedia PRO about $20. Frame Player is free and open source, with Dolby Vision, DTS, casting and torrents. Compared.
+heading: Do you need to pay for a video player on the Mac?
+lede: Several of the best-known Mac players are paid ones — Infuse by subscription, Movist and Elmedia for a one-time price — and what the money buys is often the same short list of features. Frame Player is free and open source, with no paid tier. Here is what each costs, what the payment unlocks, and when paying is still the right call.
+eyebrow: Comparison
+short: Frame Player vs Infuse
+updated: 2026-10-26
+order: 49
+related:
+  - compare/iina
+  - cast-to-tv
+  - upscaling
+  - compare/plex-jellyfin
+faq:
+  - q: Is there a free alternative to Infuse on the Mac?
+    a: For watching files on the Mac itself, yes. Frame Player is free and open source, and the things Infuse puts in its Pro tier — Dolby Vision, lossless Dolby and DTS sound, casting to a television — are part of it with nothing to unlock. What it does not replace is Infuse's library and its apps for the iPhone, iPad and Apple TV.
+  - q: Is Infuse Pro worth it?
+    a: If you watch on an Apple TV, an iPhone or an iPad from a NAS, Plex, Jellyfin or a cloud drive, Infuse is one of the best apps for that and Pro is what makes it complete — $16.99 a year or $99.99 once. If what you want is to play files on a Mac or a Windows PC and send them to a television, you do not need to pay for that.
+  - q: Does Frame Player play Dolby Vision, TrueHD and DTS for free?
+    a: Yes. Playback is libmpv with FFmpeg's own decoders, so Dolby Vision (profiles 5 and 8), HDR10, HDR10+ and HLG are tone mapped by libplacebo, and TrueHD, DTS and DTS-HD Master Audio are decoded in the player. There is nothing to buy. Dolby Atmos is not rendered as objects — an Atmos track plays as its ordinary surround mix.
+  - q: Does Frame Player run on the iPhone, iPad or Apple TV?
+    a: No. It runs on Windows 10 and 11 and on Macs with Apple Silicon, and has no mobile or television app. On an Apple TV it can still reach the screen — from a Mac it plays to an Apple TV over AirPlay.
+  - q: Can Frame Player play from a NAS?
+    a: A share mounted in Finder, or mapped as a drive in Windows, opens like any other folder, with the next episode queued and resume remembered. Frame Player does not browse SMB or NFS servers by itself, and it is not a Plex, Emby or Jellyfin client.
+  - q: Why is Frame Player free?
+    a: It is an open-source project under the GPL-3.0, with no account, no subscription and no advertising. The one thing the player reports, once, is that it was installed.
+---
+
+import Mock from '../../../components/prose/Mock.astro'
+import Note from '../../../components/prose/Note.astro'
+
+Ask what to use on a Mac for the files QuickTime will not open and three names
+come up besides IINA: [Infuse](https://firecore.com/infuse),
+[Movist](https://movistprime.com/) and
+[Elmedia Player](https://www.elmedia-video-player.com/). All three are good
+players, and all three are paid — Infuse through a subscription, the other two
+for a one-time price. Look at what the payment unlocks and the list is
+short and much the same: high-end HDR and surround formats, casting to a
+television, network sources. [Frame Player](/) has all of the first two and costs
+nothing, on the Mac and on Windows.
+
+<Mock kind="cast">
+  The cast panel. Chromecast, DLNA televisions and, on a Mac, AirPlay are in the
+  free player — each device says whether this file will play as it is before
+  anything starts.
+</Mock>
+
+## What each one costs
+
+| Price | [Frame Player](/) | Infuse | Movist | Elmedia Player |
+|---|---|---|---|---|
+| The app | Free | Free, with Pro | $9.99 on the Mac App Store | Free, with PRO |
+| The paid tier | — | Pro: $1.99 a month, $16.99 a year or $99.99 once | Movist Pro: $17.99 once, from the developer | PRO: $19.99 once, in the app |
+| Over three years | **$0** | $71.64 monthly, $50.97 yearly, or $99.99 lifetime | $17.99 | $19.99 |
+| Account or subscription | None | Optional subscription; Pro also comes as a lifetime purchase | None | None |
+| Source code | Open, GPL-3.0 | Closed | Closed | Closed |
+
+<p class="table-note">Prices in USD from the US App Store and the developers' own sites in October 2026, against Infuse 8.5.8, Movist 2.20.0 and Elmedia Player 8.24; they differ from country to country, and Movist's went up in August 2026. Infuse says its lifetime purchase includes future major versions; Movist's and Elmedia's pages do not say either way.</p>
+
+## What the payment unlocks
+
+| Compared | [Frame Player](/) | Infuse | Movist | Elmedia Player |
+|---|---|---|---|---|
+| Runs on | Windows 10 and 11, macOS on Apple Silicon | iPhone, iPad, Mac, Apple TV, Vision Pro | Mac | Mac |
+| Engine | libmpv, with FFmpeg's decoders | Its own | Its own | Its own |
+| Dolby Vision | Profiles 5 and 8, free | Profiles 5 and 8; the developer's site lists it with Pro | Supported | — |
+| Lossless Dolby and DTS sound | TrueHD and DTS-HD MA decoded, free | "High-resolution Dolby and DTS audio" in Pro | AC-3 and DTS passed to a receiver | AC-3 and DTS passed to a receiver, in PRO |
+| AirPlay | From the Mac, free | Pro | Movist Pro, macOS 15 and later | PRO |
+| Chromecast and DLNA | Both, free | Google Cast in Pro | — | Both, in PRO |
+| Network shares and cloud drives | A mounted share opens like a folder | SMB, NFS, WebDAV and more free; cloud drives in Pro | FTP, SFTP, WebDAV and SMB in Movist Pro | — |
+| Library with posters and metadata | — | Yes, free | — | — |
+| Subtitle search | Built in, OpenSubtitles, matched to the exact release | OpenSubtitles, free | — | OpenSubtitles download, in PRO |
+| Picture adjustments | Brightness, contrast, saturation, gamma, crop, free | — | Core Image filters | Brightness, contrast and saturation, in PRO |
+| Upscaling | Neural-network shaders, free | "Advanced video upscaling", free | — | — |
+| Torrents | Watch while downloading | — | — | — |
+
+<p class="table-note">From each developer's own feature list and App Store listing in October 2026. A dash means the developer does not list the feature, not that we tested it and found it missing.</p>
+
+## What is the same
+
+**The everyday files.** MKV, MP4, HEVC, AV1, 10-bit, every common subtitle format
+— all four play the files people actually have, with hardware decoding, including
+the ones QuickTime refuses.
+
+**Subtitles and skipping.** Infuse and Frame Player both download subtitles from
+OpenSubtitles and both offer to skip an intro; Infuse does it free, and so does
+Frame Player, which searches by the file's own fingerprint first, so what comes
+back was made for exactly that copy.
+
+**Upscaling.** Infuse's free tier upscales lower-resolution video, and so does
+Frame Player — with [neural-network shaders](/upscaling) chosen per file or per
+playlist, which say so when the picture is not being enlarged and the shader has
+nothing to do.
+
+## Where Frame Player goes further
+
+**The formats that are paid elsewhere are free here.** Playback is libmpv, the
+engine behind mpv and IINA, and it decodes with FFmpeg's own decoders: Dolby
+Vision profiles 5 and 8, HDR10, HDR10+ and HLG are tone mapped by libplacebo, and
+TrueHD, DTS and DTS-HD Master Audio are decoded in the player and played as
+ordinary surround sound. Nothing is behind a tier, and nothing changes the day a
+subscription lapses.
+
+<Note>
+  **Dolby Atmos is not rendered as objects.** An Atmos track in TrueHD or E-AC-3
+  plays as the surround mix it carries underneath, which is what most speakers
+  and headphones on a computer would play anyway.
+</Note>
+
+**Casting to the television, free and without re-encoding.** A Chromecast, a
+DLNA smart TV and, from a Mac, an AirPlay television are all in the cast panel.
+Each device says before anything starts whether this file plays as it is, needs
+the container repacked — the picture is copied, never re-encoded — or cannot play
+and why. While a film is on the television the window is its remote: the seekbar,
+the keys, the chapters and the queue act on the set. The details are in
+[how casting works](/cast-to-tv).
+
+**Windows as well.** Infuse, Movist and Elmedia are Apple-only. Frame Player is
+the same player on a Windows PC and a Mac, so one set of habits follows you
+between the two.
+
+**Torrents, a catalog and watching together.** A magnet link plays while it
+downloads, the pieces you are about to watch fetched first
+([how](/torrent-streaming)); the catalog finds a film by its poster and opens a
+release from your own indexer; and a six-character code keeps friends in other
+places on the same frame, each playing their own copy
+([how](/watch-together)). None of the three paid players lists any of these.
+
+**The picture, by hand.** Brightness, contrast, saturation and gamma for one file,
+a whole season or everything; black bars baked into the video
+[measured and cut away](/guides/remove-black-bars); a step one frame forward or
+[one frame back](/guides/step-back-one-frame); and a [mini player](/mini-player)
+that stays on top of other apps, on a Mac even over one in full screen.
+
+## Where Infuse is the better choice
+
+<Note>
+  **On an Apple TV, an iPhone or an iPad**, use Infuse: Frame Player has no app
+  for any of them. From a Mac it can still put a film on an Apple TV over AirPlay.
+</Note>
+
+- **One player on every Apple screen.** Infuse runs on the iPhone, the iPad, the
+  Mac, the Apple TV and Vision Pro, and Pro keeps the library, watched history
+  and playback position in sync between them through iCloud. Frame Player
+  remembers where you stopped on the one computer you stopped on.
+- **A library, not a folder.** Infuse fetches posters, descriptions and artwork
+  for the files you already have and arranges them by film and series, free.
+  Frame Player's start screen lists what is unfinished, with a frame from the
+  video, but it does not build a library of your files.
+- **Servers and clouds.** Infuse connects to SMB, NFS, WebDAV and FTP shares and
+  to Plex, Emby and Jellyfin servers in the free version, and to Dropbox, Google
+  Drive, OneDrive and others with Pro. Frame Player plays from a share only once
+  the system has mounted it, and is not a client for any server.
+- **Trakt.** Infuse scrobbles what you watch, and your ratings, to Trakt. Frame
+  Player has no Trakt connection.
+- **Real Dolby Vision output on the Apple TV.** An Apple TV hands Dolby Vision to
+  the television as Dolby Vision. A computer has no such output; Frame Player
+  tone maps the picture for the display it is on.
+
+## And Movist or Elmedia
+
+**Movist** is a native Mac player with a long history, sold once — $9.99 on the
+App Store, or $17.99 for Movist Pro from its developer, which adds network shares,
+AirPlay, picture-in-picture and a browser extension for web video. **Elmedia
+Player** is free to play files and asks $19.99 once for PRO, which adds casting
+to Chromecast, AirPlay and DLNA televisions, subtitle downloads, picture
+adjustments and A–B loops. Both are Mac-only and both are fair prices for what
+they are. The point is only that most of what those Pro and PRO lists add is in
+Frame Player for nothing — and that a one-time price for a Mac player still
+leaves a Windows PC without one.
+
+Choosing among mpv-based players instead? [Frame Player and IINA compared](/compare/iina).

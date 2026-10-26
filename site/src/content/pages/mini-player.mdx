@@ -1,0 +1,160 @@
+---
+title: A video that stays on top, even over full screen — Frame Player
+description: Frame Player's mini player shrinks the video into a corner that stays above your work — and on a Mac it floats over other apps in full screen too. How it works.
+heading: Keep a video on top while you work — even over a full-screen app
+lede: Press P and the film shrinks into a small window in the corner of the screen, above everything else, with nothing on it but the picture until you reach for it. On a Mac it stays there when you switch to an app in full screen, which an ordinary "always on top" window does not.
+eyebrow: Mini player
+short: Mini player
+updated: 2026-10-26
+order: 35
+related:
+  - compare/iina
+  - upscaling
+  - guides/remove-black-bars
+  - cast-to-tv
+faq:
+  - q: Does the mini player stay on top of an app in full screen?
+    a: On a Mac, yes — that is the part it was built for. A full-screen app on macOS is a space of its own, and an ordinary always-on-top window is left behind on the desktop; the mini player is not. On Windows it is a topmost window, which stays above ordinary windows; a game running in exclusive full screen takes over the display, and nothing on the desktop is drawn over it.
+  - q: Is it the system's Picture in Picture?
+    a: No. It is the player's own window made small. The video engine draws into a view inside Frame Player's window, with the controls drawn over it, and the system's Picture in Picture would take the picture away from both. What you do not get is what only the system panel does — tucking the video into the edge of the screen, or resizing it with a pinch.
+  - q: How do I get back to the full window?
+    a: Press P again, click the round button in the top right corner of the mini window, or choose Leave the mini player in the right-click menu. On a Mac, View › Mini Player (⌘⇧M) does the same. The window comes back at the size and in the place it had before, and a double click on the picture takes it straight to full screen instead.
+  - q: Can I make the mini window bigger or smaller?
+    a: Yes — drag one of its edges. It keeps the picture's shape as it resizes and does not go below 240 by 135 pixels, where the seekbar would stop being usable.
+  - q: Why does the window jump to the edge of the screen when I let go?
+    a: That is the magnetic edge. Let go of the window near an edge or a corner and it glides the rest of the way, to the same margin it opened at. If you would rather place it freely, turn off Snap mini player to edges in the right-click menu, under Window — or, on a Mac, in the View menu.
+---
+
+import Note from '../../components/prose/Note.astro'
+
+Some videos are not the thing you are doing but the thing next to it: a lecture
+while you take notes, a match while you work, the second half of a film while a
+download finishes. [Frame Player](/) has a mode for that. The window shrinks into
+a corner of the screen, stays above every other window, and gets out of the
+picture's way until you move the mouse over it.
+
+## Using it
+
+1. Open a video — a file, a link or a torrent, anything that plays.
+2. Press **P**, or right-click the picture and choose **Mini player**. On a Mac
+   it is also in the menu bar, under **View › Mini Player**, with ⌘⇧M.
+3. The window shrinks to 420 wide, with a height that follows the picture's
+   own shape, and goes to the bottom right corner of the screen — above the Dock
+   or the taskbar, never under it. If the player was in full screen, it leaves
+   full screen first.
+
+**Moving it.** There is no title bar in the mini window, so you drag the picture
+itself. Let go near an edge or a corner and the window glides the rest of the
+way, to the same margin it opened at, so it never ends up a few pixels off the
+edge. It snaps only once you have let go of the mouse button — pausing in the
+middle of a drag does not pull it from under your hand. Whatever the snapping
+setting, a mini window is never left hanging off the screen: with no title bar,
+there would be nothing to grab it back by.
+
+**Resizing it.** Drag an edge. The picture keeps its shape as the window grows
+or shrinks, down to 240 by 135 pixels.
+
+## What is in the small window
+
+At that size, everything that belongs to a full-sized window would sit on
+top of the picture, so most of it stands down:
+
+| In the mini window | What happens to it |
+|---|---|
+| The seekbar and the times | Kept, with the hover preview, which shrinks to fit — or shows only the time when there is no room for a frame |
+| Previous, play and next | Kept, in one row under the seekbar |
+| Volume, speed, tracks, the other buttons | Hidden from the bar; the right-click menu is untouched |
+| The title bar | Gone, and on a Mac the window buttons with it |
+| A way out | A round button in the top right corner |
+
+Everything fades when the mouse stops, as it does in full screen — the mini
+player counts as full screen for the **Hide the controls** setting — and comes
+back the moment you move over the window. Skipping an intro still works: the
+skip button appears over the picture in a smaller size, and the on-screen
+messages shrink to match.
+
+On a Mac the mini window spends its life next to another app, so it handles
+the click that brings it forward with care: that click activates the window and
+does not pause the video. A pinch on the trackpad over it zooms into the picture
+rather than resizing the window.
+
+## Getting back
+
+Press **P** again, click the **round button** in the corner, or choose
+**Leave the mini player** in the right-click menu. The window goes back to the size
+and the place it had before, and "always on top" goes back to whatever you had
+it set to. A double click on the picture leaves the mini player and goes straight
+to full screen (unless you set clicks on the picture to **Pause only**). Going
+back to the start screen leaves the mini player too, because the button that
+leaves it lives over the video.
+
+## Over an app in full screen, on a Mac
+
+This is the part that needed the most work, and the reason "always on top" is not
+enough on its own.
+
+On a Mac, an app in full screen is not a big window on your desktop — it is a
+**space** of its own, the same kind of thing as a second desktop, and you swipe
+between them. "Always on top" only lifts a window above the others on *its own*
+space. So a plain always-on-top video window stays exactly where it was, on the
+desktop you left, and disappears precisely when you go full screen in the app you
+wanted to use it with.
+
+The obvious fix is a higher level — put the window above everything. We tried
+that, with a small test app that put labeled windows over a full-screen TextEdit
+and took a picture of the screen, because reasoning about it had already been
+wrong three times. **The level makes no difference.** An ordinary window does not
+appear over another app's full-screen space at the floating level, at the level
+of the menu bar, at the level of pop-up menus, or even at the very top level, above
+everything the system itself draws. Allowing it on every space and marking it as
+an auxiliary to full screen is needed but does not do it either.
+
+What does it is the *kind* of window. macOS has a second kind besides the ordinary
+one — a **panel**, the sort used for floating palettes and inspectors — and a
+panel that does not make its app active when clicked is allowed onto another
+app's full-screen space. Either half alone fails: a panel that activates its app
+stays behind, and an ordinary window that promises not to activate stays behind
+too. So while the mini player is on, Frame Player's window becomes such a panel,
+and when you leave it, it becomes an ordinary window again, with every setting it
+had before put back exactly — including the one that lets it go full screen at
+all.
+
+<Note>
+  This is what lets the mini player follow you onto a full-screen browser,
+  editor or presentation. It does not need any permission, and there is nothing
+  to turn on.
+</Note>
+
+## Why it is not the system's Picture in Picture
+
+IINA, the Mac's best-known mpv player, uses the system's own Picture in Picture,
+and it is fair to ask why Frame Player does not. The answer is in how the player
+is built. The video engine, mpv, draws into a view *inside* Frame Player's
+window, and the whole interface — the seekbar, the menus, the subtitle panel —
+is drawn on top of it. The system's Picture in Picture works by taking the video
+out of the app and into a panel the system owns. Doing that here would mean
+lifting mpv's view out of the window and leaving the interface behind, along
+with the transparency the window depends on.
+
+A small window of our own keeps all of that: the same seekbar with previews, the
+same right-click menu, the same skip button. What it does not have is what only
+the system's panel can do — tucking the video away into the side of the screen,
+and resizing it with a pinch.
+
+## On Windows
+
+The mini player looks and behaves the same: the corner, the magnetic edges, the
+controls that fade. Windows has no spaces for full-screen apps, so the floating
+trick above is not needed there. The mini window is a topmost window, which is as
+high as an ordinary window on Windows goes, and it stays above the windows you
+work in. The exception is a game running in **exclusive** full screen, which takes
+the display over completely; nothing on the desktop is drawn over that, our window
+included.
+
+## Always on top, without the mini player
+
+If you want the ordinary window to stay above the others — a full-size window on a
+second screen, say — that is a separate switch: right-click the picture and turn
+on **Always on top** under **Window** (on a Mac it is also in the **View** menu).
+It is remembered between launches. While the mini player is on, it is in charge
+of keeping the window on top, and your own choice comes back when you leave it.

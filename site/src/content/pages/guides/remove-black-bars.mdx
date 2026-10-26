@@ -1,0 +1,200 @@
+---
+title: How to remove black bars from a video — Frame Player
+description: Black bars baked into a video stay on screen in a window and frame an ultrawide monitor on all four sides. Why they are in the file, and how to crop them off.
+heading: How to remove the black bars that are part of a video
+lede: Some videos carry their black bars inside the picture itself, so no player setting for "aspect ratio" makes them go away, and on an ultrawide screen they end up framing the film on all four sides. The fix is a crop of exactly those bars and nothing more. Here is where the bars come from, why cropping by eye goes wrong, and how Frame Player finds them by measuring the file.
+eyebrow: Guide
+short: Remove black bars
+updated: 2026-10-26
+order: 56
+related:
+  - upscaling
+  - guides/darker-than-quicktime
+  - compare/vlc
+  - torrent-streaming
+faq:
+  - q: Will cropping cut off part of the picture?
+    a: Not with Auto. It keeps, for each edge, the smallest bar it saw across the file, so a dark scene can make it crop less but never more, and when it is not sure it crops nothing. The setting that does cut picture is "Fill the screen", which trims whatever the screen's shape requires — that is a different tool, described below.
+  - q: I cropped the bars and still see black bars in full screen. Why?
+    a: Because your screen has a different shape from the film. A 2.39:1 film on a 16:9 screen needs bars above and below whatever the file looks like; after the crop the player draws them itself instead of showing the ones in the file. Where cropping makes a visible difference is in a window, which takes the film's shape, and on a screen whose shape is closer to the film's than the file's was, such as an ultrawide monitor.
+  - q: Does it change or re-encode the file?
+    a: No. The crop is applied while the video plays, the file on disk is not touched, and choosing None puts the whole frame back.
+  - q: Do I have to set it again for every episode?
+    a: No. The choice is kept for the folder or the torrent, and each episode applies it to itself when it opens — Auto measures that episode's own bars, so a finale in a wider ratio is not cut to the pilot's.
+  - q: Does it work on online videos?
+    a: "The named shapes do, since they are computed from the frame size. Auto does not: it reads frames from across the whole file, and for a video streamed from a website that would mean downloading pieces of it from end to end before you watch. A torrent is the exception, because its pieces are on your disk."
+  - q: Is there a shortcut?
+    a: C opens the picture panel, where the crop is. The key can be changed in the shortcut editor.
+---
+
+import Mock from '../../../components/prose/Mock.astro'
+import Note from '../../../components/prose/Note.astro'
+
+You open a film, make it full screen, and there is black above and below it — or,
+on a wide monitor, a black frame all the way round. Changing the aspect ratio
+squashes everything, zooming cuts off the sides, and a different copy of the same
+film had no bars at all. The bars are not the player's doing: they are pixels in
+the video, and they have to be cropped off. [Frame Player](/) can measure where
+they are and remove exactly those.
+
+## Bars the player adds, and bars that are in the file
+
+There are two kinds of black bar, and only one of them can be removed.
+
+**Bars the player adds** appear whenever the picture and the screen have
+different shapes. A film made at 2.39:1, the usual cinema widescreen, is wider
+than a 16:9 screen, so it is shown full width with black above and below. That is
+the whole picture, as large as it fits. Nothing removes those bars without
+cutting picture off.
+
+**Bars inside the file** were put there when the video was made. A Blu-ray is
+1920×1080, a 16:9 frame, so a 2.39:1 film on it is stored with black strips above
+and below the picture — *letterboxed*. A 4:3 television series remastered into a
+16:9 frame gets strips at the sides — *pillarboxed*. And a 4:3 programme inside a
+letterboxed 16:9 frame has them on all four sides. To the player, those strips are
+picture: black picture, but part of the frame it was given. That is also why two
+copies of one film can differ — one stored at the full 16:9 with the bars, one
+already cropped to the film's own shape.
+
+## Why they show up on all four sides
+
+On a 16:9 screen, a letterboxed 16:9 file looks the same as a cropped one: bars
+above and below either way. The bars in the file start to show when the screen,
+or the window, has another shape.
+
+| What you are watching | Where | What you see |
+|---|---|---|
+| 2.39:1 film stored in a 16:9 file | Ultrawide 21:9 monitor | The 16:9 frame is pillarboxed by the player, and the film inside it is letterboxed by the file: a small picture with black on all four sides |
+| The same file | A window | The window has the frame's 16:9 shape and the film fills only the middle of it |
+| 4:3 series stored in a 16:9 file | A MacBook's 16:10 screen | Black at the sides from the file, and thin black above and below from the screen |
+| A cropped copy of the same film | Any of these | Bars only where the screen's shape needs them |
+
+Cropping the file's bars turns the first kind of copy into the last.
+
+## How other players do it
+
+**By eye.** VLC's *Video › Crop* menu offers a list of fixed ratios, and most
+players have something similar. You pick the one that looks right, it cuts a
+centered rectangle of that shape, and you pick it again for the next file.
+
+**By watching the screen.** mpv has no crop button, but it can run FFmpeg's
+`cropdetect` filter, which reports the bars in the frames that are playing, and
+mpv's source tree carries a script, `autocrop.lua`, that runs it on the scene in
+front of you and crops to what it found. The trouble is the scene. A night shot
+has dark edges that are picture, an opening can be black for its first minute, and
+a scene framed with darkness at the top looks exactly like a letterbox to anything
+that sees only that scene. The filter also needs the frames in ordinary memory, so
+with hardware decoding it adds a copy of every frame back from the graphics card
+while it runs.
+
+## How Frame Player does it
+
+Open the picture panel — right-click the video and choose **Picture**, or press
+**C** — and pick one of the shapes under **Crop**: **None**, **Auto**, **2.39**,
+**1.85** or **4:3**.
+
+<Mock kind="picture">
+  The picture panel on a letterboxed episode. Auto crop measures the file, and the
+  window closes on the film's own shape.
+</Mock>
+
+### Auto measures the whole file, not the scene on screen
+
+Auto opens the file a second time, separately from playback, and decodes eight
+keyframes spread from 10 % to 90 % of its length. On each it walks in from every
+edge, line by line, until it meets picture: a line counts as bar while no more
+than one sample in fifty is more than 16 levels above black, so the faint noise
+compression leaves in a bar, or a single hot pixel, does not end it.
+
+Then the frames vote, edge by edge, and each edge keeps the **smallest** bar it was
+shown. A dark scene reports bars that are too big; a bright one reports the real
+ones; the smallest is the right one. One frame is allowed to disagree, so a
+subtitle burnt into the bottom strip, or a logo in a corner, does not veto the
+crop for the whole film. Two frames reaching an edge mean the edge is picture.
+
+The rest is caution:
+
+- Strips under 1 % of the frame are left alone — that is encoder padding, and
+  cropping it would change the window's shape for nothing anyone can see.
+- A crop that would keep less than 30 % of the width or height is treated as a
+  misreading, and nothing is cropped.
+- Fewer than three frames to measure, as in a short clip that is dark throughout,
+  and the answer is "No black bars found".
+
+We measured it on letterboxed and pillarboxed test files, 10-bit HEVC among them,
+and on footage made to fool it — dark fireworks, space scenes: the rectangle was
+exact every time, five full-frame films came back with nothing to crop, and a 4K
+HEVC file took under a second.
+
+### The named shapes
+
+2.39 and 1.85 are the two ratios cinema films are letterboxed to; 4:3 is the one
+television programmes are pillarboxed to. Choosing one cuts a centered rectangle
+of that shape, worked out from the frame's displayed shape, so an anamorphic file,
+an aspect ratio you set by hand and a rotated video all come out right. If the
+picture already has that shape, the player says so and leaves it. Use these when
+you know the ratio, when the bars are not black enough to measure, or on a link,
+where Auto is not offered.
+
+### One choice for the season, a measurement for each episode
+
+Picking a crop on one episode records it for the folder, or for the torrent,
+and the panel says so: *For the whole playlist. "Auto" looks for bars in each
+file separately.* When the next episode opens it applies the choice to itself —
+Auto measures that episode, a named shape is computed from its frame. A rectangle
+is never copied from one file to another, because episodes of one release usually
+share their bars but not always, and a finale in a wider ratio cut to the pilot's
+rectangle would lose picture.
+
+Each file remembers the rectangle it came to, including "no bars here", so
+reopening it costs nothing. Choosing **None** turns the crop off for the playlist
+as well.
+
+### On a torrent that is still downloading
+
+A torrent's pieces are on your disk, so Auto works there too — but a file still
+arriving has holes, and a frame from a hole is not a frame. So the player looks
+only inside the stretches already downloaded, usually the start and the part around
+where you are watching, and spreads its samples over those. Fewer scenes can only
+make it crop less, never more. We checked that on copies with the middle half of
+the file blanked out: samples from the ends found the exact rectangle, and even
+samples placed inside the blank gave no wrong answer.
+
+If too little has arrived to measure three different places, the panel says
+*Too little is downloaded yet, try again shortly*. When an episode opens with Auto
+already chosen, the player tries again by itself while it plays, every 30
+seconds, four times in all.
+
+## The window takes the picture's shape
+
+With **Window to video** on **Aspect**, which is the default, the window has the
+shape of the picture — and after a crop, that is the shape of the film rather than
+of the frame it was stored in. A letterboxed film opens into a wide window with
+no black in it, and the window keeps that shape while you resize it. The seekbar's
+hover previews follow too: they show the cropped picture, not the frame with its
+bars.
+
+## Cropping is not "Fill the screen"
+
+The picture panel has one more control that gets rid of black bars, and it does
+something different.
+
+**Crop** removes the bars that are in the file and keeps all of the picture. Use
+it on any file that has them.
+
+**Fill the screen** enlarges the picture until there are no bars left at all, and
+cuts off whatever no longer fits — the sides of a 2.39:1 film on a 16:9 screen, the
+top and bottom of a 4:3 one. That is picture, not bars: titles, faces at the edge
+of the frame, subtitles burnt into the image.
+
+<Note>
+  **They work together.** Crop first, so the file's own bars are gone and the
+  picture is as large as it can be without losing anything. If you still want a
+  screen with no black at all, turn on Fill the screen as well, knowing that from
+  there on, what goes is the film.
+</Note>
+
+The panel also has brightness, contrast, saturation and gamma, and on a Mac the
+choice between [mpv's and QuickTime's tone curves](/guides/darker-than-quicktime)
+is in the settings. For a soft, low-resolution source,
+[neural-network upscaling](/upscaling) is in the same panel.

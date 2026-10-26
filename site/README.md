@@ -62,7 +62,7 @@ What a page can put in its text, from `src/components/prose/`:
 
 | Component | What it is |
 |---|---|
-| `<Mock kind>` | One of the home page's own mocks, from `src/components/mocks/` — the same components the sections use. `torrent`, `cast`, `room` and `subs` are the sections' own; `playing`, `preview` and `audio` are the hero's player window (`PlayerMock`) showing one thing each: a torrent's readout, a hover preview, the audio menu. A guide shows the player as a mock, never as a screenshot, so every picture of it on the site is the same drawing |
+| `<Mock kind>` | One of the home page's own mocks, from `src/components/mocks/` — the same components the sections use. `torrent`, `cast`, `room`, `subs` and `picture` are the sections' own; `playing`, `preview` and `audio` are the hero's player window (`PlayerMock`) showing one thing each: a torrent's readout, a hover preview, the audio menu. A guide shows the player as a mock, never as a screenshot, so every picture of it on the site is the same drawing |
 | `<Note>` | An aside with an accent rule |
 | `<PieceMap>` | The torrent piece diagram |
 

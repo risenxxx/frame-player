@@ -194,6 +194,9 @@
 
 /* A mock from the landing page, in the width it was drawn for. */
 .fig-mock .feat-mock { max-width: 640px; margin-inline: auto; }
+/* The picture scene sizes its stage off the column's width in `cqw`, which on
+   the home page is `.mock-wide .feat-mock`'s container. */
+.fig-wide-mock .feat-mock { container-type: inline-size; }
 
 /* ── notes ────────────────────────────────────────────────────────────────── */
 
@@ -309,6 +312,11 @@
   font-weight: 500;
   color: var(--acc);
 }
+
+/* Two of them under one section: a wrapping row, so a narrow column stacks
+   them rather than squeezing one beside the other. */
+.more-links { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 24px; }
+.more-links .more-link { margin-top: 0; }
 
 .more-link::after { content: "→"; transition: transform 0.15s var(--ease); }
 .more-link:hover::after { transform: translateX(3px); }
