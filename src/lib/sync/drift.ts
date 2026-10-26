@@ -5,7 +5,7 @@
  * The reasoning is measured elsewhere in this project and is worth restating,
  * because the obvious implementation is the wrong one. An exact seek costs
  * decoding from the preceding keyframe, and on a file with a long GOP that is
- * ~1.9 s (see "Seek flags are a performance contract" in CLAUDE.md) — so a
+ * ~1.9 s (see "Seek flags are a performance contract" in .claude/rules/mpv-playback.md) — so a
  * player that seeks to fix 300 ms of drift stops for two seconds to correct a
  * third of a second, arriving *further* out of step than it started and with a
  * visible stall. Ten seconds at 103 % of speed fixes the same 300 ms with

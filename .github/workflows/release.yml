@@ -194,7 +194,7 @@ jobs:
       #
       # There is deliberately no TMDB key here: the catalog reaches TMDB through
       # `services/tmdb`, which holds the key, so nothing about it belongs in the
-      # client build. See "The catalog" in CLAUDE.md for why that is a reading of
+      # client build. See "The catalog" in .claude/rules/catalog.md for why that is a reading of
       # their terms rather than caution.
       - name: Build Tauri app (Windows)
         if: runner.os == 'Windows'

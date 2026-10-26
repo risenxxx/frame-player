@@ -5,7 +5,7 @@
  * This is the most invariant-dense code in the player and the least covered by
  * tests, so it was moved here as a unit rather than split by gesture. The
  * reasoning is kept verbatim from where it was written; architecture.md and the
- * "Seek flags are a performance contract" section of CLAUDE.md are the long
+ * "Seek flags are a performance contract" rule in .claude/rules/mpv-playback.md are the long
  * form. The rules that must not be broken, in one place:
  *
  *   - **Exactly one seek in flight**, never a timer. A fixed interval builds a

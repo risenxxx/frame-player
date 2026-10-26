@@ -2,8 +2,9 @@
 
 The reset every size written down depends on, specificity between borrowed classes, and the handful of rendering traps measured in both engines.
 
-Part of the rule book: [`CLAUDE.md`](../../CLAUDE.md) carries the one-line
-version of each rule here, this file carries the whole of it — the identifiers,
+Part of the rule book: its short form, [`.claude/rules/css.md`](../../.claude/rules/css.md),
+carries each rule here in one paragraph (and [`CLAUDE.md`](../../CLAUDE.md) the
+few that hold anywhere); this file carries the whole of it — the identifiers,
 the measurements and the failure the rule was written against.
 
 - **A bar's gradient tail must not be part of its hit area.** `.topbar` and `.osc` extend well past their controls to fade the scrim (76 px vs 48 px of content; 44 px of top padding on the OSC). While that padding belonged to the element, clicks in it were swallowed by the bar — the user is visibly clicking video and the player ignores them. The gradients live in `::before` with `pointer-events: none`, and the elements themselves are sized to their content. **An absolutely-positioned `::before` paints *above* in-flow children**, so `.osc::before` needs `z-index: -1` plus `isolation: isolate` on `.osc` — without it the gradient covered the control row and every button looked disabled. `.topbar` survives without it only because its children are themselves absolutely positioned and come later in DOM order; do not rely on that when adding children. Anything targeting the scrim must therefore target `::before` (e.g. `.player.no-video .topbar::before`), and `data-tauri-drag-region` still needs the bar itself to receive events, which is why `pointer-events: none` on the whole bar is *not* the fix.

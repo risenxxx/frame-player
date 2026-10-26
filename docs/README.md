@@ -6,9 +6,10 @@ into twice.
 
 These documents answer **why**. The rule book answers **what is true of the code
 right now**, and where the two disagree, it wins: [`CLAUDE.md`](../CLAUDE.md) in
-the repository root is its index — one line per rule — and
-[`rules/`](rules/README.md) beside this file holds the chapters those lines link
-to. A finding earns a line there when breaking it would break the player; it
+the repository root is its index and holds the rules that apply anywhere,
+[`.claude/rules/`](../.claude/rules/) holds each area's rules one paragraph
+apiece, and [`rules/`](rules/README.md) beside this file holds the chapters those
+paragraphs link to. A finding earns a line there when breaking it would break the player; it
 stays here when its value is saving the next investigation.
 
 | Document | What it covers |

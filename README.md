@@ -503,8 +503,10 @@ go run ./services/relay/cmd/probe -room ABC123 -hold 20s     # hold the room, on
 | `docs/` | Design notes: why the architecture, the transports and the shipping story look like this |
 | `external-issues-backlog/` | Upstream bugs found here, written up for filing |
 
-[CLAUDE.md](CLAUDE.md) is the engineering state of record: how each subsystem
-works and which invariants must not be broken. [docs/](docs/) is the reasoning
+[CLAUDE.md](CLAUDE.md) is the index of the engineering state of record, and
+[docs/rules/](docs/rules/README.md) is the record itself: how each subsystem works
+and which invariants must not be broken, a chapter per area, each with a
+one-paragraph-per-rule short form in [.claude/rules/](.claude/rules/). [docs/](docs/) is the reasoning
 behind it — the measurements, the alternatives that were tried, and the dead
 ends worth not repeating. Code comments and build scripts cite those documents
 by name (`architecture.md`, `macos.md`, a numbered `ROADMAP` item).

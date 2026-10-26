@@ -2,8 +2,9 @@
 
 The seekbar storyboard and everything that decodes a frame outside playback: what it costs, what colour it comes out, and which frame it has to be.
 
-Part of the rule book: [`CLAUDE.md`](../../CLAUDE.md) carries the one-line
-version of each rule here, this file carries the whole of it — the identifiers,
+Part of the rule book: its short form, [`.claude/rules/thumbnails.md`](../../.claude/rules/thumbnails.md),
+carries each rule here in one paragraph (and [`CLAUDE.md`](../../CLAUDE.md) the
+few that hold anywhere); this file carries the whole of it — the identifiers,
 the measurements and the failure the rule was written against.
 
 - **Whether the sidecar shares mpv's FFmpeg depends on the platform, and the prefix on a log line tells you who is talking.** On macOS `src-tauri/ffmpeg-macos/lib/*.dylib` are **symlinks into `src-tauri/lib/`** (verified with `otool -D`: both carry the install name `@rpath/libavcodec.62.dylib`) — mpv and the thumbnail service load one and the same library. On Windows they are separate DLLs: `libmpv-2.dll` against `ffmpeg/bin/*.dll`. What is constant is the logging: mpv installs an `av_log` callback and its lines read `[ffmpeg/video] hevc: …`, so **a bare `[hevc @ 0x…] …` is libavcodec's default callback** and did not come through mpv — in practice the sidecar decoding a file in software, not playback. Hence `log::set_level(Error)` next to `ffmpeg_the_third::init()`: a chatty file (Dolby Vision RPU notices on a DV remux, for one) otherwise buries everything else in the dev console. Note the asymmetry it inherits: the log level is global to a library, so on macOS that call also caps mpv's own libav messages, while on Windows it only affects ours. If mpv-side FFmpeg warnings are ever needed for debugging, that line is where they went.

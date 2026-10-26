@@ -2,8 +2,9 @@
 
 The DHT, the trackers, encryption, the proxy and port forwarding — the half of the feature that is about reaching peers at all.
 
-Part of the rule book: [`CLAUDE.md`](../../CLAUDE.md) carries the one-line
-version of each rule here, this file carries the whole of it — the identifiers,
+Part of the rule book: its short form, [`.claude/rules/torrents-network.md`](../../.claude/rules/torrents-network.md),
+carries each rule here in one paragraph (and [`CLAUDE.md`](../../CLAUDE.md) the
+few that hold anywhere); this file carries the whole of it — the identifiers,
 the measurements and the failure the rule was written against.
 The *why* behind it — what was tried, what was measured — is in
 [`../torrents.md`](../torrents.md).

@@ -35,7 +35,7 @@
 //! name withheld — the URL basename becomes the token itself plus the
 //! extension (the extension is load-bearing: the receiver probes by it), and
 //! the LOAD metadata carries no title, so neither the wire nor the TV screen
-//! names the file. That is this feature's slice of the CLAUDE.md rule that
+//! names the file. That is this feature's slice of the docs/rules/sources-and-privacy.md rule that
 //! every new path by which something about a file leaves this machine is
 //! another privacy enforcement point.
 

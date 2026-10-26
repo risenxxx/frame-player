@@ -5,7 +5,7 @@ Finding something to watch, and the release that carries it.
 Everything here was measured against the live services rather than read from
 documentation, and several of the measurements contradict what the obvious
 design would assume. The rules that must not be broken are in
-[CLAUDE.md](../CLAUDE.md); this is the reasoning, the numbers and the dead ends.
+[`.claude/rules/catalog.md`](../.claude/rules/catalog.md) and [rules/catalog.md](rules/catalog.md); this is the reasoning, the numbers and the dead ends.
 
 The worked example throughout is **Sintel** — the Blender Foundation's Creative
 Commons short, which this repository already uses as its torrent test fixture

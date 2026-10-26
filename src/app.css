@@ -500,7 +500,7 @@ button.primary:hover {
    Here rather than in a component because two of them draw it — the settings
    sheet and the room panel — and a class one component declares is a class the
    other renders unstyled. That is the `.speedopt` failure written down in
-   CLAUDE.md, and `css-orphans` is what caught this one before it shipped:
+   .claude/rules/ui-surfaces.md, and `css-orphans` is what caught this one before it shipped:
    the room's three switches would have come out as bare stacked boxes. */
 .row-toggle {
   display: flex;
@@ -1031,7 +1031,7 @@ input[type='range'].bipolar {
    delete buttons. Two menus draw this, the play queue and the external
    subtitles in the track menu, so it cannot live in either of them. `min-width:
    0` on both the row and the entry is what lets the name ellipsize instead of
-   pushing the panel wider (see the note in CLAUDE.md). */
+   pushing the panel wider (see the note in .claude/rules/css.md). */
 .queue-row {
   display: flex;
   align-items: center;

@@ -2,8 +2,9 @@
 
 Where state lives and which direction it may depend, what the page is left holding, the hotkey table, localisation and what is worth a test.
 
-Part of the rule book: [`CLAUDE.md`](../../CLAUDE.md) carries the one-line
-version of each rule here, this file carries the whole of it — the identifiers,
+Part of the rule book: its short form, [`.claude/rules/frontend.md`](../../.claude/rules/frontend.md),
+carries each rule here in one paragraph (and [`CLAUDE.md`](../../CLAUDE.md) the
+few that hold anywhere); this file carries the whole of it — the identifiers,
 the measurements and the failure the rule was written against.
 
 - **A `$derived` re-evaluates the moment it is read again, not at the end of the tick.** So an event handler must read the derived object it is acting on *once*, before it touches anything that derived depends on. The skip button got this wrong — `skipUsed = skipHint.from; seekChapter(skipHint.next.index)` — and the second read returned `null`, threw, and left a control that visibly disappeared (its block had already unmounted) while doing nothing at all. Verified against the real compiler and runtime rather than guessed: compile a runes module with `compileModule`, read a derived, mutate its dependency, read it again — it is already the new value. Destructure first (`const { from, next } = skipHint`) and the whole class of bug goes away. Worth knowing that the symptom is silent: the exception dies in the handler, so what the user sees is a button that vanishes on click.

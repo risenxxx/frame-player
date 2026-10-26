@@ -232,7 +232,7 @@ export async function playEntry(entry: PlaylistEntry) {
  *
  * One decode at a time and only for a card about to be shown: this is the same
  * budget the start screen keeps, for the same reason — a keyframe decode
- * competes with playback (see the storyboard notes in CLAUDE.md).
+ * competes with playback (see the storyboard notes in .claude/rules/thumbnails.md).
  */
 let posterInFlight = false;
 

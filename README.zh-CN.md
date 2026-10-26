@@ -315,7 +315,7 @@ go run ./services/relay/cmd/probe -room ABC123 -hold 20s     # hold the room, on
 | `docs/` | 设计笔记：架构、传输方式和发布流程为什么是现在这个样子 |
 | `external-issues-backlog/` | 在这里发现的上游 bug，已整理成文，待提交 |
 
-[CLAUDE.md](CLAUDE.md) 是工程现状的权威记录：每个子系统如何工作，哪些不变量不能被打破。[docs/](docs/) 记录的是其背后的推理：测量数据、尝试过的替代方案，以及不必再走一遍的死胡同。代码注释和构建脚本会按名称引用这些文档（`architecture.md`、`macos.md`、带编号的 `ROADMAP` 条目）。
+[CLAUDE.md](CLAUDE.md) 是工程现状记录的索引，记录本身在 [docs/rules/](docs/rules/README.md)：每个子系统如何工作，哪些不变量不能被打破，每个领域一章；每章的简要版本（每条规则一段）在 [.claude/rules/](.claude/rules/)。[docs/](docs/) 记录的是其背后的推理：测量数据、尝试过的替代方案，以及不必再走一遍的死胡同。代码注释和构建脚本会按名称引用这些文档（`architecture.md`、`macos.md`、带编号的 `ROADMAP` 条目）。
 
 ## 发布
 

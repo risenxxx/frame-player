@@ -2,8 +2,9 @@
 
 What a source *is* as opposed to how the player reaches it, how files arrive from the system, and the watch history with the nine places privacy has to be enforced.
 
-Part of the rule book: [`CLAUDE.md`](../../CLAUDE.md) carries the one-line
-version of each rule here, this file carries the whole of it — the identifiers,
+Part of the rule book: its short form, [`.claude/rules/sources-and-privacy.md`](../../.claude/rules/sources-and-privacy.md),
+carries each rule here in one paragraph (and [`CLAUDE.md`](../../CLAUDE.md) the
+few that hold anywhere); this file carries the whole of it — the identifiers,
 the measurements and the failure the rule was written against.
 
 - **A network source is not a file, and a surprising amount of the player assumes otherwise.** `isNetworkSource()` gates the three that matter: the thumbnail storyboard (it decodes the *whole* file in the background — over a stream that pulls the entire thing a second time, in an order unrelated to playback, while the player is trying to buffer), the folder queue (`folder_entries` would take a URL for a path), and "show in Finder" (nothing to show). Watch positions and remembered tracks work unchanged, since a URL is a perfectly good key. **yt-dlp is enabled explicitly** (`ytdl=yes`): the CLI turns the hook on by default, the manual is ambiguous about the client API, and a feature depending on which side of that line libmpv falls is not worth the saved line. Finding the binary is ours to do, because **a GUI process does not have the shell's PATH** — launched from Finder or Explorer it inherits the session's minimal environment, so a perfectly good `~/bin/yt-dlp` is invisible to mpv's own lookup. `ytdlp_path` probes the usual locations, *runs* the candidate (a file being present says nothing about it being runnable), hands mpv the absolute path through `ytdl_hook-ytdl_path` and puts its directory on PATH as well. Measured: the hook logs "No youtube-dl found … in config directories" — which is about mpv's config dir only — and then spawns exactly that absolute path. Expect the failure mode to be **staleness, not absence**: a September 2025 yt-dlp already fails on YouTube with "The page needs to be reloaded", so the error message names updating it rather than installing it.
