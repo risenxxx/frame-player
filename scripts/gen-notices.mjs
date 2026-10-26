@@ -132,6 +132,28 @@ function verifyPatches(projects) {
   return onDisk.length;
 }
 
+/**
+ * The application's own license, as its two manifests declare it.
+ *
+ * The notices state it in prose and embed LICENSE, but the declared field is
+ * what tools read — and package.json said MIT while Cargo.toml, LICENSE and
+ * the README said GPL-3.0, because nothing compared them. The two are the same
+ * claim made twice, so they are held to each other here.
+ */
+function verifyOwnLicense() {
+  const npm = readJson(join(root, 'package.json')).license;
+  const cargo = read(join(root, 'src-tauri', 'Cargo.toml')).match(/^license = "([^"]+)"/m)?.[1];
+  if (!npm || npm !== cargo) {
+    console.error(
+      `\npackage.json declares license ${JSON.stringify(npm)}, ` +
+        `src-tauri/Cargo.toml declares ${JSON.stringify(cargo)}.\n` +
+        'They are the same application; make them say the same thing.\n',
+    );
+    process.exit(1);
+  }
+  return npm;
+}
+
 /** The files a patch changes, in the order it changes them. */
 function patchedFiles(file) {
   const files = [];
@@ -227,6 +249,7 @@ function render() {
   if (count !== null) console.log(`closure: ${count} shipped libraries, all covered`);
   const patchCount = verifyPatches(projects);
   console.log(`patches: ${patchCount}, all described`);
+  console.log(`own license: ${verifyOwnLicense()}`);
   const patched = projects.filter((p) => p.patches?.list?.length);
 
   const text = (name) => {
