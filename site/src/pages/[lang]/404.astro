@@ -1,0 +1,14 @@
+---
+/* The 404 in every language but English, at `/ru/404`: Cloudflare answers a
+   missing address with the nearest `404.html` up the tree. */
+import NotFound from '../../views/NotFound.astro'
+import { DEFAULT_LOCALE, enabledLocales } from '../../i18n/index.ts'
+
+export function getStaticPaths() {
+  return enabledLocales()
+    .filter((lang) => lang !== DEFAULT_LOCALE)
+    .map((lang) => ({ params: { lang } }))
+}
+---
+
+<NotFound />

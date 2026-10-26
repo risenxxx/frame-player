@@ -1,0 +1,30 @@
+---
+/*
+  The language switch: the same page in every language it is written in, or
+  that language's home page where it is not. Drawn only by a build with more
+  than one language (`multilingual`), as a row of links rather than buttons —
+  each one goes somewhere, and a crawler follows it. Following one remembers
+  the choice (scripts/lang.ts), which is what keeps the hint away afterwards.
+*/
+import { LOCALE_META, alternatesOf, enabledLocales, localePath, multilingual, useLocale } from '../i18n/index.ts'
+
+const { lang, s } = useLocale(Astro)
+const alternates = alternatesOf(Astro.url.pathname)
+const links = enabledLocales().map((l) => ({ l, meta: LOCALE_META[l], href: alternates[l] ?? localePath(l, '/') }))
+---
+
+{multilingual() && (
+  <nav class="langs" aria-label={s.lang.legend}>
+    {links.map(({ l, meta, href }) => (
+      <a
+        href={href}
+        hreflang={meta.hreflang}
+        lang={meta.htmlLang}
+        title={meta.name}
+        aria-label={meta.name}
+        aria-current={l === lang ? 'true' : undefined}
+        data-lang-set={l}
+      >{meta.short}</a>
+    ))}
+  </nav>
+)}

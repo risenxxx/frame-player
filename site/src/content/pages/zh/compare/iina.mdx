@@ -1,0 +1,93 @@
+---
+title: Windows 版 IINA？同一个 mpv 引擎，两个系统都能用 · Frame Player
+description: IINA 只支持 macOS。Frame Player 在 Windows 和 macOS 上运行同一个引擎 libmpv，并增加了种子边下边播、投屏和一起看。一份客观的对比。
+heading: 在找 Windows 版的 IINA？
+lede: IINA 只能在 Mac 上运行，没有 Windows 版。Frame Player 基于同一个引擎 libmpv，两个系统都能运行，所以无论在哪个系统上，格式支持、硬件解码和 HDR 都出自 mpv。下面对比这两者，以及其他 mpv 前端。
+eyebrow: 对比
+short: Windows 版 IINA
+updated: 2026-09-21
+translated: 2026-09-21
+order: 40
+related:
+  - compare/vlc
+  - torrent-streaming
+  - cast-to-tv
+  - watch-together
+faq:
+  - q: 有官方的 Windows 版 IINA 吗？
+    a: 没有。IINA 自称是为现代 macOS 打造的播放器，用 Swift 基于 Apple 的框架编写，没有 Windows 版本。下面这些播放器是 Windows 上最接近的选择，它们都基于 mpv。
+  - q: Frame Player 和 IINA 用的是同一个引擎吗？
+    a: 是的。两者都基于 libmpv，也就是 mpv 的库形式。格式、硬件解码、HDR 色调映射和画质在两者中都来自 mpv，所以在一个里能播放的文件，在另一个里也能播放。
+  - q: 我能沿用自己的 mpv.conf 吗？
+    a: 能。Frame Player 有一份自己的 mpv.conf（“设置”里有一个按钮可以找到它），其中以 name=value 形式写的选项会在启动时生效。设置对话框只会修改属于它自己的那几行，所以你自己的选项都会保留。快捷键由播放器自己管理，在它的快捷键编辑器中设置，而不是在 input.conf 中。
+  - q: Frame Player 能在 Intel Mac 上运行吗？
+    a: 目前不能，macOS 版适用于 Apple Silicon。在 Intel Mac 上，请使用 IINA。
+  - q: Frame Player 免费吗？
+    a: 免费，而且和 IINA 一样以 GPL-3.0 开源。没有账号、没有订阅，也没有跟踪；播放器只报告一件事，而且只报告一次：它被安装了。
+---
+
+import Mock from '../../../../components/prose/Mock.astro'
+import Note from '../../../../components/prose/Note.astro'
+
+IINA 是很多 Mac 用户会毫不犹豫推荐的播放器：一个原生、好看的前端，底层是 mpv，而 mpv 差不多是现有最好的视频引擎。接下来大家会问的是：Windows 上没有 IINA，该用什么？[Frame Player](/zh) 正是为回答这个问题而做的：同样的引擎，同样讲究播放器用起来的感受；它也能在 Mac 上运行，所以一个播放器可以陪你在两个系统之间切换。
+
+<Mock kind="preview">
+  悬停在进度条上，会显示你将跳到的那一帧及其所属章节。
+</Mock>
+
+## 一览
+
+| 对比项 | [Frame Player](/zh) | IINA | mpv.net | mpv |
+|---|---|---|---|---|
+| 支持平台 | Windows 10 和 11，Apple Silicon 上的 macOS | macOS，Intel 和 Apple Silicon | Windows | Windows、macOS、Linux |
+| 引擎 | libmpv | libmpv | libmpv | mpv |
+| 进度条预览 | 内置 | 内置 | 借助 thumbfast 脚本 | 借助 thumbfast 等脚本 |
+| 字幕搜索 | 内置，OpenSubtitles，精确匹配你的版本 | OpenSubtitles 插件，随附 | — | 通过脚本 |
+| 你的 mpv 选项 | 自己的 mpv.conf，name=value 行 | 高级设置中的“使用配置目录” | 自己的 mpv.conf | mpv.conf |
+| 投屏到电视 | Chromecast 和 DLNA | 未内置 | 未内置 | — |
+| 种子 | 内置，边下边播 | 未内置 | 未内置 | — |
+| 一起看 | 内置 | 通过 Syncplay | 通过 Syncplay | 通过 Syncplay |
+| 许可证 | GPL-3.0 | GPL-3.0 | GPL-2.0 | GPL-2.0 或更高版本 |
+
+<p class="table-note">对照 IINA 1.4.4、mpv.net 7.1.2 和 mpv 0.41 核对，2026 年 9 月。</p>
+
+## 相同之处
+
+**画面**。表中每个播放器都把解码交给 mpv，所以文件看起来如何，包括 HDR 和杜比视界的色调映射、硬件解码、缩放，在所有这些播放器里都是 mpv 的功劳。如果 IINA 能把一个文件播好，Frame Player 也会以同样的方式播放它，在 Windows 上也一样。
+
+**你的 mpv 选项**。Frame Player 有一份自己的 mpv.conf，并在启动时应用其中的选项，写法是 `name=value`，大多数 mpv.conf 本来就是这样写的。设置对话框只会修改属于它自己的那几行，所以你手写的选项在下次启动后依然还在。
+
+## Frame Player 更进一步的地方
+
+**整体设计的界面**。日常用到的一切都能在窗口里找到：设置面板、右键菜单、快捷键编辑器，平时想用的功能都不需要配置文件或脚本。细节也都经过推敲，而不是听天由命：控制栏出现时字幕会让开，你正在读的那一行永远不会被进度条挡住；每个提示和菜单项都显示对应的快捷键，快捷键对应物理按键，任何键盘布局下都能用；窗口变窄时，控制栏会把多出的按钮收进一个按钮，而不是把播放按钮挤离中央；电影会从你停下的地方重新打开，并带上你选的配音和字幕。
+
+**预览就是你将跳到的那一帧**。指针停下后，进度条缩略图会精确到该位置，而不是显示它前面的关键帧，同时还会显示所属章节。
+
+**与你的版本匹配的字幕**。按文件自身的指纹搜索，找到的是为这份拷贝专门制作的字幕；为其他帧率制作的字幕会在下载前标出，这种字幕正是那种[看得越久偏差越大](/zh/guides/subtitles-out-of-sync)的。
+
+**跳过片头**。文件的章节名称表明是片头、前情提要或片尾时，画面上会出现跳过按钮。它按完整的章节标题匹配，所以名为“Ending the war”的章节永远不会被当成片尾。
+
+**内置种子、投屏和一起看**。磁力链接可以边下边播（[原理](/zh/torrent-streaming)），电影无需重新编码就能投屏到 Chromecast 或 DLNA 电视（[原理](/zh/cast-to-tv)），一个六位代码就能让身在别处的朋友停在同一帧上（[原理](/zh/watch-together)）。IINA 和 mpv.net 可以借助插件、脚本或 Syncplay 实现其中一部分；在 Frame Player 中，这些都是播放器本身的一部分。
+
+<Mock kind="audio">
+  音轨菜单。你选择的音轨按语言和名称记住，所以在第一集选的配音到了第二集也能再找到，即使音轨编号不同。
+</Mock>
+
+## IINA 更合适的情况
+
+<Note>
+  **在 Intel Mac 上**，请使用 IINA：Frame Player 的 macOS 版适用于 Apple Silicon。
+</Note>
+
+- **它是原生 Mac 应用**，基于 Apple 自己的框架编写，用起来看得出来。Frame Player 的界面是建立在 mpv 之上的网页技术，快速而细致，但不是 AppKit。
+- **插件**。IINA 有 JavaScript 插件系统，在线媒体和字幕功能都以插件形式提供，可以更新或替换。Frame Player 没有插件系统。
+- **画中画和音乐模式**。IINA 使用系统自带的画中画，并有一个针对音频文件的模式。Frame Player 有一个始终置顶的迷你播放器（在 macOS 上甚至能悬浮在全屏的其他应用之上），但不是系统的那个功能。
+- **多年的使用积累**。IINA 从 2017 年就有了，也随之积累了大量的修复。
+
+## 还有 mpv.net，或者 mpv 本身
+
+在 Windows 上，**mpv.net** 是另一个知名的 mpv 前端，它贴近 mpv 自己的使用方式：键盘优先，通过 mpv.conf 配置，用 mpv 脚本扩展。如果你喜欢这样使用 mpv，它是很好的选择。**mpv 本身**是所有这些播放器的引擎，自带一个极简的界面，其他一切都通过脚本完成。
+
+Frame Player 走的是另一条路：界面用鼠标和用键盘一样顺手，而大多数人最后会用脚本补上的功能，比如预览、字幕搜索、跳过片头、记住音轨，都已经在播放器里，用设置面板代替配置文件，而你的 mpv.conf 在底层依然生效。
+
+不是从 mpv 而是从 VLC 转过来的？请看 [Frame Player 与 VLC 对比](/zh/compare/vlc)。

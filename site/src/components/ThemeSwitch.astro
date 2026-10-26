@@ -1,0 +1,24 @@
+---
+/*
+  The theme switch, drawn twice on every page — in the header and, on a narrow
+  screen where the header has no room for it, in the footer. One state for
+  both: see scripts/theme.ts.
+*/
+import T from '../i18n/T.astro'
+import { useLocale } from '../i18n/index.ts'
+
+const { s } = useLocale(Astro)
+---
+
+<fieldset class="theme" data-theme-switch>
+  <legend class="vh"><T s={s.theme.legend} /></legend>
+  <button type="button" data-theme-set="system" aria-pressed="true" title={s.theme.systemTitle}>
+    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-monitor"/></svg><span class="vh"><T s={s.theme.system} /></span>
+  </button>
+  <button type="button" data-theme-set="light" aria-pressed="false" title={s.theme.light}>
+    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sun"/></svg><span class="vh"><T s={s.theme.light} /></span>
+  </button>
+  <button type="button" data-theme-set="dark" aria-pressed="false" title={s.theme.dark}>
+    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-moon"/></svg><span class="vh"><T s={s.theme.dark} /></span>
+  </button>
+</fieldset>

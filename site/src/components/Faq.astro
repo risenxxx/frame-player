@@ -4,19 +4,24 @@
   questions, and the answers are in the markup for anything that reads rather
   than scrolls. The list is shared with the page's structured data (src/faq.ts).
 */
-import { FAQ } from '../faq.ts'
+import T from '../i18n/T.astro'
+import { useLocale } from '../i18n/index.ts'
+import { faqFor } from '../faq.ts'
+
+const { lang, s, href } = useLocale(Astro)
+const FAQ = faqFor(lang)
 ---
 
 <section class="faq-home" id="questions">
   <div class="wrap">
     <div class="sec-h" data-reveal>
-      <h2>Questions</h2>
+      <h2><T s={s.faq.h} /></h2>
     </div>
     <div class="faq-list" data-reveal style="--dl:1">
       {FAQ.map(({ q, a, more }) => (
         <details class="faq-q">
           <summary>{q}</summary>
-          <p>{a}{more && <> <a href={more.href}>{more.label}</a></>}</p>
+          <p>{a}{more && <> <a href={href(more.href)}>{more.label}</a></>}</p>
         </details>
       ))}
     </div>

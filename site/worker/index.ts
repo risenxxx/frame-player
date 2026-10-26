@@ -18,6 +18,7 @@
  */
 import { ANALYTICS_PREFIX, RYBBIT_UPSTREAM } from '../src/analytics.ts'
 import { INSTALLS_ATTR, installsLabel } from '../src/installs.ts'
+import { basePath, localeOf } from '../src/i18n/locales.ts'
 
 interface Env {
   ASSETS: { fetch: (request: Request | string | URL) => Promise<Response> }
@@ -26,7 +27,10 @@ interface Env {
 
 /** The part of the Workers runtime's `HTMLRewriter` used here; the DOM types do not know it. */
 declare class HTMLRewriter {
-  on(selector: string, handler: { element(element: { setInnerContent(content: string): void }): void }): HTMLRewriter
+  on(
+    selector: string,
+    handler: { element(element: { getAttribute(name: string): string | null; setInnerContent(content: string): void }): void },
+  ): HTMLRewriter
   transform(response: Response): Response
 }
 
@@ -216,7 +220,11 @@ function wantsMarkdown(accept: string): boolean {
 
 /** The Markdown twin of a document address, or null for a path that has none. */
 function twinOf(pathname: string): string | null {
-  if (pathname === '/') return '/llms.txt'
+  /* A home page's twin is its language's llms.txt: `/llms.txt`, `/ru/llms.txt`. */
+  if (basePath(pathname) === '/' && !/\.[a-z0-9]+$/i.test(pathname)) {
+    const lang = localeOf(pathname)
+    return lang === 'en' ? '/llms.txt' : `/${lang}/llms.txt`
+  }
   if (/\.[a-z0-9]+$/i.test(pathname)) return null
   return `${pathname.replace(/\/+$/, '')}.md`
 }
@@ -251,16 +259,23 @@ export default {
     headers.set('vary', vary && !/\baccept\b/i.test(vary) ? `${vary}, Accept` : 'Accept')
     const page = new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 
-    /* Only the home page carries the count, so only it pays for reading one. */
-    if (url.pathname !== '/' || !response.ok || !(headers.get('content-type') ?? '').includes('text/html')) return page
+    /* Only the home page carries the count — in each language, `/` and `/ru`
+       alike — so only it pays for reading one. */
+    if (basePath(url.pathname) !== '/' || !response.ok || !(headers.get('content-type') ?? '').includes('text/html')) return page
     const count = await currentInstalls(env)
     if (count === null) return page
-    const label = installsLabel(count)
+    const lang = localeOf(url.pathname)
     /* The asset's validator describes the file as built, not the page as sent:
        kept, a browser revalidating would get a 304 and keep yesterday's number. */
     page.headers.delete('etag')
     return new HTMLRewriter()
-      .on(`[${INSTALLS_ATTR}]`, { element: (element) => element.setInnerContent(label) })
+      .on(`[${INSTALLS_ATTR}]`, {
+        /* The words are the page's own, in its language; the number is ours. */
+        element: (element) => {
+          const template = element.getAttribute(INSTALLS_ATTR)
+          if (template) element.setInnerContent(installsLabel(template, count, lang))
+        },
+      })
       .transform(page)
   },
 }

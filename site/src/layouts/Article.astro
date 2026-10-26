@@ -10,12 +10,15 @@
 */
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { getCollection, type CollectionEntry } from 'astro:content'
+import type { CollectionEntry } from 'astro:content'
 import Page from './Page.astro'
 import Icons from '../components/Icons.astro'
 import Nav from '../components/Nav.astro'
 import Footer from '../components/Footer.astro'
 import FinalCta from '../components/FinalCta.astro'
+import T from '../i18n/T.astro'
+import { html, longDate, rich, useLocale } from '../i18n/index.ts'
+import { baseId, pageIn } from '../i18n/pages.ts'
 
 interface Props {
   entry: CollectionEntry<'pages'>
@@ -23,18 +26,22 @@ interface Props {
 
 const { entry } = Astro.props
 const d = entry.data
+const { lang, s, meta, href } = useLocale(Astro)
 const url = new URL(`/${entry.id}`, Astro.site).href
-const home = new URL('/', Astro.site).href
+const home = new URL(href('/'), Astro.site).href
 
-const all = await getCollection('pages')
 /* What kind of page a card leads to, from the folder it lives in: the eyebrow
    would only repeat the card's own title for a feature page. */
-const kind = (id: string) => (id.startsWith('compare/') ? 'Comparison' : id.startsWith('guides/') ? 'Guide' : 'Feature')
-const related = d.related.flatMap((id) => {
-  const found = all.find((e) => e.id === id)
-  if (!found) throw new Error(`${entry.id}: "related" names ${id}, which is not a page`)
-  return [found]
-})
+const kind = (id: string) => (id.startsWith('compare/') ? s.article.kind.comparison : id.startsWith('guides/') ? s.article.kind.guide : s.article.kind.feature)
+/* `related` names English pages; a reader of a translation is sent to the
+   translation of each where there is one. */
+const related = await Promise.all(
+  d.related.map(async (id) => {
+    const found = await pageIn(lang, id)
+    if (!found) throw new Error(`${entry.id}: "related" names ${id}, which is not a page`)
+    return found
+  }),
+)
 
 /*
   The link card, if `bun run og` has drawn one for this page; the site's own
@@ -44,7 +51,7 @@ const related = d.related.flatMap((id) => {
 const card = `/og/${entry.id.replaceAll('/', '-')}.png`
 const image = existsSync(resolve(process.cwd(), 'public', card.slice(1))) ? card : '/og.png'
 
-const updated = d.updated.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+const updated = html(`<time datetime="${d.updated.toISOString().slice(0, 10)}">${rich(longDate(lang, d.updated))}</time>`)
 
 const schema: Record<string, unknown>[] = [
   {
@@ -62,7 +69,7 @@ const schema: Record<string, unknown>[] = [
     dateModified: d.updated.toISOString(),
     mainEntityOfPage: url,
     url,
-    inLanguage: 'en',
+    inLanguage: meta.hreflang,
     image: new URL(image, Astro.site).href,
     isPartOf: { '@id': `${home}#website` },
     author: { '@type': 'Organization', name: 'Frame Player', url: home },
@@ -102,12 +109,12 @@ if (d.faq.length > 0) {
       <header class="art-head">
         <div class="hero-light" aria-hidden="true"></div>
         <div class="wrap art-head-in">
-          <nav class="crumbs" aria-label="Breadcrumb">
-            <a href="/">Frame Player</a><span class="slash" aria-hidden="true">/</span><span aria-current="page">{d.short}</span>
+          <nav class="crumbs" aria-label={s.article.breadcrumb}>
+            <a href={href('/')}>Frame Player</a><span class="slash" aria-hidden="true">/</span><span aria-current="page">{d.short}</span>
           </nav>
           <h1>{d.heading}</h1>
           <p class="lede">{d.lede}</p>
-          <p class="fine art-meta">Updated <time datetime={d.updated.toISOString().slice(0, 10)}>{updated}</time></p>
+          <p class="fine art-meta"><T s={s.article.updated} p={{ date: updated }} /></p>
         </div>
       </header>
 
@@ -116,7 +123,7 @@ if (d.faq.length > 0) {
 
         {d.faq.length > 0 && (
           <section class="faq" aria-labelledby="questions">
-            <h2 id="questions">Questions</h2>
+            <h2 id="questions"><T s={s.article.questions} /></h2>
             {d.faq.map(({ q, a }) => (
               <div class="faq-item">
                 <h3>{q}</h3>
@@ -130,11 +137,11 @@ if (d.faq.length > 0) {
 
     {related.length > 0 && (
       <aside class="wrap readnext" aria-labelledby="read-next">
-        <h2 id="read-next">Read next</h2>
+        <h2 id="read-next"><T s={s.article.readNext} /></h2>
         <div class="rn-grid">
           {related.map((r) => (
             <a class="rn-card" href={`/${r.id}`}>
-              <span class="rn-k">{kind(r.id)}</span>
+              <span class="rn-k">{kind(baseId(r))}</span>
               <span class="rn-t">{r.data.short}</span>
               <span class="rn-d">{r.data.description}</span>
             </a>
@@ -156,8 +163,10 @@ if (d.faq.length > 0) {
     import { initPointer } from '../scripts/pointer.ts'
     import { initPan } from '../scripts/pan.ts'
     import { initCastWalk } from '../scripts/castwalk.ts'
+    import { initLang } from '../scripts/lang.ts'
 
     initTheme()
+    initLang()
     initNav()
     initPan()
     initPointer()

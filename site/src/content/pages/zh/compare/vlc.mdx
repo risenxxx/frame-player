@@ -1,0 +1,109 @@
+---
+title: Windows 和 Mac 上的 VLC 替代品：Frame Player 与 VLC 对比
+description: VLC 几乎什么都能播。Frame Player 基于 mpv，另外提供进度条预览、与你手中版本匹配的字幕、种子和投屏。一份客观的对比。
+heading: 选 Frame Player 还是 VLC？
+lede: VLC 是人人都装过的播放器，这份地位来之不易：它几乎什么都能播，几乎在任何设备上都能运行。Frame Player 基于另一个引擎 mpv，界面围绕它从零设计。下面说明两者各自更适合什么情况。
+eyebrow: 对比
+short: Frame Player 与 VLC
+updated: 2026-09-22
+translated: 2026-09-22
+order: 45
+related:
+  - compare/iina
+  - compare/plex-jellyfin
+  - cast-to-tv
+  - guides/subtitles-out-of-sync
+faq:
+  - q: Frame Player 是基于 VLC 开发的吗？
+    a: 不是。VLC 基于它自己的引擎 libVLC。Frame Player 基于 libmpv，也就是 mpv 的库形式，IINA 和 mpv.net 背后也是这个引擎。两者底层都使用 FFmpeg 的解码器，所以能播放的格式基本相同。
+  - q: VLC 的进度条有缩略图预览吗？
+    a: 截至当前版本 VLC 3.0.24 还没有，这个需求已经被提了很多年。Frame Player 在你悬停在进度条上时显示指针下方的那一帧，指针停下后还会把它精确到该位置。
+  - q: 为什么 VLC 投屏到 Chromecast 时是黑屏？
+    a: 通常是因为文件的视频是设备无法解码的格式（常见的是 HEVC 和 10-bit 视频），而 VLC 还是发送了过去，于是电视上只显示标题和黑色画面，声音照常播放。这是 VLC 问题跟踪系统中 56 个未解决的 Chromecast 问题之一。Frame Player 会在开始前针对每台设备检查每个文件，并告诉你将会发生什么，所以设备无法显示的文件永远不会被发送过去。
+  - q: VLC 能投屏到 DLNA 电视吗？
+    a: VLC 3 可以通过“播放 → 渲染器”投屏到 Chromecast 设备，设备无法播放时会实时转换视频。它可以浏览 DLNA 媒体服务器，但不能把视频发送到 DLNA 电视。Frame Player 两者都支持：Chromecast 和 DLNA。
+  - q: Frame Player 和 VLC 一样免费吗？
+    a: 是的。两者都免费开源：Frame Player 采用 GPL-3.0，VLC 采用 GPL-2.0 或更高版本。两者都没有账号、订阅或广告。
+  - q: Frame Player 能在 Linux、Android 或 iPhone 上运行吗？
+    a: 不能。它支持 Windows 10 和 11，以及 Apple Silicon 上的 macOS。在 Linux、手机、Intel Mac 或 Windows ARM 笔记本上，请使用 VLC。
+---
+
+import Mock from '../../../../components/prose/Mock.astro'
+import Note from '../../../../components/prose/Note.astro'
+
+“用什么播放这个文件？”默认的答案是 VLC，这也很有道理：它几乎什么都能播，几乎在哪里都能运行，二十年来一直如此。离开它的人怀念的通常不是某种格式，而是画面之外的体验：界面十年来变化不大，悬停在进度条上什么也不显示，字幕要靠扩展来找。[Frame Player](/zh) 正是为这一部分而做的。
+
+<Mock kind="preview">
+  悬停在进度条上，会显示你将跳到的那一帧及其所属章节，这正是 VLC 用户最常提出的需求。
+</Mock>
+
+## 一览
+
+| 对比项 | [Frame Player](/zh) | VLC |
+|---|---|---|
+| 支持平台 | Windows 10 和 11，Apple Silicon 上的 macOS | Windows（含 ARM）、macOS、Linux、Android、iOS 等 |
+| 引擎 | libmpv，使用 FFmpeg 的解码器 | libVLC，使用 FFmpeg 的解码器 |
+| 进度条预览 | 内置 | — |
+| 字幕搜索 | 内置，OpenSubtitles，精确匹配你的版本 | VLSub 扩展，OpenSubtitles |
+| 记住停下的位置 | 是，还会记住你选的音轨和字幕轨 | 询问是否继续 |
+| 逐帧 | 向前和向后 | 仅向前 |
+| 跳过片头 | 根据文件的章节 | — |
+| 投屏到电视 | Chromecast 和 DLNA，画面从不重新编码 | Chromecast，设备无法播放时实时转换视频 |
+| 种子 | 内置，边下边播 | — |
+| 一起看 | 内置 | 通过 Syncplay |
+| YouTube 等网站 | 通过 yt-dlp，可在播放器内安装 | 通过 VLC 自带的脚本 |
+| 许可证 | GPL-3.0 | GPL-2.0 或更高版本 |
+
+<p class="table-note">对照 VLC 3.0.24 核对，2026 年 9 月。采用新界面的 VLC 4 正在开发中，尚未发布。</p>
+
+## 相同之处
+
+**格式**。两者底层都用 FFmpeg 解码，所以日常文件，包括 MKV、MP4、AVI、HEVC、AV1 以及各种常见的音频和字幕格式，在哪个播放器里都能播放，显卡支持时还能硬件解码。
+
+**价格**。两者都免费开源，没有账号、没有订阅，也不会往外发送任何东西。
+
+## Frame Player 更进一步的地方
+
+**整体设计的界面**。VLC 的每项功能都在某个地方，藏在好几层深的菜单里；Frame Player 把常用的功能放在视频上，其余的放在一个设置面板里。细节都经过推敲：控制栏出现时字幕会让开，你正在读的那一行永远不会被进度条挡住；每个提示和菜单项都显示对应的快捷键，快捷键对应物理按键，任何键盘布局下都能用；窗口变窄时，控制栏会把多出的按钮收进一个按钮，而不是把播放按钮挤离中央。
+
+**预览就是你将跳到的那一帧**。悬停在进度条上，就能看到要跳到哪里，以及它所属的章节。指针停下后，缩略图会精确到那一帧，而不是它前面的关键帧。
+
+**mpv 式的画面**。HDR 由 libplacebo（mpv 以之闻名的渲染器）进行色调映射，其中包括没有 HDR10 回退层的杜比视界资源，而 VLC 3 长期以来把这类资源显示成绿色和紫色。
+
+**剧集从你停下的地方继续**。Frame Player 会直接在你停下的位置重新打开文件，不会询问；它还会按语言和名称记住你选的配音和字幕，所以在第一集做的选择到了第二集也能再找到，即使音轨编号不同。一集结束时，会提供文件夹中的下一集；章节名称表明是片头、前情提要或片尾时，会出现跳过按钮。
+
+<Mock kind="audio">
+  音轨菜单。你选择的音轨会为整个文件夹记住，而不只是一个文件。
+</Mock>
+
+**与你的版本匹配的字幕**。字幕搜索是播放器的一部分，而不是扩展。它首先按文件自身的指纹搜索，找到的是为这份拷贝专门制作的字幕；为其他帧率制作的字幕会在下载前标出，这种字幕正是那种[看得越久偏差越大](/zh/guides/subtitles-out-of-sync)的。
+
+**内置种子和一起看**。磁力链接可以边下边播（[原理](/zh/torrent-streaming)），一个六位代码就能让身在别处的朋友停在同一帧上（[原理](/zh/watch-together)）；用 VLC 则需要另一个程序 Syncplay。
+
+## 投屏到电视
+
+这是两者差别最大的地方。VLC 可以把视频发送到 Chromecast，能用的时候很方便，但它的问题跟踪系统里有 [56 个未解决的 Chromecast 问题](https://code.videolan.org/videolan/vlc/-/issues/?label_name%5B%5D=Component%3A%3AStream%20output%3A%20Chromecast)，而且反复出现的总是那几个：[只显示标题的黑屏](https://code.videolan.org/videolan/vlc/-/issues/25359)，[HEVC](https://code.videolan.org/videolan/vlc/-/issues/27671) 和 [10-bit 视频](https://code.videolan.org/videolan/vlc/-/issues/27127)只有声音，投屏[几分钟后就停止](https://code.videolan.org/videolan/vlc/-/issues/25366)，投屏时[音轨无法切换](https://code.videolan.org/videolan/vlc/-/issues/25492)，以及从 3.0.22 起，部分 Chromecast [干脆不再出现在列表中](https://code.videolan.org/videolan/vlc/-/issues/29654)。设备无法播放某个文件时，VLC 会实时转换视频，并提示转换可能占满电脑的全部性能，卡顿就是从这里来的。
+
+Frame Player 的投屏是对照真实电视开发和测量的，思路正好相反：
+
+- **开始之前就告诉你会发生什么**。投屏面板中的每台电视都会针对这个文件说明：**直接播放**、**播放前需先准备**，或者无法播放以及原因。设备无法显示的文件永远不会被发送过去，所以不会有黑屏要干等。
+- **画面从不重新编码**。如果问题只出在容器上，文件会被重新封装，视频流原样复制：一部电影大约十秒，而且副本会保留下来，再次投屏时立即开始。之后电视播放的是一个普通文件，所以在电视上跳转和播放其他内容一样快。
+- **除了 Chromecast，还有 DLNA**。DLNA 电视用自己的播放器播放文件，所以电视本身就能处理的资源会原样发送。实测：一台 4K LG 电视，6.3 GB 的 HEVC HDR10 MKV，杜比 5.1 音轨，包括跳转在内都正常。电视两种协议都支持时，播放器会选择适合该文件的一种，启动失败时再改用另一种。
+- **窗口变成遥控器**。进度条、快捷键、章节、播放队列和音轨都作用于电视；切换配音时，新音轨在旧音轨继续播放的同时准备好，然后再切换。断开连接后，影片会回到窗口中，从电视播放到的位置继续。
+- **出问题时，会说明是什么问题**。搜索时还会直接询问你网络中的设备，以应对不在 Wi-Fi 频段之间转发设备发现的路由器；找到了却始终无法开始播放的电视，会被报告为防火墙问题（几乎总是如此）；每台设备下方的检查会显示电视自称能播放的格式，并附有复制按钮，方便提交问题报告。
+
+详细内容见[投屏原理](/zh/cast-to-tv)。
+
+## VLC 更合适的情况
+
+<Note>
+  **在 Linux、手机、Intel Mac 或 Windows ARM 笔记本上**，请使用 VLC：Frame Player 运行于搭载 Intel 和 AMD 处理器的 Windows，以及 Apple Silicon Mac。
+</Note>
+
+- **它到处都能运行**。桌面、手机、平板和 Apple TV 上用同一个播放器，这很有价值，没有别的播放器覆盖得这么全。
+- **光盘**。VLC 能播放带菜单的 DVD。Frame Player 播放文件和链接，不播放光盘。
+- **播放之外**。VLC 能转换文件、录制流、向其他设备推流，还能播放网络电台和播客。Frame Player 只是一个播放器，别的都不做。
+- **扩展**。VLC 可以用 Lua 脚本扩展。Frame Player 没有插件系统，不过你的 mpv.conf 在底层依然生效。
+- **二十年的使用积累**。VLC 遇到过的奇怪文件比任何其他播放器都多，也随之积累了大量的修复。
+
+如果你想要的是一个能在所有设备上处理所有媒体事务的工具，那就是 VLC。如果你想要的是在 Windows 电脑或 Mac 上看电影和剧集的最佳体验，这正是 Frame Player 的用途。如果你是来找 Windows 版 IINA 的，[对比在这里](/zh/compare/iina)。

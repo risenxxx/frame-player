@@ -120,9 +120,14 @@ function run(player: HTMLElement, track: HTMLElement, readout: HTMLElement, figu
     const endgame = left < 0.1 ? 0.45 + left * 5.5 : 1
     return Math.min(1, peers / 36) * endgame
   }
+  /* The readout's words come from the page (`data-say`, in its language);
+     only the two numbers are this script's. */
+  const words = (figures.dataset.say ?? '{rate} MB/s{sep}{n} peers')
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+    .replace('{sep}', '<span class="sep"></span>')
   const say = (): void => {
     const mbs = Math.max(0.4, rate * 38 + (Math.random() - 0.5) * 2).toFixed(1)
-    figures.innerHTML = `${mbs} MB/s<span class="sep"></span>${peers} peers`
+    figures.innerHTML = words.replace('{rate}', mbs).replace('{n}', String(peers))
     player.style.setProperty('--disk', `${((count / PIECES) * 100).toFixed(1)}%`)
   }
 

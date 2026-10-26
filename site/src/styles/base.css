@@ -36,6 +36,72 @@ section[id], #download { scroll-margin-top: 72px; }
 .fine { font-size: 13px; color: var(--fg2); }
 .nb { white-space: nowrap; }
 
+/* ── languages ────────────────────────────────────────────────────────────── */
+
+/*
+  Simplified Chinese draws its Han characters from the system's own face —
+  PingFang SC on a Mac, Microsoft YaHei on Windows, Noto Sans CJK on the rest.
+  A Chinese web font would be megabytes for a page that is otherwise ~100 KB,
+  and every machine a Chinese reader has already carries one. Latin words in
+  Chinese text stay in Onest, which comes first and has no Han, so the browser
+  goes down the list one character at a time.
+
+  Chinese quotation marks and the ellipsis come from the same system face,
+  through a family of their own that only the Chinese stack puts first — as in
+  the application (src/app.css): Onest has “ ” and …, and without this they are
+  Latin-width quotes crowding the characters they enclose and an ellipsis on
+  the baseline where Chinese centres it. `local()` downloads nothing.
+*/
+@font-face {
+  font-family: "Han Punctuation";
+  src: local("PingFang SC Regular"), local("PingFangSC-Regular"), local("Microsoft YaHei UI"), local("MicrosoftYaHeiUI");
+  font-weight: 300 549;
+  unicode-range: U+2018-2019, U+201C-201D, U+2026;
+}
+
+@font-face {
+  font-family: "Han Punctuation";
+  src: local("PingFang SC Semibold"), local("PingFangSC-Semibold"), local("Microsoft YaHei UI Bold"), local("MicrosoftYaHeiUI-Bold");
+  font-weight: 550 900;
+  unicode-range: U+2018-2019, U+201C-201D, U+2026;
+}
+
+:root:lang(zh) {
+  --sans: "Han Punctuation", "Onest Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif;
+  /* A readout in Chinese ("磁盘上 7.4 GB") would otherwise take its Han from
+     the system's monospace fallback, which on a Mac is a serif. */
+  --mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", "Microsoft YaHei UI",
+    "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+}
+
+/* No punctuation at the start of a line, as Chinese typesetting asks. */
+:lang(zh) { line-break: strict; }
+
+/*
+  The tight tracking the Latin headlines are set with closes up Han characters,
+  which are drawn to fill their square and have no sidebearings to give; and a
+  line height of 1.02 lets two lines of them touch. Every heading and every
+  tracked label gets both back in Chinese.
+*/
+:root:lang(zh) :is(h1, h2, h3, .brand, .btn, .upd-t, .rn-t, .upd-sum) { letter-spacing: 0; }
+:root:lang(zh) :is(h1, h2) { line-height: 1.25; }
+
+/* A heading breaks after its punctuation, never inside a word: Chinese has no
+   spaces, so left alone a line ended wherever it ran out ("调 / 节"). The
+   phrases are written short enough to fit; `anywhere` is only the guard
+   against one that does not. */
+:root:lang(zh) :is(h1, h2, h3) { word-break: keep-all; overflow-wrap: anywhere; }
+
+/* Han characters fill their square, so a line of them at the Latin size reads
+   a size heavier; the hero comes down by about a seventh. */
+:root:lang(zh) .hero h1 { font-size: clamp(32px, 4.25vw, 59px); }
+
+/* The mocks draw in Rubik (player.css), which has “ ” and … of its own; the
+   application puts the punctuation family before Rubik in Chinese, and so do
+   they. Every window that sets Rubik is listed: .player, .win and .mn-win. */
+:root:lang(zh) :is(.player, .win, .mn-win) { font-family: "Han Punctuation", "Rubik", var(--sans); }
+
 /*
   A row of independent facts. The dots are decoration between them, and a
   wrapped line puts a dot where a line begins — so the layout does the

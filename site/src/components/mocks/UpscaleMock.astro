@@ -1,6 +1,10 @@
 ---
 import Frame from '../Frame.astro'
 import TitleBar from './TitleBar.astro'
+import T from '../../i18n/T.astro'
+import { useLocale } from '../../i18n/index.ts'
+
+const { s } = useLocale(Astro)
 ---
 
 <!-- A 480p episode, and the picture panel's upscaling row on it.
@@ -16,7 +20,7 @@ import TitleBar from './TitleBar.astro'
      The sharpening is drawn with CSS filters: it says which way each mode
      goes, not what a network does to a frame, and the caption says so. -->
 <div class="player up" data-scene data-dur="7600" data-ease="linear" data-pointer aria-hidden="true">
-  <Frame name="highway-trails" slot="guide" class="scene up-pic" alt="Star trails over a desert road at night" />
+  <Frame name="highway-trails" slot="guide" class="scene up-pic" alt={s.alt.highwayRoad} />
   <TitleBar over>Desert.Nights.S01E03.480p.mkv</TitleBar>
   <div class="osc">
     <div class="times mono"><span>08:41</span><span>42:10</span></div>
@@ -47,17 +51,17 @@ import TitleBar from './TitleBar.astro'
   </div>
 
   <div class="pic-menu up-menu" data-stop="1" data-fx="0" data-fy="0">
-    <div class="pm-title">Upscaling</div>
+    <div class="pm-title"><T s={s.mock.upscale.title} /></div>
     <div class="pm-pills up-modes">
-      <span class="pm-pill up-pill" style="--w: var(--on-off)">Off</span>
-      <span class="pm-pill up-pill" style="--w: var(--on-video)" data-stop="2">Video</span>
-      <span class="pm-pill up-pill" style="--w: var(--on-anime)" data-stop="3">Anime</span>
-      <span class="pm-pill up-pill" style="--w: var(--on-strong)" data-stop="4">Strong</span>
+      <span class="pm-pill up-pill" style="--w: var(--on-off)"><T s={s.mock.upscale.off} /></span>
+      <span class="pm-pill up-pill" style="--w: var(--on-video)" data-stop="2"><T s={s.mock.upscale.video} /></span>
+      <span class="pm-pill up-pill" style="--w: var(--on-anime)" data-stop="3"><T s={s.mock.upscale.anime} /></span>
+      <span class="pm-pill up-pill" style="--w: var(--on-strong)" data-stop="4"><T s={s.mock.upscale.strong} /></span>
     </div>
-    <div class="up-note">Active: the picture is 2.2× its own size</div>
+    <div class="up-note"><T s={s.mock.upscale.active} /></div>
     <div class="pm-pills">
-      <span class="pm-pill up-pill" style="--w: 1">This file</span>
-      <span class="pm-pill up-pill" style="--w: 0">Playlist</span>
+      <span class="pm-pill up-pill" style="--w: 1"><T s={s.mock.common.thisFile} /></span>
+      <span class="pm-pill up-pill" style="--w: 0"><T s={s.mock.common.playlist} /></span>
     </div>
   </div>
 

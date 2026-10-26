@@ -5,6 +5,10 @@
   page's tokens so it follows the theme; the states are a fixed picture, not a
   simulation — its job is to make "reading drives downloading" visible.
 */
+import T from '../../i18n/T.astro'
+import { useLocale } from '../../i18n/index.ts'
+
+const { s } = useLocale(Astro)
 const N = 48
 const PLAYHEAD = 14
 const state = (i: number): 'have' | 'next' | 'soon' | 'jump' | 'none' => {
@@ -20,18 +24,18 @@ const state = (i: number): 'have' | 'next' | 'soon' | 'jump' | 'none' => {
   <div
     class="pm"
     role="img"
-    aria-label="A row of 48 pieces. Everything before the playhead and a little after it is on disk; the next pieces are being fetched first, the ones after them are queued, a short run further on is on disk from an earlier jump, and the rest has not been asked for."
+    aria-label={s.pieceMap.label}
   >
     <div class="pm-row" style={`--n:${N}`}>
       {Array.from({ length: N }, (_, i) => <span class:list={['pm-c', state(i)]} style={`--d:${Math.max(0, i - PLAYHEAD - 3)}`}></span>)}
-      <span class="pm-head" style={`--at:${(PLAYHEAD / N) * 100}%`}><span>playhead</span></span>
+      <span class="pm-head" style={`--at:${(PLAYHEAD / N) * 100}%`}><span><T s={s.pieceMap.playhead} /></span></span>
     </div>
     <ul class="pm-key" aria-hidden="true">
-      <li><i class="have"></i>on disk</li>
-      <li><i class="next"></i>fetched first</li>
-      <li><i class="soon"></i>queued behind them</li>
-      <li><i class="jump"></i>on disk from an earlier jump</li>
-      <li><i class="none"></i>not asked for</li>
+      <li><i class="have"></i><T s={s.pieceMap.have} /></li>
+      <li><i class="next"></i><T s={s.pieceMap.next} /></li>
+      <li><i class="soon"></i><T s={s.pieceMap.soon} /></li>
+      <li><i class="jump"></i><T s={s.pieceMap.jump} /></li>
+      <li><i class="none"></i><T s={s.pieceMap.none} /></li>
     </ul>
   </div>
   <figcaption><slot /></figcaption>

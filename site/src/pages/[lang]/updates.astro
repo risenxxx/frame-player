@@ -1,0 +1,14 @@
+---
+/* Every release, at `/ru/updates` and `/zh/updates`: the page in the reader's
+   language around notes that are written once, in English. */
+import Updates from '../../views/Updates.astro'
+import { DEFAULT_LOCALE, enabledLocales } from '../../i18n/index.ts'
+
+export function getStaticPaths() {
+  return enabledLocales()
+    .filter((lang) => lang !== DEFAULT_LOCALE)
+    .map((lang) => ({ params: { lang } }))
+}
+---
+
+<Updates />

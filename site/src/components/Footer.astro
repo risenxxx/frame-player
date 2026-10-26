@@ -1,55 +1,57 @@
 ---
-import { getCollection } from 'astro:content'
+import T from '../i18n/T.astro'
+import Langs from './Langs.astro'
+import ThemeSwitch from './ThemeSwitch.astro'
+import { html, rich, useLocale } from '../i18n/index.ts'
+import { pagesIn } from '../i18n/pages.ts'
 
 /* The same rule as the header: `#top` only exists on the page it belongs to. */
-const home = Astro.url.pathname === '/'
+const { lang, s, home, href } = useLocale(Astro)
 
 /* Every guide, on every page: the footer is the one list a crawler and a
-   reader both reach from anywhere. */
-const guides = (await getCollection('pages')).sort((a, b) => a.data.order - b.data.order)
+   reader both reach from anywhere — each in the page's language where it is
+   written, in English where it is not yet. */
+const guides = await pagesIn(lang)
 
 /* On the widest layout the list is spread edge to edge, which is only right
    while it fits on one line: a wrapped row under `space-between` flings a
    lone last link to one edge and a pair of them to both. Nothing in CSS can
    ask whether a row wrapped, so the answer is estimated here, where the list
-   is known. At 13.5px the titles measured 6.46px a character; 6.8 is that
-   with room for a wider one, 20px is the gap, 1136px the row at 1201px. Five
-   is the floor because fewer links stretched over the row read as holes. */
-const guideChars = guides.reduce((n, g) => n + g.data.short.length, 0)
+   is known. At 13.5px Onest measured 6.63px a character; 6.8 is that with
+   room for a wider one, 20px is the gap, 1136px the row at 1201px. A Han
+   character is drawn about twice as wide, so in Chinese it counts as two.
+   Five is the floor because fewer links stretched over the row read as holes. */
+function ems(text: string): number {
+  return [...text].reduce((n, c) => n + (/\p{Script=Han}/u.test(c) ? 2 : 1), 0)
+}
+const guideChars = guides.reduce((n, g) => n + ems(g.data.short), 0)
 const spread = guides.length >= 5 && guideChars * 6.8 + 20 * (guides.length - 1) <= 1136
+
+const heart = html(`<svg class="ic heart" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-heart"></use></svg><span class="vh">${rich(s.footer.love)}</span>`)
+const author = html('<a href="https://risen.dev" target="_blank">Risen</a>')
 ---
 
 <footer class="foot">
   <div class="wrap foot-in">
-    <a class="brand" href={home ? '#top' : '/'}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>Frame Player</a>
+    <a class="brand" href={home ? '#top' : href('/')}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>Frame Player</a>
     <div class="foot-theme">
-      <fieldset class="theme" data-theme-switch>
-        <legend class="vh">Theme</legend>
-        <button type="button" data-theme-set="system" aria-pressed="true" title="Match the system">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-monitor"/></svg><span class="vh">System</span>
-        </button>
-        <button type="button" data-theme-set="light" aria-pressed="false" title="Light">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sun"/></svg><span class="vh">Light</span>
-        </button>
-        <button type="button" data-theme-set="dark" aria-pressed="false" title="Dark">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-moon"/></svg><span class="vh">Dark</span>
-        </button>
-      </fieldset>
+      <ThemeSwitch />
+      <Langs />
     </div>
-    <nav class="links" aria-label="Elsewhere">
-      <a href="https://github.com/risenxxx/frame-player">Source</a>
-      <a href="/updates">Updates</a>
-      <a href="https://github.com/risenxxx/frame-player/tree/main/docs">Documentation</a>
-      <a href="https://github.com/risenxxx/frame-player/blob/main/LICENSE">Licence</a>
+    <nav class="links" aria-label={s.footer.elsewhere}>
+      <a href="https://github.com/risenxxx/frame-player"><T s={s.footer.source} /></a>
+      <a href={href('/updates')}><T s={s.footer.updates} /></a>
+      <a href="https://github.com/risenxxx/frame-player/tree/main/docs"><T s={s.footer.docs} /></a>
+      <a href="https://github.com/risenxxx/frame-player/blob/main/LICENSE"><T s={s.footer.licence} /></a>
     </nav>
     {guides.length > 0 && (
-      <nav class:list={['guides', { spread }]} aria-label="Guides">
+      <nav class:list={['guides', { spread }]} aria-label={s.footer.guides}>
         {guides.map((g) => <a href={`/${g.id}`}>{g.data.short}</a>)}
       </nav>
     )}
     <p class="facts facts-line">
-      <span class="nb">GPL-3.0-or-later</span><span class="sep"></span><span class="nb">built on libmpv, FFmpeg and librqbit</span>
+      <span class="nb">GPL-3.0-or-later</span><span class="sep"></span><span class="nb"><T s={s.footer.built} /></span>
     </p>
-    <p class="made">Made with <svg class="ic heart" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-heart"/></svg><span class="vh">love</span> by <a href="https://risen.dev" target="_blank">Risen</a></p>
+    <p class="made"><T s={s.footer.made} p={{ heart, author }} /></p>
   </div>
 </footer>

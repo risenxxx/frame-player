@@ -1,0 +1,107 @@
+---
+/*
+  Every release, newest first, from `changelog/*.md` (see src/releases.ts for
+  which of them count as out). One page rather than one per release: most
+  releases are two or three lines, and a page each would be a site of stubs.
+  Each has an anchor, `#v1.18.0`, which is what the home page's cards and the
+  GitHub release link to.
+
+  Drawn at `/updates` and, in another language, at `/ru/updates`: the page
+  around the notes is in the reader's language, the notes are English — they
+  are written once, by the release — and marked so with `lang`. The Markdown
+  twin and the feed stay English only.
+*/
+import { render } from 'astro:content'
+import Page from '../layouts/Page.astro'
+import Icons from '../components/Icons.astro'
+import Nav from '../components/Nav.astro'
+import Footer from '../components/Footer.astro'
+import FinalCta from '../components/FinalCta.astro'
+import T from '../i18n/T.astro'
+import { html, longDate, rich, useLocale } from '../i18n/index.ts'
+import { publishedReleases, anchor } from '../releases.ts'
+
+const { lang, s, href } = useLocale(Astro)
+const notes = lang === 'en' ? undefined : 'en'
+const releases = await publishedReleases()
+const rendered = await Promise.all(releases.map(async (r) => ({ entry: r, ...(await render(r)) })))
+const latest = releases[0]
+
+const url = new URL(href('/updates'), Astro.site).href
+const home = new URL(href('/'), Astro.site).href
+const schema = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Frame Player', item: home },
+      { '@type': 'ListItem', position: 2, name: s.updates.h, item: url },
+    ],
+  },
+]
+---
+
+<Page
+  title={s.updates.title}
+  description={s.updates.description}
+  schema={schema}
+  markdown="/updates.md"
+  feed={{ href: '/updates.xml', title: s.updates.feedTitle }}
+>
+  <Icons />
+  <Nav />
+  <main id="top">
+    <header class="art-head">
+      <div class="hero-light" aria-hidden="true"></div>
+      <div class="wrap art-head-in upd-head">
+        <nav class="crumbs" aria-label={s.article.breadcrumb}>
+          <a href={href('/')}>Frame Player</a><span class="slash" aria-hidden="true">/</span><span aria-current="page"><T s={s.updates.h} /></span>
+        </nav>
+        <h1><T s={s.updates.h} /></h1>
+        <p class="lede"><T s={s.updates.lede} /></p>
+        {latest && (
+          <p class="fine art-meta">
+            <T s={s.updates.latest} p={{ version: latest.data.version, date: html(`<time datetime="${latest.data.date.toISOString().slice(0, 10)}">${rich(longDate(lang, latest.data.date))}</time>`) }} />
+            <span aria-hidden="true"> · </span><a class="upd-feed" href="/updates.xml"><T s={s.updates.feed} /></a>
+          </p>
+        )}
+        {notes && <p class="fine art-meta"><T s={s.updates.english} /></p>}
+      </div>
+    </header>
+
+    <div class="wrap upd-list">
+      {rendered.map(({ entry, Content }) => (
+        <article class="upd-rel" id={anchor(entry.data.version)} aria-labelledby={`${anchor(entry.data.version)}-h`}>
+          <div class="upd-meta">
+            <h2 id={`${anchor(entry.data.version)}-h`}>
+              <a href={`#${anchor(entry.data.version)}`}>{entry.data.version}</a>
+            </h2>
+            <time datetime={entry.data.date.toISOString().slice(0, 10)}>{longDate(lang, entry.data.date)}</time>
+          </div>
+          <div class="upd-body" lang={notes}>
+            <p class="upd-sum">{entry.data.summary}</p>
+            <Content />
+          </div>
+        </article>
+      ))}
+    </div>
+
+    <div id="download">
+      <FinalCta />
+    </div>
+  </main>
+  <Footer />
+
+  <script>
+    import { initTheme } from '../scripts/theme.ts'
+    import { initMotion } from '../scripts/motion.ts'
+    import { initNav } from '../scripts/nav.ts'
+    import { initPointer } from '../scripts/pointer.ts'
+    import { initLang } from '../scripts/lang.ts'
+
+    initTheme()
+    initLang()
+    initNav()
+    initPointer()
+    initMotion()
+  </script>
+</Page>

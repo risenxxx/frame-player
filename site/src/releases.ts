@@ -28,13 +28,6 @@ export async function publishedReleases(): Promise<ReleaseEntry[]> {
 /** Where a release is on `/updates`. */
 export const anchor = (version: string): string => `v${version}`
 
-export const longDate = (d: Date): string =>
-  d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
-
-/* Assembled rather than `en-GB`'s short form, which spells September "Sept". */
-export const shortDate = (d: Date): string =>
-  `${d.getUTCDate()} ${d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })} ${d.getUTCFullYear()}`
-
 /**
  * The headlines of a release, what is new before what was fixed: the bold
  * lead of each entry, without its full stop.

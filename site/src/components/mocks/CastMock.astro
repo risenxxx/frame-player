@@ -1,32 +1,36 @@
 ---
 import Frame from '../Frame.astro'
 import TitleBar from './TitleBar.astro'
+import T from '../../i18n/T.astro'
+import { useLocale } from '../../i18n/index.ts'
+
+const { s } = useLocale(Astro)
 ---
 
 <div class="win" data-scene data-dur="2400" data-ease="linear" aria-hidden="true">
   <div class="player mini">
-    <Frame name="comet-sea" slot="mock" class="scene" alt="A comet low over a calm sea at night" />
+    <Frame name="comet-sea" slot="mock" class="scene" alt={s.alt.cometSea} />
     <TitleBar over>Orbital.Night.S02E03.2160p.HDR.mkv</TitleBar>
     <div class="castpop">
-      <div class="castpop-title">Playing on TV</div>
+      <div class="castpop-title"><T s={s.mock.cast.title} /></div>
       <div class="castrow pick">
         <span class="txt">
-          <span class="cast-name">Living room</span>
-          <span class="cast-model">Plays as it is</span>
+          <span class="cast-name"><T s={s.mock.cast.rooms[0]!} /></span>
+          <span class="cast-model"><T s={s.mock.cast.asIs} /></span>
         </span>
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-conf"/></svg>
       </div>
       <div class="castrow">
         <span class="txt">
-          <span class="cast-name">Kitchen</span>
-          <span class="cast-model">Prepared before it starts</span>
+          <span class="cast-name"><T s={s.mock.cast.rooms[1]!} /></span>
+          <span class="cast-model"><T s={s.mock.cast.prepared} /></span>
         </span>
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-conf"/></svg>
       </div>
       <div class="castrow">
         <span class="txt">
-          <span class="cast-name">Bedroom</span>
-          <span class="cast-model">Checking how this device can be reached…</span>
+          <span class="cast-name"><T s={s.mock.cast.rooms[2]!} /></span>
+          <span class="cast-model"><T s={s.mock.cast.checking} /></span>
         </span>
         <span class="spin"></span>
       </div>

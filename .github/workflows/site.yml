@@ -6,9 +6,11 @@ name: Site
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'changelog/**', '.prototools', '.github/workflows/site.yml']
+    # The application's dictionary too: the mocks are held to its labels
+    # (site/src/i18n/app.ts), so a label renamed in the player is checked here.
+    paths: ['site/**', 'changelog/**', 'src/lib/i18n.svelte.ts', '.prototools', '.github/workflows/site.yml']
   pull_request:
-    paths: ['site/**', 'changelog/**', '.prototools', '.github/workflows/site.yml']
+    paths: ['site/**', 'changelog/**', 'src/lib/i18n.svelte.ts', '.prototools', '.github/workflows/site.yml']
   workflow_dispatch:
 
 concurrency:
