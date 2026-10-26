@@ -31,6 +31,9 @@ const SIZES = {
   /* The player window in a guide: a mock there is capped at 640px
      (`.fig-mock`), inside the page gutter below that. */
   guide: '(min-width: 704px) 640px, calc(100vw - 2 * clamp(16px, 4vw, 32px))',
+  /* The mini player's picture: 420 of the 1728 its desktop is drawn as, in a
+     figure capped at 720px. */
+  mini: '(min-width: 784px) 175px, 25vw',
 }
 
 interface Props {

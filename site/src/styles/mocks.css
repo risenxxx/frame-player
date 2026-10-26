@@ -1195,6 +1195,288 @@
   vertical-align: -0.16em;
 }
 
+/* ── mock: the mini player on a desktop ───────────────────────────────────── */
+
+/*
+  A 1728×1080 screen — a 16-inch MacBook's, give or take — at the column's width. `--u` is one of its pixels, so every
+  length below is written in the screen's own numbers — the application's 420
+  for the window, its 24 for the margin — and the whole desktop scales as one.
+  `cqw` is the figure's (`.fig-mini .feat-mock`, prose.css).
+
+  The work area is what the application measures against: with no menu bar
+  drawn, from the top of the screen to above the Dock, 1010 down. Where an edge of the window
+  rests is 24 inside that — x 24 and 1284 for a 420-wide window, y 24 and 750
+  for a 236-tall one — and `.mn-rest` draws those four lines.
+
+  One linear `--p` over 10 000 ms, each beat with its own curve (`-t` is its
+  linear time, the bare name the curve):
+
+    pointer fades in           0–200 ms    ease-out
+    walks onto the window      200–1100    smoothstep; the controls come up
+                                           under it, 900–1150
+    the rest lines appear      1300–1500
+    drag to (60, 58)           1400–2900   smoothstep — 36 and 34 from the
+                                           corner's rest, inside the 56
+    let go: glide to (24, 24)  3000–3190   ease-out cubic, GLIDE_MS
+    the two marks              3200–4500
+    drag to (640, 380)         4700–5800   far from every rest line: it stays
+    drag to (1250, 290)        6300–7500   34 from the right rest
+    let go: glide to x 1284    7600–7790   y untouched — the axes are separate
+    its mark                   7800–9200
+    pointer walks off          8400–9200   smoothstep
+    the lines go               9000–9200
+    the controls go            9600–9850   idle
+
+  The pointer follows the window only while it holds it: on release it stays
+  where the hand let go and the window glides out from under it, as it does.
+*/
+.mn-stage {
+  --u: calc(100cqw / 1728);
+
+  --in-t: clamp(0, var(--p, 1) / 0.02, 1);
+  --in: calc(1 - (1 - var(--in-t)) * (1 - var(--in-t)) * (1 - var(--in-t)));
+  --a-in-t: clamp(0, (var(--p, 1) - 0.02) / 0.09, 1);
+  --a-in: calc(var(--a-in-t) * var(--a-in-t) * (3 - 2 * var(--a-in-t)));
+  --ui-in-t: clamp(0, (var(--p, 1) - 0.09) / 0.025, 1);
+  --ui-out-t: clamp(0, (var(--p, 1) - 0.96) / 0.025, 1);
+  --ui: calc((1 - (1 - var(--ui-in-t)) * (1 - var(--ui-in-t)) * (1 - var(--ui-in-t))) * (1 - var(--ui-out-t) * var(--ui-out-t) * (3 - 2 * var(--ui-out-t))));
+  --g-in: clamp(0, (var(--p, 1) - 0.13) / 0.02, 1);
+  --g-out: clamp(0, (var(--p, 1) - 0.9) / 0.02, 1);
+  --guide: calc(var(--g-in) * (1 - var(--g-out)));
+  --d1-t: clamp(0, (var(--p, 1) - 0.14) / 0.15, 1);
+  --d1: calc(var(--d1-t) * var(--d1-t) * (3 - 2 * var(--d1-t)));
+  --g1-t: clamp(0, (var(--p, 1) - 0.3) / 0.019, 1);
+  --g1: calc(1 - (1 - var(--g1-t)) * (1 - var(--g1-t)) * (1 - var(--g1-t)));
+  --mk1: calc(clamp(0, (var(--p, 1) - 0.32) / 0.02, 1) * (1 - clamp(0, (var(--p, 1) - 0.43) / 0.02, 1)));
+  --d2-t: clamp(0, (var(--p, 1) - 0.47) / 0.11, 1);
+  --d2: calc(var(--d2-t) * var(--d2-t) * (3 - 2 * var(--d2-t)));
+  --d3-t: clamp(0, (var(--p, 1) - 0.63) / 0.12, 1);
+  --d3: calc(var(--d3-t) * var(--d3-t) * (3 - 2 * var(--d3-t)));
+  --g2-t: clamp(0, (var(--p, 1) - 0.76) / 0.019, 1);
+  --g2: calc(1 - (1 - var(--g2-t)) * (1 - var(--g2-t)) * (1 - var(--g2-t)));
+  --mk2: calc(clamp(0, (var(--p, 1) - 0.78) / 0.02, 1) * (1 - clamp(0, (var(--p, 1) - 0.9) / 0.02, 1)));
+  --a-out-t: clamp(0, (var(--p, 1) - 0.84) / 0.08, 1);
+  --a-out: calc(var(--a-out-t) * var(--a-out-t) * (3 - 2 * var(--a-out-t)));
+
+  /* The window's top-left corner, in screen pixels. */
+  --wx: calc(1284 - 1224 * var(--d1) - 36 * var(--g1) + 616 * var(--d2) + 610 * var(--d3) + 34 * var(--g2));
+  --wy: calc(750 - 692 * var(--d1) - 34 * var(--g1) + 356 * var(--d2) - 90 * var(--d3));
+  /* The pointer: onto the window at (+210, +90), with it through each drag,
+     still through each glide, then off onto the document. */
+  --px: calc(860 + 634 * var(--a-in) - 1224 * var(--d1) + 616 * var(--d2) + 610 * var(--d3) - 576 * var(--a-out));
+  --py: calc(700 + 140 * var(--a-in) - 692 * var(--d1) + 356 * var(--d2) - 90 * var(--d3) + 226 * var(--a-out));
+
+  position: relative;
+  height: calc(1080 * var(--u));
+  overflow: hidden;
+  border-radius: 14px;
+  /* Dark and even out to the corners, as every other mock window is: a light
+     wallpaper ran into the light page at the rounded edge. */
+  background: linear-gradient(165deg, #33316f 0%, #232152 50%, #15142f 100%);
+  box-shadow: var(--sh-win);
+  font-size: calc(13 * var(--u));
+  line-height: 1.2;
+  text-align: left;
+}
+
+/* The outline every mock window has (`.player`), over whatever reaches the
+   edge, so it is one colour all the way round. */
+.mn-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.mn-doc {
+  position: absolute;
+  left: calc(180 * var(--u));
+  top: calc(80 * var(--u));
+  width: calc(1060 * var(--u));
+  height: calc(820 * var(--u));
+  border-radius: calc(10 * var(--u));
+  background: #fbfbfd;
+  box-shadow: 0 calc(18 * var(--u)) calc(50 * var(--u)) rgba(10, 10, 30, 0.35);
+  overflow: hidden;
+}
+
+.mn-doc-bar {
+  position: relative;
+  height: calc(28 * var(--u));
+  display: grid;
+  place-items: center;
+  border-bottom: 1px solid #e6e6ec;
+  background: #f0f0f4;
+  color: #55555f;
+}
+
+.mn-doc-bar .dots {
+  position: absolute;
+  left: calc(12 * var(--u));
+  top: 50%;
+  display: flex;
+  gap: calc(8 * var(--u));
+  transform: translateY(-50%);
+}
+
+.mn-doc-bar .dots i { width: calc(12 * var(--u)); height: calc(12 * var(--u)); border-radius: 50%; background: #d4d4dc; }
+
+.mn-doc-body { display: grid; gap: calc(14 * var(--u)); padding: calc(48 * var(--u)) calc(72 * var(--u)); }
+.mn-doc-body i { display: block; width: var(--w); height: calc(9 * var(--u)); border-radius: calc(4.5 * var(--u)); background: #dcdce4; }
+.mn-doc-body i:first-child { height: calc(16 * var(--u)); background: #c4c4cf; }
+.mn-doc-body i.gap { margin-top: calc(22 * var(--u)); }
+
+.mn-dock {
+  position: absolute;
+  left: 50%;
+  bottom: calc(5 * var(--u));
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+  padding: calc(7 * var(--u));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: calc(18 * var(--u));
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateX(-50%);
+}
+
+.mn-dock i { width: calc(46 * var(--u)); height: calc(46 * var(--u)); border-radius: calc(11 * var(--u)); background: #5b5a96; }
+.mn-dock i:nth-child(3n + 2) { background: #8b8fe0; }
+.mn-dock i:nth-child(4n) { background: #3e3d74; }
+.mn-dock i.sep { width: 1px; height: calc(40 * var(--u)); border-radius: 0; background: rgba(255, 255, 255, 0.2); }
+
+/* Where an edge of the window comes to rest: 24 inside the work area. */
+.mn-rest {
+  position: absolute;
+  left: calc(24 * var(--u));
+  top: calc(24 * var(--u));
+  width: calc(1680 * var(--u));
+  height: calc(962 * var(--u));
+  border: 1px dashed rgba(255, 255, 255, 0.7);
+  border-radius: 2px;
+  opacity: var(--guide);
+}
+
+/* A dimension: a line across the gap with a tick at each end, and its number. */
+.mn-mark {
+  position: absolute;
+  --c: #fff;
+  /* Over the window: a number centred on a 17px gap is wider than the gap,
+     and it reads as a note on the drawing rather than a thing on the desk. */
+  z-index: 5;
+}
+
+.mn-mark::before, .mn-mark::after { content: ""; position: absolute; background: var(--c); }
+.mn-mark span {
+  position: absolute;
+  padding: 1px 3px;
+  border-radius: 4px;
+  background: #4338ca;
+  color: #fff;
+  font: 500 9.5px/1.3 var(--mono);
+  white-space: nowrap;
+}
+
+.mk-left, .mk-right { height: 0; border-top: 1.5px solid var(--c); }
+.mk-left::before, .mk-left::after, .mk-right::before, .mk-right::after { top: -4.5px; width: 1.5px; height: 8px; }
+.mk-left::before, .mk-right::before { left: 0; }
+.mk-left::after, .mk-right::after { right: 0; }
+.mk-left span, .mk-right span { left: 50%; bottom: 5px; transform: translateX(-50%); }
+.mk-left { left: 0; top: calc(142 * var(--u)); width: calc(24 * var(--u)); opacity: var(--mk1); }
+.mk-right { left: calc(1704 * var(--u)); top: calc(408 * var(--u)); width: calc(24 * var(--u)); opacity: var(--mk2); }
+/* Kept inside the screen's own edges, which clip them: each number is wider
+   than the gap it labels. */
+.mk-left span { transform: translateX(calc(-50% + 5px)); }
+.mk-right span { transform: translateX(calc(-50% - 5px)); }
+
+.mk-top { left: calc(234 * var(--u)); top: 0; width: 0; height: calc(24 * var(--u)); border-left: 1.5px solid var(--c); opacity: var(--mk1); }
+.mk-top::before, .mk-top::after { left: -4.5px; width: 8px; height: 1.5px; }
+.mk-top::before { top: 0; }
+.mk-top::after { bottom: 0; }
+.mk-top span { left: 6px; top: 50%; transform: translateY(-50%); }
+
+/* The mini window: the application's 420, its height the picture's 16:9. */
+.mn-win {
+  position: absolute;
+  left: calc(var(--wx) * var(--u));
+  top: calc(var(--wy) * var(--u));
+  width: calc(420 * var(--u));
+  height: calc(236 * var(--u));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: calc(10 * var(--u));
+  overflow: hidden;
+  background: #08080a;
+  box-shadow: 0 calc(16 * var(--u)) calc(44 * var(--u)) rgba(5, 5, 20, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
+  font-family: "Rubik", var(--sans);
+  color: #e8e8ec;
+  -webkit-font-smoothing: auto;
+  z-index: 3;
+}
+
+.mn-pic { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* What the mini player keeps while the pointer is over it — +page.svelte's
+   `.minibtn`, and `.osc` with SeekBar's and Controls' `.mini` rules. */
+.mn-ui { position: absolute; inset: 0; opacity: var(--ui); }
+
+.mn-exit {
+  position: absolute;
+  top: calc(12 * var(--u));
+  right: calc(12 * var(--u));
+  display: grid;
+  place-items: center;
+  width: calc(30 * var(--u));
+  height: calc(30 * var(--u));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background: rgba(16, 16, 22, 0.82);
+  color: #d6d6de;
+}
+
+.mn-exit svg { width: calc(14 * var(--u)); height: calc(14 * var(--u)); }
+
+.mn-osc { position: absolute; inset: auto 0 0; padding: 0 calc(10 * var(--u)) calc(6 * var(--u)); isolation: isolate; }
+.mn-osc::before {
+  content: "";
+  position: absolute;
+  inset: calc(-44 * var(--u)) 0 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.32) 55%, transparent);
+  z-index: -1;
+}
+
+.mn-times { display: flex; justify-content: space-between; padding: 0 calc(8 * var(--u)); color: #e0e0e6; font-size: calc(10.5 * var(--u)); font-variant-numeric: tabular-nums; }
+.mn-track { position: relative; height: calc(4 * var(--u)); margin: calc(8 * var(--u)) calc(6 * var(--u)) calc(6 * var(--u)); border-radius: calc(2 * var(--u)); background: rgba(255, 255, 255, 0.28); }
+.mn-track i { position: absolute; inset: 0 auto 0 0; width: 27%; border-radius: inherit; background: #fff; }
+.mn-track b { position: absolute; left: 27%; top: 50%; width: calc(12 * var(--u)); height: calc(12 * var(--u)); margin: calc(-6 * var(--u)) 0 0 calc(-6 * var(--u)); border-radius: 50%; background: #fff; }
+
+.mn-controls { display: flex; justify-content: center; gap: calc(6 * var(--u)); margin-top: calc(4 * var(--u)); }
+.mn-b { display: grid; place-items: center; width: calc(36 * var(--u)); height: calc(34 * var(--u)); color: #e8e8ec; }
+.mn-b svg { width: calc(20 * var(--u)); height: calc(20 * var(--u)); }
+.mn-b.play { width: calc(38 * var(--u)); }
+.mn-b.play svg { width: calc(24 * var(--u)); height: calc(24 * var(--u)); }
+
+/* The system's arrow at its own size, its tip on the hotspot (see `.walk`). */
+.mn-ptr {
+  position: absolute;
+  left: calc(var(--px) * var(--u));
+  top: calc(var(--py) * var(--u));
+  width: 0;
+  height: 0;
+  opacity: var(--in);
+  z-index: 4;
+}
+
+.mn-ptr svg { position: absolute; width: 11px; height: 18px; margin: -1.5px 0 0 -1.1px; filter: drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.4)); }
+
+/* On a phone the gaps are a few pixels wide: the lines still say where the
+   window rests, the numbers no longer fit beside them. */
+@container (max-width: 480px) {
+  .mn-mark span { display: none; }
+}
+
 /* ── mock: the start screen ───────────────────────────────────────────────── */
 
 /* No surface of its own: the start screen is the window, title bar included. */

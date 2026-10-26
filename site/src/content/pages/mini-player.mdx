@@ -25,6 +25,7 @@ faq:
     a: That is the magnetic edge. Let go of the window near an edge or a corner and it glides the rest of the way, to the same margin it opened at. If you would rather place it freely, turn off Snap mini player to edges in the right-click menu, under Window — or, on a Mac, in the View menu.
 ---
 
+import Mock from '../../components/prose/Mock.astro'
 import Note from '../../components/prose/Note.astro'
 
 Some videos are not the thing you are doing but the thing next to it: a lecture
@@ -32,6 +33,13 @@ while you take notes, a match while you work, the second half of a film while a
 download finishes. [Frame Player](/) has a mode for that. The window shrinks into
 a corner of the screen, stays above every other window, and gets out of the
 picture's way until you move the mouse over it.
+
+<Mock kind="mini">
+  The mini player over a document. Let go near an edge and it glides the rest of
+  the way, to 24 points from it — above the Dock, never under it; let go
+  anywhere else and it stays where it was put. Near a side, only that side
+  snaps: the window keeps the height you left it at.
+</Mock>
 
 ## Using it
 
@@ -44,9 +52,12 @@ picture's way until you move the mouse over it.
    full screen first.
 
 **Moving it.** There is no title bar in the mini window, so you drag the picture
-itself. Let go near an edge or a corner and the window glides the rest of the
-way, to the same margin it opened at, so it never ends up a few pixels off the
-edge. It snaps only once you have let go of the mouse button — pausing in the
+itself. Let go within 56 points of an edge or a corner and the window glides
+the rest of the way, to the same margin it opened at — 24 points inside the
+screen's usable area, so below the menu bar and above the Dock or the taskbar
+(on Windows, the same numbers in pixels at normal scaling). It never ends up a
+few pixels off the edge, and the two directions are separate: brought near the
+right edge halfway down, it moves to the edge and keeps its height. It snaps only once you have let go of the mouse button — pausing in the
 middle of a drag does not pull it from under your hand. Whatever the snapping
 setting, a mini window is never left hanging off the screen: with no title bar,
 there would be nothing to grab it back by.

@@ -197,6 +197,9 @@
 /* The picture scene sizes its stage off the column's width in `cqw`, which on
    the home page is `.mock-wide .feat-mock`'s container. */
 .fig-wide-mock .feat-mock { container-type: inline-size; }
+/* The mini player's desktop is a whole screen, drawn in its own pixels off
+   the figure's width (`--u` in mocks.css), at the text column's width. */
+.fig-mini .feat-mock { max-width: 720px; container-type: inline-size; }
 
 /* ── notes ────────────────────────────────────────────────────────────────── */
 

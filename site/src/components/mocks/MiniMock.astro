@@ -1,0 +1,56 @@
+---
+import Frame from '../Frame.astro'
+---
+
+<!-- The mini player on a desktop, and where it comes to rest when let go.
+
+     A 1728×1080 screen drawn to the column's width: a document window, the
+     Dock, and the mini window in the bottom-right corner, 24 from
+     the work area's edges, where entering the mode puts it. The pointer walks
+     onto it (the controls come up under it), and drags it three times:
+
+       near the top-left corner — let go, it glides into the corner;
+       to the middle of the screen — let go, it stays where it was put;
+       near the right edge — let go, it glides to that edge and keeps its
+       height, because each axis snaps on its own.
+
+     The dashed line is where an edge of the window rests (24 inside the work
+     area, which ends above the Dock), and the marks say so after each
+     landing. Every number is the application's — MINI_WIDTH, SCREEN_PADDING,
+     SNAP_DIST and GLIDE_MS in window-prefs.svelte.ts — so each release point
+     is inside the 56 that snaps, and the middle one is far outside it. -->
+<div class="mn-stage" data-scene data-dur="10000" data-ease="linear" aria-hidden="true">
+  <div class="mn-doc">
+    <div class="mn-doc-bar"><span class="dots"><i></i><i></i><i></i></span><span class="mn-doc-name">Notes.rtf</span></div>
+    <div class="mn-doc-body">
+      <i style="--w:46%"></i><i style="--w:88%"></i><i style="--w:92%"></i><i style="--w:71%"></i>
+      <i class="gap" style="--w:84%"></i><i style="--w:90%"></i><i style="--w:63%"></i>
+      <i class="gap" style="--w:94%"></i><i style="--w:86%"></i><i style="--w:89%"></i><i style="--w:40%"></i>
+    </div>
+  </div>
+
+  <div class="mn-dock"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="sep"></i><i></i></div>
+
+  <div class="mn-rest"></div>
+  <div class="mn-mark mk-left"><span>24</span></div>
+  <div class="mn-mark mk-top"><span>24</span></div>
+  <div class="mn-mark mk-right"><span>24</span></div>
+
+  <div class="mn-win">
+    <Frame name="ridge-hiker" slot="mini" class="mn-pic" alt="" />
+    <div class="mn-ui">
+      <span class="mn-exit"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></span>
+      <div class="mn-osc">
+        <div class="mn-times"><span>12:07</span><span>44:31</span></div>
+        <div class="mn-track"><i></i><b></b></div>
+        <div class="mn-controls">
+          <span class="mn-b"><svg viewBox="0 0 24 24"><use href="#p-prev"/></svg></span>
+          <span class="mn-b play"><svg viewBox="0 0 24 24"><use href="#p-pause"/></svg></span>
+          <span class="mn-b"><svg viewBox="0 0 24 24"><use href="#p-next"/></svg></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <span class="mn-ptr"><svg viewBox="0 0 11 18"><use href="#i-cursor"/></svg></span>
+</div>

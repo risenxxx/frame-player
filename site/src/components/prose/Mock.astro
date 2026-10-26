@@ -17,15 +17,16 @@ import RoomMock from '../mocks/RoomMock.astro'
 import SubsMock from '../mocks/SubsMock.astro'
 import PlayerMock from '../mocks/PlayerMock.astro'
 import PictureMock from '../mocks/PictureMock.astro'
+import MiniMock from '../mocks/MiniMock.astro'
 
 interface Props {
-  kind: 'torrent' | 'cast' | 'room' | 'subs' | 'playing' | 'preview' | 'audio' | 'picture'
+  kind: 'torrent' | 'cast' | 'room' | 'subs' | 'playing' | 'preview' | 'audio' | 'picture' | 'mini'
 }
 
 const { kind } = Astro.props
 ---
 
-<figure class:list={['fig', 'fig-mock', { 'sc-cast': kind === 'cast', 'fig-wide-mock': kind === 'picture' }]}>
+<figure class:list={['fig', 'fig-mock', { 'sc-cast': kind === 'cast', 'fig-wide-mock': kind === 'picture', 'fig-mini': kind === 'mini' }]}>
   <div class="feat-mock" data-reveal>
     {kind === 'torrent' && <TorrentMock />}
     {kind === 'cast' && <CastMock />}
@@ -35,6 +36,7 @@ const { kind } = Astro.props
     {kind === 'preview' && <PlayerMock kind="preview" />}
     {kind === 'audio' && <PlayerMock kind="audio" />}
     {kind === 'picture' && <PictureMock />}
+    {kind === 'mini' && <MiniMock />}
   </div>
   {Astro.slots.has('default') && <figcaption><slot /></figcaption>}
 </figure>
