@@ -52,8 +52,11 @@
   --sel: rgba(129, 140, 248, 0.32);
   --sh-win: 0 1px 2px rgba(0, 0, 0, 0.5), 0 32px 80px -24px rgba(0, 0, 0, 0.8);
   --sh-pop: 0 18px 50px -12px rgba(0, 0, 0, 0.7);
-  --sans: "Onest", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* The names the @fontsource-variable packages register, "… Variable". The
+     stack used to say "Onest", which no @font-face declares: every page drew in
+     the system's own face while the Onest file was preloaded for nothing. */
+  --sans: "Onest Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --gut: clamp(16px, 4vw, 32px);
   color-scheme: dark;

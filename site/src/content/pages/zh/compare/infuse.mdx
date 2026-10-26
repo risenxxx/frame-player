@@ -1,0 +1,111 @@
+---
+title: 免费的 Infuse 替代品，适用于 Mac 和 Windows · Frame Player
+description: Infuse Pro 每年 $16.99，Movist Pro 和 Elmedia PRO 约 $20。Frame Player 免费开源，支持杜比视界、DTS、投屏和种子。对比如下。
+heading: 在 Mac 上看视频，需要花钱买播放器吗？
+lede: 几款最有名的 Mac 播放器都是付费的：Infuse 采用订阅制，Movist 和 Elmedia 一次性买断，而花钱换来的往往是同样一小串功能。Frame Player 免费开源，没有付费版。下面说明每款要花多少钱、付费解锁了什么，以及什么时候付费仍然是正确的选择。
+eyebrow: 对比
+short: Frame Player 与 Infuse
+updated: 2026-10-26
+translated: 2026-10-26
+order: 49
+related:
+  - compare/iina
+  - cast-to-tv
+  - upscaling
+  - compare/plex-jellyfin
+faq:
+  - q: Mac 上有免费的 Infuse 替代品吗？
+    a: 如果是在 Mac 本机上看文件，有。Frame Player 免费开源，Infuse 放在 Pro 版里的功能，包括杜比视界、无损杜比和 DTS 音频、投屏到电视，它都具备，无需解锁。它替代不了的是 Infuse 的媒体库，以及它在 iPhone、iPad 和 Apple TV 上的应用。
+  - q: Infuse Pro 值得买吗？
+    a: 如果你在 Apple TV、iPhone 或 iPad 上观看 NAS、Plex、Jellyfin 或云盘中的内容，Infuse 是这方面最好的应用之一，而 Pro 让它变得完整：每年 $16.99，或一次性 $99.99。如果你想要的是在 Mac 或 Windows 电脑上播放文件并发送到电视，这不需要花钱。
+  - q: Frame Player 能免费播放杜比视界、TrueHD 和 DTS 吗？
+    a: 能。播放由 libmpv 和 FFmpeg 自己的解码器完成，所以杜比视界（Profile 5 和 8）、HDR10、HDR10+ 和 HLG 由 libplacebo 进行色调映射，TrueHD、DTS 和 DTS-HD Master Audio 在播放器内解码。没有任何需要购买的东西。杜比全景声不会以对象方式渲染：全景声音轨会按其普通的环绕声混音播放。
+  - q: Frame Player 能在 iPhone、iPad 或 Apple TV 上运行吗？
+    a: 不能。它支持 Windows 10 和 11 以及 Apple Silicon Mac，没有移动端或电视应用。不过它仍然可以把画面送到 Apple TV 上：从 Mac 通过 AirPlay 播放到 Apple TV。
+  - q: Frame Player 能播放 NAS 上的内容吗？
+    a: 在访达中挂载的共享，或在 Windows 中映射为驱动器的共享，打开方式和其他文件夹一样，下一集会排进播放队列，播放位置也会被记住。Frame Player 不会自行浏览 SMB 或 NFS 服务器，也不是 Plex、Emby 或 Jellyfin 的客户端。
+  - q: Frame Player 为什么免费？
+    a: 它是一个采用 GPL-3.0 的开源项目，没有账号、没有订阅，也没有广告。播放器只报告一件事，而且只报告一次：它被安装了。
+---
+
+import Mock from '../../../../components/prose/Mock.astro'
+import Note from '../../../../components/prose/Note.astro'
+
+问起 Mac 上用什么播放 QuickTime 打不开的文件，除了 IINA，还会冒出三个名字：[Infuse](https://firecore.com/infuse)、[Movist](https://movistprime.com/) 和 [Elmedia Player](https://www.elmedia-video-player.com/)。三个都是好播放器，也都要付费：Infuse 是订阅制，另外两个一次性买断。看看付费解锁的内容，清单很短，而且大同小异：高端 HDR 和环绕声格式、投屏到电视、网络来源。前两项 [Frame Player](/zh) 全都有，而且一分钱不花，Mac 和 Windows 上都是。
+
+<Mock kind="cast">
+  投屏面板。Chromecast、DLNA 电视，以及 Mac 上的 AirPlay，都在这个免费播放器里；每台设备都会在开始之前说明这个文件能否直接播放。
+</Mock>
+
+## 每款要花多少钱
+
+| 价格 | [Frame Player](/zh) | Infuse | Movist | Elmedia Player |
+|---|---|---|---|---|
+| 应用本身 | 免费 | 免费，另有 Pro | Mac App Store 上 $9.99 | 免费，另有 PRO |
+| 付费版 | — | Pro：每月 $1.99、每年 $16.99 或一次性 $99.99 | Movist Pro：一次性 $17.99，从开发者处购买 | PRO：一次性 $19.99，在应用内购买 |
+| 三年总计 | **$0** | 按月 $71.64，按年 $50.97，或终身 $99.99 | $17.99 | $19.99 |
+| 账号或订阅 | 无 | 可选订阅；Pro 也可终身买断 | 无 | 无 |
+| 源代码 | 开源，GPL-3.0 | 闭源 | 闭源 | 闭源 |
+
+<p class="table-note">价格以美元计，取自美国 App Store 和开发者官网，2026 年 10 月，对照 Infuse 8.5.8、Movist 2.20.0 和 Elmedia Player 8.24；各国价格不同，Movist 的价格在 2026 年 8 月上调过。Infuse 表示终身购买包含未来的大版本；Movist 和 Elmedia 的页面对此没有说明。</p>
+
+## 付费解锁了什么
+
+| 对比项 | [Frame Player](/zh) | Infuse | Movist | Elmedia Player |
+|---|---|---|---|---|
+| 支持平台 | Windows 10 和 11，Apple Silicon 上的 macOS | iPhone、iPad、Mac、Apple TV、Vision Pro | Mac | Mac |
+| 引擎 | libmpv，使用 FFmpeg 的解码器 | 自有引擎 | 自有引擎 | 自有引擎 |
+| 杜比视界 | Profile 5 和 8，免费 | Profile 5 和 8；开发者官网将其列在 Pro 中 | 支持 | — |
+| 无损杜比和 DTS 音频 | 解码 TrueHD 和 DTS-HD MA，免费 | Pro 中的“高解析度杜比和 DTS 音频” | AC-3 和 DTS 直通到功放 | AC-3 和 DTS 直通到功放，在 PRO 中 |
+| AirPlay | 从 Mac，免费 | Pro | Movist Pro，macOS 15 及更高版本 | PRO |
+| Chromecast 和 DLNA | 两者都支持，免费 | Pro 中的 Google Cast | — | 两者都支持，在 PRO 中 |
+| 网络共享和云盘 | 挂载的共享像文件夹一样打开 | SMB、NFS、WebDAV 等免费；云盘在 Pro 中 | Movist Pro 中的 FTP、SFTP、WebDAV 和 SMB | — |
+| 带海报和元数据的媒体库 | — | 支持，免费 | — | — |
+| 字幕搜索 | 内置，OpenSubtitles，精确匹配你的版本 | OpenSubtitles，免费 | — | OpenSubtitles 下载，在 PRO 中 |
+| 画面调节 | 亮度、对比度、饱和度、伽马、裁剪，免费 | — | Core Image 滤镜 | 亮度、对比度和饱和度，在 PRO 中 |
+| 超分辨率 | 神经网络着色器，免费 | “高级视频放大”，免费 | — | — |
+| 种子 | 边下边播 | — | — | — |
+
+<p class="table-note">取自各开发者自己的功能列表和 App Store 页面，2026 年 10 月。短横线表示开发者没有列出该功能，而不是我们测试后发现没有。</p>
+
+## 相同之处
+
+**日常文件**。MKV、MP4、HEVC、AV1、10-bit，以及各种常见字幕格式：四款都能播放大家手里实际有的文件，支持硬件解码，包括 QuickTime 拒绝打开的那些。
+
+**字幕和跳过**。Infuse 和 Frame Player 都能从 OpenSubtitles 下载字幕，也都能跳过片头；Infuse 免费提供，Frame Player 也一样，而且它首先按文件自身的指纹搜索，所以找回来的字幕正是为这份拷贝制作的。
+
+**超分辨率**。Infuse 的免费版能放大低分辨率视频，Frame Player 也能：使用可按文件或按播放列表选择的[神经网络着色器](/zh/upscaling)，画面没有被放大、着色器无事可做时会明确告诉你。
+
+## Frame Player 更进一步的地方
+
+**别处要付费的格式，这里免费**。播放由 libmpv（mpv 和 IINA 背后的引擎）完成，并使用 FFmpeg 自己的解码器：杜比视界 Profile 5 和 8、HDR10、HDR10+ 和 HLG 由 libplacebo 进行色调映射，TrueHD、DTS 和 DTS-HD Master Audio 在播放器内解码，并作为普通环绕声播放。没有任何功能藏在付费版后面，订阅到期那天也不会有任何变化。
+
+<Note>
+  **杜比全景声不会以对象方式渲染**。TrueHD 或 E-AC-3 中的全景声音轨会按其底层携带的环绕声混音播放，而电脑上的大多数扬声器和耳机本来也就是这样播放的。
+</Note>
+
+**投屏到电视，免费且无需重新编码**。Chromecast、DLNA 智能电视，以及（从 Mac）AirPlay 电视，都在投屏面板里。每台设备都会在开始之前说明这个文件是能直接播放、需要重新封装容器（画面原样复制，从不重新编码），还是无法播放以及原因。电影在电视上播放时，窗口就是它的遥控器：进度条、快捷键、章节和播放队列都作用于电视。详细内容见[投屏原理](/zh/cast-to-tv)。
+
+**也支持 Windows**。Infuse、Movist 和 Elmedia 都只支持 Apple 设备。Frame Player 在 Windows 电脑和 Mac 上是同一个播放器，所以一套使用习惯能跟着你在两者之间切换。
+
+**种子、片库和一起看**。磁力链接可以边下边播，优先下载你马上要看的文件块（[原理](/zh/torrent-streaming)）；片库按海报找到电影，并从你自己的索引器打开资源；一个六位代码就能让身在别处的朋友停在同一帧上，每个人播放自己的拷贝（[原理](/zh/watch-together)）。这三款付费播放器都没有列出其中任何一项。
+
+**手动调节画面**。亮度、对比度、饱和度和伽马，可用于单个文件、一整季或所有文件；压制在视频里的黑边会被[测量并裁掉](/zh/guides/remove-black-bars)；可以向前逐帧，也可以[向后逐帧](/zh/guides/step-back-one-frame)；还有始终悬浮在其他应用之上的[迷你播放器](/zh/mini-player)，在 Mac 上甚至能悬浮在全屏应用之上。
+
+## Infuse 更合适的情况
+
+<Note>
+  **在 Apple TV、iPhone 或 iPad 上**，请使用 Infuse：Frame Player 在这些设备上都没有应用。不过从 Mac 它仍然可以通过 AirPlay 把电影放到 Apple TV 上。
+</Note>
+
+- **所有 Apple 屏幕上的同一个播放器**。Infuse 能在 iPhone、iPad、Mac、Apple TV 和 Vision Pro 上运行，Pro 还会通过 iCloud 在它们之间同步媒体库、观看记录和播放位置。Frame Player 只在你停下的那台电脑上记住你停在了哪里。
+- **媒体库，而不是文件夹**。Infuse 会免费为你已有的文件获取海报、简介和图片，并按电影和剧集整理。Frame Player 的开始界面会列出没看完的内容，配有取自视频的画面，但不会为你的文件建立媒体库。
+- **服务器和云盘**。Infuse 免费版就能连接 SMB、NFS、WebDAV 和 FTP 共享，以及 Plex、Emby 和 Jellyfin 服务器，Pro 还能连接 Dropbox、Google Drive、OneDrive 等。Frame Player 只能在系统挂载共享之后播放其中的内容，也不是任何服务器的客户端。
+- **Trakt**。Infuse 会把你看过的内容和你的评分同步到 Trakt。Frame Player 没有接入 Trakt。
+- **Apple TV 上真正的杜比视界输出**。Apple TV 会把杜比视界以杜比视界的形式交给电视。电脑没有这样的输出；Frame Player 会针对当前显示器对画面进行色调映射。
+
+## 还有 Movist 或 Elmedia
+
+**Movist** 是一款历史悠久的原生 Mac 播放器，一次性买断：App Store 上 $9.99，或从开发者处购买 Movist Pro，$17.99，增加网络共享、AirPlay、画中画，以及用于网页视频的浏览器扩展。**Elmedia Player** 播放文件免费，PRO 一次性收费 $19.99，增加投屏到 Chromecast、AirPlay 和 DLNA 电视、字幕下载、画面调节和 A-B 循环。两者都只支持 Mac，就它们本身而言价格都很公道。这里想说的只是：那些 Pro 和 PRO 清单增加的功能，大部分在 Frame Player 里都不用花钱；而且为 Mac 播放器一次性付了钱，Windows 电脑上依然没有播放器。
+
+在基于 mpv 的播放器之间做选择？请看 [Frame Player 与 IINA 对比](/zh/compare/iina)。

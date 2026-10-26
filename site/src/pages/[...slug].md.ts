@@ -4,11 +4,11 @@
   `text/markdown`.
 */
 import type { APIRoute } from 'astro'
-import { getCollection } from 'astro:content'
 import { pageMarkdown } from '../markdown.ts'
+import { allPages } from '../i18n/pages.ts'
 
 export async function getStaticPaths() {
-  const pages = await getCollection('pages')
+  const pages = await allPages()
   return pages.map((entry) => ({ params: { slug: entry.id }, props: { entry } }))
 }
 

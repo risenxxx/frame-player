@@ -130,8 +130,9 @@
      nothing and stops the line running off both edges. */
   .nb { white-space: normal; }
 
-  .nav .theme { display: none; }
+  .nav .theme, .nav .langs { display: none; }
   .foot-theme { display: block; }
+  .foot-theme .langs { margin-left: 8px; vertical-align: top; }
 
   /*
     The footer centres as a whole. On a wide screen it is a rail — brand on the

@@ -4,7 +4,9 @@ import { glob } from 'astro/loaders'
 /*
   The pages beyond the landing page: guides, comparisons, a page per feature.
   One collection, because they share one layout and one set of fields; the
-  folder a file sits in is its address — `compare/iina.mdx` is `/compare/iina`.
+  folder a file sits in is its address — `compare/iina.mdx` is `/compare/iina`,
+  and its Russian translation, `ru/compare/iina.mdx`, is `/ru/compare/iina`
+  (src/i18n/pages.ts).
 
   They are reference pages rather than posts. `updated` is the date the page was
   last checked against the player, not the day it was first published, and it
@@ -35,6 +37,9 @@ const pages = defineCollection({
         revised is published and updated on the same day. */
     published: z.coerce.date().optional(),
     updated: z.coerce.date(),
+    /** A translation only (`ru/…`, `zh/…`): the English page's `updated` date
+        it was made from. The build says when the English page has moved on. */
+    translated: z.coerce.date().optional(),
     /** Order in the footer and in lists of pages. */
     order: z.number().default(100),
     /** Other pages worth reading after this one, by their id (`compare/iina`). */

@@ -1,21 +1,25 @@
 ---
 import TitleBar from './TitleBar.astro'
+import T from '../../i18n/T.astro'
+import { useLocale } from '../../i18n/index.ts'
+
+const { s } = useLocale(Astro)
 ---
 
 <div class="win" data-scene data-dur="3000" aria-hidden="true">
-  <TitleBar>Orbital Night<span class="sep"></span>season 2</TitleBar>
+  <TitleBar><T s={s.mock.torrent.show} /><span class="sep"></span><T s={s.mock.torrent.season} /></TitleBar>
   <div class="rows">
     <div class="row done">
       <svg class="ic ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-      <span class="nm">S02E01.2160p.HDR.DV.mkv</span><span class="meta">watched</span>
+      <span class="nm">S02E01.2160p.HDR.DV.mkv</span><span class="meta"><T s={s.mock.torrent.watched} /></span>
     </div>
     <div class="row done">
       <svg class="ic ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-      <span class="nm">S02E02.2160p.HDR.DV.mkv</span><span class="meta">watched</span>
+      <span class="nm">S02E02.2160p.HDR.DV.mkv</span><span class="meta"><T s={s.mock.torrent.watched} /></span>
     </div>
     <div class="row on">
       <svg class="ic ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-play"/></svg>
-      <span class="nm">S02E03.2160p.HDR.DV.mkv</span><span class="meta">23:14 left</span>
+      <span class="nm">S02E03.2160p.HDR.DV.mkv</span><span class="meta"><T s={s.mock.common.left} p={{ t: '23:14' }} /></span>
     </div>
     <div class="row">
       <svg class="ic ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-file"/></svg>
@@ -33,7 +37,7 @@ import TitleBar from './TitleBar.astro'
   <div class="torfoot">
     <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-down"/></svg>
     <span class="rate">4.2 MB/s</span>
-    <span class="grow">28 peers</span>
-    <span class="tag">seeding off</span>
+    <span class="grow"><T s={s.mock.common.peers} p={{ n: 28 }} /></span>
+    <span class="tag"><T s={s.mock.torrent.seedingOff} /></span>
   </div>
 </div>

@@ -1,23 +1,25 @@
 ---
 import TorrentMock from './mocks/TorrentMock.astro'
+import T from '../i18n/T.astro'
+import { useLocale } from '../i18n/index.ts'
+
+const { s, href } = useLocale(Astro)
 ---
 
   <section class="feat rev" id="torrents">
     <div class="wrap feat-in">
       <div class="feat-copy" data-reveal>
-        <h2>Watch it while it is still downloading</h2>
+        <h2><T s={s.torrents.h} /></h2>
         <p class="lede">
-          Paste a magnet or open a <span class="mono">.torrent</span> and Frame Player starts playing while it downloads. Pieces near the playhead come first, and the seekbar shows what has arrived, so you know whether a jump will land.
+          <T s={s.torrents.lede} />
         </p>
         <ul class="checks">
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Nothing downloads until you open it</b>, and seeding is off by default.</span></li>
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Subtitles inside the release attach themselves</b>, and the next episode is fetched ahead.</span></li>
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>A stall says why:</b> download rate, peers and how much of the file is on disk.</span></li>
+          {s.torrents.checks.map((check) => (
+            <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><T s={check} /></span></li>
+          ))}
         </ul>
-        <a class="more-link" href="/torrent-streaming">How torrent streaming works</a>
+        <a class="more-link" href={href('/torrent-streaming')}><T s={s.torrents.more} /></a>
       </div>
       <div class="feat-mock" data-reveal style="--dl:1">
         <TorrentMock />

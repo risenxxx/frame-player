@@ -19,6 +19,9 @@ export function initNav(): void {
 
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
     const label = button.querySelector('.lbl')
+    /* Both words are the page's, in its language: what the label says, and
+       what it says for a moment once the line is copied (`data-copied`). */
+    const idle = label?.textContent ?? ''
     button.addEventListener('click', async () => {
       const text = button.dataset.copy
       if (!text) return
@@ -28,10 +31,10 @@ export function initNav(): void {
         return
       }
       button.classList.add('done')
-      if (label) label.textContent = 'Copied'
+      if (label) label.textContent = button.dataset.copied ?? idle
       setTimeout(() => {
         button.classList.remove('done')
-        if (label) label.textContent = 'Copy'
+        if (label) label.textContent = idle
       }, 1600)
     })
   }

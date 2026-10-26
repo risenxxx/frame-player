@@ -1,0 +1,25 @@
+---
+/*
+  One line offering this page in the reader's own language, written in that
+  language — it is for somebody who reads it, not for somebody who reads this
+  page. One per language the page exists in besides its own, all hidden;
+  scripts/lang.ts shows the one the browser asks for, at most once.
+*/
+import { LOCALE_META, alternatesOf, multilingual, strings, useLocale, type Locale } from '../i18n/index.ts'
+
+const { lang } = useLocale(Astro)
+const alternates = alternatesOf(Astro.url.pathname)
+const offers = (Object.keys(alternates) as Locale[])
+  .filter((l) => l !== lang)
+  .map((l) => ({ l, meta: LOCALE_META[l], s: strings(l).lang, href: alternates[l]! }))
+---
+
+{multilingual() && offers.map(({ l, meta, s, href }) => (
+  <div class="lang-hint" data-lang-hint={l} lang={meta.htmlLang} role="note" hidden>
+    <span>{s.hint}</span>
+    <a href={href} hreflang={meta.hreflang}>{s.open}</a>
+    <button type="button" data-lang-dismiss aria-label={s.dismiss} title={s.dismiss}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M7 7l10 10M17 7 7 17"/></svg>
+    </button>
+  </div>
+))}

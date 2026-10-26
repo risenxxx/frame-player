@@ -1,89 +1,32 @@
+---
+import T from '../i18n/T.astro'
+import { useLocale } from '../i18n/index.ts'
+
+const { s } = useLocale(Astro)
+
+/* Each cell's glyph, by position: the dictionary's cells are in this order. */
+const ICONS = ['i-play', 'i-conf', 'i-pip', 'i-search', 'i-skip', 'i-pip', 'i-keys', 'i-hdr', 'i-loop', 'i-zoom', 'i-frame', 'i-audio', 'i-queue', 'i-shield', 'i-conf']
+if (ICONS.length !== s.everything.cells.length) throw new Error('MoreGrid: one icon per cell')
+---
+
   <section class="more" id="everything">
     <div class="wrap">
       <div class="sec-h" data-reveal>
-        <h2>The parts you only notice when they are missing</h2>
+        <h2><T s={s.everything.h} /></h2>
         <p class="lede">
-          Small things other players get almost right.
+          <T s={s.everything.lede} />
         </p>
       </div>
       <div class="grid" data-reveal style="--dl:1">
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-play"/></svg>
-          <h3>On screen in half a second</h3>
-          <p><b>0.56 s</b> from click to a usable window on an Apple Silicon Mac: nothing loads before you need it.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-conf"/></svg>
-          <h3>Live media info</h3>
-          <p>Codec, resolution, audio layout and the real bitrate, refreshed every second while the panel is open.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pip"/></svg>
-          <h3>The window remembers where it was</h3>
-          <p>Size and position come back at launch, or the window fits the video without leaving the screen.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"/></svg>
-          <h3>The preview is the frame you land on</h3>
-          <p>Seekbar thumbnails sharpen to the exact frame once the cursor stops, not the keyframe before it.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-skip"/></svg>
-          <h3>Skip intro that knows what an intro is</h3>
-          <p>Chapters match by their whole title, so "Ending the war for good" is never taken for the credits.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pip"/></svg>
-          <h3>A mini player that stays put</h3>
-          <p>Small, always on top and snapped to a corner. On macOS it floats over other apps in fullscreen.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-keys"/></svg>
-          <h3>47 actions, all rebindable</h3>
-          <p>Hotkeys follow physical keys, so they work in any keyboard layout. J, K and L do what you expect.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-hdr"/></svg>
-          <h3>HDR, Dolby Vision, anything</h3>
-          <p>Decoded by libmpv, as in mpv and IINA: full format coverage, hardware decoding and HDR tone mapping.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-loop"/></svg>
-          <h3>A–B loops and frame steps</h3>
-          <p>Loop the stretch between two marks, and step one frame forward or back.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-zoom"/></svg>
-          <h3>Zoom and pan without a jump</h3>
-          <p>Zoom and position change in the same frame, so the picture never jumps between two redraws.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-frame"/></svg>
-          <h3>Export the frame you are on</h3>
-          <p>Save or copy the exact decoded frame, HDR tone mapping included.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-audio"/></svg>
-          <h3>Audio that behaves</h3>
-          <p>Pick the output device, level a film that whispers then shouts, and keep an audio delay per file.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-queue"/></svg>
-          <h3>The folder is the queue</h3>
-          <p>The next episode starts after a countdown you can cancel. Repeat one file, the queue, or nothing.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-shield"/></svg>
-          <h3>Folders that leave no trace</h3>
-          <p>Mark a folder private and nothing about it is recorded or sent anywhere. There is no account, and the player reports one thing, once: that it was installed.</p>
-        </div>
-        <div class="cell">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-conf"/></svg>
-          <h3>Your own mpv.conf still wins</h3>
-          <p>Settings change only their own lines in mpv.conf, so options you wrote by hand survive.</p>
-        </div>
+        {s.everything.cells.map((cell, i) => (
+          <div class="cell">
+            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href={`#${ICONS[i]}`}/></svg>
+            <h3><T s={cell.h} /></h3>
+            <p><T s={cell.p} /></p>
+          </div>
+        ))}
         <div class="cell spare" aria-hidden="true">
-          <p>Oops — this square needed covering. Fifteen does not divide by two, so at this width the grid comes up one short. Widen the window and the corner goes away.</p>
+          <p><T s={s.everything.spare} /></p>
         </div>
       </div>
     </div>

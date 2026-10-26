@@ -15,6 +15,8 @@
  * of the page's markup.
  */
 import type { CollectionEntry } from 'astro:content'
+import { fill, strings } from './i18n/index.ts'
+import { entryLang } from './i18n/pages.ts'
 
 /** `<Tag …>body</Tag>` → whatever `render` makes of the body. */
 function component(text: string, tag: string, render: (body: string, attrs: string) => string): string {
@@ -25,12 +27,14 @@ function component(text: string, tag: string, render: (body: string, attrs: stri
 export function pageMarkdown(entry: CollectionEntry<'pages'>, site: URL): string {
   const d = entry.data
   const url = new URL(`/${entry.id}`, site).href
+  /* The words around the page's own text, in the page's language. */
+  const s = strings(entryLang(entry)).markdown
 
   let body = entry.body ?? ''
   body = body.replace(/^import .*$/gm, '')
-  body = component(body, 'Mock', (caption) => `*Figure: ${caption}*`)
-  body = component(body, 'PieceMap', (caption) => `*Diagram: ${caption}*`)
-  body = component(body, 'Note', (note) => `> **Note.** ${note}`)
+  body = component(body, 'Mock', (caption) => `*${fill(s.figure, { caption })}*`)
+  body = component(body, 'PieceMap', (caption) => `*${fill(s.diagram, { caption })}*`)
+  body = component(body, 'Note', (note) => `> **${s.note}** ${note}`)
   body = body.replace(/<p class="table-note">([\s\S]*?)<\/p>/g, '$1')
   // Whatever markup is left is the page's own HTML, which Markdown carries.
   body = body.replace(/\]\((\/[^)]*)\)/g, (_, path: string) => `](${new URL(path, site).href})`)
@@ -43,11 +47,11 @@ export function pageMarkdown(entry: CollectionEntry<'pages'>, site: URL): string
     '',
     `> ${d.lede}`,
     '',
-    `Source: ${url}`,
-    `Updated: ${d.updated.toISOString().slice(0, 10)}`,
+    fill(s.source, { url }),
+    fill(s.updated, { date: d.updated.toISOString().slice(0, 10) }),
     '',
     body,
-    ...(questions ? ['', '## Questions', '', questions] : []),
+    ...(questions ? ['', `## ${s.questions}`, '', questions] : []),
     '',
   ].join('\n')
 }

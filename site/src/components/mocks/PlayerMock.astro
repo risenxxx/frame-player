@@ -16,6 +16,8 @@
     audio    the audio track menu open over the control bar
 */
 import Frame from '../Frame.astro'
+import T from '../../i18n/T.astro'
+import { useLocale } from '../../i18n/index.ts'
 
 interface Props {
   kind: 'hero' | 'torrent' | 'preview' | 'audio'
@@ -43,6 +45,8 @@ const TRACK = {
   preview: '--pos:29.4%;--buf:100%;--hover:52%',
   audio: '--pos:59.6%;--buf:100%',
 }
+
+const { s } = useLocale(Astro)
 ---
 
 <div
@@ -53,10 +57,10 @@ const TRACK = {
   style={TRACK[kind]}
   aria-hidden="true"
 >
-  {kind === 'hero' && <Frame name="orion-moon" slot="hero" class="scene" alt="A spacecraft in sunlight with the Moon beyond it" loading="eager" fetchpriority="high" />}
-  {kind === 'torrent' && <Frame name="highway-trails" slot="guide" class="scene" alt="Star trails over a desert highway" />}
-  {kind === 'preview' && <Frame name="lake-galaxy" slot="guide" class="scene" alt="The Milky Way reflected in a mountain lake" />}
-  {kind === 'audio' && <Frame name="lake-trails" slot="guide" class="scene" alt="Star trails turning above a mountain lake" />}
+  {kind === 'hero' && <Frame name="orion-moon" slot="hero" class="scene" alt={s.alt.orionMoon} loading="eager" fetchpriority="high" />}
+  {kind === 'torrent' && <Frame name="highway-trails" slot="guide" class="scene" alt={s.alt.highwayTrails} />}
+  {kind === 'preview' && <Frame name="lake-galaxy" slot="guide" class="scene" alt={s.alt.lakeGalaxy} />}
+  {kind === 'audio' && <Frame name="lake-trails" slot="guide" class="scene" alt={s.alt.lakeTrails} />}
   <span class="p-scrim"></span>
   <span class="p-bar">
     <span class="lights"><i></i><i></i><i></i></span>
@@ -70,14 +74,14 @@ const TRACK = {
     <div class="torchip">
       <span class="torchip-line">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-down"/></svg>
-        <span class="mono">4.2 MB/s<span class="sep"></span>28 peers</span>
+        <span class="mono" data-say={`{rate} MB/s{sep}${s.mock.common.peers}`}>4.2 MB/s<span class="sep"></span><T s={s.mock.common.peers} p={{ n: 28 }} /></span>
       </span>
       <span class="torchip-bar"><i></i></span>
     </div>
   )}
 
   {kind === 'hero' && (
-    <span class="skip">Skip intro
+    <span class="skip"><T s={s.mock.player.skipIntro} />
       <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-skip"/></svg>
     </span>
   )}
@@ -86,19 +90,19 @@ const TRACK = {
     <div class="times mono">
       {kind === 'audio' && (
         <div class="trackpop">
-          <div class="trackpop-title">Audio track</div>
-          <div class="trackrow sel">English<span class="sep"></span>eng</div>
-          <div class="trackrow">English (5.1)<span class="sep"></span>eng</div>
-          <div class="trackrow">Russian (dub)<span class="sep"></span>rus</div>
-          <div class="trackrow">Add file…</div>
+          <div class="trackpop-title"><T s={s.mock.player.audioTrack} /></div>
+          <div class="trackrow sel"><T s={s.mock.player.tracks[0]!} /><span class="sep"></span>eng</div>
+          <div class="trackrow"><T s={s.mock.player.tracks[1]!} /><span class="sep"></span>eng</div>
+          <div class="trackrow"><T s={s.mock.player.tracks[2]!} /><span class="sep"></span>rus</div>
+          <div class="trackrow"><T s={s.mock.common.addFile} /></div>
           <div class="trackpop-rule"></div>
-          <div class="trackpop-title">Delay</div>
+          <div class="trackpop-title"><T s={s.mock.player.delay} /></div>
           <div class="delayrow">
             <span class="delaybtn">−</span>
             <span class="delayval mono">0.00 s</span>
             <span class="delaybtn">+</span>
             <span class="delaysep"></span>
-            <span class="delayreset">Reset</span>
+            <span class="delayreset"><T s={s.mock.player.reset} /></span>
           </div>
         </div>
       )}
@@ -110,16 +114,16 @@ const TRACK = {
     <div class="seekwrap">
       {kind === 'hero' && (
         <div class="hovertip">
-          <span class="thumb"><Frame name="earth-aurora" slot="thumb" alt="Earth at night under the aurora, seen from orbit" loading="eager" /></span>
+          <span class="thumb"><Frame name="earth-aurora" slot="thumb" alt={s.alt.earthAurora} loading="eager" /></span>
           <span class="tip-time mono">13:39</span>
-          <span class="tip-chapter">Chapter 2<span class="sep"></span>The Terminator Line</span>
+          <span class="tip-chapter"><T s={s.mock.player.chapter} /><span class="sep"></span><T s={s.mock.player.chapterName} /></span>
         </div>
       )}
       {kind === 'preview' && (
         <div class="hovertip">
-          <span class="thumb"><Frame name="lake-tent" slot="thumb" alt="A lit tent on the shore of a mountain lake" /></span>
+          <span class="thumb"><Frame name="lake-tent" slot="thumb" alt={s.alt.lakeTent} /></span>
           <span class="tip-time mono">56:05</span>
-          <span class="tip-chapter">Camp at the Shore</span>
+          <span class="tip-chapter"><T s={s.mock.player.chapterCamp} /></span>
         </div>
       )}
       <div class="seektrack">

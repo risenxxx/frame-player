@@ -1,6 +1,10 @@
 ---
 import Frame from '../Frame.astro'
 import TitleBar from './TitleBar.astro'
+import T from '../../i18n/T.astro'
+import { useLocale } from '../../i18n/index.ts'
+
+const { s } = useLocale(Astro)
 ---
 
 <!-- One episode, and the picture panel on it.
@@ -22,7 +26,7 @@ import TitleBar from './TitleBar.astro'
      measured by scripts/pointer.ts, as in the subtitle scene. -->
 <div class="pic-stage" data-scene data-dur="7800" data-ease="linear" aria-hidden="true">
   <div class="player pic" data-pointer>
-    <div class="pic-lb"><Frame name="surf-glow" slot="mock" class="scene" alt="Bioluminescent surf on a beach at night" /></div>
+    <div class="pic-lb"><Frame name="surf-glow" slot="mock" class="scene" alt={s.alt.surfGlow} /></div>
     <TitleBar over>Orbital.Night.S02E05.2160p.mkv</TitleBar>
     <div class="osc">
       <div class="times mono"><span>12:07</span><span>44:31</span></div>
@@ -52,35 +56,35 @@ import TitleBar from './TitleBar.astro'
       </div>
     </div>
 
-    <div class="pic-osd o1">Looking for black bars…</div>
-    <div class="pic-osd o2">Crop<span class="osd-sub">Auto</span></div>
+    <div class="pic-osd o1"><T s={s.mock.picture.looking} /></div>
+    <div class="pic-osd o2"><T s={s.mock.picture.crop} /><span class="osd-sub"><T s={s.mock.picture.auto} /></span></div>
 
     <div class="pic-menu" data-stop="1" data-fx="0" data-fy="0">
-      <div class="pm-title">Crop</div>
+      <div class="pm-title"><T s={s.mock.picture.crop} /></div>
       <div class="pm-pills crop">
-        <span class="pm-pill was">None</span>
-        <span class="pm-pill now" data-stop="5">Auto</span>
+        <span class="pm-pill was"><T s={s.mock.picture.none} /></span>
+        <span class="pm-pill now" data-stop="5"><T s={s.mock.picture.auto} /></span>
         <span class="pm-pill">2.39</span>
         <span class="pm-pill">1.85</span>
         <span class="pm-pill">4:3</span>
       </div>
       <div class="pm-sep"></div>
-      <div class="pm-title">Brightness and color</div>
+      <div class="pm-title"><T s={s.mock.picture.color} /></div>
       <div class="pm-adjust">
         <div class="pm-row live">
-          <span class="pm-label">Brightness</span>
+          <span class="pm-label"><T s={s.mock.picture.brightness} /></span>
           <span class="pm-track" data-stop="2"><i class="pm-fill"></i><b class="pm-knob"></b><span class="pm-to" data-stop="3"></span></span>
           <span class="pm-val"><span class="pm-plus">+</span></span>
         </div>
-        <div class="pm-row"><span class="pm-label">Contrast</span><span class="pm-track"><b class="pm-knob"></b></span><span class="pm-val zero">0</span></div>
-        <div class="pm-row"><span class="pm-label">Saturation</span><span class="pm-track"><b class="pm-knob"></b></span><span class="pm-val zero">0</span></div>
-        <div class="pm-row"><span class="pm-label">Gamma</span><span class="pm-track"><b class="pm-knob"></b></span><span class="pm-val zero">0</span></div>
+        <div class="pm-row"><span class="pm-label"><T s={s.mock.picture.contrast} /></span><span class="pm-track"><b class="pm-knob"></b></span><span class="pm-val zero">0</span></div>
+        <div class="pm-row"><span class="pm-label"><T s={s.mock.picture.saturation} /></span><span class="pm-track"><b class="pm-knob"></b></span><span class="pm-val zero">0</span></div>
+        <div class="pm-row"><span class="pm-label"><T s={s.mock.picture.gamma} /></span><span class="pm-track"><b class="pm-knob"></b></span><span class="pm-val zero">0</span></div>
       </div>
-      <div class="pm-title">Apply to</div>
+      <div class="pm-title"><T s={s.mock.picture.applyTo} /></div>
       <div class="pm-pills scope">
-        <span class="pm-pill was">This file</span>
-        <span class="pm-pill now" data-stop="4">Playlist</span>
-        <span class="pm-pill">All files</span>
+        <span class="pm-pill was"><T s={s.mock.common.thisFile} /></span>
+        <span class="pm-pill now" data-stop="4"><T s={s.mock.common.playlist} /></span>
+        <span class="pm-pill"><T s={s.mock.picture.allFiles} /></span>
       </div>
     </div>
 

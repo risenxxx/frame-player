@@ -1,25 +1,27 @@
 ---
 import PictureMock from './mocks/PictureMock.astro'
+import T from '../i18n/T.astro'
+import { useLocale } from '../i18n/index.ts'
+
+const { s, href } = useLocale(Astro)
 ---
 
   <section class="feat rev mock-wide" id="picture">
     <div class="wrap feat-in">
       <div class="feat-copy" data-reveal>
-        <h2>The picture, cropped and tuned by eye</h2>
+        <h2><T s={s.picture.h} /></h2>
         <p class="lede">
-          Auto crop removes black bars baked into the video by measuring frames across the whole file, and the window takes the picture's shape. Brightness, contrast, saturation and gamma adjust live, with the menu out of the way.
+          <T s={s.picture.lede} />
         </p>
         <ul class="checks">
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>One choice covers the season</b>: each episode is measured on its own, so a wider finale is not cut to the pilot's bars.</span></li>
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>It works on a torrent still downloading.</b></span></li>
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Set a correction for one file, its playlist or everything</b>; when two disagree, the player asks which to keep.</span></li>
+          {s.picture.checks.map((check) => (
+            <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><T s={check} /></span></li>
+          ))}
         </ul>
         <p class="more-links">
-          <a class="more-link" href="/guides/remove-black-bars">How auto crop finds the bars</a>
-          <a class="more-link" href="/guides/darker-than-quicktime">Why the same video looks darker in mpv than in QuickTime</a>
+          <a class="more-link" href={href('/guides/remove-black-bars')}><T s={s.picture.more[0]!} /></a>
+          <a class="more-link" href={href('/guides/darker-than-quicktime')}><T s={s.picture.more[1]!} /></a>
         </p>
       </div>
       <div class="feat-mock" data-reveal style="--dl:1">

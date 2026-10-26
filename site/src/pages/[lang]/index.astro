@@ -1,0 +1,13 @@
+---
+/* The home page in every language but English, at `/ru` and `/zh`. */
+import Home from '../../views/Home.astro'
+import { DEFAULT_LOCALE, enabledLocales } from '../../i18n/index.ts'
+
+export function getStaticPaths() {
+  return enabledLocales()
+    .filter((lang) => lang !== DEFAULT_LOCALE)
+    .map((lang) => ({ params: { lang } }))
+}
+---
+
+<Home />

@@ -1,0 +1,17 @@
+---
+/*
+  One string of the dictionary, as markup: `<T s={s.hero.lede} />`, or with
+  values, `<T s={s.download.version} p={{ version }} />`. See `rich` in
+  index.ts for what a string may carry.
+*/
+import { rich, type Params } from './index.ts'
+
+interface Props {
+  s: string
+  p?: Params
+}
+
+const { s, p } = Astro.props
+---
+
+<Fragment set:html={rich(s, p)} />

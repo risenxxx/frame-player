@@ -1,8 +1,13 @@
 ---
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import onestLatin from '@fontsource-variable/onest/files/onest-latin-wght-normal.woff2?url'
-import { getCollection } from 'astro:content'
+import onestCyrillic from '@fontsource-variable/onest/files/onest-cyrillic-wght-normal.woff2?url'
 import Analytics from '../components/Analytics.astro'
 import { downloads } from '../release.ts'
+import { LOCALE_META, alternatesOf, enabledLocales, multilingual, useLocale, type Locale } from '../i18n/index.ts'
+import { pagesIn } from '../i18n/pages.ts'
+import { checkMockStrings } from '../i18n/app.ts'
 import '@fontsource-variable/onest'
 import '@fontsource-variable/jetbrains-mono'
 import '../styles/tokens.css'
@@ -33,14 +38,23 @@ interface Props {
   noindex?: boolean
 }
 
+const { lang, s, meta, href } = useLocale(Astro)
+
+/* Once per build: every mock's labels are the application's (i18n/app.ts). */
+checkMockStrings()
+
+/* The site's link card in the page's language, where `bun run og` has drawn
+   one (`og-ru.png`); the English one otherwise. Resolved against the working
+   directory, as release.ts explains. */
+const localCard = `/og-${lang}.png`
+const ogCard = lang !== 'en' && existsSync(resolve(process.cwd(), 'public', localCard.slice(1))) ? localCard : '/og.png'
+
 const {
-  title = 'Frame Player — a video player for Windows and macOS',
-  description =
-    'Free, open-source video player on mpv for Windows and macOS: watch a torrent as it downloads, ' +
-    'cast to the TV untouched, resume anything.',
+  title = s.meta.title,
+  description = s.meta.description,
   ogType = 'website',
-  image = '/og.png',
-  imageAlt = 'Frame Player: files, links, magnets. One player that gets them right.',
+  image = ogCard,
+  imageAlt = s.meta.imageAlt,
   schema = [],
   markdown,
   feed,
@@ -52,6 +66,20 @@ const {
   and `Astro.url` says so; the address it is served at has no extension.
 */
 const canonical = new URL(Astro.url.pathname.replace(/\.html$/, ''), Astro.site)
+
+/*
+  The same page in the other languages it is written in — every one of them,
+  this one included, as the convention asks, and English again as the default
+  for a reader whose language is none of them. A page in one language prints
+  none of this, and neither does the 404, which is not a page to send anyone to.
+*/
+const alternates = Object.entries(alternatesOf(Astro.url.pathname)) as [Locale, string][]
+const hreflang = !noindex && alternates.length > 1
+  ? [
+      ...alternates.map(([l, path]) => ({ hreflang: LOCALE_META[l].hreflang, href: new URL(path, Astro.site).href })),
+      { hreflang: 'x-default', href: new URL(alternates.find(([l]) => l === 'en')?.[1] ?? '/', Astro.site).href },
+    ]
+  : []
 const ogImage = new URL(image, Astro.site)
 const { version, windows, date } = await downloads()
 
@@ -65,7 +93,7 @@ const { version, windows, date } = await downloads()
 */
 /* The guides, so the application's own record points at the pages that explain
    it: one place an agent can read the whole site's shape from. */
-const guides = (await getCollection('pages')).sort((a, b) => a.data.order - b.data.order)
+const guides = await pagesIn(lang)
 
 const site = new URL('/', Astro.site).href
 const ORG = { '@type': 'Organization', name: 'Frame Player', url: site, logo: new URL('/apple-touch-icon.png', Astro.site).href }
@@ -81,7 +109,7 @@ const app = {
      and what says the page is current rather than merely undated. */
   ...(date ? { datePublished: date, dateModified: date } : {}),
   url: site,
-  inLanguage: 'en',
+  inLanguage: meta.hreflang,
   author: ORG,
   publisher: ORG,
   softwareHelp: guides.map((g) => ({ '@type': 'WebPage', name: g.data.short, url: new URL(`/${g.id}`, Astro.site).href })),
@@ -90,9 +118,7 @@ const app = {
   isAccessibleForFree: true,
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
   image: new URL('/og.png', Astro.site).href,
-  description:
-    'Free, open-source video player on mpv for Windows and macOS: watch a torrent as it downloads, ' +
-    'cast to the TV untouched, resume anything.',
+  description: s.meta.description,
 }
 /* The site itself, so a page, its guides and the application are one graph
    rather than three records that happen to share a domain. */
@@ -101,7 +127,7 @@ const website = {
   '@id': `${site}#website`,
   name: 'Frame Player',
   url: site,
-  inLanguage: 'en',
+  inLanguage: multilingual() ? enabledLocales().map((l) => LOCALE_META[l].hreflang) : meta.hreflang,
   publisher: ORG,
   about: { '@id': `${site}#app` },
 }
@@ -110,7 +136,7 @@ const jsonLd = { '@context': 'https://schema.org', '@graph': [website, app, ...s
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={meta.htmlLang} data-lang={multilingual() ? lang : undefined}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -123,6 +149,7 @@ const jsonLd = { '@context': 'https://schema.org', '@graph': [website, app, ...s
         <link rel="canonical" href={canonical} />
         {/* Nothing withheld from a snippet: a page that means to be quoted says so. */}
         <meta name="robots" content="max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+        {hreflang.map((a) => <link rel="alternate" hreflang={a.hreflang} href={a.href} />)}
         {markdown && <link rel="alternate" type="text/markdown" href={new URL(markdown, Astro.site)} />}
         {feed && <link rel="alternate" type="application/atom+xml" title={feed.title} href={new URL(feed.href, Astro.site)} />}
       </>
@@ -133,7 +160,8 @@ const jsonLd = { '@context': 'https://schema.org', '@graph': [website, app, ...s
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
-    <meta property="og:locale" content="en" />
+    <meta property="og:locale" content={meta.ogLocale} />
+    {hreflang.length > 0 && alternates.filter(([l]) => l !== lang).map(([l]) => <meta property="og:locale:alternate" content={LOCALE_META[l].ogLocale} />)}
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
@@ -149,7 +177,11 @@ const jsonLd = { '@context': 'https://schema.org', '@graph': [website, app, ...s
     <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    {/* The faces the first screen is set in, so it is not drawn twice. Every
+        language has Latin in it (the name, the platforms); Russian adds its
+        letters; Chinese takes its Han from the system and preloads nothing more. */}
     <link rel="preload" href={onestLatin} as="font" type="font/woff2" crossorigin />
+    {lang === 'ru' && <link rel="preload" href={onestCyrillic} as="font" type="font/woff2" crossorigin />}
 
     {/*
       The only script in the head, and it runs before the first paint: it marks

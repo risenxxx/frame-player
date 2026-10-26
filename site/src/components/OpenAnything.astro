@@ -1,32 +1,34 @@
 ---
 import TitleBar from './mocks/TitleBar.astro'
+import T from '../i18n/T.astro'
+import { useLocale } from '../i18n/index.ts'
+
+const { s } = useLocale(Astro)
 ---
 
   <section class="feat" id="open">
     <div class="wrap feat-in">
       <div class="feat-copy" data-reveal>
-        <h2>If it points at a video, it opens</h2>
+        <h2><T s={s.open.h} /></h2>
         <p class="lede">
-          Files, folders, links, magnets, <span class="mono">.torrent</span> files and a release's RSS feed all open in one window. Playback is libmpv, so anything mpv plays — MKV, HEVC, AV1, HDR, Dolby Vision — plays here.
+          <T s={s.open.lede} />
         </p>
         <ul class="checks">
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>One episode opens the folder</b> as a queue in natural order: ep2 before ep10.</span></li>
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Video pages open through yt-dlp</b>, which the player can install for you when a link first needs it.</span></li>
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Resume survives a restart</b>, even for a torrent episode.</span></li>
+          {s.open.checks.map((check) => (
+            <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><T s={check} /></span></li>
+          ))}
         </ul>
       </div>
       <div class="feat-mock" data-reveal style="--dl:1">
         <div class="win" data-scene data-dur="3400" aria-hidden="true">
-          <TitleBar>Open a link</TitleBar>
+          <TitleBar><T s={s.mock.opener.title} /></TitleBar>
           <div class="opener">
-            <p class="opener-h">Paste a link, a magnet or a feed</p>
+            <p class="opener-h"><T s={s.mock.opener.prompt} /></p>
             <div class="field">
               <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-link"/></svg>
               <span class="typed">magnet:?xt=urn:btih:9f4c1b8e…&amp;dn=Orbital.Night.S02.2160p.HDR</span>
-              <span class="go">Open</span>
+              <span class="go"><T s={s.mock.opener.go} /></span>
             </div>
             <div class="kinds">
               <span class="kind hot" style="--i:0">magnet:</span>

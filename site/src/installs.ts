@@ -11,12 +11,24 @@
  */
 export const INSTALLS_BASE = 870
 
-/** The marker the worker fills in; the page renders `INSTALLS_BASE` into it. */
+import { LOCALE_META, type Locale } from './i18n/locales.ts'
+
+/**
+ * The marker the worker fills in. Its value is the label in the page's
+ * language with `{n}` where the number goes (`download.installs` in the
+ * dictionary), so the worker writes the number without knowing the words;
+ * the page renders `INSTALLS_BASE` into it.
+ */
 export const INSTALLS_ATTR = 'data-installs'
 
-/** Rounded down, so the number on the page is never more than was counted. */
-export function installsLabel(count: number): string {
+/** Rounded down, so the number on the page is never more than was counted;
+    grouped the way the page's language groups digits. */
+export function installsCount(count: number, lang: Locale): string {
   const step = count < 10_000 ? 10 : 100
   const shown = Math.floor(count / step) * step
-  return `${shown.toLocaleString('en-US')}+ installs`
+  return shown.toLocaleString(lang === 'en' ? 'en-US' : LOCALE_META[lang].intl)
 }
+
+/** The label: the template from the marker, with the number in it. */
+export const installsLabel = (template: string, count: number, lang: Locale): string =>
+  template.replace('{n}', installsCount(count, lang))

@@ -23,14 +23,44 @@ const MARK = `<svg viewBox="0 0 24 24" width="76" height="76" aria-hidden="true"
   <path fill="#818cf8" stroke="#818cf8" stroke-width="1.6" stroke-linejoin="round" d="M10 9v6l5.4-3z"/>
 </svg>`
 
-const card = `<!doctype html><meta charset="utf-8">
+/*
+  The card's words, per language. A copy of three strings the site keeps in
+  src/i18n/ — this tool is plain Node and cannot import TypeScript, and the
+  cards are redrawn by hand anyway; the headline is `hero.title`, keep the two
+  in step. Chinese draws its Han from the system face, as the site does, and
+  loses the Latin headline's negative tracking.
+*/
+const escape = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+
+const WORDS = {
+  en: {
+    title: ['Files, links, magnets.', 'One player that gets them right.'],
+    sub: 'A video player for Windows and macOS, built on mpv.',
+    facts: ['Free and open source', 'GPL-3.0', 'no account, no telemetry'],
+  },
+  ru: {
+    title: ['Файлы, ссылки, торренты.', 'Один плеер — и всё как надо.'],
+    sub: 'Видеоплеер для Windows и macOS на движке mpv.',
+    facts: ['Бесплатно и с открытым кодом', 'GPL-3.0', 'без аккаунта и телеметрии'],
+  },
+  zh: {
+    title: ['文件、链接、磁力链接，', '一个播放器全部搞定。'],
+    sub: '基于 mpv 的视频播放器，适用于 Windows 和 macOS。',
+    facts: ['免费开源', 'GPL-3.0', '无需账号，没有遥测'],
+  },
+}
+const LANGS = Object.keys(WORDS)
+
+const card = (lang) => {
+  const w = WORDS[lang]
+  return `<!doctype html><meta charset="utf-8">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&display=swap');
   html, body { margin: 0; width: 1200px; height: 630px; }
   body {
     background: #08090c;
     color: #f2f4f8;
-    font: 400 16px/1.5 Onest, system-ui, sans-serif;
+    font: 400 16px/1.5 Onest, ${lang === 'zh' ? '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", ' : ''}system-ui, sans-serif;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -56,9 +86,11 @@ const card = `<!doctype html><meta charset="utf-8">
 </style>
 <div class="glow"></div>
 <div class="row">${MARK}<span class="name">Frame Player</span></div>
-<h1>Files, links, magnets.<br>One player that gets them right.</h1>
-<p>A video player for Windows and macOS, built on mpv.</p>
-<div class="facts"><b>Free and open source</b><i></i>GPL-3.0<i></i>no account, no telemetry</div>`
+<h1>${w.title.map(escape).join('<br>')}</h1>
+<p>${escape(w.sub)}</p>
+<div class="facts"><b>${escape(w.facts[0])}</b><i></i>${escape(w.facts[1])}<i></i>${escape(w.facts[2])}</div>`
+    .replace('</style>', lang === 'zh' ? 'h1, .kicker { letter-spacing: 0 !important; } h1 { line-height: 1.25; }</style>' : '</style>')
+}
 
 const icon = `<!doctype html><meta charset="utf-8">
 <style>
@@ -84,17 +116,26 @@ const shot = async (html, out, size) => {
   console.log('wrote', out)
 }
 
-await shot(card, new URL('../public/og.png', import.meta.url).pathname, '1200,630')
+/* The site's own card: `og.png` in English, `og-ru.png` and `og-zh.png` beside
+   it (Page.astro picks the page's language's). */
+for (const lang of LANGS) {
+  await shot(card(lang), new URL(`../public/og${lang === 'en' ? '' : `-${lang}`}.png`, import.meta.url).pathname, '1200,630')
+}
 
 /*
   A guide's card is the same card with the page's own kicker and headline, so a
   link to /cast-to-tv says what is behind it rather than repeating the home
   page. Read straight out of the frontmatter; only two plain fields are needed,
   and a YAML parser is not worth a dependency for them. `public/og/<id>.png`
-  is what Article.astro looks for, with `/` in the id turned into `-`.
+  is what Article.astro looks for, with `/` in the id turned into `-` — a
+  translation's id starts with its language (`ru/cast-to-tv` →
+  `ru-cast-to-tv.png`), and so does its card's words.
 */
-const escape = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;')
-const field = (text, name) => text.match(new RegExp(`^${name}: (.+)$`, 'm'))?.[1].trim()
+/* A value may be quoted, as YAML needs it to be when it holds ": ". */
+const field = (text, name) => {
+  const raw = text.match(new RegExp(`^${name}: (.+)$`, 'm'))?.[1].trim()
+  return raw && /^(["']).*\1$/.test(raw) ? raw.slice(1, -1).replace(/\\"/g, '"') : raw
+}
 const pagesDir = new URL('../src/content/pages/', import.meta.url).pathname
 const ogDir = new URL('../public/og/', import.meta.url).pathname
 await mkdir(ogDir, { recursive: true })
@@ -104,7 +145,8 @@ for (const file of await readdir(pagesDir, { recursive: true })) {
   const heading = field(text, 'heading')
   const eyebrow = field(text, 'eyebrow')
   if (!heading || !eyebrow) throw new Error(`${file}: no heading or eyebrow in the frontmatter`)
-  const page = card
+  const first = file.split('/')[0]
+  const page = card(LANGS.includes(first) ? first : 'en')
     .replace(/<h1>[\s\S]*?<\/h1>/, `<p class="kicker">${escape(eyebrow)}</p><h1>${escape(heading)}</h1>`)
     .replace('</style>', '.kicker { position: relative; margin: 44px 0 0; font-size: 20px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: #818cf8; } .kicker + h1 { margin-top: 14px; }</style>')
   await shot(page, join(ogDir, `${file.replace(/\.mdx$/, '').replaceAll('/', '-')}.png`), '1200,630')

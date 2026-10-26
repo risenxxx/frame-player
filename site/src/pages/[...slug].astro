@@ -1,15 +1,18 @@
 ---
 /*
   Every page of the `pages` collection, at the address its file names:
-  `src/content/pages/compare/iina.mdx` is `/compare/iina`. The home page, the
-  404 and the sitemap are files of their own and win over this route.
+  `src/content/pages/compare/iina.mdx` is `/compare/iina`, and its Russian
+  translation `ru/compare/iina.mdx` is `/ru/compare/iina` — a translation of a
+  language this build does not carry is left out (src/i18n/pages.ts). The home
+  page, the 404 and the sitemap are files of their own and win over this route.
 */
-import { getCollection, render } from 'astro:content'
+import { render } from 'astro:content'
 import Article from '../layouts/Article.astro'
 import Table from '../components/prose/Table.astro'
+import { allPages } from '../i18n/pages.ts'
 
 export async function getStaticPaths() {
-  const pages = await getCollection('pages')
+  const pages = await allPages()
   return pages.map((entry) => ({ params: { slug: entry.id }, props: { entry } }))
 }
 

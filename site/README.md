@@ -38,10 +38,117 @@ The hero's "870+ installs" is live: the player reports its first launch once
 counter worker in `installs/` (a Durable Object, reached only through the
 `INSTALLS` service binding), and `worker/index.ts` writes the current number
 into the home page's `data-installs` element, read at most every ten minutes
-per isolate. The built page carries the starting number, `INSTALLS_BASE` in
+per isolate. The element's value is the label in the page's language with `{n}`
+where the number goes, so the worker writes the number into `/ru` and `/zh` too
+without knowing a word of either. The built page carries the starting number, `INSTALLS_BASE` in
 `src/installs.ts`, so a counter that cannot be reached shows that rather than
 nothing. `site.yml` deploys the counter before the site; locally both run in
 one session with `wrangler dev -c wrangler.jsonc -c installs/wrangler.jsonc`.
+
+## Languages
+
+The site is written in English, Russian and Simplified Chinese. English is at
+the root and every other language is the same address under its prefix —
+`/ru`, `/ru/updates`, `/zh/torrent-streaming` — with the slug left in English,
+so the alternates of a page are arithmetic rather than a table
+(`src/i18n/locales.ts`).
+
+```bash
+SITE_LOCALES=en,ru,zh bun run dev     # every language, the unwritten ones in English
+SITE_LOCALES=en,ru,zh bun run build
+```
+
+A production build writes the languages in `PUBLISHED` (`src/i18n/locales.ts`)
+and nothing else; `SITE_LOCALES` is how a language is worked on before it is
+out. A published language must be complete — the build stops and lists what a
+dictionary lacks, a list of the wrong length or a string whose `{placeholders}`
+differ from the English — and an unpublished one borrows English string by
+string, with one line in the build log saying how much. A build with one
+language prints nothing of the rest: no switch, no hint, no hreflang.
+
+Every word the templates print is in `src/i18n/en.ts`, which defines the shape;
+`ru.ts` and `zh.ts` are typed against it. A template reads its page's language
+from the address — `const { lang, s, href } = useLocale(Astro)` — and prints a
+string through `<T s={…} />`, which renders the little markup a string may
+carry (`**bold**`, `*italic*`, `` `mono` ``, `{sep}` and `{placeholders}`, see
+the head of en.ts). `href` is how a link stays in the reader's language: an
+English address becomes this language's one when the page exists here, and
+stays English when it does not. The strings inside the mocks are the
+application's own interface, and say what the player says in that language
+(`src/lib/i18n.svelte.ts` at the root of the repository).
+
+What a page in another language carries:
+
+- `<html lang>`, the canonical address of its own, an `hreflang` link for every
+  language it exists in plus `x-default` (English), `og:locale` and its
+  alternates; the sitemap names the same set per address (`xhtml:link`).
+- The switch in the header and the footer (`Langs.astro`): the same page in
+  each language, or that language's home page where the page is not written.
+- The hint (`LangHint.astro`, `scripts/lang.ts`): one line at the foot of the
+  screen, in the reader's language, when the browser asks for a language the
+  page also exists in. Nothing redirects by `Accept-Language` — that would send
+  a crawler, which asks in English, away from every other language, and leave a
+  reader who wanted this page no way to keep it. Following the switch or
+  closing the hint is a choice (`fp-lang`), and the hint is not shown again.
+- Its own 404: Cloudflare answers a missing address with the nearest
+  `404.html` up the tree, so `/ru/anything` is answered by `/ru/404`.
+
+Each language downloads only its own faces. Every `@font-face` carries a
+`unicode-range`, and a browser fetches a face only for characters it has to
+draw — so Onest's and JetBrains Mono's Cyrillic, and the Cyrillic cut of the
+mocks' Rubik (`rubik-player-cyrillic.woff2`, ~10 KB), reach the Russian pages
+and nothing else. Chinese ships no font at all: its Han characters come from
+the system (PingFang SC, Microsoft YaHei, Noto Sans CJK — the stack is
+`:root:lang(zh)` in `base.css`), with Chinese quotes and the ellipsis taken
+from the same face through `local()`, as the application does. The preload in
+`Page.astro` follows the language too. A new string in a mock is checked
+against the ranges in `player.css`; a character outside them falls back to
+Onest rather than to a missing glyph.
+
+Chinese headings break only after their punctuation (`word-break: keep-all`),
+so a heading is written in phrases short enough to fit; they lose the Latin
+headings' negative tracking and get a looser line height. The breakpoints that
+depend on the length of words — the header's links, the facts lines — were
+measured with all three languages in place, and a new language is measured
+again with its own.
+
+A guide in another language is a file of its own: the English page's path
+under the language's folder — `src/content/pages/ru/compare/vlc.mdx` is
+`/ru/compare/vlc` — with one import level more and one field more,
+`translated`, the English page's `updated` date it was made from. Every list of
+pages (the footer, "Read next", the sitemap, llms.txt, the structured data)
+comes from `src/i18n/pages.ts`, which gives a reader the page in their language
+where it is written and the English one where it is not, and the switch, the
+hreflang links and `href()` learn of a translation by its file existing. The
+build checks every translation (`check` in pages.ts):
+
+- it has an English page, and says which text of it it is (`translated`);
+- its links stay in its language — a link to a page that exists in this
+  language must be that page's address (`/ru/cast-to-tv`, `/ru` for the home
+  page), and a link under the prefix must lead to a page that exists;
+- when the English page is revised after the date in `translated`, the build
+  lists the translation as behind. It still goes out — a page a few sentences
+  behind is better than none — but nobody has to find that out by reading.
+
+So revising an English guide is: change it, bump its `updated`, and then
+either bring each translation level and set its `translated` to the new date,
+or leave it listed as behind until someone does.
+
+The mocks are pictures of the player, so their labels are the player's: the
+strings under `mock` in the dictionaries are held to the application's own
+(`src/lib/i18n.svelte.ts`) in every language by `src/i18n/app.ts`, which fails
+the build on a difference. A new label in a mock that the player also shows
+gets a line in its `MOCK_STRINGS`; the Site workflow runs on a change to the
+application's dictionary for that reason.
+
+The link card is per language too: `bun run og` draws `og.png`, `og-ru.png`,
+`og-zh.png` and a card per guide in each (`og/ru-cast-to-tv.png`), with the
+card's few words in a table at the top of `tools/og.mjs`.
+
+`/updates` exists in every language, but the release notes are written once,
+in English, by the release: the page around them is translated and the notes
+are marked `lang="en"`. Its Markdown twin and its feed stay English only.
+`/llms.txt` has a twin per language (`/ru/llms.txt`), listing the guides in it.
 
 ## Guide pages
 
@@ -137,9 +244,11 @@ Addresses have no trailing slash and no extension: the build writes
 |---|---|
 | `src/styles/` | The stylesheet, split by subject and imported in cascade order by the layout: tokens → base → chrome → player → mocks → sections → prose → narrow → motion. Order is load-bearing; `narrow.css` overrides what comes before it |
 | `src/content/pages/` | The guide pages, one MDX file each — see above |
-| `src/pages/404.astro` | Every missing address: the path the reader asked for, drawn as a file the player failed to open, over a test card. `noindex`, no canonical |
+| `src/i18n/` | The languages: which there are and which are out (`locales.ts`, pure — the worker imports it), the dictionaries (`en.ts` defines the keys), and `useLocale`/`rich`/`T.astro` — see "Languages" above |
+| `src/views/` | The home page, `/updates` and the 404, each drawn once for every language: `src/pages/index.astro` and `src/pages/[lang]/index.astro` are both one line that renders `Home.astro`, and so on |
+| `src/views/NotFound.astro` | Every missing address: the path the reader asked for, drawn as a file the player failed to open, over a test card. `noindex`, no canonical |
 | `src/components/` | One file per section; `mocks/` holds the interface mocks the sections and the guides share — the player window, the title bar every other window carries, and one per section, `prose/` what a guide can use in its text. Each mock is the application's own surface rebuilt in HTML — the control row, the cast panel and the start screen carry the measurements and the glyphs from `src/lib/components/` rather than a screenshot |
-| `src/scripts/` | `theme.ts` (system/light/dark, two switches, one state), `nav.ts` (the header's backdrop, driven by an observer on a 1 px marker rather than a scroll handler), `motion.ts` (`--p` from 0 to 1 per scene, once, when the section is properly in view) |
+| `src/scripts/` | `theme.ts` (system/light/dark, two switches, one state), `lang.ts` (the language choice and the hint), `nav.ts` (the header's backdrop, driven by an observer on a 1 px marker rather than a scroll handler), `motion.ts` (`--p` from 0 to 1 per scene, once, when the section is properly in view) |
 | `assets/img/` | One source per frame, committed and **never published**. They are the final frames, not stand-ins for screenshots — see below |
 | `public/gen/` | What `bun run images` makes from them: three formats, a handful of widths, hashed names. Generated locally and **committed** — CI never encodes |
 | `scripts/images.mjs` | The generator, and the width ladders it uses |

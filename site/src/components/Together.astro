@@ -1,23 +1,25 @@
 ---
 import RoomMock from './mocks/RoomMock.astro'
+import T from '../i18n/T.astro'
+import { useLocale } from '../i18n/index.ts'
+
+const { s, href } = useLocale(Astro)
 ---
 
   <section class="feat rev" id="together">
     <div class="wrap feat-in">
       <div class="feat-copy" data-reveal>
-        <h2>Two machines, one timeline</h2>
+        <h2><T s={s.together.h} /></h2>
         <p class="lede">
-          Share a six-character code and everyone in the room stays on the same position, pauses and episode. Seek on one and the other lands on the same frame, even on a slow connection.
+          <T s={s.together.lede} />
         </p>
         <ul class="checks">
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Drift is corrected by speed, not by seeking</b> — ten seconds at 103% closes the gap without a jump.</span></li>
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>The room waits for whoever is buffering</b> and resumes by itself.</span></li>
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Torrents need no pasting:</b> everyone joins the same swarm. Only the timeline goes through the relay, never the video.</span></li>
+          {s.together.checks.map((check) => (
+            <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><T s={check} /></span></li>
+          ))}
         </ul>
-        <a class="more-link" href="/watch-together">How watching together works</a>
+        <a class="more-link" href={href('/watch-together')}><T s={s.together.more} /></a>
       </div>
       <div class="feat-mock" data-reveal style="--dl:1">
         <RoomMock />

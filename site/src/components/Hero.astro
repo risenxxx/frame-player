@@ -2,41 +2,40 @@
 import PlayerMock from './mocks/PlayerMock.astro'
 import { downloads } from '../release.ts'
 import { INSTALLS_BASE, installsLabel } from '../installs.ts'
+import T from '../i18n/T.astro'
+import { useLocale } from '../i18n/index.ts'
 
 const { version, windows, macos } = await downloads()
+const { lang, s } = useLocale(Astro)
 ---
 
   <section class="hero">
     <div class="hero-light" aria-hidden="true"></div>
     <div class="wrap hero-copy">
       <h1 class="enter">
-        <span>Files, links, magnets.</span>
-        <span>One player that gets them right.</span>
+        {s.hero.title.map((line) => <span><T s={line} /></span>)}
       </h1>
       <p class="lede enter" style="--dl:1">
-        Frame Player is a free, open-source video player for Windows and macOS, built on mpv. It
-        streams torrents while they download, casts to Chromecast and DLNA TVs without re-encoding,
-        and lets friends watch together.
+        <T s={s.hero.lede} />
       </p>
       <div class="cta cta-c enter" style="--dl:2" id="download">
         <a class="btn btn-primary btn-lg dl-windows" href={windows}>
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-windows"/></svg>
-          Download for Windows
+          <T s={s.download.windows} />
         </a>
         <a class="btn btn-ghost btn-lg dl-macos" href={macos}>
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-apple"/></svg>
-          Download for macOS
+          <T s={s.download.macos} />
         </a>
       </div>
       <p class="fine facts-line mid enter" style="--dl:3">
-        <span class="nb">Version {version}</span><span class="sep"></span><span class="nb" data-installs>{installsLabel(INSTALLS_BASE)}</span><span class="sep"></span><span class="nb">Windows 10/11<span class="sep"></span>Apple Silicon</span><span class="sep"></span><span class="nb">free and open source, GPL-3.0</span>
+        <span class="nb"><T s={s.download.version} p={{ version }} /></span><span class="sep"></span><span class="nb" data-installs={s.download.installs}>{installsLabel(s.download.installs, INSTALLS_BASE, lang)}</span><span class="sep"></span><span class="nb"><T s={s.download.platforms} /></span><span class="sep"></span><span class="nb"><T s={s.download.license} /></span>
       </p>
     </div>
 
     <div class="wrap shot">
       <p class="vh">
-        Frame Player playing a 4K file from a torrent: a hover preview of a later scene above the
-        seekbar, chapter marks along it, and a skip-intro button over the video.
+        <T s={s.hero.shot} />
       </p>
       <PlayerMock kind="hero" />
     </div>

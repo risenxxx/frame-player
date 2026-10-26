@@ -1,0 +1,102 @@
+---
+title: Mac 版 PotPlayer？一个播放器，两个系统通用 · Frame Player
+description: PotPlayer 只能在 Windows 上运行。Frame Player 在 Windows 和 macOS 上都能用，基于 mpv，免费开源。从 PotPlayer 过来，哪些能延续，哪些不能。
+heading: 在找 Mac 版的 PotPlayer？
+lede: PotPlayer 只有 Windows 版，没有 Mac 版。Frame Player 在两个系统上都能运行，功能完全相同，所以 Windows 电脑和 Mac 可以用同一个播放器。下面说明从 PotPlayer 过来哪些习惯可以延续，Frame Player 多了什么，以及你会失去什么。
+eyebrow: 对比
+short: Mac 版 PotPlayer
+updated: 2026-10-26
+translated: 2026-10-26
+order: 42
+related:
+  - compare/iina
+  - compare/vlc
+  - compare/infuse
+  - upscaling
+  - guides/step-back-one-frame
+faq:
+  - q: 有 Mac 版的 PotPlayer 吗？
+    a: 没有。PotPlayer 官网只提供 Windows 安装包：32 位、64 位，以及从 2026 年 8 月起的 ARM64 版，适用于 Windows 7 到 11。没有 macOS、Linux 或移动版，在 Mac 上运行它就得用 Windows 虚拟机。
+  - q: Frame Player 和 PotPlayer 一样免费吗？
+    a: 是的，而且它还是开源的，采用 GPL-3.0，代码公开。PotPlayer 可以免费使用，但源代码没有公开。Frame Player 没有账号、没有订阅，也没有广告；它只报告一件事，而且只报告一次：它被安装了。
+  - q: Frame Player 能用 madVR 吗？
+    a: 不能。madVR 是 Windows 上的 DirectShow 渲染器，而 Frame Player 的画面在两个系统上都来自 mpv 自己的渲染器 libplacebo。要放大低分辨率视频，它有自己的神经网络超分辨率，在 Mac 和 Windows 上都能运行。
+  - q: Frame Player 能逐帧播放吗？也能向后吗？
+    a: 能。句点键向前一帧，逗号键向后一帧。对任何播放器来说，向后都是较难的方向，因为视频是以一组组只能向前解码的帧存储的；在向后逐帧本来会很慢的文件上，Frame Player 会切换到反向解码。
+  - q: Frame Player 会读取我的 PotPlayer 设置或播放列表吗？
+    a: 不会。设置、快捷键和书签都不会迁移过来。Frame Player 的快捷键可以重新绑定，J、K、L 的作用和大多数播放器一样，而且打开一集后，文件夹中的其余几集会自动加入播放队列。
+  - q: Frame Player 能在 Windows on ARM 或 Intel Mac 上运行吗？
+    a: 目前不能。它支持搭载 Intel 和 AMD 处理器的 Windows 10 和 11，以及 Apple Silicon Mac。在 Windows ARM 笔记本上，PotPlayer 有对应版本；在 Intel Mac 上，请使用 IINA 或 VLC。
+---
+
+import Mock from '../../../../components/prose/Mock.astro'
+import Note from '../../../../components/prose/Note.astro'
+
+PotPlayer 在 Windows 上有一批忠实用户，这份口碑是实打实挣来的：启动快，不装解码包也几乎什么都能播，凡是有人想改的地方都有对应的设置。麻烦从你换了 Mac，或者上班要用 Mac 开始，因为 PotPlayer 从来没有做过 Mac 版。常见的建议是两个系统各用一个播放器，或者用一个只有你习惯功能一半的播放器。[Frame Player](/zh) 的目标是在两个系统上都是同一个播放器：Windows 和 macOS 上功能相同、快捷键相同、设置也相同。
+
+<Mock kind="preview">
+  悬停在进度条上，会显示你将跳到的那一帧及其所属章节。
+</Mock>
+
+## 一览
+
+| 对比项 | [Frame Player](/zh) | PotPlayer |
+|---|---|---|
+| 支持平台 | Windows 10 和 11，Apple Silicon 上的 macOS | Windows 7 到 11，含 ARM64 |
+| 引擎 | libmpv，使用 FFmpeg 的解码器和 libplacebo 的渲染器 | 自有引擎，内置解码器；可通过 OpenCodec 扩展 |
+| 视频渲染器 | mpv 的渲染器，两个系统相同 | 内置 Direct3D 9 和 11、madVR、MPC Video Renderer |
+| 超分辨率 | 神经网络着色器，任何显卡都能用 | D3D11 渲染器中的 GPU Super Resolution、NVIDIA RTX Video、madVR 的缩放算法 |
+| 逐帧 | 向前和向后 | 支持 |
+| A-B 循环 | 支持 | 支持，可设置片段列表和循环次数 |
+| 字幕搜索 | 内置，OpenSubtitles，精确匹配你的版本 | 内置，支持在线翻译 |
+| 语音生成字幕 | — | Whisper，包括实时生成 |
+| 投屏到电视 | Chromecast、DLNA，Mac 上还有 AirPlay | 未内置 |
+| 种子 | 内置，边下边播 | 未内置 |
+| 一起看 | 内置 | 未内置 |
+| 3D 和 360° 视频 | — | 支持 |
+| 录制与采集 | 保存或复制当前帧 | 视频、流、屏幕和游戏录制 |
+| 许可证 | GPL-3.0，开源 | 免费软件，源代码未公开 |
+
+<p class="table-note">对照 PotPlayer 官网及其更新记录核对，截至 2026 年 10 月 21 日的版本。</p>
+
+## 相同之处
+
+**丢什么都能播**。两个播放器都自带解码器，所以 MKV、HEVC、AV1、10-bit 和 HDR 文件无需另装任何东西就能播放，显卡支持时还能硬件解码。
+
+**日常工具**。倍速播放、A-B 循环、逐帧、音频和字幕延迟、选择输出设备、超过 100% 的音量、保存当前帧：PotPlayer 用户每天会用到的这些功能这里都有，而且每个都对应一个可以重新绑定的快捷键。
+
+**免费**。两者都不花钱，也都不需要账号。
+
+## Frame Player 更进一步的地方
+
+**它有 Mac 版**。这正是本页的主题，但值得说清楚：同一个播放器、同一套快捷键，在 Windows 电脑和 Apple Silicon Mac 上都一样。在一台电脑上看到一半的文件，换到另一台上你也知道怎么操作。
+
+**不用先配置一番的界面**。PotPlayer 的强项是一个什么都能设置的选项窗口，代价是要先找到你需要的那一项。Frame Player 把常用的功能放在视频上和右键菜单里，其余的放在一个设置面板里。在底层，它依然读取 mpv.conf，所以界面上没有的选项可以手动写进去。
+
+**向后逐帧，而且很快**。任何播放器都能向前逐帧；向后一帧却意味着要把一整组帧解码一遍，才能显示前一帧。Frame Player 会测量文件，在向后逐帧会很慢的地方改为反向解码，所以按住按键就能在一个场景中一帧帧往回走，而不是每一帧都卡一下。[原理](/zh/guides/step-back-one-frame)。
+
+**画面裁剪和放大，无需设置渲染器**。自动裁剪会测量整个文件中的帧，去掉压制在视频里的黑边，每一集单独测量（[原理](/zh/guides/remove-black-bars)）。超分辨率使用专为真人影像或动画制作的神经网络着色器，窗口太小、放大不会带来任何区别时，面板会告诉你（[原理](/zh/upscaling)）。两者在 Mac 上效果相同，而 Mac 上没有 madVR。
+
+<Mock kind="picture">
+  画面面板：亮度和对比度应用于整个播放列表，然后是自动裁剪，窗口随之变成影片本身的形状。
+</Mock>
+
+**与你的版本匹配的字幕**。搜索首先按文件自身的指纹进行，找到的是为这份拷贝专门制作的字幕；为其他帧率制作的字幕会在下载前标出，这种字幕正是那种[看得越久偏差越大](/zh/guides/subtitles-out-of-sync)的。
+
+**种子、投屏和一起看**。磁力链接可以边下边播（[原理](/zh/torrent-streaming)）；电影无需重新编码就能投屏到 Chromecast 或 DLNA 电视，从 Mac 还能投到 AirPlay 电视（[原理](/zh/cast-to-tv)）；一个六位代码就能让身在别处的朋友停在同一帧上（[原理](/zh/watch-together)）。这三项 PotPlayer 都没有内置。
+
+## PotPlayer 更合适的情况
+
+<Note>
+  **在 Windows ARM 笔记本上**，PotPlayer 有原生版本，Frame Player 没有。
+</Note>
+
+- **配置深度**。如果你想按编码选择解码器、串联视频滤镜，或者细调渲染器，PotPlayer 开放的这类选项远比 Frame Player 多，Frame Player 也永远不会提供那么多。
+- **madVR 和 MPC Video Renderer**。有些用户认定了 madVR 的缩放和色调映射，别的都不要；PotPlayer 能用它，Frame Player 不能。
+- **语音生成字幕**。PotPlayer 能用 Whisper 根据音频生成字幕，甚至在直播流播放时也行，还能在线翻译字幕。Frame Player 能找字幕，但不会生成或翻译字幕。
+- **不只是文件**。面向 3D 电视和 3D 眼镜的 3D 输出、360° 视频、电视卡和采集卡，以及录制视频、流、屏幕或游戏。Frame Player 播放文件和链接，以上这些都不做。
+- **旧版 Windows**。PotPlayer 仍能安装在 Windows 7 和 8.1 上；Frame Player 需要 Windows 10 或 11。
+
+## 其他 Mac 播放器
+
+如果你只需要在 Mac 上用播放器，也有不跨平台的好选择。**IINA** 是原生的 Mac 前端，和 Frame Player 用的是同一个 mpv 引擎，在 Intel Mac 上就用它（[对比](/zh/compare/iina)）。**VLC** 到处都能运行，几乎什么都能播（[对比](/zh/compare/vlc)）。**Infuse** 是一个围绕海报片库打造的精致播放器，有付费的 Pro 版（[对比](/zh/compare/infuse)）。IINA 和 Infuse 都止步于 Mac，所以都不能成为旁边那台 Windows 电脑上的播放器，而 Frame Player 正好补上了这个空缺。

@@ -1,23 +1,25 @@
 ---
 import CastMock from './mocks/CastMock.astro'
+import T from '../i18n/T.astro'
+import { useLocale } from '../i18n/index.ts'
+
+const { s, href } = useLocale(Astro)
 ---
 
   <section class="feat sc-cast" id="tv">
     <div class="wrap feat-in">
       <div class="feat-copy" data-reveal>
-        <h2>Send it to the set, without repacking it first</h2>
+        <h2><T s={s.tv.h} /></h2>
         <p class="lede">
-          Cast to Chromecast, a DLNA TV or — from a Mac — an AirPlay TV from one button. Each TV in the list says what will happen to <i>this</i> file; when the set can play the release as it is — often 4K HEVC HDR with Dolby audio — nothing is re-encoded.
+          <T s={s.tv.lede} />
         </p>
         <ul class="checks">
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>Otherwise the file is remuxed</b>, with the video copied rather than re-encoded, so it is ready in seconds.</span></li>
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>A torrent can be cast while it downloads.</b></span></li>
-          <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
-            <span><b>The window becomes a remote:</b> keys, chapters and the queue control the TV, and disconnecting resumes on the computer.</span></li>
+          {s.tv.checks.map((check) => (
+            <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>
+            <span><T s={check} /></span></li>
+          ))}
         </ul>
-        <a class="more-link" href="/cast-to-tv">Casting, in detail</a>
+        <a class="more-link" href={href('/cast-to-tv')}><T s={s.tv.more} /></a>
       </div>
       <div class="feat-mock" data-reveal style="--dl:1">
         <CastMock />
