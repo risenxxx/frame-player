@@ -121,7 +121,7 @@ unsafe impl Send for ThumbSession {}
 
 impl ThumbSession {
     fn open(path: &str) -> Result<Self, String> {
-        let ictx = ffmpeg::format::input(&path).map_err(|e| format!("open: {e}"))?;
+        let ictx = ffmpeg::format::input(path).map_err(|e| format!("open: {e}"))?;
         let stream = ictx
             .streams()
             .best(media::Type::Video)
@@ -145,7 +145,6 @@ impl ThumbSession {
         dec_ctx.set_threading(ffmpeg::codec::threading::Config {
             kind: ffmpeg::codec::threading::Type::Frame,
             count: DECODE_THREADS,
-            ..Default::default()
         });
         let decoder = dec_ctx
             .decoder()
@@ -513,8 +512,8 @@ fn set_sdr_colorspace(ctx: &mut scaling::Context, frame: &Video) {
     };
     let full = i32::from(frame.color_range() == Range::JPEG);
     unsafe {
-        let coeff = ffmpeg::sys::sws_getCoefficients(src as i32);
-        let dst = ffmpeg::sys::sws_getCoefficients(ffmpeg::sys::SWS_CS_ITU709 as i32);
+        let coeff = ffmpeg::sys::sws_getCoefficients(src);
+        let dst = ffmpeg::sys::sws_getCoefficients(ffmpeg::sys::SWS_CS_ITU709);
         ffmpeg::sys::sws_setColorspaceDetails(
             ctx.as_mut_ptr(),
             coeff,

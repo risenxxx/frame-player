@@ -211,6 +211,15 @@ dunce = "1"
 # in the tree via tauri-plugin-deep-link.
 windows-registry = "0.5"
 
+# CI runs `cargo clippy --all-targets -- -D warnings` on both platforms
+# (.github/workflows/rust.yml), so every lint here is either fixed or turned off
+# on purpose. These two are judgments about shape, not defects: the long
+# argument lists are Tauri commands, whose arguments are the frontend's named
+# parameters, and the complex types are each spelled once where they are used.
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
+
 # librqbit crates vendored with changes upstream has in no release — see
 # vendor/README.md for each one. The DHT survives Windows' routine UDP recv
 # errors, librqbit carries MSE and two accessors, and dualstack-sockets can bind

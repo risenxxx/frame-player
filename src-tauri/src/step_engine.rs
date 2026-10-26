@@ -47,7 +47,7 @@ unsafe impl Send for StepSession {}
 
 impl StepSession {
     fn open(path: &str) -> Result<Self, String> {
-        let ictx = ffmpeg::format::input(&path).map_err(|e| format!("open: {e}"))?;
+        let ictx = ffmpeg::format::input(path).map_err(|e| format!("open: {e}"))?;
         let stream = ictx
             .streams()
             .best(media::Type::Video)
@@ -204,16 +204,11 @@ impl StepSession {
         self.bytes = 0;
         self.cursor = 0;
         self.seek_keyframe_before(pos)?;
-        loop {
-            match self.decode_next()? {
-                Some(f) => {
-                    let fpts = f.pts;
-                    self.push_back_frame(f);
-                    if fpts >= pos + ENTER_AHEAD_SECS {
-                        break;
-                    }
-                }
-                None => break,
+        while let Some(f) = self.decode_next()? {
+            let fpts = f.pts;
+            self.push_back_frame(f);
+            if fpts >= pos + ENTER_AHEAD_SECS {
+                break;
             }
         }
         self.continuous_tail = true;
@@ -264,16 +259,11 @@ impl StepSession {
             let target = target.max(0.0);
             self.seek_keyframe_before(target)?;
             let mut collected: Vec<CachedFrame> = Vec::new();
-            loop {
-                match self.decode_next()? {
-                    Some(f) => {
-                        if f.pts >= front - PTS_EPS {
-                            break;
-                        }
-                        collected.push(f);
-                    }
-                    None => break,
+            while let Some(f) = self.decode_next()? {
+                if f.pts >= front - PTS_EPS {
+                    break;
                 }
+                collected.push(f);
             }
             self.continuous_tail = false;
             if !collected.is_empty() {
