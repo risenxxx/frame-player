@@ -59,6 +59,11 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_PROFILE_DEV_DEBUG: '0'
+  # Pinned, unlike the release's `stable`: every Rust release brings clippy
+  # lints of its own, and with `-D warnings` that turns a quiet Thursday into a
+  # red check on code nobody touched. Bumping this is a commit that fixes what
+  # the new lints find (`cargo +<version> clippy` locally shows it first).
+  RUST_TOOLCHAIN: '1.99.1'
 
 jobs:
   windows:
@@ -68,8 +73,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy
 
       - name: Rust cache
@@ -127,8 +133,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy
 
       - name: Rust cache

@@ -475,8 +475,7 @@ async fn ytdlp_install(app: tauri::AppHandle) -> Result<String, String> {
         bytes.extend_from_slice(&chunk);
         // Every whole percent, not every chunk: chunks arrive in the thousands
         // and each emit crosses into the webview.
-        if total > 0 {
-            let pct = bytes.len() as u64 * 100 / total;
+        if let Some(pct) = (bytes.len() as u64 * 100).checked_div(total) {
             if pct != last_emit {
                 last_emit = pct;
                 let _ = app.emit(YTDLP_PROGRESS_EVENT, pct);

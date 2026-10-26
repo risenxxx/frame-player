@@ -545,11 +545,11 @@ fn take_text(d: &mut Draft, name: &str, text: String) {
                 d.size = Some(n);
             }
         }
-        "pubdate" | "published" | "updated" | "date" => {
-            if d.published.is_none() || name == "published" || name == "pubdate" {
-                if let Some(t) = parse_date(&text) {
-                    d.published = Some(t);
-                }
+        "pubdate" | "published" | "updated" | "date"
+            if d.published.is_none() || name == "published" || name == "pubdate" =>
+        {
+            if let Some(t) = parse_date(&text) {
+                d.published = Some(t);
             }
         }
         _ => {}

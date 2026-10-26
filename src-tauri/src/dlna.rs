@@ -2429,6 +2429,9 @@ mod discovery_tests {
             )
             .unwrap();
             sock.set_reuse_address(true).unwrap();
+            // Unix only: there SO_REUSEADDR alone does not let a second socket
+            // bind a multicast port; on Windows it does, and the call does not exist.
+            #[cfg(unix)]
             sock.set_reuse_port(true).unwrap();
             sock.bind(&std::net::SocketAddrV4::new(std::net::Ipv4Addr::UNSPECIFIED, 1900).into())
                 .unwrap();

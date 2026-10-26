@@ -104,8 +104,8 @@ pub fn movie_hash(path: &Path) -> std::io::Result<u64> {
 }
 
 fn fold(mut hash: u64, buf: &[u8]) -> u64 {
-    for word in buf.chunks_exact(8) {
-        hash = hash.wrapping_add(u64::from_le_bytes(word.try_into().unwrap()));
+    for word in buf.as_chunks::<8>().0 {
+        hash = hash.wrapping_add(u64::from_le_bytes(*word));
     }
     hash
 }
@@ -455,7 +455,7 @@ pub async fn subs_search(
         let body = get_json(&app, &key, &params).await?;
         let mut items = parse_hits(&body);
         if !items.is_empty() {
-            items.sort_by(|a, b| b.downloads.cmp(&a.downloads));
+            items.sort_by_key(|i| std::cmp::Reverse(i.downloads));
             let total = body.get("total_count").and_then(|v| v.as_i64()).unwrap_or(0);
             return Ok(SearchResult {
                 items,
@@ -497,7 +497,7 @@ pub async fn subs_search(
 
     // The API's own relevance order is not usable as-is: "interstellar" puts a
     // documentary *about* the film above subtitles for the film.
-    items.sort_by(|a, b| b.downloads.cmp(&a.downloads));
+    items.sort_by_key(|i| std::cmp::Reverse(i.downloads));
 
     Ok(SearchResult {
         // Derived from what came back, not from what was asked. A stray
@@ -1124,8 +1124,8 @@ mod tests {
                 &bytes[..HASH_CHUNK as usize],
                 &bytes[bytes.len() - HASH_CHUNK as usize..],
             ] {
-                for word in chunk.chunks_exact(8) {
-                    h = h.wrapping_add(u64::from_le_bytes(word.try_into().unwrap()));
+                for word in chunk.as_chunks::<8>().0 {
+                    h = h.wrapping_add(u64::from_le_bytes(*word));
                 }
             }
             h

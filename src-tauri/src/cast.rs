@@ -909,6 +909,7 @@ pub(crate) fn served_path(service: &Arc<CastService>) -> Option<PathBuf> {
 }
 
 /// Requests for the current file from anybody but this machine.
+#[cfg(target_os = "macos")]
 pub(crate) fn server_remote_hits(service: &Arc<CastService>) -> u64 {
     let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
     inner
@@ -922,6 +923,7 @@ pub(crate) fn server_remote_hits(service: &Arc<CastService>) -> u64 {
 /// whose playlists name their segments by bare file name. The directory
 /// server answers one path component and nothing with a leading dot, so the
 /// token reaches nothing outside it.
+#[cfg(target_os = "macos")]
 pub(crate) async fn serve_dir(
     service: &Arc<CastService>,
     device_ip: IpAddr,
@@ -947,6 +949,7 @@ pub(crate) async fn serve_dir(
 }
 
 /// The addresses that have sent a request to the LAN server for the current file.
+#[cfg(target_os = "macos")]
 pub(crate) fn server_peers(service: &Arc<CastService>) -> Vec<IpAddr> {
     let inner = service.inner.lock().unwrap_or_else(|p| p.into_inner());
     inner

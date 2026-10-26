@@ -1292,7 +1292,9 @@ mod tests {
             }
             let rgb = s.scaled_rgb().expect("scale");
             let luma: Vec<f64> = rgb
-                .chunks_exact(3)
+                .as_chunks::<3>()
+                .0
+                .iter()
                 .map(|p| 0.299 * p[0] as f64 + 0.587 * p[1] as f64 + 0.114 * p[2] as f64)
                 .collect();
             let mean = luma.iter().sum::<f64>() / luma.len() as f64;
@@ -1546,7 +1548,9 @@ fn rgb_stats(rgb: &[u8]) -> (f64, f64) {
         return (0.0, 0.0);
     }
     let luma: Vec<f64> = rgb
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|p| 0.299 * p[0] as f64 + 0.587 * p[1] as f64 + 0.114 * p[2] as f64)
         .collect();
     let mean = luma.iter().sum::<f64>() / luma.len() as f64;
