@@ -6,11 +6,10 @@
 # of mistake the compiler does not (see the notes at the top of each script), and
 # a gate nobody runs is a comment.
 #
-# The Rust half is deliberately absent: it needs libmpv and the FFmpeg SDK, which
-# `release.yml` either downloads (Windows) or builds from source (macOS, ~an hour
-# cold) — that is a separate job with its own caches, not something to bolt on
-# here. `cargo check` and `clippy` are therefore NOT covered by this workflow;
-# run them locally per the note in CLAUDE.md.
+# The Rust half is a workflow of its own, `rust.yml`: it needs libmpv and the
+# FFmpeg SDK, its own caches and two platforms, and it runs only when something
+# under `src-tauri/` changed — none of which belongs in a job that runs on every
+# push and finishes in a minute.
 #
 # The watch-together relay IS covered, because it costs nothing to: it is Go with
 # one dependency and no native libraries at all. That matters for more than the
