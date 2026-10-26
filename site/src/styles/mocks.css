@@ -941,6 +941,101 @@
   opacity: calc(var(--in) * (1 - var(--out)));
 }
 
+/* ── mock: upscaling — the three modes in turn ────────────────────────────── */
+
+/*
+  The picture panel's upscaling block over a 480p episode (UpscaleMock). The
+  panel is the colour scene's surface (`.pic-menu`, `.pm-pills`) holding the
+  application's other block. One linear `--p` over 7600 ms, each beat with its
+  own curve — `-t` is a beat's linear time, the bare name its curve:
+
+    pointer fades in        0–150 ms    ease-out
+    walks to the click      0–700       smoothstep; the menu opens there
+    menu opens              750–1000    ease-out
+    walks to Video          1100–1650   smoothstep, pressed at 1750
+    the picture sharpens    1800–2200   smoothstep; the status line comes up
+    walks to Anime          2600–3000   pressed at 3100, picture 3150–3550
+    walks to Strong         3950–4350   pressed at 4450, picture 4500–4900
+    menu closes             5900–6200   smoothstep; the pointer with it
+
+  Each mode leaves the frame a step crisper than the last — a blur that thins
+  out and a little contrast and colour — which is the direction of each one,
+  drawn rather than captured. The pointer is the hand over the pills, from
+  arriving on Video until the menu closes. Stops: scripts/pointer.ts.
+*/
+.player.up {
+  container-type: inline-size;
+  --ui: 1;
+  --peek: 0;
+  --in-t: clamp(0, var(--p, 1) / 0.0197, 1);
+  --in: calc(1 - (1 - var(--in-t)) * (1 - var(--in-t)) * (1 - var(--in-t)));
+  --m1-t: clamp(0, var(--p, 1) / 0.0921, 1);
+  --m1: calc(var(--m1-t) * var(--m1-t) * (3 - 2 * var(--m1-t)));
+  --menu-in-t: clamp(0, (var(--p, 1) - 0.0987) / 0.0329, 1);
+  --menu-in: calc(1 - (1 - var(--menu-in-t)) * (1 - var(--menu-in-t)) * (1 - var(--menu-in-t)));
+  --m2-t: clamp(0, (var(--p, 1) - 0.1447) / 0.0724, 1);
+  --m2: calc(var(--m2-t) * var(--m2-t) * (3 - 2 * var(--m2-t)));
+  --v-t: clamp(0, (var(--p, 1) - 0.2303) / 0.0158, 1);
+  --v: calc(1 - (1 - var(--v-t)) * (1 - var(--v-t)) * (1 - var(--v-t)));
+  --vp-t: clamp(0, (var(--p, 1) - 0.2368) / 0.0526, 1);
+  --vp: calc(var(--vp-t) * var(--vp-t) * (3 - 2 * var(--vp-t)));
+  --m3-t: clamp(0, (var(--p, 1) - 0.3421) / 0.0526, 1);
+  --m3: calc(var(--m3-t) * var(--m3-t) * (3 - 2 * var(--m3-t)));
+  --a-t: clamp(0, (var(--p, 1) - 0.4079) / 0.0158, 1);
+  --a: calc(1 - (1 - var(--a-t)) * (1 - var(--a-t)) * (1 - var(--a-t)));
+  --ap-t: clamp(0, (var(--p, 1) - 0.4145) / 0.0526, 1);
+  --ap: calc(var(--ap-t) * var(--ap-t) * (3 - 2 * var(--ap-t)));
+  --m4-t: clamp(0, (var(--p, 1) - 0.5197) / 0.0526, 1);
+  --m4: calc(var(--m4-t) * var(--m4-t) * (3 - 2 * var(--m4-t)));
+  --s-t: clamp(0, (var(--p, 1) - 0.5855) / 0.0158, 1);
+  --s: calc(1 - (1 - var(--s-t)) * (1 - var(--s-t)) * (1 - var(--s-t)));
+  --sp-t: clamp(0, (var(--p, 1) - 0.5921) / 0.0526, 1);
+  --sp: calc(var(--sp-t) * var(--sp-t) * (3 - 2 * var(--sp-t)));
+  --menu-out-t: clamp(0, (var(--p, 1) - 0.7763) / 0.0395, 1);
+  --menu-out: calc(var(--menu-out-t) * var(--menu-out-t) * (3 - 2 * var(--menu-out-t)));
+  --menu: calc(var(--menu-in) * (1 - var(--menu-out)));
+  --out-t: clamp(0, (var(--p, 1) - 0.7763) / 0.0526, 1);
+  --out: calc(var(--out-t) * var(--out-t) * (3 - 2 * var(--out-t)));
+  --hand: calc(clamp(0, (var(--p, 1) - 0.2171) * 1000, 1) - clamp(0, (var(--p, 1) - 0.7763) * 1000, 1));
+  --on-off: calc(1 - var(--v));
+  --on-video: calc(var(--v) - var(--a));
+  --on-anime: calc(var(--a) - var(--s));
+  --on-strong: var(--s);
+}
+
+/* Scaled a touch past the window, so the blur's soft rim falls outside it. */
+.up-pic {
+  transform: scale(1.03);
+  filter:
+    blur(calc(1.8px - 1.1px * var(--vp) - 0.35px * var(--ap) - 0.35px * var(--sp)))
+    contrast(calc(1 + 0.04 * var(--vp) + 0.03 * var(--ap) + 0.06 * var(--sp)))
+    saturate(calc(1 + 0.03 * var(--vp) + 0.03 * var(--ap) + 0.08 * var(--sp)));
+}
+
+.up-menu { top: 50px; }
+.up-pill { background: rgba(99, 102, 241, var(--w)); color: #fff; }
+/* Up only once a mode is on, as in the application. Through `.pic-menu`, whose
+   own children rule (`> :not(.pm-adjust)`) would otherwise outrank it. */
+.pic-menu .up-note { padding: 1px 10px 6px; color: #77777f; font-size: 11.5px; line-height: 1.4; opacity: var(--v); }
+
+.player.up .ptr {
+  left: calc(
+    62% * (1 - var(--m1))
+    + var(--x1, 0px) * (var(--m1) - var(--m2))
+    + var(--x2, 0px) * (var(--m2) - var(--m3))
+    + var(--x3, 0px) * (var(--m3) - var(--m4))
+    + var(--x4, 0px) * var(--m4)
+  );
+  top: calc(
+    58% * (1 - var(--m1))
+    + var(--y1, 0px) * (var(--m1) - var(--m2))
+    + var(--y2, 0px) * (var(--m2) - var(--m3))
+    + var(--y3, 0px) * (var(--m3) - var(--m4))
+    + var(--y4, 0px) * var(--m4)
+  );
+  opacity: calc(var(--in) * (1 - var(--out)));
+}
+
 /* ── mock: subtitles ──────────────────────────────────────────────────────── */
 
 /*

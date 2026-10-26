@@ -1,0 +1,68 @@
+---
+import Frame from '../Frame.astro'
+import TitleBar from './TitleBar.astro'
+---
+
+<!-- A 480p episode, and the picture panel's upscaling row on it.
+
+     The picture opens soft, as a 480p source enlarged by ordinary scaling is.
+     The pointer right-clicks, the panel comes up (ContextMenu.svelte, trimmed
+     to the upscaling block: the four modes, the status line, the scope), and
+     the pointer steps through Video, Anime and Strong; each makes the frame a
+     little crisper and the status line says the shader is running. The menu
+     closes on Strong — a 480p source is inside its 720p limit, so there is no
+     fallback note — and the scene ends on the upscaled picture.
+
+     The sharpening is drawn with CSS filters: it says which way each mode
+     goes, not what a network does to a frame, and the caption says so. -->
+<div class="player up" data-scene data-dur="7600" data-ease="linear" data-pointer aria-hidden="true">
+  <Frame name="highway-trails" slot="guide" class="scene up-pic" alt="Star trails over a desert road at night" />
+  <TitleBar over>Desert.Nights.S01E03.480p.mkv</TitleBar>
+  <div class="osc">
+    <div class="times mono"><span>08:41</span><span>42:10</span></div>
+    <div class="seekwrap">
+      <div class="seektrack">
+        <span class="buffered" style="width:100%;background:rgba(255,255,255,.18)"></span>
+        <span class="fill" style="width:21%"></span>
+        <span class="knob" style="left:21%"></span>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="cluster left">
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-volume"/></svg></span>
+        <span class="volume"><i></i><b></b></span>
+      </div>
+      <div class="cluster center">
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-prev"/></svg></span>
+        <span class="b play"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-pause"/></svg></span>
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-next"/></svg></span>
+      </div>
+      <div class="cluster right">
+        <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-audio"/></svg></span>
+        <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-subs"/></svg></span>
+        <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-cast"/></svg></span>
+        <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-full"/></svg></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pic-menu up-menu" data-stop="1" data-fx="0" data-fy="0">
+    <div class="pm-title">Upscaling</div>
+    <div class="pm-pills up-modes">
+      <span class="pm-pill up-pill" style="--w: var(--on-off)">Off</span>
+      <span class="pm-pill up-pill" style="--w: var(--on-video)" data-stop="2">Video</span>
+      <span class="pm-pill up-pill" style="--w: var(--on-anime)" data-stop="3">Anime</span>
+      <span class="pm-pill up-pill" style="--w: var(--on-strong)" data-stop="4">Strong</span>
+    </div>
+    <div class="up-note">Active: the picture is 2.2× its own size</div>
+    <div class="pm-pills">
+      <span class="pm-pill up-pill" style="--w: 1">This file</span>
+      <span class="pm-pill up-pill" style="--w: 0">Playlist</span>
+    </div>
+  </div>
+
+  <span class="ptr">
+    <svg class="walk-arrow" viewBox="0 0 11 18" aria-hidden="true"><use href="#i-cursor"/></svg>
+    <svg class="walk-hand" viewBox="0 0 15 19" aria-hidden="true"><use href="#i-hand"/></svg>
+  </span>
+</div>
