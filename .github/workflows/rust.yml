@@ -1,0 +1,157 @@
+# The Rust half: clippy and the unit tests, on both platforms the player ships for.
+#
+# `checks.yml` covers the frontend and the Go services and leaves this out,
+# because the crate needs libmpv and the FFmpeg SDK to compile at all. Both are
+# already fetched rather than built by `release.yml` — Windows from the upstream
+# SDKs behind an actions/cache, macOS from the set the `macOS libs` workflow
+# publishes — so the same two steps make the crate checkable here.
+#
+# Both platforms, not just the cheaper one: most of the `unsafe` in this crate is
+# AppKit and AVFoundation behind `cfg(target_os = "macos")`, and a Windows-only
+# job would not even compile it. The Windows half (`cfg(windows)` in
+# window_shape, net_route, update, webview2) cannot be checked from a Mac at all
+# — reqwest's rustls pulls aws-lc-sys, whose C build wants the Windows SDK — so
+# this is the only place it is compiled before a release.
+#
+# Kept off the critical path in three ways:
+#   - `paths`: a push that touches no Rust does not start it, and that is most of
+#     them. Its own file and `fetch-libs.ps1` are listed because they change what
+#     the job does.
+#   - one job per platform, clippy then the tests in the same job. Build scripts
+#     and proc macros are shared between `check` and `build` artifacts, so the
+#     expensive host-side work (bindgen over FFmpeg, aws-lc's C build) happens
+#     once — and two caches rather than four matters, because the repository's
+#     10 GB cache is shared with `release.yml`, whose caches are the ones a
+#     release waits on.
+#   - no debug info (`CARGO_PROFILE_DEV_DEBUG=0`, which the test profile
+#     inherits): nothing here is ever run under a debugger, and it is most of the
+#     size of the target directory and of the cache.
+#
+# The Rust cache is written only from main, so pull requests read it without
+# replacing it with their own variant.
+name: Rust
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/**'
+      - '.cargo/**'
+      - 'scripts/fetch-libs.ps1'
+      - 'scripts/fetch-macos-libs.sh'
+      - 'scripts/macos-libs-key.sh'
+      - '.github/workflows/rust.yml'
+  pull_request:
+    paths:
+      - 'src-tauri/**'
+      - '.cargo/**'
+      - 'scripts/fetch-libs.ps1'
+      - 'scripts/fetch-macos-libs.sh'
+      - 'scripts/macos-libs-key.sh'
+      - '.github/workflows/rust.yml'
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run's answer worthless.
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: '0'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: check-windows
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The same key as `release.yml`, so the two workflows share one copy and
+      # the download runs only when the script changes. `.cargo/config.toml`
+      # points FFMPEG_DIR and LIBCLANG_PATH at what this puts on disk.
+      - name: Cache native SDKs
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/lib
+            src-tauri/ffmpeg
+            src-tauri/tools
+          key: native-sdks-${{ runner.os }}-${{ hashFiles('scripts/fetch-libs.ps1') }}
+
+      # Authenticated for the reason given in `release.yml`: the anonymous API
+      # allowance is per IP, and a hosted runner shares its address.
+      - name: Fetch native SDKs
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      # The test binary imports the FFmpeg DLLs. build.rs copies them next to
+      # target/debug/*.exe, but a test binary lives one level down in `deps/`,
+      # where the loader does not look — so they go on PATH instead.
+      - name: Test
+        working-directory: src-tauri
+        shell: bash
+        run: |
+          export PATH="$PWD/ffmpeg/bin:$PATH"
+          cargo test --locked
+
+  macos:
+    # The release builds on macos-26 for the SDK it links against; nothing here
+    # ships, but the same runner keeps the two from disagreeing about a lint
+    # that depends on the SDK's headers.
+    runs-on: macos-26
+    env:
+      FFMPEG_DIR: ${{ github.workspace }}/src-tauri/ffmpeg-macos
+      LIBCLANG_PATH: /Library/Developer/CommandLineTools/usr/lib
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: check-macos
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Twenty-odd megabytes from the public bucket, verified by the script.
+      # Unlike the release this does not fall back to building the set from
+      # source: a set that is not published yet means the `macOS libs` workflow
+      # has not been run after a pinned version changed, and the release will
+      # say the same thing — twenty minutes of compiling here would only hide it.
+      - name: Fetch native libs
+        run: scripts/fetch-macos-libs.sh
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      # A test binary in target/debug/deps cannot resolve `@executable_path/lib`
+      # (build.rs copies the dylibs beside the app binary, one level up).
+      - name: Test
+        working-directory: src-tauri
+        run: DYLD_FALLBACK_LIBRARY_PATH="$PWD/lib" cargo test --locked
