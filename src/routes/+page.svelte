@@ -13,6 +13,10 @@
   import Tooltip from '$lib/components/Tooltip.svelte';
   import Osd from '$lib/components/Osd.svelte';
   import Curtain from '$lib/components/Curtain.svelte';
+  import Dialogs from '$lib/components/Dialogs.svelte';
+  import MiniButton from '$lib/components/MiniButton.svelte';
+  import Osc from '$lib/components/Osc.svelte';
+  import ResizeEdges from '$lib/components/ResizeEdges.svelte';
   import LoadingOverlay from '$lib/components/LoadingOverlay.svelte';
   import CastScreen from '$lib/components/CastScreen.svelte';
   import SkipButton from '$lib/components/SkipButton.svelte';
@@ -47,12 +51,11 @@
     minimizeWindow,
     onTitlebarMouseDown,
     pokeUi,
-    startResize,
     toggleFullscreen,
   } from '$lib/chrome.svelte';
   import { faded } from '$lib/faded.svelte';
   import { initStallWatch } from '$lib/stall.svelte';
-  import { initSubShift, subShift } from '$lib/sub-shift.svelte';
+  import { initSubShift } from '$lib/sub-shift.svelte';
   import {
     cancelAdvance,
     dismissEnd,
@@ -61,41 +64,22 @@
     takeSkip,
   } from '$lib/endscreen.svelte';
   import {
-    applyEncryption,
-    applyProxy,
-    applyRoute,
-    clearTorrentCache,
     deleteTorrent,
     deleteWatchedFiles,
-    dropLink,
     openFileDialog,
-    fixYtdlp,
     openLinkDialog,
     openRecent,
     openRememberedTorrent,
-    openTorrent,
     checkFeedUpdate,
-    pickFeedItem,
     opening,
-    pickTorrentFile,
-    playTorrentFile,
-    submitLink,
-    submitUpdate,
-    togglePortForward,
-    toggleSeeding,
   } from '$lib/open.svelte';
   import {
     catalog,
     checkTorrentUpdate,
-    closeCatalog,
     openCatalog,
   } from '$lib/catalog.svelte';
   import {
-    addTrackFile,
     initTracks,
-    nudgeDelayHere,
-    resetDelayHere,
-    selectTrack,
   } from '$lib/tracks.svelte';
   import {
     clearCastClick,
@@ -109,33 +93,20 @@
     onWheel,
   } from '$lib/input.svelte';
   import {
-    closeSettings,
     initOverlays,
-    openSettingsAt,
     overlays,
-    toggleInfo,
-    toggleMenu,
   } from '$lib/overlays.svelte';
-  import {
-    resume,
-  } from '$lib/resume.svelte';
   import { boot, shutdown } from '$lib/boot';
-  import { diag, runDiagnosis, copyDiagnosis } from '$lib/cast-diagnosis.svelte';
-  import { initThumbAspect, seekbar } from '$lib/seekbar.svelte';
+  import { initThumbAspect } from '$lib/seekbar.svelte';
   import { tips } from '$lib/tooltip.svelte';
   import { initCastFollow } from '$lib/bridge.svelte';
   import {
-    backToStart,
     initVideoReady,
     startScreen,
   } from '$lib/start-screen.svelte';
   import { initWindowTitle, title } from '$lib/title.svelte';
   import { installUpdate, updater } from '$lib/updater.svelte';
-  import { subs } from '$lib/subs.svelte';
   import { t } from '$lib/i18n.svelte';
-  import {
-    withKey,
-  } from '$lib/keys.svelte';
   import { osd } from '$lib/osd.svelte';
   import {
     forgetRecent,
@@ -144,11 +115,7 @@
   import { initAudioOutput } from '$lib/audio-output.svelte';
   import { IS_MAC } from '$lib/platform';
   import {
-    cycleAbLoop,
-    jumpChapter,
     player,
-    setPicture,
-    cycleLoop,
   } from '$lib/player.svelte';
   import {
     curtain,
@@ -159,23 +126,15 @@
   import {
     initWindowShape,
     mini,
-    toggleMini,
   } from '$lib/window-prefs.svelte';
-  import {
-    removeFromQueue,
-  } from '$lib/playlist.svelte';
   import {
     initUpscaleWatch,
     upscale,
   } from '$lib/upscale.svelte';
   import {
     torrent,
-    torrentPositions,
     torrentResume,
-    watchedFiles,
     trackTorrentPlayback,
-    answerVpnAsk,
-    net,
   } from '$lib/torrent.svelte';
   import {
     cast,
@@ -283,14 +242,6 @@
     if (invite.code) overlays.room = true;
   });
 
-  const castStateLabel = $derived(
-    cast.state === 'connecting' ? t('cast.state_connecting')
-    : cast.state === 'preparing' ? t('cast.state_preparing')
-    : cast.state === 'loading' || cast.state === 'buffering' ? t('cast.state_loading')
-    : cast.state === 'paused' ? t('cast.state_paused')
-    : t('cast.state_playing'),
-  );
-
   // The seekbar and the taskbar follow the TV while casting — see bridge.svelte.ts.
   initCastFollow();
 </script>
@@ -397,7 +348,6 @@
        as the player dying for the length of the remux. -->
   {#if cast.remote}
     <CastScreen
-    stateLabel={castStateLabel}
     title={title.displayTitle}
     onclick={onCastScreenClick}
     ondblclick={() => { clearCastClick(); void toggleFullscreen(); }}
@@ -431,183 +381,9 @@
     onChipHover={(over) => (chrome.chipHover = over)}
   />
 
-  <!-- Windows only, and that is not a tidy-up: `drag_resize_window` is
-       **unimplemented on macOS** — tao returns `NotSupported` and Tauri
-       discards the error (`let _ = ...`), so these strips caught the press and
-       then did nothing at all. Worse than nothing, in fact: they are 5px wide,
-       sit inside the window above everything (`z-index: 50`) and draw their own
-       resize cursors, so they took over the band AppKit uses for its own edge
-       resizing and turned it into a dead zone that still looked live. The
-       symptom was a resize that worked only when the pointer happened to land
-       in the system's band outside the frame. macOS needs none of this: the
-       window is `Titled | Resizable`, and AppKit resizes it from edges and
-       corners the DOM cannot reach anyway. -->
-  {#if !IS_MAC && !chrome.fullscreen && !chrome.isMaximized}
-    <div class="rz rz-n" role="presentation" onpointerdown={() => startResize('North')}></div>
-    <div class="rz rz-s" role="presentation" onpointerdown={() => startResize('South')}></div>
-    <div class="rz rz-e" role="presentation" onpointerdown={() => startResize('East')}></div>
-    <div class="rz rz-w" role="presentation" onpointerdown={() => startResize('West')}></div>
-    <div class="rz rz-ne" role="presentation" onpointerdown={() => startResize('NorthEast')}></div>
-    <div class="rz rz-nw" role="presentation" onpointerdown={() => startResize('NorthWest')}></div>
-    <div class="rz rz-se" role="presentation" onpointerdown={() => startResize('SouthEast')}></div>
-    <div class="rz rz-sw" role="presentation" onpointerdown={() => startResize('SouthWest')}></div>
-  {/if}
+  <ResizeEdges />
 
-    {#if overlays.ctxAt}
-    <ContextMenu
-      at={overlays.ctxAt}
-      fullscreen={chrome.fullscreen}
-      close={() => (overlays.ctxAt = null)}
-      actions={{
-        openFile: () => void openFileDialog(),
-        openLink: () => void openLinkDialog(),
-        backToStart: () => void backToStart(),
-        toggleInfo: () => toggleInfo(player.hasFile),
-        openSettings: () => (overlays.settings = true),
-        openRoom: () => (overlays.room = true),
-        toggleFullscreen: () => void toggleFullscreen(),
-        cycleLoop,
-        cycleAbLoop,
-        jumpChapter,
-        setPicture,
-      }}
-    />
-  {/if}
-
-  {#if diag.open}
-      <DiagnosisDialog
-        device={diag.device}
-        lines={diag.lines}
-        busy={diag.busy}
-        onclose={() => (diag.open = false)}
-        onCopy={(device) => void copyDiagnosis(device)}
-      />
-    {/if}
-
-    {#if opening.linkOpen}
-      <LinkDialog
-        link={opening.box}
-        ytdlpBusy={opening.ytdlpBusy}
-        ytdlpPct={opening.ytdlpPct}
-        feedBusy={opening.feedBusy}
-        onclose={() => (opening.linkOpen = false)}
-        onSubmit={(url) => submitLink(url)}
-        onForget={(url) => dropLink(url)}
-        onPickTorrentFile={pickTorrentFile}
-        onFixYtdlp={fixYtdlp}
-      />
-    {/if}
-
-    <!-- The dialog leads with the *reason*, not the request. "Update" over an
-         input box is mysterious; "BitTorrent cannot add a file to a torrent" is
-         the fact that makes the whole errand make sense, and it is why the
-         player cannot do this by itself. -->
-    {#if opening.updateFor}
-      {@const known = opening.updateFor}
-      <TorrentUpdateDialog
-        {known}
-        suggested={opening.updateSuggested}
-        feedItem={opening.updateFeedItem}
-        note={opening.updateNote}
-        busy={opening.updateBusy}
-        error={opening.updateError}
-        value={opening.updateValue}
-        onValue={(v) => (opening.updateValue = v)}
-        onclose={() => { if (!opening.updateBusy) opening.updateFor = null; }}
-        onSubmit={() => void submitUpdate()}
-        onOpenAsNew={(magnet) => { opening.updateFor = null; void openTorrent(magnet); }}
-      />
-    {/if}
-
-    <!-- A torrent holding more than one video is a question only the viewer can
-         answer. The rest still become queue entries, which is free: nothing is
-         downloaded until mpv reads one (see torrent/mod.rs). -->
-    <!-- A feed holding more than one release. Picking one resolves it into an
-         ordinary torrent, whose own file picker may follow. -->
-    {#if opening.feedPick}
-      {@const pick = opening.feedPick}
-      <FeedPickDialog
-        feed={pick.feed}
-        items={pick.items}
-        onclose={() => (opening.feedPick = null)}
-        onPick={(item) => void pickFeedItem(pick.url, item)}
-      />
-    {/if}
-
-    {#if opening.pick}
-      {@const info = opening.pick}
-      <TorrentPickDialog
-        {info}
-        positions={torrentPositions(info.info_hash)}
-        finished={watchedFiles(info.info_hash)}
-        onclose={() => (opening.pick = null)}
-        onPick={(i, file) => void playTorrentFile(i, file)}
-      />
-    {/if}
-
-    <!-- Above the start screen and below everything a chosen release raises:
-         `playRelease` shuts this before handing the magnet over, so the torrent
-         picker that follows never has to sit on top of it. -->
-    {#if catalog.open}
-      <CatalogDialog
-        onclose={closeCatalog}
-        onSettings={() => {
-          closeCatalog();
-          openSettingsAt('torrents');
-        }}
-      />
-    {/if}
-
-    {#if subs.open}
-      <SubsDialog />
-    {/if}
-
-    {#if overlays.info}
-      <MediaInfoDialog onclose={() => (overlays.info = false)} />
-    {/if}
-
-
-
-  {#if overlays.room}
-    <RoomDialog onclose={() => (overlays.room = false)} />
-  {/if}
-
-  {#if overlays.settings}
-    <SettingsDialog
-      initialTab={overlays.settingsTab}
-      onclose={closeSettings}
-      onToggleSeeding={() => void toggleSeeding()}
-      onTogglePortForward={() => void togglePortForward()}
-      onSetProxy={(url) => void applyProxy(url)}
-      onSetEncryption={(mode) => void applyEncryption(mode)}
-      onSetRoute={(route) => void applyRoute(route)}
-      onClearTorrentCache={() => void clearTorrentCache()}
-      onLicenses={() => (overlays.licenses = true)}
-      onReport={() => (overlays.report = true)}
-    />
-  {/if}
-
-  <!-- The one dialog an open *waits on*: `addTorrent` holds the resolve until
-       it is answered, so it sits above everything, including the link box
-       that may have raised it. -->
-  {#if net.ask}
-    <VpnRouteDialog
-      via={net.ask.via}
-      direct={net.ask.direct}
-      onAnswer={(choice, remember) => void answerVpnAsk(choice, remember)}
-    />
-  {/if}
-
-  <!-- Above the settings sheet rather than instead of it: closing the notices
-       has to give the settings back, which is what the order in `closeTopmost`
-       encodes. Rendered after, so it also paints on top. -->
-  {#if overlays.licenses}
-    <LicensesDialog onclose={() => (overlays.licenses = false)} />
-  {/if}
-
-  {#if overlays.report}
-    <ReportDialog onclose={() => (overlays.report = false)} />
-  {/if}
+  <Dialogs />
 
   {#if tips.tooltip}
     <Tooltip tooltip={tips.tooltip} bind:el={tips.el} />
@@ -627,83 +403,10 @@
     <SkipButton hint={endOfFile.hint} mini={mini.on} onskip={takeSkip} />
   {/if}
 
-  <button
-    class="minibtn"
-    data-tip={withKey(t('ctx.mini_exit'), 'mini')}
-    aria-label={t('ctx.mini_exit')}
-    onclick={(e) => {
-      e.stopPropagation();
-      void toggleMini();
-    }}
-  >
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-    </svg>
-  </button>
+  <MiniButton />
 
   {#if !startScreen.showEmpty}
-  <!-- The click handler is a guard, not an affordance: it stops a click on the
-       bar reaching the video's play/pause. There is nothing here to activate
-       from the keyboard — every control inside is a real button, reachable on
-       its own — so a keydown handler would add a focus stop that leads nowhere.
-       `role="toolbar"` already says what this is. The directive has to be a
-       comment of its own and start with the word: prose in front of it and it
-       is not seen at all. -->
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    class="osc"
-    class:hidden={chrome.idle}
-    class:gone={oscGone.on}
-    bind:this={subShift.oscEl}
-    role="toolbar"
-    tabindex="-1"
-    onclick={(e) => e.stopPropagation()}
-    ondblclick={(e) => e.stopPropagation()}
-    onmouseenter={() => (chrome.oscHover = true)}
-    onmouseleave={() => (chrome.oscHover = false)}
-  >
-    {#if overlays.menu === 'queue'}
-      <QueueMenu
-        close={() => (overlays.menu = null)}
-        onRemove={(index) => void removeFromQueue(index)}
-      />
-    {:else if overlays.menu === 'chapter'}
-      <ChapterMenu close={() => (overlays.menu = null)} />
-    {:else if overlays.menu === 'cast'}
-      <CastMenu
-        close={() => (overlays.menu = null)}
-        diagBusy={diag.busy}
-        onDiagnose={(device) => void runDiagnosis(device)}
-      />
-    {:else if overlays.trackMenu}
-      <TrackMenu
-        kind={overlays.trackMenu}
-        close={() => (overlays.menu = null)}
-        onSelect={(k, tr) => { overlays.menu = null; selectTrack(k, tr); }}
-        onAddFile={(k) => void addTrackFile(k)}
-        onNudgeDelay={nudgeDelayHere}
-        onResetDelay={resetDelayHere}
-      />
-    {/if}
-
-    <SeekBar
-      barDuration={resume.barDuration}
-      chapterMarks={seekbar.chapterMarks}
-      abRegion={seekbar.abRegion}
-      hoverChapter={seekbar.hoverChapter}
-      hasThumbs={seekbar.hasThumbs}
-      thumbAspect={seekbar.thumbAspect}
-      mini={mini.on}
-    />
-    <Controls
-      mini={mini.on}
-      fullscreen={chrome.fullscreen}
-      openMenu={overlays.menu}
-      onToggleMenu={toggleMenu}
-      onCycleLoop={cycleLoop}
-      onToggleFullscreen={() => void toggleFullscreen()}
-    />
-  </div>
+  <Osc gone={oscGone.on} />
   {/if}
 </main>
 
@@ -745,35 +448,6 @@
 
   /* Form controls do not inherit the font by default (UA styles), which is why
      buttons were drawn in the system font instead of Rubik */
-  .rz {
-    position: fixed;
-    z-index: 50;
-  }
-
-  .rz-n { top: 0; left: 10px; right: 10px; height: 5px; cursor: n-resize; }
-  .rz-s { bottom: 0; left: 10px; right: 10px; height: 5px; cursor: s-resize; }
-  .rz-e { right: 0; top: 10px; bottom: 10px; width: 5px; cursor: e-resize; }
-  .rz-w { left: 0; top: 10px; bottom: 10px; width: 5px; cursor: w-resize; }
-  .rz-ne { top: 0; right: 0; width: 10px; height: 10px; cursor: ne-resize; }
-  .rz-nw { top: 0; left: 0; width: 10px; height: 10px; cursor: nw-resize; }
-  .rz-se { bottom: 0; right: 0; width: 10px; height: 10px; cursor: se-resize; }
-  .rz-sw { bottom: 0; left: 0; width: 10px; height: 10px; cursor: sw-resize; }
-
-  /* Windows: the top-right corner belongs entirely to the window buttons — a
-     flick of the cursor into the screen corner of an edge-snapped window must
-     hit the close button, not a resize zone. Corner resizing is not lost: it
-     stays on the invisible native rim (~7px) just outside the window edge.
-     144px = three 48px buttons. */
-  .player:not(.mac) .rz-n { right: 144px; }
-  .player:not(.mac) .rz-e { top: 48px; }
-  .player:not(.mac) .rz-ne { display: none; }
-
-  /* No progress bar here, and that was tried: a full-width rule under the name
-     reads as an underline rather than a value — at 91% it is indistinguishable
-     from a border, and a list of them turns the panel into stripes. The card
-     grid needs one because a poster leaves no room for words; here there are
-     words, and "осталось 4:12" says the same thing without competing with the
-     name it sits under. */
 
   /* ---- Content languages (ROADMAP 25) ---- */
 
@@ -796,59 +470,6 @@
   .veil.on {
     opacity: 1;
     transition: none;
-  }
-
-  .osc {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    /* No top padding: those 44px were pure gradient with no controls, yet they
-       caught clicks (see .topbar). The gradient moved into ::before, which
-       extends the same 44px upwards and receives no events.
-       20px at the sides is the window's one edge — see `.controls` in
-       Controls.svelte, which is what else sits on it. */
-    padding: 0 20px 12px;
-    /* Its own stacking context, so that z-index: -1 on ::before lowers the
-       gradient under the controls without dropping it behind the whole bar. */
-    isolation: isolate;
-    /* `--chrome-fade`: see `.topbar`, and `chrome.unsteady` for why. */
-    transition: opacity var(--chrome-fade, 0.25s) ease, transform var(--chrome-fade, 0.25s) ease;
-  }
-
-  .osc::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    top: -44px;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.32) 55%, transparent);
-    pointer-events: none;
-    /* MANDATORY. By the painting rules an absolutely positioned ::before lands
-       ABOVE ordinary in-flow children (.seekrow, .controls), and the gradient
-       darkened the buttons — they looked disabled. This did not happen before,
-       because the gradient was the bar's own background and backgrounds are
-       painted first. The same scheme works on .topbar without z-index only
-       because its children are themselves absolutely positioned and come after
-       ::before in DOM order. */
-    z-index: -1;
-  }
-
-  .osc.hidden {
-    opacity: 0;
-    transform: translateY(10px);
-    pointer-events: none;
-  }
-
-  /* Faded out and taken off the page: the seekbar under a transparent bar is
-     still written on every video frame, and still painted. See `faded`. */
-  .osc.gone {
-    visibility: hidden;
-  }
-
-  .player.mini .osc {
-    padding: 0 10px 6px;
   }
 
   /* ---- Casting ------------------------------------------------------------ */
@@ -876,52 +497,5 @@
      purpose: the start screen keeps its tint while mpv is still warming up. */
   .player.no-video {
     background: #101016;
-  }
-
-  /* The way out has to be visible in the mode that hides everything else. */
-  .player.mini .minibtn {
-    display: grid;
-  }
-
-  /* Fades with the rest of the UI: in a corner window the picture is the point,
-     and a button pinned over it forever is one more thing in the way. */
-  .player.mini.idle-ui .minibtn {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  /* Round, and that is the whole reason: a rounded rectangle 8px inside the
-     window's own rounded corner has to obey the concentric rule (inner radius
-     = outer minus the gap) to look right, and the outer radius is not ours to
-     know — macOS decides it, Windows 11 decides a different one, and both can
-     change with the OS. A circle has no corner to disagree with, which is why
-     the system's own corner controls (the traffic lights) are circles too. */
-  .minibtn {
-    display: none;
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    z-index: 20;
-    place-items: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 999px;
-    background: rgba(16, 16, 22, 0.82);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-    color: #d6d6de;
-    cursor: pointer;
-    transition: opacity 0.25s ease;
-  }
-
-  .minibtn svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  .minibtn:hover {
-    background: rgba(32, 32, 42, 0.9);
-    color: #fff;
   }
 </style>
