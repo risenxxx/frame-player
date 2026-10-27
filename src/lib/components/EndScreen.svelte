@@ -140,11 +140,31 @@
     background: rgba(40, 40, 54, 0.85);
   }
 
-  /* The start screen's half of this pair moved to start/RecentRail.svelte
-     with its markup; `.endcard` is still drawn here. */
-  .endcard:hover .card-poster {
-    outline: 2px solid #818cf8;
-    outline-offset: 1px;
+  /* The start screen's half of this pair lives in start/RecentRail.svelte
+     with its markup, and the reasons are written there: no ring, the frame
+     comes closer inside its own box, `isolation` for WebKit's rounded
+     corners. These cards carry no progress, so that half stays there. */
+  .endcard .card-poster {
+    isolation: isolate;
+  }
+
+  /* Never quite at scale 1, for the one-pixel jump at the end of the zoom
+     back — see the same rule in RecentRail.svelte. */
+  .endcard .card-poster img {
+    transform: scale(1.001);
+    transition: transform 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+    will-change: transform;
+  }
+
+  .endcard:hover .card-poster img,
+  .endcard:focus-visible .card-poster img {
+    transform: scale(1.06);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .endcard .card-poster img {
+      transition: none;
+    }
   }
 
   /* These lie over an arbitrary final frame, and that frame is as often black

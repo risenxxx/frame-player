@@ -114,6 +114,12 @@
                   </svg>
                 </span>
               {/if}
+              <!-- The whole length, under the bar, shown on hover. Not for an
+                   entry without a duration: a full track with nothing on it
+                   would claim a length the player never learned. -->
+              {#if item.dur > 0}
+                <span class="card-track"></span>
+              {/if}
               <span
                 class="card-progress"
                 style="width: {item.dur > 0
@@ -224,11 +230,13 @@
     justify-content: safe center;
     gap: 14px;
     overflow-x: auto;
-    /* Room for the hover outline. `.card-poster` draws a 2px ring at
+    /* Room for the keyboard focus ring. `:focus-visible` draws a 2px ring at
        `outline-offset: 1px`, which lives 3px outside the card's box and was
        being cut off by this container's own clipping — visible as the top edge
-       of the ring disappearing. The negative margin gives the padding back so
-       nothing moves, and `scroll-padding` keeps a snapped card clear of it. */
+       of the ring disappearing. (The hover used to draw the same ring; it no
+       longer leaves the card's box, the focus ring still does.) The negative
+       margin gives the padding back so nothing moves, and `scroll-padding`
+       keeps a snapped card clear of it. */
     overflow-y: hidden;
     padding: 5px;
     margin: -5px;
@@ -292,7 +300,7 @@
 
   /* 21, not 16, and the extra 5 is not a fudge. A scroll container's content
      *begins* at its content edge but is *clipped* at its padding edge, so the
-     rail's 5px of horizontal padding — there to give the hover outline room —
+     rail's 5px of horizontal padding — there to give the focus ring room —
      puts the row's start and its cut-off 5px apart. Measured: at scrollLeft 0
      the first card sits at the content edge, while cards on the right run all
      the way to the padding edge. So the left arrow lines up on the first card
@@ -350,12 +358,38 @@
     color: inherit;
   }
 
+  /* 5px tall and drawn at 3: the hover thickens the bar with `scaleY`, never
+     with `height`. The picture under it is a layer of its own (see the hover
+     rules below), and WebKit decides per frame whether a box overlapping a
+     layer gets one too — while the height was animating that decision kept
+     flipping and the bar blinked in and out under the zoomed frame. A bar
+     with its own layer and a fixed box gives it nothing to decide. */
   .card-progress {
     position: absolute;
+    z-index: 2;
     left: 0;
     bottom: 0;
-    height: 3px;
+    height: 5px;
     background: #6366f1;
+    transform: scaleY(0.6);
+    transform-origin: bottom;
+    transition: transform 140ms ease;
+    will-change: transform;
+  }
+
+  .card-track {
+    position: absolute;
+    z-index: 2;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.28);
+    opacity: 0;
+    transform: scaleY(0.6);
+    transform-origin: bottom;
+    transition: transform 140ms ease, opacity 140ms ease;
+    will-change: transform, opacity;
   }
 
   /* The card's caption, and with it the tooltip's hit area: the name and the
@@ -390,10 +424,110 @@
     opacity: 1;
   }
 
-  /* The end screen's twin of this lives in EndScreen.svelte, where `.endcard`
-     is drawn. */
-  .card-open:hover .card-poster {
-    outline: 2px solid #818cf8;
-    outline-offset: 1px;
+  /* ---- Hover: the frame comes closer and the progress steps forward ----
+     No ring around the frame. Everything happens inside the poster's own
+     box, so the card does not move and the rail needs no room for it.
+
+     Only the <img> is scaled: the track and the bar are its siblings, so they
+     stay at the edge and at their own thickness. `isolation` keeps the
+     scaled picture inside the rounded corners in WebKit, which otherwise lets
+     a transformed child paint square corners for the length of the
+     transition, and keeps the z-indexes below to this box.
+
+     The shade under the track is what lets it read on a light frame: white
+     at 0.28 over a pale picture is no line at all. It is only as tall and as
+     dark as the bar needs — 0.3 under the 5px, gone 24px up — because a
+     taller one (45% of the frame at 0.55 was tried) dims the picture the
+     hover is showing off. The bar keeps its own
+     indigo rather than lightening to #818cf8, for the same reason.
+
+     `.card:hover`, not `.card-open:hover`: the forget cross is a sibling of
+     the open button, and pointing at it is still pointing at this card. The
+     end screen's twin of this lives in EndScreen.svelte, where `.endcard` is
+     drawn. */
+  .recent-rail .card-poster {
+    isolation: isolate;
+  }
+
+  /* **Never quite at scale 1, on purpose.** The poster sits on fractional
+     coordinates (200 × 9/16 is 112.5, and the start screen is centered), and
+     a layer drawn at an exact identity transform is snapped to whole pixels
+     while a scaled one is not — so the frame was drawn unsnapped for the
+     length of the zoom back and snapped in its last frame, a visible jump of
+     about a pixel. `will-change` alone, which keeps the layer alive, did not
+     stop it. 0.1% is 0.2px of overscan, cut off by the poster's own clip.
+     There is no brightness filter for the same reason: a second effect ending
+     with the transition is a second chance to redraw it differently. */
+  .recent-rail .card-poster img {
+    transform: scale(1.001);
+    transition: transform 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+    will-change: transform;
+  }
+
+  .recent-rail .card-poster::after {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 24px;
+    /* Eased rather than linear, so the shade has no visible top edge. */
+    background: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.3),
+      rgba(0, 0, 0, 0.22) 5px,
+      rgba(0, 0, 0, 0.11) 11px,
+      rgba(0, 0, 0, 0.04) 17px,
+      transparent
+    );
+    opacity: 0;
+    transition: opacity 180ms ease;
+    /* Its own layer above the picture's, for the reason on `.card-progress`. */
+    will-change: opacity;
+    pointer-events: none;
+  }
+
+  .recent-rail .card-name,
+  .recent-rail .card-left {
+    transition: color 140ms ease;
+  }
+
+  .card:hover .card-poster img,
+  .card-open:focus-visible .card-poster img {
+    transform: scale(1.06);
+  }
+
+  .card:hover .card-poster::after,
+  .card-open:focus-visible .card-poster::after,
+  .card:hover .card-track,
+  .card-open:focus-visible .card-track {
+    opacity: 1;
+  }
+
+  .card:hover .card-track,
+  .card-open:focus-visible .card-track,
+  .card:hover .card-progress,
+  .card-open:focus-visible .card-progress {
+    transform: none;
+  }
+
+  .card:hover .card-name,
+  .card-open:focus-visible .card-name {
+    color: #fff;
+  }
+
+  .card:hover .card-left,
+  .card-open:focus-visible .card-left {
+    color: #c4c4ce;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .recent-rail .card-poster img,
+    .recent-rail .card-poster::after,
+    .card-track,
+    .card-progress {
+      transition: none;
+    }
   }
 </style>
