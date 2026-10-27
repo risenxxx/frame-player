@@ -149,9 +149,11 @@ fn physical_memory() -> u64 {
 #[cfg(windows)]
 fn physical_memory() -> u64 {
     use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
-    // SAFETY: zeroed is a valid MEMORYSTATUSEX; dwLength must be set first.
+    // SAFETY: a struct of integers, for which all zeroes is a valid value.
     let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
     status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+    // SAFETY: a local struct for the call to fill, with `dwLength` set to its
+    // size first, as the call requires.
     if unsafe { GlobalMemoryStatusEx(&mut status) } != 0 {
         status.ullTotalPhys
     } else {
