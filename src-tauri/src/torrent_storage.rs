@@ -42,6 +42,8 @@
 //!   by it — it is how a torrent being paused or deleted stops writing through
 //!   a storage somebody else may still hold.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
@@ -116,6 +118,9 @@ fn mark_file_sparse(f: &File) -> bool {
     // Same call librqbit makes, for the same reason and at the same moment —
     // see the module comment. A refusal is not an error: the file simply
     // occupies what it is given, which is how this behaved before 9.x.
+    // SAFETY: the handle of a file `f` keeps open for the call;
+    // FSCTL_SET_SPARSE takes no input and gives no output, so every buffer
+    // is null with a length of 0, and the call is synchronous (no OVERLAPPED).
     unsafe {
         DeviceIoControl(
             f.as_raw_handle() as _,

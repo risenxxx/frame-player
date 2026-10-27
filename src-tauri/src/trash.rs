@@ -12,6 +12,8 @@
 //! Events — would raise an Automation permission prompt the first time the key
 //! is pressed.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use std::path::Path;
 
 use crate::thumb_service::{release_file, ThumbState};
@@ -71,7 +73,10 @@ fn move_to_trash(path: &Path) -> Result<(), String> {
     let mut root = vec![0u16; 1024];
     let mut z = wide.clone();
     z.push(0);
+    // SAFETY: a NUL-terminated path, and a local buffer of exactly the length
+    // passed, which the call writes no further than.
     let ok = unsafe { GetVolumePathNameW(z.as_ptr(), root.as_mut_ptr(), root.len() as u32) };
+    // SAFETY: the NUL-terminated root the call above just wrote.
     if ok == 0 || unsafe { GetDriveTypeW(root.as_ptr()) } != DRIVE_FIXED {
         return Err("no recycle bin on this drive".into());
     }
@@ -91,6 +96,9 @@ fn move_to_trash(path: &Path) -> Result<(), String> {
             as u16,
         ..Default::default()
     };
+    // SAFETY: `pFrom` is the double-NUL-terminated list the shell wants (see
+    // above) and outlives the call; every other field is a value or a
+    // documented null, and the struct is a local the call may write back to.
     let code = unsafe { SHFileOperationW(&mut op) };
     if code != 0 {
         return Err(format!("SHFileOperation failed: {code:#x}"));
