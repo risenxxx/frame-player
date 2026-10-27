@@ -1,7 +1,7 @@
 ---
 paths:
   - "src-tauri/src/cast/**"
-  - "src-tauri/src/dlna.rs"
+  - "src-tauri/src/dlna/**"
   - "src-tauri/src/lan_sweep.rs"
   - "src-tauri/src/airplay*.rs"
   - "src/lib/cast.svelte.ts"
@@ -24,6 +24,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 |---|---|
 | `src-tauri/src/lan_sweep.rs` | Finding a television multicast does not reach: the sweep's address list (remembered hosts, then the private LAN subnets, tunnels and VM switches skipped) and the paced datagram send DLNA's unicast `M-SEARCH` uses. The Cast half (`probe_cast`: `:8009`, then `eureka_info`) lives in cast/discovery.rs |
 | `src-tauri/src/cast/` | Casting to TV (Google Cast): mDNS browse (`mdns-sd`, on-demand; `discovery.rs`), a hand-rolled CASTV2 client (TLS to the device's 8009, 4-byte-BE-framed protobuf envelopes with JSON payloads, tokio `select!` pump + dedicated reader task; `castv2.rs`), and the LAN file server (one registered file behind a random token, bound to the interface on the device's subnet; `server.rs`). The ffmpeg prepare is `prepare.rs`; the service state and every Tauri command are in `mod.rs`. Frontend half in `src/lib/cast.svelte.ts`; see "Casting" below and `casting.md` |
+| `src-tauri/src/dlna/` | DLNA, the second way to a television: SSDP search over multicast and the unicast sweep (`discovery.rs`), the device description (`description.rs`) read with the string-scanning XML of `xml.rs`, SOAP to AVTransport and RenderingControl (`control.rs`, `avtransport.rs`), DIDL-Lite and the MIME negotiation (`metadata.rs`), the subtitle beside the stream (`caption.rs`), and the two ways to drive it without the window, `FP_DLNA_PROBE` and `FP_DLNA_PLAY` (`headless.rs`). The service, its state and every Tauri command are in `mod.rs` |
 | `src-tauri/src/airplay.rs` | AirPlay, macOS only: an `AVPlayer` given the casting server's URL and AVKit's route picker, invisible over the bar's cast button and pressed from the menu's AirPlay row, so the system's own list chooses the television (there is no public API that lists or picks one). `airplay_open/replace/status/control/disconnect` mirror the other two transports' commands; `FP_AIRPLAY_PLAY=<file>` drives one session through them, logged. Frontend half in `castOverAirPlay` in `src/lib/cast.svelte.ts`. No Windows half, on purpose — see `docs/airplay.md` |
 | `src-tauri/src/airplay_hls.rs` + `src/lib/airplay-choice.ts` | AirPlay's HLS rendition: every audio track and text subtitle in one ffmpeg run, WebVTT cut on the video's segments, the master declaring size, range and frame rate (`airplay_hls_prepare`); and the pure decisions around it — the mode (auto / tracks / original), which picture kinds each receiver has refused, when silence after the master is a refusal (`hlsRefused`), and the tracks plan. See the AirPlay bullet in [rules/casting](../../docs/rules/casting.md) |
 

@@ -520,7 +520,7 @@ export function setDeviceTransport(device: TvDevice, transport: Transport | 'aut
 /// applies.
 ///
 /// **This table decides whether a device is offered; `mime_candidates` in
-/// `src-tauri/src/dlna.rs` decides what is then put on the wire. Keep the two in
+/// `src-tauri/src/dlna/metadata.rs` decides what is then put on the wire. Keep the two in
 /// step** — a spelling missing here is a television that quietly reads as
 /// incapable, which is the failure that never produces an error to look at. The
 /// entries are per-vendor variants of one container, not different formats:
