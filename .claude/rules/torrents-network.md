@@ -5,6 +5,7 @@ paths:
   - "src-tauri/src/upnp.rs"
   - "src-tauri/vendor/**"
   - "src/lib/components/VpnRouteDialog.svelte"
+  - "src/lib/torrent/prefs.svelte.ts"
 ---
 
 # torrents-network — the short form
@@ -21,6 +22,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 | Path | What lives there |
 |---|---|
 | `src-tauri/src/net_route.rs` | Which interface the swarm leaves by: the interface list (getifaddrs + SystemConfiguration on macOS, `GetAdaptersAddresses` on Windows), which of them is a tunnel, which is the way out past it (`Route::Direct`), and where the system route goes right now — a UDP `connect` to a public address, which sends nothing. It routes nothing itself; librqbit's `bind_device_name` does |
+| `src/lib/torrent/prefs.svelte.ts` | The frontend of everything in this chapter: `torrentPrefs` (seeding, port forwarding, encryption, the proxy, the route — persisted under `frameplayer.torrent`, each setter answering whether the session had to be rebuilt), `net` and the VPN question asked before a run's first torrent, and `refreshPortStatus`. Re-exported by `src/lib/torrent.svelte.ts` like the rest of `torrent/` |
 | `src-tauri/src/upnp.rs` | Asking the router whether the BitTorrent port is really forwarded: SSDP for the gateway, then `GetSpecificPortMappingEntry` for the mapping librqbit made. A read, never a write — the mapping is librqbit's to renew. Exists because its forwarder is a `run_forever` task that reports to nobody, so the setting would otherwise be a claim rather than a fact |
 | `src-tauri/vendor/` | Three librqbit crates vendored via `[patch.crates-io]` (its README has the details, and is the thing to read before bumping librqbit). `librqbit-dualstack-sockets` carries the Windows half of binding a socket to an interface, which is what "past the VPN" rests on there — see `net_route.rs`. `librqbit-dht` carries a dozen lines so the DHT does not die on a UDP recv error, which Windows produces routinely — see "Windows kills the stock DHT" below. `librqbit` carries **Message Stream Encryption**, taken whole from an unmerged upstream PR and to be dropped the day it lands — see "A network can refuse a torrent by where it is going or by what it is". The `librqbit-tracker-comms` copy that used to be here went back to the registry with the bump to 9.x, where all three of its fixes now live |
 

@@ -267,7 +267,7 @@ export function forgetDownloadedSub(path: string) {
 // ---- Recent links ---------------------------------------------------------
 
 const LINKS_KEY = 'frameplayer.links';
-/// Declared here rather than in torrent.svelte.ts because `IDENTIFIED_STORES`
+/// Declared here rather than in torrent/remembered.ts because `IDENTIFIED_STORES`
 /// has to name it and the dependency runs torrent → history, never back.
 export const TORRENTS_KEY = 'frameplayer.torrents';
 const LINKS_LIMIT = 8;
@@ -1132,7 +1132,7 @@ async function purgeFolder(dir: string) {
 /**
  * Forget everything recorded about one torrent.
  *
- * The torrent's own data is deleted by `forgetTorrent` in torrent.svelte.ts;
+ * The torrent's own data is deleted by `forgetTorrent` in torrent/disk.ts;
  * this is the history half, kept here because it is the only module that knows
  * which stores exist and how they are keyed. Every one of them files a torrent
  * under `torrent:<hash>/<index>` (see `sourceId`), so a prefix match over the
