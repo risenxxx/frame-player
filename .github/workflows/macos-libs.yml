@@ -45,7 +45,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Everything that decides what the libraries are: the two build scripts,
       # the license gate and the mpv patch. The pinned FFmpeg and mpv versions
