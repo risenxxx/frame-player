@@ -1,19 +1,12 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
-  import { open } from '@tauri-apps/plugin-dialog';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
-  import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
-  import { emitTo, listen } from '@tauri-apps/api/event';
+  import { listen } from '@tauri-apps/api/event';
   import { join, resourceDir } from '@tauri-apps/api/path';
-  import { currentMonitor, getCurrentWindow } from '@tauri-apps/api/window';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
-  import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { ProgressBarStatus } from '@tauri-apps/api/window';
-  import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
-  import { relaunch } from '@tauri-apps/plugin-process';
-  import { check, type Update } from '@tauri-apps/plugin-updater';
   import { command, destroy, setProperty } from 'tauri-plugin-libmpv-api';
-  import Dialog from '$lib/components/Dialog.svelte';
   import MediaInfoDialog from '$lib/components/MediaInfoDialog.svelte';
   import SubsDialog from '$lib/components/SubsDialog.svelte';
   import StartScreen from '$lib/components/StartScreen.svelte';
@@ -45,7 +38,6 @@
   import FeedPickDialog from '$lib/components/FeedPickDialog.svelte';
   import TorrentUpdateDialog from '$lib/components/TorrentUpdateDialog.svelte';
   import VpnRouteDialog from '$lib/components/VpnRouteDialog.svelte';
-  import { blockContextMenu, inTextField } from '$lib/dom';
   import {
     initSync,
     sync,
@@ -100,7 +92,6 @@
     takeSkip,
   } from '$lib/endscreen.svelte';
   import {
-    abandonOpening,
     applyEncryption,
     applyProxy,
     applyRoute,
@@ -117,7 +108,6 @@
     openRememberedTorrent,
     openResumeSnapshot,
     openTorrent,
-    openUpdateDialog,
     checkFeedUpdate,
     pickFeedItem,
     opening,
@@ -130,7 +120,7 @@
     submitUpdate,
     togglePortForward,
     toggleSeeding,
-  } from '$lib/open.svelte';
+} from '$lib/open.svelte';
   import {
     catalog,
     checkTorrentUpdate,
@@ -180,34 +170,38 @@
     setPendingResume,
   } from '$lib/resume.svelte';
   import { initPortable } from '$lib/portable.svelte';
+  import { runMenuAction } from '$lib/app-menu';
+  import {
+    armVideoReady,
+    backToStart,
+    enterStartScreen,
+    initVideoReady,
+    startScreen,
+  } from '$lib/start-screen.svelte';
+  import { clearTitleTimer, initWindowTitle, slideTitle, title } from '$lib/title.svelte';
   import { checkForUpdate, installUpdate, updater } from '$lib/updater.svelte';
-  import { openSubsDialog, removeSubtitle, subs } from '$lib/subs.svelte';
-  import { LOOP_LABEL } from '$lib/player.svelte';
+  import { subs } from '$lib/subs.svelte';
   import { playback } from '$lib/playback.svelte';
   import { flipAxis, shiftAxis } from '$lib/floating';
-  import { locale, setLocale, t, type Locale } from '$lib/i18n.svelte';
+  import { locale, t } from '$lib/i18n.svelte';
   import {
-    hint,
     withKey,
-  } from '$lib/keys.svelte';
-  import { osd, osdSeq, showOsd } from '$lib/osd.svelte';
+} from '$lib/keys.svelte';
+  import { osd, showOsd } from '$lib/osd.svelte';
   import {
     flushPosition,
     forgetRecent,
-    history,
     loadHistoryPrefs,
     loadRecent,
     rememberTitle,
     maybeRecordPosition,
-    type RecentItem,
-  } from '$lib/history.svelte';
+} from '$lib/history.svelte';
   import { initNowPlaying } from '$lib/now-playing.svelte';
   import { initAudioOutput } from '$lib/audio-output.svelte';
   import { IS_MAC } from '$lib/platform';
   import {
     chapterAt,
     cycleAbLoop,
-    ytdlp,
     initPlayer,
     pointAtExternalTracks,
     isNetworkSource,
@@ -221,7 +215,7 @@
     setPicture,
     cycleLoop,
     type ObservedName,
-  } from '$lib/player.svelte';
+} from '$lib/player.svelte';
   import {
     curtain,
     curtainCovered,
@@ -229,12 +223,10 @@
     curtainFileStarted,
     curtainSettled,
     initCurtain,
-    liftCurtain,
     raiseCurtain,
-  } from '$lib/curtain.svelte';
+} from '$lib/curtain.svelte';
   import {
     applyAlwaysOnTop,
-    fitWindowToVideo,
     loadWindowPrefs,
     initWindowShape,
     scheduleShape,
@@ -245,17 +237,13 @@
     syncMenuChecks,
     exitMini,
     toggleMini,
-    toggleWindowPref,
-    setWindowFit,
-    windowFit,
-  } from '$lib/window-prefs.svelte';
+} from '$lib/window-prefs.svelte';
   import {
     dropPosters,
     loadPlaylist,
     loadPlaylistPrefs,
-    playlist,
     queueFolder,
-  } from '$lib/playlist.svelte';
+} from '$lib/playlist.svelte';
   import { loadSeekSteps } from '$lib/seek-steps.svelte';
   import { restoreCrop } from '$lib/crop.svelte';
   import { restoreAdjust } from '$lib/picture-adjust.svelte';
@@ -270,7 +258,6 @@
     attachTorrentSubtitles,
     releaseTorrent,
     torrent,
-    rememberedTorrent,
     torrentPositions,
     torrentResume,
     watchedFiles,
@@ -278,8 +265,7 @@
     loadTorrentPrefs,
     answerVpnAsk,
     net,
-  } from '$lib/torrent.svelte';
-  import { copyScreenshot, saveScreenshot } from '$lib/screenshot';
+} from '$lib/torrent.svelte';
   import {
     cast,
     diagnoseDevice,
@@ -289,127 +275,16 @@
     castFollowing,
     endCast,
   } from '$lib/cast.svelte';
-  import { backBufferFor, parseTorrentUrl } from '$lib/source';
-  import { loadThumbPrefs, maybeStartThumbs, requestThumb, thumbs } from '$lib/thumbs.svelte';
-  import { isZoomed, markZoomLuaLoaded, panBy, reclampPan, resetZoom, zoomAt } from '$lib/zoom.svelte';
+  import { backBufferFor } from '$lib/source';
+  import { loadThumbPrefs, maybeStartThumbs, thumbs } from '$lib/thumbs.svelte';
+  import { markZoomLuaLoaded, reclampPan, resetZoom } from '$lib/zoom.svelte';
 
   // Sidecar frame stepping (StepEngine) is off: stepping goes through mpv,
   // which shows the correct picture (HDR tone mapping included), made fast by
   // frame-step.svelte.ts. The sidecar code stays, kept working.
 
-  function runMenuAction(id: string) {
-    switch (id) {
-      case 'settings': overlays.settings = true; break;
-      case 'open': void openFileDialog(); break;
-      case 'open_link': void openLinkDialog(); break;
-      case 'info': toggleInfo(player.hasFile); break;
-      case 'mini': void toggleMini(); break;
-      case 'chapter_prev': jumpChapter(-1); break;
-      case 'chapter_next': jumpChapter(1); break;
-      case 'reveal':
-        if (player.filePath && !isNetworkSource(player.filePath)) {
-          void revealItemInDir(player.filePath);
-        }
-        break;
-      case 'fullscreen': void toggleFullscreen(); break;
-      case 'win_remember': toggleWindowPref('remember'); break;
-      // Two check marks over one choice of three (`WindowFit`): each one
-      // unticked goes back to the middle of the three, or to nothing.
-      case 'win_fit': setWindowFit(windowFit() === 'free' ? 'shape' : 'free'); break;
-      case 'win_video_size': setWindowFit(windowFit() === 'size' ? 'shape' : 'size'); break;
-      case 'win_ontop': toggleWindowPref('alwaysOnTop'); break;
-      case 'win_snap': toggleWindowPref('snapMini'); break;
-      case 'win_size_50': void fitWindowToVideo(0.5); break;
-      case 'win_size_100': void fitWindowToVideo(1); break;
-      case 'win_size_200': void fitWindowToVideo(2); break;
-    }
-  }
-
-  /// mpv is up and paints its own area — until then a dark fill sits under the
-  /// UI. Separate from showEmpty: launching with a file has to hide the start
-  /// screen but not the background, or the transparent window shows the desktop.
-  let videoReady = $state(false);
-
-  /// Drops the dark fill. Driven by vo-configured (the mirror is fed by the
-  /// property event and by resyncState — the initial event races the listener
-  /// registration and can be lost), with playback-restart as the backstop: once
-  /// playback started, mpv is definitely painting. This used to be a fixed
-  /// delay after init(), which is a guess — init() resolves when libmpv is
-  /// initialized, not when its VO has presented anything, and on a heavy 4K
-  /// open the first present came later than the slack: the fill dropped while
-  /// nobody painted and the desktop flashed through the transparent window.
-  /// The double-rAF + delay waits from a correct anchor instead: a couple of
-  /// frames for the VO to present the field it just configured. Erring long is
-  /// invisible (our black over mpv's black field), erring short is the desktop.
-  function armVideoReady() {
-    if (videoReady) return;
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => setTimeout(() => (videoReady = true), 50)),
-    );
-  }
-  $effect(() => {
-    if (player.voConfigured) armVideoReady();
-  });
-
-
-  /// Put the picker on screen and give it something current to show. Reached
-  /// two ways, and the difference is only *when*: on a debounce from the
-  /// `filename` handler, because a playlist transition blanks the name for a
-  /// moment and the picker must not flash through it; and immediately from
-  /// `backToStart`, where there is nothing to wait and see about.
-  function enterStartScreen() {
-    clearTimeout(emptyTimer);
-    showEmpty = true;
-    // Nothing is coming that it could be waiting for.
-    liftCurtain(0);
-    void loadRecent();
-    void refreshTorrents();
-    barTitleText = '';
-    titleSlide = '';
-  }
-
-  /// Close what is playing and return to the start screen.
-  ///
-  /// `stop` rather than `playlist-remove` or a flag of our own: it unloads the
-  /// file *and* empties the playlist, which is what "back to the start screen"
-  /// has to mean — leaving a queue behind would have the next episode start
-  /// itself the moment anything nudged playback.
-  async function backToStart() {
-    // The picker goes up BEFORE mpv is told to stop, rather than 300 ms after
-    // it already has. That debounce exists for a playlist transition, where the
-    // blank is involuntary and momentary; here the destination is known, and
-    // waiting it out left the player's own chrome standing over a stopped VO —
-    // a black frame under a seekbar reading 00:00, which is what going back
-    // used to look like. `.player.no-video` is opaque, so raising it first
-    // covers the video and nothing in between is ever seen.
-    //
-    // The position is flushed first so the card this file is about to appear on
-    // carries the moment it was actually left at, not the previous write.
-    flushPosition();
-    // Nothing is being opened any more, and saying so is this path's job: the
-    // indicator goes up in `beforeLoad` and comes down on `file-loaded`, so a
-    // load abandoned in between — a torrent still looking for peers, which is
-    // exactly when somebody gives up on it — has nothing else to take it down.
-    // The `stop` below does not: its `end-file` carries the reason `stop`, and
-    // only `error` reaches the failure path.
-    abandonOpening();
-    // And the torrent is let go here rather than left to the `filename === null`
-    // handler, for the same reason the picker is raised here: this path *knows*
-    // it is leaving, while that one is inferring it from an event that may be
-    // dropped (a queue overflow costs property changes — see the mirrors' 1 s
-    // resync). Getting it wrong leaves the swarm running and the download
-    // readout standing over the start screen, which is exactly what it looked
-    // like. Idempotent: the handler's own call finds nothing left to release.
-    if (torrent.info) void releaseTorrent();
-    enterStartScreen();
-    await command('stop').catch((e) => console.warn('stop failed:', e));
-  }
-
-  /// The name of the video being played, when mpv has none.
-  ///
-  /// mpv normally supplies it (yt-dlp resolves the page), so this is the
-  /// fallback for the case the viewer actually sees: a link whose title never
-  /// arrived, leaving a video id in the title bar.
+  // The dark fill under the UI until mpv paints — see start-screen.svelte.ts.
+  initVideoReady();
 
 
 
@@ -463,24 +338,6 @@
   });
   const thumbAspect = $derived(lastAspect);
 
-  /**
-   * What a recents card says on hover.
-   *
-   * For a local file the full path, which is the useful thing a card cannot
-   * show: it tells you *which copy*. For a torrent the path is a loopback URL —
-   * `http://127.0.0.1:53864/t/<40 hex>/3/Silo.S03E04.mkv` — where the port is
-   * this run's, the hash is unreadable and neither survives a restart. What
-   * identifies the episode there is its name inside the torrent, and the
-   * torrent's own name is the context worth adding.
-   */
-  function recentTip(item: RecentItem): string {
-    const ref = parseTorrentUrl(item.path);
-    if (!ref) return item.path;
-    const file = decodeURIComponent(item.path.split('/').pop() ?? '');
-    const known = rememberedTorrent(ref.infoHash);
-    return known?.name ? `${known.name} · ${file}` : file;
-  }
-
   /// Whether the hover popup has a frame to show. Read from the thumbnail
   /// module rather than from the source kind: a torrent earns previews part-way
   /// through playback, when its file finishes downloading, which no test of the
@@ -493,62 +350,14 @@
 
   const osdState = $derived(osd());
   const hasFile = $derived(player.hasFile);
-  /// mpv's own title when it has one; failing that, the name the site gave us
-  /// (`resolvedTitle`), and only then the tidied file name — which for a link
-  /// is a video id and tells the viewer nothing.
-  const displayTitle = $derived(
-    player.mediaTitle ? player.displayTitle : (opening.resolvedTitle ?? player.displayTitle),
-  );
 
   let unlisteners: Array<() => void> = [];
   /// Throttles the Windows taskbar progress bar to about once a second.
   let lastTaskbarUpdate = 0;
-  // Debounced "empty" state: switching files in the playlist blanks filename
-  // for a moment, and the file-picker screen must not flash. The debounce is
-  // for that involuntary blank only — a deliberate close goes through
-  // `enterStartScreen` at once, see `backToStart`.
-  let showEmpty = $state(true);
   let tipEl = $state<HTMLDivElement | undefined>();
   // Custom tooltips: one delegated mechanism for every [data-tip]
   let tooltip = $state<{ text: string; pos: { x: number; y: number } | null } | null>(null);
   let tipTimer: ReturnType<typeof setTimeout> | undefined;
-  let emptyTimer: ReturnType<typeof setTimeout> | undefined;
-  // The video title (centered in the title bar) is driven by hand rather than
-  // straight from displayTitle — the text only changes inside the slide.
-  let barTitleText = $state('');
-  // Slide phases: out (leaving) / prep (starting pose of the new one) / ''
-  let titleSlide = $state('');
-  let slideDir: 'next' | 'prev' = 'next';
-  /// The playlist moved, so the next title change is a step through it rather
-  /// than a file being opened.
-  let playlistStepped = false;
-  let slideTimer: ReturnType<typeof setTimeout> | undefined;
-
-  /// The title slide says "the playlist moved" — one name leaves in the
-  /// direction of travel and the next arrives from the other side. Opening a
-  /// file is not that: there is nothing to push out of the way, and the slide
-  /// both misreads as a playlist step and delays the name by a quarter second.
-  /// So it only runs when the playlist actually stepped and there is an old
-  /// name on screen to replace.
-  function slideTitle() {
-    clearTimeout(slideTimer);
-    if (!playlistStepped || !barTitleText) {
-      playlistStepped = false;
-      titleSlide = '';
-      barTitleText = displayTitle;
-      return;
-    }
-    playlistStepped = false;
-    const dir = slideDir;
-    titleSlide = dir === 'next' ? 'out-next' : 'out-prev';
-    slideTimer = setTimeout(() => {
-      barTitleText = displayTitle;
-      titleSlide = dir === 'next' ? 'prep-next' : 'prep-prev';
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => (titleSlide = ''));
-      });
-    }, 260);
-  }
 
   onMount(async () => {
     // The frame-stepper lives here, so the seek module reaches it through
@@ -584,7 +393,7 @@
     const resumeRaw = localStorage.getItem('frameplayer.resume');
     localStorage.removeItem('frameplayer.resume');
     if (initial.length || resumeRaw) {
-      showEmpty = false;
+      startScreen.showEmpty = false;
       // The OSC is on screen from here on, so prime it before mpv even starts.
       if (initial.length) primeResumeKnob(initial[0]);
       // safety net: the file may be gone or fail to open — bring the picker back.
@@ -598,7 +407,7 @@
           setTimeout(safetyNet, 1000);
           return;
         }
-        showEmpty = true;
+        startScreen.showEmpty = true;
         void loadRecent();
       };
       setTimeout(safetyNet, 5000);
@@ -619,7 +428,7 @@
     // then grew a rail and a torrent list under them a moment later — a reflow
     // on every launch, and the one moment where the player has nothing else to
     // do but be ready.
-    if (showEmpty) await Promise.all([loadRecent(), refreshTorrents()]);
+    if (startScreen.showEmpty) await Promise.all([loadRecent(), refreshTorrents()]);
     loadWindowPrefs();
     await restoreGeometry();
     void applyAlwaysOnTop();
@@ -930,7 +739,7 @@
         setPendingResume(r.pos, r.paused);
         void openResumeSnapshot(r.path).then((opened) => {
           if (!opened) {
-            showEmpty = true;
+            startScreen.showEmpty = true;
             void loadRecent();
           }
         });
@@ -983,35 +792,14 @@
 
   onDestroy(() => {
     for (const un of unlisteners) un();
-    clearTimeout(titleTimer);
+    clearTitleTimer();
     if (player.ready) void destroy();
   });
 
-  /// Debounced on purpose: opening a file changes the title two or three times
-  /// in quick succession (cleared, then the filename, then the container's own
-  /// title), and each one is a native title-bar relayout on the main thread
-  /// while it is already busy opening the file. One call after things settle is
-  /// all the window menu and the Dock ever needed.
-  ///
-  /// This used to matter far more — every setTitle knocked the macOS traffic
-  /// lights back to their default spots and the correction was visible. That is
-  /// handled structurally now (macos_chrome.rs), so the debounce is a courtesy,
-  /// not a workaround.
-  let titleTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => {
-    const next = hasFile ? `${displayTitle} — Frame Player` : 'Frame Player';
-    clearTimeout(titleTimer);
-    titleTimer = setTimeout(() => {
-      void getCurrentWindow().setTitle(next).catch(() => {});
-    }, 250);
-  });
+  // The window's own title, debounced — see title.svelte.ts.
+  initWindowTitle();
 
   // ---- Bridge between mpv state and the page ------------------------------
-
-  /// Previous playlist position, kept because the slide direction is decided by
-  /// comparing against it — and by the time this runs the mirror is already the
-  /// new value.
-  let lastPlaylistPos = 0;
 
   /// Reactions to mpv property changes that are not the player module's own
   /// business: the seekbar knob, the taskbar, the start screen, the title
@@ -1045,7 +833,7 @@
         upscaleSourceChanged();
         break;
       case 'filename':
-        clearTimeout(emptyTimer);
+        clearTimeout(startScreen.emptyTimer);
         if (player.filename === null) {
           updateTaskbarProgress();
           // the file is gone (switched or closed) — commit the last position
@@ -1061,9 +849,9 @@
           // issuing the stop, and re-running this would rebuild the recents
           // list a second time — visible, because the cards would reshuffle
           // under the cursor as the posters arrive again.
-          if (!showEmpty) emptyTimer = setTimeout(enterStartScreen, 300);
+          if (!startScreen.showEmpty) startScreen.emptyTimer = setTimeout(enterStartScreen, 300);
         } else {
-          showEmpty = false;
+          startScreen.showEmpty = false;
           // the pause lets media-title update before the slide
           setTimeout(() => slideTitle(), 120);
         }
@@ -1096,12 +884,12 @@
         maybeStartThumbs();
         break;
       case 'playlist-pos':
-        if (player.playlistPos !== lastPlaylistPos) {
-          slideDir = player.playlistPos > lastPlaylistPos ? 'next' : 'prev';
+        if (player.playlistPos !== title.lastPlaylistPos) {
+          title.slideDir = player.playlistPos > title.lastPlaylistPos ? 'next' : 'prev';
           // Consumed by the next slideTitle: mpv reports the new position
           // before the new filename, so the flag is always set in time.
-          playlistStepped = true;
-          lastPlaylistPos = player.playlistPos;
+          title.playlistStepped = true;
+          title.lastPlaylistPos = player.playlistPos;
         }
         break;
     }
@@ -1165,7 +953,7 @@
   // when the start screen is up, where the window is nobody's.
   initWindowShape({
     sizeOwned: () => chrome.fullscreen || chrome.isMaximized,
-    resting: () => showEmpty,
+    resting: () => startScreen.showEmpty,
     settled: curtainSettled,
     // For the pinch: fullscreen only — "maximized" is any window at the
     // zoomed frame on macOS, and a pinch has to be able to bring one back.
@@ -1374,9 +1162,9 @@
   class:settling={chrome.settling}
   class:nocursor={chrome.cursorHidden}
   class:mac={IS_MAC}
-  class:no-video={showEmpty}
-  class:backdrop={!videoReady}
-  style:--veil-color={showEmpty ? '#101016' : '#000'}
+  class:no-video={startScreen.showEmpty}
+  class:backdrop={!startScreen.videoReady}
+  style:--veil-color={startScreen.showEmpty ? '#101016' : '#000'}
   style:--chrome-fade={chrome.unsteady ? '50ms' : null}
   onmousemove={pokeUi}
   onwheel={onWheel}
@@ -1397,7 +1185,7 @@
         <p>{t('error.mpv_hint')}</p>
       </div>
     </div>
-  {:else if showEmpty}
+  {:else if startScreen.showEmpty}
     <StartScreen
       torrentRows={opening.rows}
       torrentTotal={opening.total}
@@ -1469,7 +1257,7 @@
   {#if cast.remote}
     <CastScreen
     stateLabel={castStateLabel}
-    title={displayTitle}
+    title={title.displayTitle}
     onclick={onCastScreenClick}
     ondblclick={() => { clearCastClick(); void toggleFullscreen(); }}
   />
@@ -1480,11 +1268,11 @@
   <TopBar
     idle={chrome.idle}
     mini={mini.on}
-    noVideo={showEmpty}
+    noVideo={startScreen.showEmpty}
     fullscreen={chrome.fullscreen}
     barSide={chrome.barSide}
-    {barTitleText}
-    {titleSlide}
+    barTitleText={title.barTitleText}
+    titleSlide={title.titleSlide}
     bind:brandEl={chrome.brandEl}
     bind:chromeEl={chrome.chromeEl}
     updateAvail={updater.available}
@@ -1712,7 +1500,7 @@
     </svg>
   </button>
 
-  {#if !showEmpty}
+  {#if !startScreen.showEmpty}
   <!-- The click handler is a guard, not an affordance: it stops a click on the
        bar reaching the video's play/pause. There is nothing here to activate
        from the keyboard — every control inside is a real button, reachable on
