@@ -934,6 +934,61 @@ button.primary:hover {
   color: #8f8f9c;
 }
 
+/* The recents card's forget cross — here because the torrent list borrows it
+   (`.card-forget.torrow-forget`) and the two are separate components under
+   `start/`. Each override there is written to outweigh these, so losing the
+   scope's class here changed no winner; the one rule that won on source order
+   instead, `:focus-visible`'s `transition`, is restated in TorrentList. */
+.card-forget {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  /* Only the fade-out stays animated — see the rule below. */
+  transition: opacity 0.12s ease;
+}
+
+.card-forget svg {
+  width: 8px;
+  height: 8px;
+  fill: none;
+  display: block;
+}
+
+/* Appearance is instant (transition: none), like the fullscreen veil: the
+   card outline is not animated at all, and any delay on the cross reads as
+   "the card highlight is fading in slowly". */
+.card:hover .card-forget,
+.card-forget:focus-visible {
+  opacity: 1;
+  transition: none;
+}
+
+/* The start screen's two lists, the recents rail and the torrents, are each a
+   component under `start/` and share their frame and heading. */
+.recent {
+  width: 100%;
+  max-width: 900px;
+  flex: none;
+}
+
+.recent-head {
+  color: #b9b9c3;
+  font-size: 12.5px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
 
 /* Whatever is drawn over the picture leaves while the window's frame is
    changing, and comes back when it has stopped: the web content is a frame or
