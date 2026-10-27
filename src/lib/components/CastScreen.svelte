@@ -11,7 +11,6 @@
   import { cast } from '$lib/cast.svelte';
 
   interface Props {
-    stateLabel: string;
     /// What is playing, by the same name the title bar shows.
     title: string;
     onclick: () => void;
@@ -20,7 +19,15 @@
     ondblclick: () => void;
   }
 
-  let { stateLabel, title, onclick, ondblclick }: Props = $props();
+  let { title, onclick, ondblclick }: Props = $props();
+
+  const stateLabel = $derived(
+    cast.state === 'connecting' ? t('cast.state_connecting')
+    : cast.state === 'preparing' ? t('cast.state_preparing')
+    : cast.state === 'loading' || cast.state === 'buffering' ? t('cast.state_loading')
+    : cast.state === 'paused' ? t('cast.state_paused')
+    : t('cast.state_playing'),
+  );
 </script>
 
 <!-- The status card covers the video area, so without a handler of its own
