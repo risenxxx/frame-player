@@ -10,7 +10,7 @@
  *   with torrents in the first place.** An info hash plus a file index names a
  *   file exactly, and everyone can fetch it themselves. A guest joining mid-film
  *   adds the magnet and opens the right episode with no lookup at all, because
- *   the metadata is already cached beside the data (torrent.rs). Switching
+ *   the metadata is already cached beside the data (torrent/dirs.rs). Switching
  *   episodes is the same info hash with another index, which costs milliseconds.
  * - **A URL** works if the site lets each machine resolve it, which yt-dlp does
  *   on each end independently.

@@ -487,7 +487,7 @@ go run ./services/relay/cmd/probe -room ABC123 -hold 20s     # hold the room, on
 | `src-tauri/src/lib.rs` | Plugin registration, window and app lifecycle, commands |
 | `src-tauri/src/thumb_service.rs` | Seekbar thumbnails: decode, background storyboard, disk cache |
 | `src-tauri/src/step_engine.rs` | FFmpeg sidecar frame-stepper (kept working, disabled by default) |
-| `src-tauri/src/torrent.rs` | Torrent session and the loopback HTTP server mpv opens |
+| `src-tauri/src/torrent/` | Torrent session and the loopback HTTP server mpv opens |
 | `src-tauri/src/cast.rs` · `dlna.rs` | Casting: the Cast client, the LAN file server, the UPnP transport |
 | `src-tauri/src/opensubtitles.rs` | Subtitle search and download |
 | `src-tauri/src/catalog.rs` | The catalog: TMDB through our proxy, and the release lookup |

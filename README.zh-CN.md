@@ -299,7 +299,7 @@ go run ./services/relay/cmd/probe -room ABC123 -hold 20s     # hold the room, on
 | `src-tauri/src/lib.rs` | 插件注册、窗口和应用的生命周期、命令 |
 | `src-tauri/src/thumb_service.rs` | 进度条缩略图：解码、后台故事板、磁盘缓存 |
 | `src-tauri/src/step_engine.rs` | 基于 FFmpeg sidecar 的逐帧引擎（保持可用，默认禁用） |
-| `src-tauri/src/torrent.rs` | 种子会话，以及 mpv 打开的本地回环 HTTP 服务器 |
+| `src-tauri/src/torrent/` | 种子会话，以及 mpv 打开的本地回环 HTTP 服务器 |
 | `src-tauri/src/cast.rs` · `dlna.rs` | 投屏：Cast 客户端、局域网文件服务器、UPnP 传输 |
 | `src-tauri/src/opensubtitles.rs` | 字幕搜索与下载 |
 | `src-tauri/src/catalog.rs` | 片库：经由我们的代理访问 TMDB，以及资源查询 |

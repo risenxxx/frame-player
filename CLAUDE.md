@@ -132,7 +132,7 @@ are under "Commands" in its `.claude/rules/` file.
 | `src/lib/{player,playback,seek,frame-step,crop,picture-adjust,upscale,now-playing,audio-output}…` | mpv's mirrors and commands, playback whichever machine decodes, everything that moves the playhead, the picture | mpv-playback |
 | `src/lib/thumbs.svelte.ts`, `src-tauri/src/{thumb_service,color,step_engine}.rs` | Hover thumbnails, the FFmpeg sidecar, colour | thumbnails |
 | `src/lib/{tracks,resume,subs}.svelte.ts`, `languages.ts`, `src-tauri/src/{opensubtitles,external_dirs}.rs` | Tracks, the remembered choice, subtitle search | tracks-and-subtitles |
-| `src/lib/{open,torrent}.svelte.ts`, `feed.ts`, `src-tauri/src/{torrent,torrent_storage,feed}.rs` | Opening a source, torrent streaming | torrents-core, torrents-playback |
+| `src/lib/{open,torrent}.svelte.ts`, `feed.ts`, `src-tauri/src/torrent/`, `src-tauri/src/{torrent_storage,feed}.rs` | Opening a source, torrent streaming | torrents-core, torrents-playback |
 | `src-tauri/src/{net_route,upnp}.rs`, `src-tauri/vendor/` | The swarm's network, vendored librqbit | torrents-network |
 | `src-tauri/src/{cast,dlna,lan_sweep,airplay,airplay_hls}.rs`, `src/lib/cast.svelte.ts` | Google Cast, DLNA, AirPlay | casting |
 | `src/lib/sync/`, `services/`, `shared/` | Watching together, the Go services, the contracts two languages keep | sync |

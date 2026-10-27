@@ -1,7 +1,7 @@
 /**
  * Torrent streaming, player side (ROADMAP 21).
  *
- * The Rust half (torrent.rs) turns a magnet into a list of files, each with a
+ * The Rust half (torrent/) turns a magnet into a list of files, each with a
  * URL on our own loopback server; from mpv's point of view what follows is an
  * ordinary network stream, which is why so little of the player had to change.
  * What this module owns is the part that is *not* ordinary:
@@ -1060,7 +1060,7 @@ export interface TorrentOnDisk {
   size: number;
   /// The torrent's own name, read from the metadata cached beside its data.
   /// Present for anything opened by a build that cached it, whichever build
-  /// that was — see `cached_name` in torrent.rs.
+  /// that was — see `cached_name` in torrent/dirs.rs.
   name: string | null;
 }
 

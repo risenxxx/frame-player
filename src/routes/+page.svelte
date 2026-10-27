@@ -1592,7 +1592,7 @@
 
     <!-- A torrent holding more than one video is a question only the viewer can
          answer. The rest still become queue entries, which is free: nothing is
-         downloaded until mpv reads one (see torrent.rs). -->
+         downloaded until mpv reads one (see torrent/mod.rs). -->
     <!-- A feed holding more than one release. Picking one resolves it into an
          ordinary torrent, whose own file picker may follow. -->
     {#if opening.feedPick}

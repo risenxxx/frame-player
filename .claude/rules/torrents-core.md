@@ -1,5 +1,6 @@
 ---
 paths:
+  - "src-tauri/src/torrent/**"
   - "src-tauri/src/torrent*.rs"
   - "src/lib/torrent.svelte.ts"
 ---
@@ -17,7 +18,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 
 | Path | What lives there |
 |---|---|
-| `src-tauri/src/torrent.rs` | Torrent streaming: the lazy librqbit session, the loopback HTTP server mpv opens (`/t/<infohash>/<index>/<name>`, Range + HEAD), and `torrent_add`/`torrent_status`/`torrent_release`/`torrent_clear_cache`. Frontend half in `src/lib/torrent.svelte.ts` |
+| `src-tauri/src/torrent/` | Torrent streaming: the lazy librqbit session, the loopback HTTP server mpv opens (`/t/<infohash>/<index>/<name>`, Range + HEAD), and `torrent_add`/`torrent_status`/`torrent_release`/`torrent_clear_cache`. Frontend half in `src/lib/torrent.svelte.ts` |
 
 ## Critical gotchas
 

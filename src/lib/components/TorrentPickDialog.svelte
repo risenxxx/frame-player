@@ -2,7 +2,7 @@
   /// Which file of a multi-video torrent to play.
   ///
   /// The rest still become queue entries, which is free: nothing is downloaded
-  /// until mpv reads one (see torrent.rs).
+  /// until mpv reads one (see torrent/mod.rs).
   import Dialog from '$lib/components/Dialog.svelte';
   import ScrollFade from '$lib/components/ScrollFade.svelte';
   import { displayName, formatTime } from '$lib/format';

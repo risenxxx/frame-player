@@ -80,7 +80,7 @@ function run(player: HTMLElement, track: HTMLElement, readout: HTMLElement, figu
   for (let i = 0; i < Math.round(PIECES * (PLAYHEAD + AHEAD)); i++) mark(i)
   for (let i = Math.round(PIECES * (1 - TAIL)); i < PIECES; i++) mark(i)
 
-  /* `file_ranges` in torrent.rs: consecutive pieces merge into one band. */
+  /* `file_ranges` in torrent/status.rs: consecutive pieces merge into one band. */
   const drawBands = (): void => {
     const bands: [number, number][] = []
     for (let i = 0; i < PIECES; i++) {

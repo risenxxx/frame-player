@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src-tauri/src/torrent.rs"
+  - "src-tauri/src/torrent/**"
   - "src-tauri/src/net_route.rs"
   - "src-tauri/src/upnp.rs"
   - "src-tauri/vendor/**"

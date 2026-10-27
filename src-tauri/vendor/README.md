@@ -22,7 +22,7 @@ Why it is here rather than waited for: an ordinary BitTorrent handshake opens
 with the literal bytes `\x13BitTorrent protocol`, which is what a middlebox
 filtering on the protocol matches — and cutting the connection immediately after
 it is what DPI on several ISPs measurably does (see the swarm probe in
-`torrent.rs`: a peer that completes a TCP connection and then dies mid-stream).
+`torrent/tests.rs`: a peer that completes a TCP connection and then dies mid-stream).
 That failure is invisible from inside the player: peers are *seen*, some even
 connect, and nothing downloads. qBittorrent works on the same networks, and the
 difference is this.
