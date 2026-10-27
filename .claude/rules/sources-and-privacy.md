@@ -8,6 +8,7 @@ paths:
   - "src/lib/trash.ts"
   - "src/lib/components/ReportDialog.svelte"
   - "src/lib/components/StartScreen.svelte"
+  - "src/lib/components/start/**"
   - "src-tauri/src/logs.rs"
   - "src-tauri/src/install_count.rs"
   - "src-tauri/src/shell_handler.rs"

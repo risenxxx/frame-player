@@ -140,8 +140,8 @@
     background: rgba(40, 40, 54, 0.85);
   }
 
-  /* The start screen's half of this pair moved to StartScreen.svelte with its
-     markup; `.endcard` is still drawn here. */
+  /* The start screen's half of this pair moved to start/RecentRail.svelte
+     with its markup; `.endcard` is still drawn here. */
   .endcard:hover .card-poster {
     outline: 2px solid #818cf8;
     outline-offset: 1px;
