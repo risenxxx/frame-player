@@ -15,6 +15,8 @@
 //! commands call, logging each step — how the transport was measured, and how
 //! it is checked against a new receiver.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use serde::{Deserialize, Serialize};
 
 /// Where the menu row is, in the page's CSS pixels — the picker is put exactly
@@ -62,12 +64,9 @@ mod mac {
     use objc2::rc::Retained;
     use objc2::runtime::ProtocolObject;
     use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{NSButton, NSView, NSWindow};
-    use objc2_av_foundation::{
-        AVPlayer, AVPlayerItem, AVPlayerItemStatus, AVPlayerStatus, AVPlayerTimeControlStatus, AVRouteDetector,
-    };
+    use objc2_app_kit::{NSButton, NSView};
+    use objc2_av_foundation::{AVPlayer, AVPlayerItem, AVPlayerTimeControlStatus, AVRouteDetector};
     use objc2_av_kit::{AVRoutePickerView, AVRoutePickerViewDelegate};
-    use objc2_core_media::CMTime;
     use objc2_foundation::{NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSURL};
     use tauri::Manager as _;
 
@@ -212,16 +211,278 @@ mod mac {
         f(g.get_or_insert_with(Shared::default))
     }
 
+    /// AVFoundation, through one door.
+    ///
+    /// objc2-av-foundation marks every method `unsafe` because its headers were
+    /// translated and not audited, not because these calls carry a condition
+    /// the types leave open. What each wrapper below relies on is the same, and
+    /// its `SAFETY` line says which part of it applies: the receiver is
+    /// borrowed from a `Retained` the caller holds, so it is alive for the
+    /// call; every argument is a typed object or a plain value — no raw
+    /// pointer, no `AnyObject` — so the selector gets what its header declares;
+    /// and the caller is on the main thread, where every object of a session is
+    /// made and kept (`SESSION` is a main-thread local, reached only through
+    /// `on_main`). The views' half of that is checked by the types: an
+    /// `AVRoutePickerView` cannot be made or touched without a
+    /// `MainThreadMarker`.
+    mod av {
+        use objc2::rc::Retained;
+        use objc2::runtime::ProtocolObject;
+        use objc2::{MainThreadMarker, MainThreadOnly};
+        use objc2_app_kit::NSButton;
+        use objc2_av_foundation::{
+            AVMediaCharacteristic, AVMediaCharacteristicAudible, AVMediaCharacteristicContainsOnlyForcedSubtitles,
+            AVMediaCharacteristicLegible, AVMediaSelectionGroup, AVMediaSelectionOption, AVPlayer, AVPlayerItem,
+            AVPlayerItemStatus, AVPlayerStatus, AVPlayerTimeControlStatus, AVRouteDetector,
+        };
+        use objc2_av_kit::{AVRoutePickerView, AVRoutePickerViewDelegate};
+        use objc2_core_media::CMTime;
+        use objc2_foundation::{NSRect, NSURL};
+
+        /// A time at 600 ticks a second, the conventional video timescale.
+        pub fn time(seconds: f64) -> CMTime {
+            // SAFETY: CMTimeMakeWithSeconds is arithmetic on two values; a
+            // non-finite one yields an invalid CMTime, which is a value too.
+            unsafe { CMTime::with_seconds(seconds, 600) }
+        }
+
+        /// A time in seconds, 0 for an invalid or indefinite one.
+        pub fn seconds(t: CMTime) -> f64 {
+            // SAFETY: CMTimeGetSeconds reads the struct it is given by value.
+            let s = unsafe { t.seconds() };
+            if s.is_finite() { s } else { 0.0 }
+        }
+
+        /// An item for a URL, already seeked to `position` when it is past the
+        /// first half second.
+        pub fn item(url: &NSURL, position: f64, mtm: MainThreadMarker) -> Retained<AVPlayerItem> {
+            // SAFETY: a live URL; the seek's completion handler is nil, which
+            // the header allows.
+            unsafe {
+                let item = AVPlayerItem::playerItemWithURL(url, mtm);
+                if position > 0.5 {
+                    item.seekToTime_completionHandler(time(position), None);
+                }
+                item
+            }
+        }
+
+        /// A player for the first item, set up for AirPlay and still silent.
+        pub fn player(item: &AVPlayerItem, mtm: MainThreadMarker) -> Retained<AVPlayer> {
+            // SAFETY: a live item; the rest are setters taking a `bool`.
+            unsafe {
+                let player = AVPlayer::playerWithPlayerItem(Some(item), mtm);
+                player.setAllowsExternalPlayback(true);
+                player.setUsesExternalPlaybackWhileExternalScreenIsActive(true);
+                // Playing muted while the viewer chooses is the measured
+                // arrangement: the picked television picks up where the player
+                // is, and the Mac makes no sound of its own meanwhile. Unmuted
+                // the moment the route is external.
+                player.setMuted(true);
+                // Left to itself AVPlayer picks a file's subtitles from the
+                // system's language settings, and on a receiver that is a film
+                // with subtitles nobody asked for: the track that plays is the
+                // one the copy was made with (see the frontend's
+                // `prepareAirPlayCopy`).
+                player.setAppliesMediaSelectionCriteriaAutomatically(false);
+                player
+            }
+        }
+
+        /// The route picker for a player, at `frame` in its future superview.
+        /// It holds the delegate weakly: the caller keeps it alive.
+        pub fn picker(
+            frame: NSRect,
+            player: &AVPlayer,
+            delegate: &ProtocolObject<dyn AVRoutePickerViewDelegate>,
+            mtm: MainThreadMarker,
+        ) -> Retained<AVRoutePickerView> {
+            // SAFETY: a fresh allocation goes to its own initialiser once; the
+            // player and the delegate are live objects of the declared types,
+            // and a weak delegate that dies early reads as nil, not as a
+            // dangling pointer.
+            unsafe {
+                let picker = AVRoutePickerView::initWithFrame(AVRoutePickerView::alloc(mtm), frame);
+                picker.setPlayer(Some(player));
+                picker.setDelegate(Some(delegate));
+                picker
+            }
+        }
+
+        /// Press a button as a click would, with no sender.
+        pub fn click(button: &NSButton) {
+            // SAFETY: the sender is nil, which every control's action accepts;
+            // the `&NSButton` itself is proof of the main thread.
+            unsafe { button.performClick(None) }
+        }
+
+        /// Stop the player and let go of the route, the picker's part included;
+        /// where the player was, in seconds.
+        pub fn close(player: &AVPlayer, picker: &AVRoutePickerView) -> f64 {
+            // SAFETY: live objects; nil for the item, the picker's player and
+            // its delegate is each property's documented "none".
+            unsafe {
+                let time = seconds(player.currentTime());
+                player.pause();
+                player.replaceCurrentItemWithPlayerItem(None);
+                player.setAllowsExternalPlayback(false);
+                picker.setPlayer(None);
+                picker.setDelegate(None);
+                time
+            }
+        }
+
+        pub fn play(p: &AVPlayer) {
+            // SAFETY: a live player, no arguments.
+            unsafe { p.play() }
+        }
+
+        pub fn pause(p: &AVPlayer) {
+            // SAFETY: a live player, no arguments.
+            unsafe { p.pause() }
+        }
+
+        pub fn seek(p: &AVPlayer, seconds: f64) {
+            // SAFETY: a live player and a time passed by value.
+            unsafe { p.seekToTime(time(seconds)) }
+        }
+
+        pub fn unmute(p: &AVPlayer) {
+            // SAFETY: a live player and a `bool`.
+            unsafe { p.setMuted(false) }
+        }
+
+        /// The player's item, replaced; `None` takes it away.
+        pub fn set_item(p: &AVPlayer, item: Option<&AVPlayerItem>) {
+            // SAFETY: a live player and a live item or nil, which the header
+            // allows.
+            unsafe { p.replaceCurrentItemWithPlayerItem(item) }
+        }
+
+        /// What one status poll reads off the player.
+        pub struct Snapshot {
+            pub external: bool,
+            pub has_item: bool,
+            pub time: f64,
+            /// The item's length, 0 without an item or while it is unknown.
+            pub duration: f64,
+            pub failed: bool,
+            pub waiting_reason: Option<String>,
+            pub control: AVPlayerTimeControlStatus,
+        }
+
+        pub fn snapshot(p: &AVPlayer) -> Snapshot {
+            // SAFETY: getters only, on a live player and on the item it hands
+            // back retained.
+            unsafe {
+                let item = p.currentItem();
+                Snapshot {
+                    external: p.isExternalPlaybackActive(),
+                    has_item: item.is_some(),
+                    time: seconds(p.currentTime()),
+                    duration: item.as_ref().map(|i| seconds(i.duration())).unwrap_or(0.0),
+                    failed: p.status() == AVPlayerStatus::Failed
+                        || item.as_ref().is_some_and(|i| i.status() == AVPlayerItemStatus::Failed),
+                    waiting_reason: p.reasonForWaitingToPlay().map(|r| r.to_string()),
+                    control: p.timeControlStatus(),
+                }
+            }
+        }
+
+        /// The player's item once it is ready to play — before that its
+        /// selection groups are not there.
+        pub fn ready_item(p: &AVPlayer) -> Option<Retained<AVPlayerItem>> {
+            // SAFETY: getters on a live player and the item it hands back
+            // retained.
+            unsafe { p.currentItem().filter(|i| i.status() == AVPlayerItemStatus::ReadyToPlay) }
+        }
+
+        /// The characteristics a selection is made by: audible, legible, and
+        /// "only forced subtitles". `None` where the framework exports none.
+        pub type Characteristics = (
+            Option<&'static AVMediaCharacteristic>,
+            Option<&'static AVMediaCharacteristic>,
+            Option<&'static AVMediaCharacteristic>,
+        );
+
+        pub fn characteristics() -> Characteristics {
+            // SAFETY: extern statics of the framework, set by the loader before
+            // any code of ours runs and never written after; a weakly linked
+            // one that is missing reads as `None`.
+            unsafe {
+                (
+                    AVMediaCharacteristicAudible,
+                    AVMediaCharacteristicLegible,
+                    AVMediaCharacteristicContainsOnlyForcedSubtitles,
+                )
+            }
+        }
+
+        /// The item's selection group for a characteristic and its options in
+        /// order, those that also have `skip` left out.
+        #[allow(deprecated)]
+        pub fn group(
+            item: &AVPlayerItem,
+            characteristic: &AVMediaCharacteristic,
+            skip: Option<&AVMediaCharacteristic>,
+        ) -> Option<(Retained<AVMediaSelectionGroup>, Vec<Retained<AVMediaSelectionOption>>)> {
+            // SAFETY: getters on a live item and on the objects it hands back
+            // retained; the characteristics are live strings.
+            unsafe {
+                let group = item.asset().mediaSelectionGroupForMediaCharacteristic(characteristic)?;
+                let options = group
+                    .options()
+                    .iter()
+                    .filter(|o| skip.is_none_or(|skip| !o.hasMediaCharacteristic(skip)))
+                    .collect();
+                Some((group, options))
+            }
+        }
+
+        /// Select an option of the item's group, or none of it; the option's
+        /// name, for the log.
+        pub fn select(
+            item: &AVPlayerItem,
+            group: &AVMediaSelectionGroup,
+            option: Option<&AVMediaSelectionOption>,
+        ) -> Option<String> {
+            // SAFETY: a live item, a group read off its own asset, and one of
+            // that group's options or nil, which deselects as the header says.
+            unsafe {
+                item.selectMediaOption_inMediaSelectionGroup(option, group);
+                option.map(|o| o.displayName().to_string())
+            }
+        }
+
+        pub fn route_detector() -> Retained<AVRouteDetector> {
+            // SAFETY: `new` is alloc + init on a class with no init arguments.
+            unsafe { AVRouteDetector::new() }
+        }
+
+        pub fn detect_routes(d: &AVRouteDetector, on: bool) {
+            // SAFETY: a live detector and a `bool`.
+            unsafe { d.setRouteDetectionEnabled(on) }
+        }
+
+        pub fn multiple_routes(d: &AVRouteDetector) -> bool {
+            // SAFETY: a getter on a live detector.
+            unsafe { d.multipleRoutesDetected() }
+        }
+    }
+
     define_class!(
-        // SAFETY: NSObject has no subclassing requirements and this class has
-        // no Drop.
+        // SAFETY: NSObject has no subclassing requirements, and this class
+        // adds no ivars and no Drop for its superclass to know about.
         #[unsafe(super(NSObject))]
         #[thread_kind = MainThreadOnly]
         #[name = "FPAirPlayPickerDelegate"]
         struct PickerDelegate;
 
+        // SAFETY: the protocol asks nothing NSObject does not already give.
         unsafe impl NSObjectProtocol for PickerDelegate {}
 
+        // SAFETY: both methods have the signatures the protocol declares —
+        // `&self` and a picker view, nothing returned.
         unsafe impl AVRoutePickerViewDelegate for PickerDelegate {
             #[unsafe(method(routePickerViewWillBeginPresentingRoutes:))]
             fn will_begin(&self, _picker: &AVRoutePickerView) {
@@ -247,6 +508,8 @@ mod mac {
     impl PickerDelegate {
         fn new(mtm: MainThreadMarker) -> Retained<Self> {
             let this = Self::alloc(mtm).set_ivars(());
+            // SAFETY: NSObject's `init` takes nothing and returns the receiver,
+            // which has no ivars of its own left to set.
             unsafe { msg_send![super(this), init] }
         }
     }
@@ -302,12 +565,7 @@ mod mac {
     }
 
     fn content_view(window: &tauri::WebviewWindow) -> Option<Retained<NSView>> {
-        let ptr = window.ns_window().ok()? as *mut NSWindow;
-        if ptr.is_null() {
-            return None;
-        }
-        let ns = unsafe { Retained::retain(ptr) }?;
-        ns.contentView()
+        crate::macos_chrome::ns_window(window)?.contentView()
     }
 
     /// The anchor in the content view's coordinates. The web view covers the
@@ -321,11 +579,7 @@ mod mac {
 
     fn item_for(url: &str, position: f64, mtm: MainThreadMarker) -> Result<Retained<AVPlayerItem>, String> {
         let nsurl = NSURL::URLWithString(&NSString::from_str(url)).ok_or("bad url")?;
-        let item = unsafe { AVPlayerItem::playerItemWithURL(&nsurl, mtm) };
-        if position > 0.5 {
-            unsafe { item.seekToTime_completionHandler(CMTime::with_seconds(position, 600), None) };
-        }
-        Ok(item)
+        Ok(av::item(&nsurl, position, mtm))
     }
 
     /// The picker's own button. It is `AVRoutePickerButton`, a private subclass
@@ -339,7 +593,7 @@ mod mac {
         let button = picker_button(picker).ok_or("picker_unavailable")?;
         picker.setHidden(false);
         shared(|s| s.picker_closed_at = None);
-        unsafe { button.performClick(None) };
+        av::click(&button);
         Ok(())
     }
 
@@ -354,37 +608,17 @@ mod mac {
         close_on_main();
 
         let item = item_for(url, position, mtm)?;
-        let player = unsafe { AVPlayer::playerWithPlayerItem(Some(&item), mtm) };
-        unsafe {
-            player.setAllowsExternalPlayback(true);
-            player.setUsesExternalPlaybackWhileExternalScreenIsActive(true);
-            // Playing muted while the viewer chooses is the measured
-            // arrangement: the picked television picks up where the player is,
-            // and the Mac makes no sound of its own meanwhile. Unmuted the
-            // moment the route is external.
-            player.setMuted(true);
-            // Left to itself AVPlayer picks a file's subtitles from the system's
-            // language settings, and on a receiver that is a film with
-            // subtitles nobody asked for: the track that plays is the one the
-            // copy was made with (see the frontend's `prepareAirPlayCopy`).
-            player.setAppliesMediaSelectionCriteriaAutomatically(false);
-        }
+        let player = av::player(&item, mtm);
 
         let anchor = anchor.unwrap_or(Anchor { x: 90.0, y: 8.0, w: 40.0, h: 40.0 });
-        let picker = unsafe {
-            AVRoutePickerView::initWithFrame(AVRoutePickerView::alloc(mtm), frame_for(&view, anchor))
-        };
         let delegate = PickerDelegate::new(mtm);
-        unsafe {
-            picker.setPlayer(Some(&player));
-            picker.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-        }
+        let picker = av::picker(frame_for(&view, anchor), &player, ProtocolObject::from_ref(&*delegate), mtm);
         // Invisible, not hidden: a hidden view presents nothing. The system's
         // list opens beside it as if the menu row had been its button.
         picker.setAlphaValue(0.0);
         view.addSubview(&picker);
 
-        unsafe { player.play() };
+        av::play(&player);
         shared(|s| {
             s.saw_external = false;
             s.picker_closed_at = None;
@@ -406,26 +640,10 @@ mod mac {
         SESSION.with(|s| {
             let Some(s) = s.borrow_mut().take() else { return 0.0 };
             drop_session_dir(shared(|sh| sh.hls_dir.take()), None);
-            let time = seconds(unsafe { s.player.currentTime() });
-            unsafe {
-                s.player.pause();
-                s.player.replaceCurrentItemWithPlayerItem(None);
-                s.player.setAllowsExternalPlayback(false);
-                s.picker.setPlayer(None);
-                s.picker.setDelegate(None);
-            }
+            let time = av::close(&s.player, &s.picker);
             s.picker.removeFromSuperview();
             time.max(0.0)
         })
-    }
-
-    fn p_has_item(p: &AVPlayer) -> bool {
-        unsafe { p.currentItem() }.is_some()
-    }
-
-    fn seconds(t: CMTime) -> f64 {
-        let s = unsafe { t.seconds() };
-        if s.is_finite() { s } else { 0.0 }
     }
 
     fn status_on_main(lan_ip: Option<IpAddr>, peers: Vec<IpAddr>, hits: u64) -> AirPlayStatus {
@@ -444,9 +662,10 @@ mod mac {
                     }
                 }
             }
-            let external = unsafe { p.isExternalPlaybackActive() };
+            let now = av::snapshot(p);
+            let external = now.external;
             if external && !s.unmuted {
-                unsafe { p.setMuted(false) };
+                av::unmute(p);
                 s.unmuted = true;
             }
             let saw = shared(|sh| {
@@ -454,15 +673,14 @@ mod mac {
                 sh.saw_external
             });
             let swapping = shared(|sh| match sh.swapping_until {
-                Some(until) if Instant::now() < until && !(external && p_has_item(p)) => true,
+                Some(until) if Instant::now() < until && !(external && now.has_item) => true,
                 Some(_) => {
                     sh.swapping_until = None;
                     false
                 }
                 None => false,
             });
-            let item = unsafe { p.currentItem() };
-            let reported_time = seconds(unsafe { p.currentTime() });
+            let reported_time = now.time;
             let time = shared(|sh| match sh.seek_target {
                 Some((target, at)) if (reported_time - target).abs() > SEEK_LANDED && at.elapsed() < SEEK_PATIENCE => {
                     target
@@ -473,15 +691,14 @@ mod mac {
                 }
                 None => reported_time,
             });
-            let reported = item.as_ref().map(|i| seconds(unsafe { i.duration() })).unwrap_or(0.0);
+            let reported = now.duration;
             let duration = shared(|sh| {
                 if reported > 0.0 {
                     sh.duration = reported;
                 }
                 sh.duration
             });
-            let failed = unsafe { p.status() } == AVPlayerStatus::Failed
-                || item.as_ref().is_some_and(|i| unsafe { i.status() } == AVPlayerItemStatus::Failed);
+            let failed = now.failed;
 
             // Moving at least a quarter of real time since the last poll.
             let advancing = shared(|sh| {
@@ -492,7 +709,7 @@ mod mac {
                 sh.last_pos = Some((reported_time, Instant::now()));
                 moved
             });
-            let waiting_reason = unsafe { p.reasonForWaitingToPlay() }.map(|r| r.to_string());
+            let waiting_reason = now.waiting_reason;
 
             let (state, error) = if swapping {
                 ("loading", None)
@@ -507,7 +724,7 @@ mod mac {
                     ("connecting", None)
                 }
             } else {
-                match unsafe { p.timeControlStatus() } {
+                match now.control {
                     AVPlayerTimeControlStatus::Playing => ("playing", None),
                     AVPlayerTimeControlStatus::Paused if duration > 0.0 && time >= duration - 1.0 => {
                         ("ended", None)
@@ -581,40 +798,27 @@ mod mac {
     /// Select tracks of an HLS rendition on the current item, once it is ready.
     /// Indices count the master's groups in order; a legible option that only
     /// carries forced subtitles is skipped, should AVFoundation list one.
-    #[allow(deprecated)]
     fn apply_selection(p: &AVPlayer, audio: i64, sub: i64) -> Option<String> {
-        use objc2_av_foundation::{
-            AVMediaCharacteristicAudible, AVMediaCharacteristicContainsOnlyForcedSubtitles,
-            AVMediaCharacteristicLegible,
-        };
-        let item = unsafe { p.currentItem() }?;
-        if unsafe { item.status() } != AVPlayerItemStatus::ReadyToPlay {
-            return None;
-        }
-        let asset = unsafe { item.asset() };
+        let item = av::ready_item(p)?;
+        let (audible, legible, forced) = av::characteristics();
         let mut said = Vec::new();
-        if let Some(audible) = unsafe { AVMediaCharacteristicAudible } {
-            if let Some(group) = unsafe { asset.mediaSelectionGroupForMediaCharacteristic(audible) } {
-                let options = unsafe { group.options() };
-                if let Some(option) = usize::try_from(audio).ok().and_then(|i| options.iter().nth(i)) {
-                    unsafe { item.selectMediaOption_inMediaSelectionGroup(Some(&option), &group) };
-                    said.push(format!("audio {audio} {}", unsafe { option.displayName() }));
+        if let Some(audible) = audible {
+            if let Some((group, options)) = av::group(&item, audible, None) {
+                if let Some(option) = usize::try_from(audio).ok().and_then(|i| options.get(i)) {
+                    let name = av::select(&item, &group, Some(option)).unwrap_or_default();
+                    said.push(format!("audio {audio} {name}"));
                 }
             }
         }
-        if let (Some(legible), Some(forced)) =
-            (unsafe { AVMediaCharacteristicLegible }, unsafe { AVMediaCharacteristicContainsOnlyForcedSubtitles })
-        {
-            if let Some(group) = unsafe { asset.mediaSelectionGroupForMediaCharacteristic(legible) } {
-                let full: Vec<_> =
-                    unsafe { group.options() }.iter().filter(|o| !unsafe { o.hasMediaCharacteristic(forced) }).collect();
+        if let (Some(legible), Some(forced)) = (legible, forced) {
+            if let Some((group, full)) = av::group(&item, legible, Some(forced)) {
                 match usize::try_from(sub).ok().and_then(|i| full.get(i)) {
                     Some(option) => {
-                        unsafe { item.selectMediaOption_inMediaSelectionGroup(Some(option), &group) };
-                        said.push(format!("subtitle {sub} {}", unsafe { option.displayName() }));
+                        let name = av::select(&item, &group, Some(option)).unwrap_or_default();
+                        said.push(format!("subtitle {sub} {name}"));
                     }
                     None => {
-                        unsafe { item.selectMediaOption_inMediaSelectionGroup(None, &group) };
+                        av::select(&item, &group, None);
                         said.push("subtitles off".into());
                     }
                 }
@@ -658,7 +862,7 @@ mod mac {
             on_main(app, |_| {
                 SESSION.with(|s| {
                     if let Some(s) = s.borrow().as_ref() {
-                        unsafe { s.player.replaceCurrentItemWithPlayerItem(None) };
+                        av::set_item(&s.player, None);
                     }
                 })
             })
@@ -678,17 +882,15 @@ mod mac {
             SESSION.with(|s| {
                 let s = s.borrow();
                 let s = s.as_ref().ok_or("not connected")?;
-                unsafe {
-                    s.player.replaceCurrentItemWithPlayerItem(Some(&item));
-                    // The item's own seek is not enough here: on a route that is
-                    // already external, a replaced item started from zero
-                    // (measured on an audio switch at 312 s), where a fresh
-                    // player's first item honours it. So the player seeks too.
-                    if position > 0.5 {
-                        s.player.seekToTime(CMTime::with_seconds(position, 600));
-                    }
-                    s.player.play();
+                av::set_item(&s.player, Some(&item));
+                // The item's own seek is not enough here: on a route that is
+                // already external, a replaced item started from zero (measured
+                // on an audio switch at 312 s), where a fresh player's first
+                // item honours it. So the player seeks too.
+                if position > 0.5 {
+                    av::seek(&s.player, position);
                 }
+                av::play(&s.player);
                 Ok(())
             })
         })
@@ -718,14 +920,14 @@ mod mac {
                 let s = s.as_ref().ok_or("not connected")?;
                 let p = &s.player;
                 match action.as_str() {
-                    "play" => unsafe { p.play() },
-                    "pause" => unsafe { p.pause() },
+                    "play" => av::play(p),
+                    "pause" => av::pause(p),
                     // Measured forward and back: each lands, as a fresh Range
                     // request from the television at the new offset.
                     "seek" => {
                         let target = value.unwrap_or(0.0).max(0.0);
                         shared(|sh| sh.seek_target = Some((target, Instant::now())));
-                        unsafe { p.seekToTime(CMTime::with_seconds(target, 600)) }
+                        av::seek(p, target)
                     }
                     "volume" | "mute" => return Err("volume_fixed".to_string()),
                     _ => return Err("unknown action".to_string()),
@@ -776,8 +978,8 @@ mod mac {
         let _ = on_main(app, move |_| {
             DETECTOR.with(|d| {
                 let mut d = d.borrow_mut();
-                let det = d.get_or_insert_with(|| unsafe { AVRouteDetector::new() });
-                unsafe { det.setRouteDetectionEnabled(on) };
+                let det = d.get_or_insert_with(av::route_detector);
+                av::detect_routes(det, on);
             })
         })
         .await;
@@ -788,7 +990,7 @@ mod mac {
     /// way to ask.
     pub async fn routes(app: &tauri::AppHandle) -> bool {
         on_main(app, |_| {
-            DETECTOR.with(|d| d.borrow().as_ref().is_some_and(|d| unsafe { d.multipleRoutesDetected() }))
+            DETECTOR.with(|d| d.borrow().as_ref().is_some_and(|d| av::multiple_routes(d)))
         })
         .await
         .unwrap_or(false)
