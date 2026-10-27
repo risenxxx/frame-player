@@ -3,19 +3,21 @@
 
   Every mock on this site is a picture of the player's own interface, so a
   label in it is the player's label in that language — "Найти субтитры…", not
-  a translator's synonym for it. The application's dictionary is
-  src/lib/i18n.svelte.ts at the root of the repository; this module reads it as
-  text (it is a Svelte module, not something this build can import) and holds
-  each mapped string of ours to it, in every language. A label renamed in the
-  player fails the site's build until the mock follows.
+  a translator's synonym for it. The application's dictionaries are
+  src/lib/i18n/{ru,en,zh}.ts at the root of the repository — plain TypeScript
+  modules with no imports beyond a type, so this build imports them as they
+  are — and this module holds each mapped string of ours to them, in every
+  language. A label renamed in the player fails the site's build until the
+  mock follows.
 
   `MOCK_STRINGS` is the map: our dotted path → the application's key, with the
   values to fill into the application's placeholders where the mock shows a
   particular one (the mock's "9 videos" is the player's `{count} videos`), and
   the renames where the two name a placeholder differently.
 */
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { en } from '../../../src/lib/i18n/en.ts'
+import { ru } from '../../../src/lib/i18n/ru.ts'
+import { zh } from '../../../src/lib/i18n/zh.ts'
 import { LOCALES, type Locale } from './locales.ts'
 import { strings } from './index.ts'
 
@@ -79,25 +81,7 @@ const MOCK_STRINGS: Record<string, Mapping> = {
   'mock.start.videos': { key: 'start.torrent_files', fill: { count: 9 } },
 }
 
-/* The application's dictionaries keep their language as the variable name:
-   `const ru = {`, `const en: Record<MessageKey, string> = {`. */
-function appDictionaries(): Record<Locale, Record<string, string>> {
-  const file = resolve(process.cwd(), '..', 'src/lib/i18n.svelte.ts')
-  const text = readFileSync(file, 'utf8')
-  const out = {} as Record<Locale, Record<string, string>>
-  for (const lang of LOCALES) {
-    const start = text.search(new RegExp(`^const ${lang}\\b[^=]*= \\{`, 'm'))
-    if (start < 0) throw new Error(`${file}: no \`const ${lang} = {\``)
-    const end = text.indexOf('\n}', start)
-    const body = text.slice(start, end)
-    const dict: Record<string, string> = {}
-    for (const m of body.matchAll(/^\s+'([\w.]+)':\s*(['"`])((?:\\.|(?!\2)[^\\])*)\2/gms)) {
-      dict[m[1]!] = m[3]!.replace(/\\(['"`\\])/g, '$1')
-    }
-    out[lang] = dict
-  }
-  return out
-}
+const APP: Record<Locale, Record<string, string>> = { ru, en, zh }
 
 const at = (obj: unknown, path: string): unknown =>
   path.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], obj)
@@ -108,7 +92,7 @@ let checked = false
 export function checkMockStrings(): void {
   if (checked) return
   checked = true
-  const app = appDictionaries()
+  const app = APP
   const errors: string[] = []
   for (const lang of LOCALES) {
     const s = strings(lang)

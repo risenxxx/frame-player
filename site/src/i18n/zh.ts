@@ -1,7 +1,7 @@
 /*
   The Simplified Chinese site. Typed against en.ts, which defines every key;
   written against docs/zh-glossary.md and the player's own `zh` dictionary
-  (src/lib/i18n.svelte.ts), so the site calls a thing what the program calls it
+  (src/lib/i18n/zh.ts), so the site calls a thing what the program calls it
   — 种子, 用户 for its peers, 投屏, 一起看, 片库, 边下边播.
 
   The glossary's style rules hold here too: full-width punctuation, a

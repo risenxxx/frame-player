@@ -55,7 +55,7 @@ pub struct MenuChecks {
 pub struct MenuChecksState(Mutex<Option<MenuChecks>>);
 
 /// Menu labels. The menu is built natively, so it cannot reach the frontend
-/// dictionary — the three tables here mirror `src/lib/i18n.svelte.ts` and have
+/// dictionary — the three tables here mirror `src/lib/i18n/` and have
 /// to be kept in sync by hand. ZH follows Apple's own zh-CN menu wording
 /// (全屏幕, 缩放, 打开位置…) where a standard item exists, so it differs from the
 /// HTML menus on purpose. Everything else about the menu is language-agnostic.
