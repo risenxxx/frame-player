@@ -1448,7 +1448,7 @@ pub fn run() {
             let _ = ffmpeg_the_third::init();
             // The default output device, for the per-device audio offset.
             audio_output::watch(app.handle().clone());
-            // Recon only, off by default: see dlna.rs. It has to run inside the
+            // Recon only, off by default: see dlna/headless.rs. It has to run inside the
             // app because macOS drops multicast for a process with no Local
             // Network permission, which makes a CLI probe answer "nothing here"
             // whatever the network holds.

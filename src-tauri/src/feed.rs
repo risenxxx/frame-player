@@ -31,7 +31,7 @@
 //! Elements are matched by **local name**, so a namespace prefix a site chose
 //! differently from the next one costs nothing. This is also why it is a real
 //! parser (quick-xml, already in the tree) rather than the string scanning
-//! `dlna.rs` gets away with: the number of shapes here is the reason that
+//! `dlna/` gets away with: the number of shapes here is the reason that
 //! module's own note says to take a dependency instead.
 //!
 //! ## What travels, and through what

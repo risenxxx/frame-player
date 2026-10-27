@@ -87,7 +87,7 @@ pub async fn check(port: u16) -> PortStatus {
             continue;
         };
         // Services are found by scanning for `<service>` rather than parsed
-        // properly, exactly as the renderer description is read in dlna.rs: the
+        // properly, exactly as the renderer description is read in dlna/description.rs: the
         // one thing wanted out of this document is a control URL next to a
         // service type, and a real XML parser for that is a dependency to carry
         // for one field.
