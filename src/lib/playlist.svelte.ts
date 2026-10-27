@@ -369,3 +369,11 @@ export async function queueTorrent(files: { path: string; url: string }[], opene
 
 /// Natural order, the way a file manager sorts: "ep2" before "ep10".
 const naturalOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+/// Drop an entry. mpv renumbers what follows, so the list is re-read rather
+/// than patched — and removing the entry that is playing is allowed, because
+/// mpv handles it by moving on, which is what the viewer asked for.
+export async function removeFromQueue(index: number) {
+  await command('playlist-remove', [String(index)]).catch(() => {});
+  void loadPlaylist();
+}
