@@ -5,6 +5,7 @@ paths:
   - "src/lib/osd.svelte.ts"
   - "src/lib/overlays.svelte.ts"
   - "src/lib/floating.ts"
+  - "src/lib/tooltip.svelte.ts"
   - "src/lib/faded.svelte.ts"
   - "src/lib/links.ts"
 ---
@@ -26,7 +27,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 
 ## Rules
 
-- **mpv option surface**: defaults are set in `initialOptions` in +page.svelte; user overrides come from `%APPDATA%/<identifier>/mpv.conf` (command `user_mpv_conf`, template in lib.rs, `wid` filtered out). → [ui-surfaces](../../docs/rules/ui-surfaces.md)
+- **mpv option surface**: defaults are set in `initialOptions` in `initPlayer` (player/session.ts); user overrides come from `%APPDATA%/<identifier>/mpv.conf` (command `user_mpv_conf`, template in lib.rs, `wid` filtered out). → [ui-surfaces](../../docs/rules/ui-surfaces.md)
 - **Returning to the start screen is a destination, not a blank to wait out.** `showEmpty` is debounced by 300 ms because a playlist transition blanks `filename` for a moment and the picker must not flash through it. → [ui-surfaces](../../docs/rules/ui-surfaces.md)
 - **A control's actions belong to the control, not to the list around it.** The delay stepper's reset used to be a `.menu-item` under the −/+ pill, which is correct for a list row and wrong beside a control: a menu row is … → [ui-surfaces](../../docs/rules/ui-surfaces.md)
 - **The settings dialog has two control shapes, and the choice between them is about the value, not the layout.** A pill (`.segmented`) picks one of several *named* values; a slider covers a continuous range. → [ui-surfaces](../../docs/rules/ui-surfaces.md)
