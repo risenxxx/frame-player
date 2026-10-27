@@ -14,6 +14,8 @@
 //! since on a long film that would mean decoding the entire file for a
 //! difference the eye cannot see.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
@@ -117,6 +119,11 @@ struct ThumbSession {
     out_h: u32,
 }
 
+// SAFETY: the FFmpeg contexts inside hold raw pointers, which is all that
+// keeps them from being `Send`; FFmpeg ties none of them to a thread (no
+// thread-local state), and every use goes through the `Mutex` in
+// `ThumbInner`, so a session moves between threads but is never used from
+// two at once.
 unsafe impl Send for ThumbSession {}
 
 impl ThumbSession {
@@ -392,6 +399,10 @@ impl ThumbSession {
                 let bytes = out.data(i);
                 let s = out.stride(i) / 2;
                 let n = s * h;
+                // SAFETY: the plane's own bytes, borrowed from `out` for as long
+                // as the slice lives; FFmpeg aligns every plane to far more
+                // than two bytes, and the length is clamped to the whole
+                // samples the plane holds.
                 let words =
                     unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const u16, n.min(bytes.len() / 2)) };
                 (words, s)
@@ -464,6 +475,10 @@ fn dolby_profile(stream: &ffmpeg::format::stream::Stream) -> Option<u8> {
         bl_signal_compatibility_id: u8,
         md_compression: u8,
     }
+    // SAFETY: the stream's codec parameters, alive while `stream` is borrowed;
+    // `coded_side_data` is an array of `nb_coded_side_data` entries, each
+    // payload `size` bytes long — checked against the record before it is
+    // read, and the record is all `u8`, so any alignment does.
     unsafe {
         let par = stream.parameters();
         let par = par.as_ptr();
@@ -511,6 +526,8 @@ fn set_sdr_colorspace(ctx: &mut scaling::Context, frame: &Video) {
         _ => ffmpeg::sys::SWS_CS_ITU709,
     };
     let full = i32::from(frame.color_range() == Range::JPEG);
+    // SAFETY: a live scaler context borrowed mutably for the call, and the
+    // coefficient tables `sws_getCoefficients` returns, static in libswscale.
     unsafe {
         let coeff = ffmpeg::sys::sws_getCoefficients(src);
         let dst = ffmpeg::sys::sws_getCoefficients(ffmpeg::sys::SWS_CS_ITU709);
@@ -1051,6 +1068,7 @@ fn interval_for(duration: f64) -> f64 {
 /// available, but the player preempts the storyboard rather than the reverse.
 fn background_qos() {
     #[cfg(target_os = "macos")]
+    // SAFETY: sets the calling thread's own class; plain values, no memory.
     unsafe {
         libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
     }
@@ -1494,6 +1512,11 @@ pub async fn container_titles(paths: Vec<String>) -> Vec<Option<String>> {
 fn container_title(path: &str) -> Option<String> {
     let c_path = std::ffi::CString::new(path).ok()?;
     let key = std::ffi::CString::new("title").ok()?;
+    // SAFETY: `avformat_open_input` fills a null local with a context it
+    // allocates, given a NUL-terminated path and no format or options; the
+    // context is closed on every path out once it is open. The dictionary
+    // entry and its value belong to the context and are copied out before it
+    // closes.
     unsafe {
         let mut ctx: *mut ffmpeg::sys::AVFormatContext = std::ptr::null_mut();
         if ffmpeg::sys::avformat_open_input(

@@ -9,6 +9,8 @@
 //! reason for the cache below is that the storyboard asks after every cell —
 //! several times a second on a cheap file.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -54,6 +56,7 @@ fn read() -> bool {
     unsafe extern "C" {
         fn IOPSGetTimeRemainingEstimate() -> f64;
     }
+    // SAFETY: takes nothing and returns a double; no memory of ours involved.
     unsafe { IOPSGetTimeRemainingEstimate() != UNLIMITED }
 }
 
@@ -62,7 +65,9 @@ fn read() -> bool {
     use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
     // ACLineStatus: 0 offline, 1 online, 255 unknown. Only an explicit 0 is a
     // battery — a machine that does not know is treated as plugged in.
+    // SAFETY: a struct of integers, for which all zeroes is a valid value.
     let mut status: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
+    // SAFETY: a local struct for the call to fill.
     if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
         return false;
     }
