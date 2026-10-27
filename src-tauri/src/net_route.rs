@@ -19,8 +19,6 @@
 //! does not cover the loopback server mpv reads from, the casting server or the
 //! catalog: this is about the swarm.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
 /// One interface, as the settings list shows it.

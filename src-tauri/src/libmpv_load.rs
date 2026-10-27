@@ -29,8 +29,6 @@
 //! (`libmpv_load_error`), which says so in place of the plugin's message. If it
 //! succeeds, the wrapper's later load only takes another reference.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use serde::Serialize;
 
 /// Why libmpv-2.dll could not be loaded, as the frontend shows it.

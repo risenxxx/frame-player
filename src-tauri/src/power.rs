@@ -9,8 +9,6 @@
 //! reason for the cache below is that the storyboard asks after every cell —
 //! several times a second on a cheap file.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 

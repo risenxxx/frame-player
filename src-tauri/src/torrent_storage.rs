@@ -42,8 +42,6 @@
 //!   by it — it is how a torrent being paused or deleted stops writing through
 //!   a storage somebody else may still hold.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};

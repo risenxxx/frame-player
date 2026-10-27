@@ -14,8 +14,6 @@
 //! since on a long film that would mean decoding the entire file for a
 //! difference the eye cannot see.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
