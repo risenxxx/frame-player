@@ -17,6 +17,8 @@
 //! microseconds to ask and changes when somebody pairs a speaker — a second
 //! and a half late is not a thing anybody watching a film can see.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use serde::Serialize;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -132,6 +134,8 @@ mod platform {
     fn default_device() -> Option<u32> {
         let mut device: u32 = 0;
         let mut size = std::mem::size_of::<u32>() as u32;
+        // SAFETY: the default output device is an `AudioObjectID` (u32), and
+        // the out-buffer is a local u32 with its size passed; no qualifier.
         let status = unsafe {
             AudioObjectGetPropertyData(
                 SYSTEM_OBJECT,
@@ -150,6 +154,9 @@ mod platform {
     fn string_property(device: u32, selector: u32) -> Option<String> {
         let mut value: CFStringRef = std::ptr::null();
         let mut size = std::mem::size_of::<CFStringRef>() as u32;
+        // SAFETY: both selectors asked for here answer a CFStringRef, and the
+        // out-buffer is a local of exactly that size, passed with its size;
+        // no qualifier.
         let status = unsafe {
             AudioObjectGetPropertyData(
                 device,
@@ -163,6 +170,8 @@ mod platform {
         if status != 0 || value.is_null() {
             return None;
         }
+        // SAFETY: a non-null CFString this call handed us under the create
+        // rule (see above), released by `owned` and by nothing else.
         let owned = unsafe { CFString::wrap_under_create_rule(value) };
         let text = owned.to_string();
         (!text.is_empty()).then_some(text)
@@ -186,6 +195,9 @@ mod platform {
 
     impl Source {
         pub fn new() -> Option<Self> {
+            // SAFETY: COM initialised for this thread, which then keeps the
+            // enumerator (see `Source`), and the enumerator created by its
+            // class id; the `windows` crate types both calls' arguments.
             unsafe {
                 // S_FALSE (already initialised) is fine; a mode clash is not
                 // ours to fix and the create below will say so.
@@ -199,6 +211,10 @@ mod platform {
         /// `eMultimedia`, the role mpv's WASAPI output asks for when it is
         /// left on its default device.
         pub fn default_output(&mut self) -> Option<AudioOutput> {
+            // SAFETY: interface calls on a live enumerator on the thread COM
+            // was initialised on, through the `windows` crate's typed
+            // wrappers; the id string `GetId` allocates is copied out and then
+            // freed once with `CoTaskMemFree`, as its documentation asks.
             unsafe {
                 let device = self.enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia).ok()?;
                 let raw = device.GetId().ok()?;

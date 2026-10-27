@@ -22,6 +22,8 @@
 //! The list there covers AppKit's predefined items (Cmd+Q/W/H/M, the Edit menu)
 //! as well as the ones declared below.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use std::sync::{Mutex, Once};
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -423,6 +425,13 @@ fn show_about(app: &tauri::AppHandle<Wry>) {
     let version = app.package_info().version.to_string();
     let ns = |t: &str| NSString::from_str(t);
 
+    // SAFETY: every message is an AppKit or Foundation method sent with the
+    // argument types its header declares — objects that are alive for the
+    // call, an `NSTextAlignment`, a CGFloat — and read back as the type it
+    // returns: `new`/`alloc` + `init…` give owned objects and the rest
+    // borrowed ones, which `Retained` accounts for by method family, and the
+    // one nullable result (`URLWithString:`) is an `Option`. Called on the
+    // main thread (see above).
     unsafe {
         let centered: Retained<AnyObject> = msg_send![class!(NSMutableParagraphStyle), new];
         // From the crate rather than a literal: AppKit numbers the alignments

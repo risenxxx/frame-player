@@ -5,6 +5,8 @@
 //! GOP. Meanwhile mpv sits paused behind a canvas overlay, and the frontend
 //! walks it to the displayed frame with a background pre-seek.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -41,8 +43,10 @@ pub struct StepSession {
     continuous_tail: bool,
 }
 
-// Access to the session is serialized through a Mutex; FFmpeg contexts are not
-// thread-bound (no TLS), so moving them between threads is safe.
+// SAFETY: access to the session is serialized through a Mutex, and FFmpeg
+// contexts are not thread-bound (no TLS), so moving them between threads is
+// sound — the raw pointers inside are the only reason the compiler cannot see
+// that.
 unsafe impl Send for StepSession {}
 
 impl StepSession {

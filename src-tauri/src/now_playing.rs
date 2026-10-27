@@ -23,6 +23,8 @@
 //! through a bindings crate: six selectors and three constants are not worth a
 //! dependency, and every one of them is checked here against the headers.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use tauri::AppHandle;
 
 #[cfg(target_os = "macos")]
@@ -96,12 +98,15 @@ struct RemoteCommand {
 #[cfg(target_os = "macos")]
 fn info_center() -> Option<Retained<AnyObject>> {
     let class = AnyClass::get(c"MPNowPlayingInfoCenter")?;
+    // SAFETY: `+defaultCenter` takes nothing and returns the shared instance,
+    // never nil; the none family, so `Retained` takes a reference of its own.
     Some(unsafe { msg_send![class, defaultCenter] })
 }
 
 #[cfg(target_os = "macos")]
 fn command_center() -> Option<Retained<AnyObject>> {
     let class = AnyClass::get(c"MPRemoteCommandCenter")?;
+    // SAFETY: `+sharedCommandCenter`, as `defaultCenter` above.
     Some(unsafe { msg_send![class, sharedCommandCenter] })
 }
 
@@ -113,6 +118,9 @@ fn apply(info: &NowPlaying) {
     };
     if !info.playing {
         let none: *mut AnyObject = std::ptr::null_mut();
+        // SAFETY: the info center's two setters as MediaPlayer declares them:
+        // a nullable dictionary (nil takes the listing down) and an
+        // `MPNowPlayingPlaybackState`, an NSInteger.
         unsafe {
             let _: () = msg_send![&*center, setNowPlayingInfo: none];
             let _: () = msg_send![&*center, setPlaybackState: STATE_STOPPED];
@@ -123,6 +131,11 @@ fn apply(info: &NowPlaying) {
 
     let dict = NSMutableDictionary::<NSString, NSObject>::new();
     let number = |v: f64| Retained::into_super(NSNumber::new_f64(v));
+    // SAFETY: the keys are MediaPlayer's exported constant strings, set by the
+    // loader before any code of ours runs and never written after; the values
+    // are the types each key's documentation names (a string, NSNumbers).
+    // `setNowPlayingInfo:` takes the dictionary (copying it) and
+    // `setPlaybackState:` an NSInteger.
     unsafe {
         dict.insert(MPMediaItemPropertyTitle, &*Retained::into_super(NSString::from_str(&info.title)));
         if info.duration > 0.0 {
@@ -158,6 +171,11 @@ fn set_enabled(commands: &[&str], enabled: &[bool]) {
             continue;
         };
         let sel = objc2::runtime::Sel::register(&name);
+        // SAFETY: every name passed is one of MPRemoteCommandCenter's command
+        // properties, a getter returning an `MPRemoteCommand` the center owns
+        // and keeps (so the unretained pointer stays valid for the next line);
+        // an unknown one would answer nil, which is checked. `setEnabled:`
+        // takes a BOOL.
         unsafe {
             let cmd: *mut AnyObject = msg_send![&*center, performSelector: sel];
             if cmd.is_null() {
@@ -180,6 +198,9 @@ fn install(app: AppHandle) {
     let handler = |command: &'static str, seek: bool| {
         let app = app.clone();
         block2::RcBlock::new(move |event: core::ptr::NonNull<AnyObject>| -> isize {
+            // SAFETY: only the change-position command is wired with `seek`,
+            // and its event is an `MPChangePlaybackPositionCommandEvent`,
+            // alive for the call, whose `positionTime` is a double.
             let position = seek.then(|| unsafe {
                 let p: f64 = msg_send![event.as_ptr(), positionTime];
                 p
@@ -190,10 +211,16 @@ fn install(app: AppHandle) {
     };
     macro_rules! wire {
         ($sel:ident, $name:literal, $seek:literal) => {{
-            let cmd: Retained<AnyObject> = unsafe { msg_send![&*center, $sel] };
             let block = handler($name, $seek);
-            let _: *mut AnyObject = unsafe { msg_send![&*cmd, addTargetWithHandler: &*block] };
+            // SAFETY: `$sel` is one of the center's command properties, an
+            // `MPRemoteCommand` getter that never answers nil.
+            // `addTargetWithHandler:` takes a block of the
+            // `MPRemoteCommandHandlerStatus (^)(MPRemoteCommandEvent *)` type
+            // `handler` builds, copies it, and returns a target this does not
+            // need; `setEnabled:` takes a BOOL.
             unsafe {
+                let cmd: Retained<AnyObject> = msg_send![&*center, $sel];
+                let _: *mut AnyObject = msg_send![&*cmd, addTargetWithHandler: &*block];
                 let _: () = msg_send![&*cmd, setEnabled: Bool::YES];
             }
         }};
