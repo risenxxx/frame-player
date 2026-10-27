@@ -31,7 +31,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -77,7 +77,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup toolchain
         uses: moonrepo/setup-toolchain@v0
@@ -105,7 +105,7 @@ jobs:
       - name: Cache native SDKs (Windows)
         if: runner.os == 'Windows'
         id: sdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             src-tauri/lib
@@ -237,7 +237,7 @@ jobs:
       - name: Restore built app (macOS)
         if: runner.os == 'macOS'
         id: app-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: src-tauri/target/release/bundle/macos
           key: mac-app-${{ github.sha }}-${{ needs.check-version.outputs.version }}
@@ -270,7 +270,7 @@ jobs:
 
       - name: Save built app (macOS)
         if: runner.os == 'macOS' && steps.app-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: src-tauri/target/release/bundle/macos
           key: mac-app-${{ github.sha }}-${{ needs.check-version.outputs.version }}
@@ -486,7 +486,7 @@ jobs:
       # this job exists to publish — and the failure would look like the build
       # producing nothing.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4

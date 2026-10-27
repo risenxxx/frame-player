@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Wrangler 4 requires Node 22.19 or newer. This directory has no
       # `.prototools` of its own: proto walks up to the repository root's.
