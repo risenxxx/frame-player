@@ -4,7 +4,7 @@ paths:
   - "src/lib/torrent.svelte.ts"
   - "src/lib/stall.svelte.ts"
   - "src/lib/feed.ts"
-  - "src-tauri/src/torrent.rs"
+  - "src-tauri/src/torrent/**"
   - "src-tauri/src/feed.rs"
   - "src/lib/components/TorrentPickDialog.svelte"
   - "src/lib/components/TorrentUpdateDialog.svelte"

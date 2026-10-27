@@ -70,7 +70,7 @@ anyhow = "1"
 # `NonZeroU32`, so even "zero" cannot be expressed. With the feature on and the
 # flag false, behaviour is identical to the feature being off.
 librqbit = { version = "9.0.1", default-features = false, features = ["rust-tls", "disable-upload"] }
-# The local HTTP server mpv opens (torrent.rs). hyper/tokio are already in the
+# The local HTTP server mpv opens (torrent/http.rs). hyper/tokio are already in the
 # tree via reqwest and tauri, so this is a handful of lines of framing rather
 # than a new dependency — and it is why librqbit's own `http-api` feature (axum
 # + tower-http, a whole web framework for one route) stays off.

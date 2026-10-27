@@ -429,7 +429,7 @@ impl StorageFactory for LazyStorageFactory {
     /// way around it. Without it every torrent is dropped from the session
     /// store the moment it is added — no resume data, no restore, and a full
     /// re-hash of everything on every open, which is what the five offline
-    /// torrent tests in torrent.rs caught.
+    /// torrent tests in torrent/tests.rs caught.
     fn is_type_id(&self, type_id: std::any::TypeId) -> bool {
         type_id == std::any::TypeId::of::<Self>()
             || type_id == std::any::TypeId::of::<FilesystemStorageFactory>()

@@ -351,7 +351,7 @@ export async function queueFolder(openedPath: string) {
  * A torrent holding a season *is* a playlist — the roadmap's observation, and it
  * costs nothing here because a URL is only a string: nothing is downloaded until
  * mpv actually reads one, at which point the server selects that file (see the
- * module header in torrent.rs). So a twelve-episode torrent produces a
+ * module header in torrent/mod.rs). So a twelve-episode torrent produces a
  * twelve-entry queue that still only fetches the episode being watched.
  *
  * Ordered by the *path inside the torrent*, not the torrent's own file order,

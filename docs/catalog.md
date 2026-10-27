@@ -9,7 +9,7 @@ design would assume. The rules that must not be broken are in
 
 The worked example throughout is **Sintel** — the Blender Foundation's Creative
 Commons short, which this repository already uses as its torrent test fixture
-(`sintel_smoke` in `torrent.rs`). It is a real query against the real service,
+(`sintel_smoke` in `torrent/tests.rs`). It is a real query against the real service,
 and it happens to exhibit most of the awkward cases at once.
 
 ## Two services, and which answers what
