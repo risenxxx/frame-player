@@ -75,7 +75,7 @@ the head of en.ts). `href` is how a link stays in the reader's language: an
 English address becomes this language's one when the page exists here, and
 stays English when it does not. The strings inside the mocks are the
 application's own interface, and say what the player says in that language
-(`src/lib/i18n.svelte.ts` at the root of the repository).
+(`src/lib/i18n/` at the root of the repository).
 
 What a page in another language carries:
 
@@ -136,10 +136,10 @@ or leave it listed as behind until someone does.
 
 The mocks are pictures of the player, so their labels are the player's: the
 strings under `mock` in the dictionaries are held to the application's own
-(`src/lib/i18n.svelte.ts`) in every language by `src/i18n/app.ts`, which fails
+(`src/lib/i18n/`) in every language by `src/i18n/app.ts`, which fails
 the build on a difference. A new label in a mock that the player also shows
 gets a line in its `MOCK_STRINGS`; the Site workflow runs on a change to the
-application's dictionary for that reason.
+application's dictionaries for that reason.
 
 The link card is per language too: `bun run og` draws `og.png`, `og-ru.png`,
 `og-zh.png` and a card per guide in each (`og/ru-cast-to-tv.png`), with the

@@ -3,6 +3,7 @@ paths:
   - "src/routes/**"
   - "src/lib/keys.svelte.ts"
   - "src/lib/i18n.svelte.ts"
+  - "src/lib/i18n/**"
   - "src/lib/input.svelte.ts"
   - "src/lib/wheel.ts"
   - "src/lib/latest.ts"
@@ -34,7 +35,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 | `src/lib/input.svelte.ts`, `overlays.svelte.ts` | Everything the viewer does with a key, a wheel or a pointer, and what is on top of the video. `input` decides *which* thing was asked for; who answers it is `playback`'s (see the row below), which is why this file no longer spells the casting rule out — the one branch it keeps is the click, where the two transports want genuinely different gestures rather than the same gesture aimed elsewhere. `overlays` is the surface stack: at most one OSC menu, and Escape unwinding innermost first. Its existence is what lets `input` take **no hooks from the page at all** — everything that reacts to an overlay was reaching for a different variable before |
 | `src/lib/thumbs.svelte.ts`, `zoom.svelte.ts`, `zoom-step.ts`, `screenshot.ts`, `osd.svelte.ts`, `format.ts`, `platform.ts` | Hover thumbnails; zoom/pan maths, and how far one Ctrl+wheel event zooms (a pinch by what the fingers did, a notch by a step — pure, tested); frame export; the OSD popup; pure formatting helpers; `IS_MAC` |
 | `src/lib/latest.ts` | "Only the newest attempt may write." A counter behind `latest()` → `begin()` → `run.stale`, guarding the six places where a read outlives what it was about — the track and chapter lists, the queue read, the recents rail, the UPnP probe and the torrent poll. **Clearing a timer does nothing about this**: a promise already in flight resolves regardless, and a slower earlier attempt then lands last and overwrites the newer answer, permanently, since nothing is left to correct it. It had been hand-written in all six, and what a copy loses is never the counter — it is a check after the *second* await, which is why the shape makes each check one word |
-| `src/lib/i18n.svelte.ts` | ru/en/zh dictionaries, `t()`, `joinList()`, `locale()`/`setLocale()`; `ru` defines the key set, so a missing English or Chinese string is a type error. The Chinese follows [docs/zh-glossary.md](../../docs/zh-glossary.md) |
+| `src/lib/i18n.svelte.ts`, `src/lib/i18n/{ru,en,zh}.ts` | `t()`, `joinList()`, `locale()`/`setLocale()`, and the dictionaries one module per language beside it; `ru.ts` defines the key set and `en`/`zh` are `satisfies Record<MessageKey, string>`, so a missing English or Chinese string is a type error. TypeScript rather than JSON for exactly that, and because the site imports them as they are. The Chinese follows [docs/zh-glossary.md](../../docs/zh-glossary.md) |
 | `src/lib/keys.svelte.ts` | The hotkey table: `ACTIONS` (44 rows, per-platform defaults, `noRepeat`/`quiet`), chord normalization and labels, the localStorage overrides, and `hint()`/`hintPair()` that every tooltip and menu row reads |
 
 ## Rules

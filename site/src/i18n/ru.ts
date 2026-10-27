@@ -1,6 +1,6 @@
 /*
   The Russian site. Typed against en.ts, which defines every key; the words of
-  the interface follow the player's own `ru` dictionary (src/lib/i18n.svelte.ts),
+  the interface follow the player's own `ru` dictionary (src/lib/i18n/ru.ts),
   so the site calls a thing what the program calls it — «раздача» for a
   torrent in the interface's sense, «источники» for its peers, «смотреть
   вместе», «мини-плеер», «обрезка».

@@ -1,6 +1,6 @@
 # The zh-CN glossary
 
-The Chinese interface (`zh` in `src/lib/i18n.svelte.ts`) is translated from the
+The Chinese interface (`src/lib/i18n/zh.ts`) is translated from the
 **English** strings, with the Russian as a second reference for meaning, into
 Simplified Chinese as mainland desktop software writes it (Windows 11 and macOS
 zh-CN conventions). This file is what keeps a new string in step with the 900
