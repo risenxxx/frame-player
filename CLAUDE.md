@@ -134,7 +134,7 @@ are under "Commands" in its `.claude/rules/` file.
 | `src/lib/{tracks,resume,subs}.svelte.ts`, `languages.ts`, `src-tauri/src/{opensubtitles,external_dirs}.rs` | Tracks, the remembered choice, subtitle search | tracks-and-subtitles |
 | `src/lib/{open,torrent}.svelte.ts`, `feed.ts`, `src-tauri/src/torrent/`, `src-tauri/src/{torrent_storage,feed}.rs` | Opening a source, torrent streaming | torrents-core, torrents-playback |
 | `src-tauri/src/{net_route,upnp}.rs`, `src-tauri/vendor/` | The swarm's network, vendored librqbit | torrents-network |
-| `src-tauri/src/{cast,dlna}/`, `src-tauri/src/{lan_sweep,airplay,airplay_hls}.rs`, `src/lib/cast.svelte.ts` | Google Cast, DLNA, AirPlay | casting |
+| `src-tauri/src/{cast,dlna}/`, `src-tauri/src/{lan_sweep,airplay,airplay_hls}.rs`, `src/lib/cast.svelte.ts` + `src/lib/cast/` | Google Cast, DLNA, AirPlay | casting |
 | `src/lib/sync/`, `services/`, `shared/` | Watching together, the Go services, the contracts two languages keep | sync |
 | `src-tauri/src/catalog.rs`, `src/lib/catalog.svelte.ts`, `services/tmdb/` | The catalog | catalog |
 | `src/lib/{history,report}.svelte.ts`, `source.ts`, `redact.ts`, `src-tauri/src/{logs,install_count,shell_handler}.rs` | What a source is, the watch history, the issue report, privacy | sources-and-privacy |
