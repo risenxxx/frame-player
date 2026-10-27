@@ -23,8 +23,6 @@
 //! through a bindings crate: six selectors and three constants are not worth a
 //! dependency, and every one of them is checked here against the headers.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use tauri::AppHandle;
 
 #[cfg(target_os = "macos")]

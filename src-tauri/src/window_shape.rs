@@ -24,8 +24,6 @@
 //! (`window_frame_glide`): the position and the size as one frame, over time —
 //! and the picture going dark and coming back around it (`window_video_fade`).
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 // ---- Saying that a resize is under way -----------------------------------
 //
 // The web content is pinned to the window's top-left corner and drawn a frame

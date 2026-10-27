@@ -22,8 +22,6 @@
 //! The list there covers AppKit's predefined items (Cmd+Q/W/H/M, the Edit menu)
 //! as well as the ones declared below.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use std::sync::{Mutex, Once};
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};

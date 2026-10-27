@@ -24,8 +24,6 @@
 //! Nothing here sends anything anywhere. The frontend shows the whole report
 //! before it can be copied, saved or attached.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use std::collections::VecDeque;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

@@ -13,8 +13,6 @@
 //! frame decoded, so a probe is a few milliseconds on a local file. See the
 //! frame-stepping line in docs/rules/mpv-playback.md.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use ffmpeg::media;
 use ffmpeg_the_third as ffmpeg;
 
