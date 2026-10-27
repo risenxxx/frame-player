@@ -13,8 +13,6 @@
 //! whole window, no title is drawn, and the system window buttons stay where
 //! macOS users expect them, on the left.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use objc2::rc::Retained;
 use objc2::Message;
 use objc2_app_kit::{

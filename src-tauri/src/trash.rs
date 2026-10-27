@@ -12,8 +12,6 @@
 //! Events — would raise an Automation permission prompt the first time the key
 //! is pressed.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use std::path::Path;
 
 use crate::thumb_service::{release_file, ThumbState};
