@@ -70,7 +70,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@master
@@ -90,7 +90,7 @@ jobs:
       # points FFMPEG_DIR and LIBCLANG_PATH at what this puts on disk.
       - name: Cache native SDKs
         id: sdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             src-tauri/lib
@@ -130,7 +130,7 @@ jobs:
       LIBCLANG_PATH: /Library/Developer/CommandLineTools/usr/lib
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@master
