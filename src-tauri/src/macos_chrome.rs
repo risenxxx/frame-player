@@ -28,13 +28,16 @@ const TRAFFIC_LIGHTS: [NSWindowButton; 3] = [
     NSWindowButton::ZoomButton,
 ];
 
-fn ns_window(window: &tauri::WebviewWindow) -> Option<Retained<NSWindow>> {
+/// The window's `NSWindow`, with a reference of our own.
+pub(crate) fn ns_window(window: &tauri::WebviewWindow) -> Option<Retained<NSWindow>> {
     let ptr = window.ns_window().ok()? as *mut NSWindow;
     if ptr.is_null() {
         return None;
     }
-    // Tauri hands out a borrowed pointer to a live window — take another
-    // reference rather than ownership.
+    // SAFETY: Tauri hands out the pointer of the `NSWindow` its window object
+    // owns, alive at least as long as `window` is borrowed here; `retain` takes
+    // a reference of our own rather than ownership, so what is returned stays
+    // valid after the borrow ends. Retaining is thread-safe.
     unsafe { Retained::retain(ptr) }
 }
 
