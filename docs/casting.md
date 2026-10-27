@@ -310,8 +310,8 @@ is unicast (the CASTV2 connection, the SOAP calls, the television fetching from
 our server), so only being *found* fails.
 
 So each address is also asked directly, for as long as the picker is open
-(`lan_sweep.rs` for the address list, the protocol halves in cast.rs and
-dlna.rs):
+(`lan_sweep.rs` for the address list, the protocol halves in cast/discovery.rs
+and dlna.rs):
 
 - **Cast: `:8009` accepts a connection, then `GET :8008/setup/eureka_info`**
   for the name (`name`, `ssdp_udn`). A device whose 8008 is closed is still

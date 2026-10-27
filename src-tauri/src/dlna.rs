@@ -650,7 +650,7 @@ fn media_duration(path: &std::path::Path) -> Option<f64> {
 /// second `<res>` of a subtitle type after the video's is the generic form
 /// (the one LG and most others take); Samsung reads its own
 /// `sec:CaptionInfoEx` element instead — and, for a set that asks, the
-/// `CaptionInfo.sec` header on the video's answer (cast.rs). Both appear only
+/// `CaptionInfo.sec` header on the video's answer (cast/server.rs). Both appear only
 /// when there is a subtitle, so the metadata of every other file is what it
 /// always was.
 fn didl(
@@ -1195,7 +1195,7 @@ mod tests {
 // What it costs is that every device answers differently; hence the ladder is
 // read from `GetProtocolInfo` rather than assumed.
 //
-// The command surface deliberately mirrors cast.rs (`*_connect`, `*_load`,
+// The command surface deliberately mirrors cast/mod.rs (`*_connect`, `*_load`,
 // `*_status`, `*_control`, `*_disconnect`) and reports the same status shape,
 // so the frontend keeps one store and one casting screen and only chooses which
 // command name to call.
@@ -1216,7 +1216,7 @@ pub struct DlnaDeviceInfo {
 
 #[derive(Default)]
 struct DlnaState {
-    /// Same vocabulary as cast.rs: connecting | loading | playing | paused |
+    /// Same vocabulary as cast/castv2.rs: connecting | loading | playing | paused |
     /// buffering | ended | stopped | error.
     state: String,
     error: Option<String>,

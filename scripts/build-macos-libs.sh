@@ -13,7 +13,7 @@
 # **Nothing is lost by dropping the GPL parts**, which is what makes this cheap:
 #
 #   - x264 / x265 are *encoders*, and the player never encodes video. Every
-#     ffmpeg invocation in cast.rs passes `-c:v copy`; only audio is transcoded,
+#     ffmpeg invocation in cast/ passes `-c:v copy`; only audio is transcoded,
 #     to AAC or E-AC-3, both native FFmpeg encoders. The sidecar smoke test
 #     already uses `mpeg4` for exactly this reason.
 #   - librubberband is mpv's optional pitch-correction filter. The default has

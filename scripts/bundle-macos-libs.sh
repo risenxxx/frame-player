@@ -106,7 +106,7 @@ else
 fi
 
 echo "==> ffmpeg CLI"
-# The cast prepare rung (cast.rs) spawns the ffmpeg *binary* — for
+# The cast prepare rung (cast/prepare.rs) spawns the ffmpeg *binary* — for
 # `-movflags +faststart`, `-progress` and kill-to-cancel, none of which the
 # library route gives for free. Windows gets it from the BtbN SDK; here it is
 # Homebrew's, which is the same 0.4 MB shim over the very dylibs this script
