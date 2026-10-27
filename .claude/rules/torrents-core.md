@@ -3,6 +3,7 @@ paths:
   - "src-tauri/src/torrent/**"
   - "src-tauri/src/torrent*.rs"
   - "src/lib/torrent.svelte.ts"
+  - "src/lib/torrent/**"
 ---
 
 # torrents-core — the short form
@@ -18,7 +19,8 @@ Each line is the rule; the chapter it links to is the whole of it.
 
 | Path | What lives there |
 |---|---|
-| `src-tauri/src/torrent/` | Torrent streaming: the lazy librqbit session, the loopback HTTP server mpv opens (`/t/<infohash>/<index>/<name>`, Range + HEAD), and `torrent_add`/`torrent_status`/`torrent_release`/`torrent_clear_cache`. Frontend half in `src/lib/torrent.svelte.ts` |
+| `src-tauri/src/torrent/` | Torrent streaming: the lazy librqbit session, the loopback HTTP server mpv opens (`/t/<infohash>/<index>/<name>`, Range + HEAD), and `torrent_add`/`torrent_status`/`torrent_release`/`torrent_clear_cache`. Frontend half in the row below |
+| `src/lib/torrent.svelte.ts` + `src/lib/torrent/` | The frontend half. `torrent.svelte.ts` is only the name every importer uses: it re-exports the parts under `torrent/`, and the order of its lines is the order they evaluate in (the first to reach the rest of `$lib` goes through `history.svelte`, as the single file did). `state.svelte.ts` is the leaf: the shapes Rust hands over, the `torrent` object every surface reads, `positionBuffered`. `session.ts` adds a torrent and releases it; `remembered.ts` is the per-info-hash store of how to reopen one (`frameplayer.torrents`), watched episodes included; `disk.ts` is the start screen's list of what is on disk and `forgetTorrent`. The rest are in [torrents-playback](torrents-playback.md) and [torrents-network](torrents-network.md) |
 
 ## Critical gotchas
 

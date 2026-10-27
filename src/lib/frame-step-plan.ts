@@ -99,7 +99,7 @@ export function shouldReverse(i: ReverseInputs): boolean {
 /// How far a stretch is widened before it is looked up in a torrent's map of
 /// what has arrived. The map is of *bytes* and the stretch is of *time*, and a
 /// variable-bitrate file makes the two disagree — the same reasoning and the
-/// same margin as the preview gate (`positionBuffered` in torrent.svelte.ts).
+/// same margin as the preview gate (`positionBuffered` in torrent/state.svelte.ts).
 export const BUFFER_MARGIN = 0.004;
 
 /**

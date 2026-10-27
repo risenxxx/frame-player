@@ -39,7 +39,7 @@ const AHEAD = 0.03
 const TAIL = 0.01
 /** How long after the scene starts the download does: the interface is up by then. */
 const START_DELAY_MS = 1300
-/** The application's own polls: `BUFFER_POLL_MS` and `POLL_MS` in torrent.svelte.ts. */
+/** The application's own polls: `BUFFER_POLL_MS` and `POLL_MS` in torrent/poll.svelte.ts. */
 const BUFFER_POLL_MS = 2000
 const STATUS_POLL_MS = 1000
 /** The simulation's step, finer than either poll. */
