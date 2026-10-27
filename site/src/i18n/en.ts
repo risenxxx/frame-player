@@ -360,7 +360,7 @@ export const en = {
 
   /*
     The application's own interface, as the mocks draw it. Where the player
-    has a string of its own (src/lib/i18n.svelte.ts), the mock says what the
+    has a string of its own (src/lib/i18n/), the mock says what the
     player says in that language — a mock is a picture of the program, not of
     a translation of it. Titles of files stay as they are in every language.
   */
