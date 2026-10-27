@@ -731,6 +731,13 @@ fn hdr_status_impl(window: &tauri::WebviewWindow) -> Option<HdrStatus> {
     }
 
     let hwnd = window.hwnd().ok()?;
+    // SAFETY: every struct here is integers, integer arrays and unions of
+    // integers, for which all zeroes is a valid value, and the declared one is
+    // `repr(C)` after the SDK's layout. Every out-parameter is a local, or a
+    // Vec sized to the count the system just returned and truncated to the
+    // count it then wrote. Each DISPLAYCONFIG request carries its own
+    // struct's size in its header, which is as far as the system writes; the
+    // monitor handle only goes back to GetMonitorInfoW.
     unsafe {
         let hmon = MonitorFromWindow(hwnd.0 as _, MONITOR_DEFAULTTONEAREST);
         if hmon.is_null() {
@@ -820,6 +827,8 @@ fn sync_drag_resize_borders(window: &tauri::Window) {
     let fullscreen = window.is_fullscreen().unwrap_or(false);
     let class: Vec<u16> = "TAURI_DRAG_RESIZE_BORDERS\0".encode_utf16().collect();
     let name: Vec<u16> = "TAURI_DRAG_RESIZE_WINDOW\0".encode_utf16().collect();
+    // SAFETY: handles only (a stale one fails the call) and two
+    // NUL-terminated UTF-16 strings alive for it.
     unsafe {
         let child = FindWindowExW(
             hwnd.0 as _,
@@ -1051,6 +1060,7 @@ fn webview_version() -> Option<String> {
 #[tauri::command]
 fn primary_button_down() -> bool {
     #[cfg(windows)]
+    // SAFETY: two queries that take and return plain values.
     unsafe {
         use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
         use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
@@ -1078,6 +1088,7 @@ fn primary_button_down() -> bool {
 #[tauri::command]
 fn double_click_time() -> u32 {
     #[cfg(windows)]
+    // SAFETY: a query that takes nothing and returns a value.
     unsafe {
         windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime()
     }
