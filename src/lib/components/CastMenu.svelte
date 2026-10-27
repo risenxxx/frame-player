@@ -452,7 +452,13 @@
   /* `.cast-hint` lives in app.css: the track menu says the same kind of thing
      about a DLNA session and was rendering it unstyled. */
 
+  /* Takes the panel's width rather than proposing one. The panel is as wide
+     as its longest row, and a paragraph's longest row is the whole paragraph
+     on one line: the AirPlay hint alone asked for more than the 520px cap, so
+     opening the gear took the panel from 314px to its ceiling (css.md). The
+     rows above decide the width; these hints wrap inside it. */
   .tv-settings {
+    contain: inline-size;
     display: flex;
     flex-direction: column;
     gap: 8px;
