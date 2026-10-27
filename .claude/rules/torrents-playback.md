@@ -2,6 +2,7 @@
 paths:
   - "src/lib/open.svelte.ts"
   - "src/lib/torrent.svelte.ts"
+  - "src/lib/torrent/**"
   - "src/lib/stall.svelte.ts"
   - "src/lib/feed.ts"
   - "src-tauri/src/torrent/**"
@@ -27,6 +28,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 |---|---|
 | `src/lib/open.svelte.ts` | How a source becomes a playing file: the link box, torrents (resolve, pick, the start-screen list, replacing one with its re-upload) and the indicator that says something slow is under way. **One module rather than the two it was planned as**, because the halves depend on each other by design — a magnet is pasted into the box that takes links, so `submitLink` dispatches into the torrent flow, and the torrent flow reports its failures back through `linkBox.torrentError`, which raises that same dialog for a dropped `.torrent` that has nowhere else to speak. A boundary between them would be a cycle with a hook across it. It composes `loadFiles`, the queue and the position store rather than reimplementing any of them, and takes the one thing it cannot reach — the file-dialog dimming flag — through `initOpen` |
 | `src-tauri/src/feed.rs` + `src/lib/feed.ts` + `FeedPickDialog.svelte` | Torrent RSS feeds: `feed_read` (RSS/Atom in their tracker dialects), `feed_torrent` (fetch an item's `.torrent` into the metadata cache), and the pure matching that decides which item is a re-upload of which release. See "An RSS feed is a link to a release" below |
+| `src/lib/torrent/` (re-exported by `src/lib/torrent.svelte.ts`) | The parts of the torrent client that follow playback: `poll.svelte.ts` (`trackTorrentPlayback` — the status and buffer-map polls, the finished-episode mark, the one-ahead prefetch), `files.ts` (the videos in queue order, the subtitles inside a release), `poster.ts` (the poster taken while the data is on disk), `replace.ts` (`updateTorrent` — handing data and positions to a re-upload), `feeds.ts` (reading a feed and resolving an item through Rust). The state, the session, the store and the disk list are in [torrents-core](torrents-core.md) |
 
 ## Rules
 
