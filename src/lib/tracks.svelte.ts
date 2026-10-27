@@ -238,7 +238,7 @@ export function selectTrack(kind: 'audio' | 'sub', track: Track | null) {
   // stay in agreement with what the TV plays.
   if (cast.remote && kind === 'audio' && track) void castSwitchAudio(track);
   // Over AirPlay a subtitle reaches the set inside its HLS rendition
-  // (cast.svelte.ts, `airplaySwitch`); over Cast and DLNA the choice stays local.
+  // (cast/airplay.ts, `airplaySwitch`); over Cast and DLNA the choice stays local.
   if (cast.remote && kind === 'sub') void castSwitchSub(track);
 }
 
