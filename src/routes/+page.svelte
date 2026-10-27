@@ -1,18 +1,11 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
-  import { listen } from '@tauri-apps/api/event';
-  import { join, resourceDir } from '@tauri-apps/api/path';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { getCurrentWebview } from '@tauri-apps/api/webview';
-  import { command, destroy } from 'tauri-plugin-libmpv-api';
+  import { onDestroy, onMount } from 'svelte';
   import MediaInfoDialog from '$lib/components/MediaInfoDialog.svelte';
   import SubsDialog from '$lib/components/SubsDialog.svelte';
   import StartScreen from '$lib/components/StartScreen.svelte';
   import SettingsDialog from '$lib/components/SettingsDialog.svelte';
   import LicensesDialog from '$lib/components/LicensesDialog.svelte';
   import ReportDialog from '$lib/components/ReportDialog.svelte';
-  import { syncDebugLog } from '$lib/report.svelte';
   import RoomDialog from '$lib/components/RoomDialog.svelte';
   import ContextMenu from '$lib/components/ContextMenu.svelte';
   import TopBar from '$lib/components/TopBar.svelte';
@@ -41,18 +34,9 @@
     initSync,
     sync,
   } from '$lib/sync/apply.svelte';
-  import { initDeepLinks, invite } from '$lib/sync/link.svelte';
+  import { invite } from '$lib/sync/link.svelte';
   import {
-    initSeek,
-    scheduleScrubEnd,
-    seek,
-  } from '$lib/seek.svelte';
-  import {
-    USE_STEP_ENGINE,
-    cancelStep,
     togglePlayback,
-    flushStepThenCancel,
-    schedulePrewarm,
     step,
   } from '$lib/step-engine.svelte';
   import {
@@ -63,7 +47,6 @@
     minimizeWindow,
     onTitlebarMouseDown,
     pokeUi,
-    scheduleVeilRelease,
     startResize,
     toggleFullscreen,
   } from '$lib/chrome.svelte';
@@ -90,14 +73,12 @@
     openLinkDialog,
     openRecent,
     openRememberedTorrent,
-    openResumeSnapshot,
     openTorrent,
     checkFeedUpdate,
     pickFeedItem,
     opening,
     pickTorrentFile,
     playTorrentFile,
-    refreshTorrents,
     submitLink,
     submitUpdate,
     togglePortForward,
@@ -118,24 +99,17 @@
   } from '$lib/tracks.svelte';
   import {
     clearCastClick,
-    clearClickSuppression,
-    armClickSuppression,
-    initInput,
-    loadDoubleClickInterval,
     onCastScreenClick,
     onContextMenu,
-    onKeydown,
     onVideoClick,
     onVideoDblClick,
     onVideoPointerDown,
     onVideoPointerMove,
     onVideoPointerUp,
     onWheel,
-    resetWheelGesture,
   } from '$lib/input.svelte';
   import {
     closeSettings,
-    dismissOnOutsideClick,
     initOverlays,
     openSettingsAt,
     overlays,
@@ -143,45 +117,36 @@
     toggleMenu,
   } from '$lib/overlays.svelte';
   import {
-    primeResumeKnob,
     resume,
-    setPendingResume,
   } from '$lib/resume.svelte';
-  import { initPortable } from '$lib/portable.svelte';
-  import { runMenuAction } from '$lib/app-menu';
-  import { initCastFollow, playerHooks } from '$lib/bridge.svelte';
+  import { boot, shutdown } from '$lib/boot';
+  import { diag, runDiagnosis, copyDiagnosis } from '$lib/cast-diagnosis.svelte';
+  import { initThumbAspect, seekbar } from '$lib/seekbar.svelte';
+  import { tips } from '$lib/tooltip.svelte';
+  import { initCastFollow } from '$lib/bridge.svelte';
   import {
     backToStart,
     initVideoReady,
     startScreen,
   } from '$lib/start-screen.svelte';
-  import { clearTitleTimer, initWindowTitle, title } from '$lib/title.svelte';
-  import { checkForUpdate, installUpdate, updater } from '$lib/updater.svelte';
+  import { initWindowTitle, title } from '$lib/title.svelte';
+  import { installUpdate, updater } from '$lib/updater.svelte';
   import { subs } from '$lib/subs.svelte';
-  import { flipAxis, shiftAxis } from '$lib/floating';
-  import { locale, t } from '$lib/i18n.svelte';
+  import { t } from '$lib/i18n.svelte';
   import {
     withKey,
   } from '$lib/keys.svelte';
-  import { osd, showOsd } from '$lib/osd.svelte';
+  import { osd } from '$lib/osd.svelte';
   import {
-    flushPosition,
     forgetRecent,
-    loadHistoryPrefs,
-    loadRecent,
-    maybeRecordPosition,
   } from '$lib/history.svelte';
   import { initNowPlaying } from '$lib/now-playing.svelte';
   import { initAudioOutput } from '$lib/audio-output.svelte';
   import { IS_MAC } from '$lib/platform';
   import {
-    chapterAt,
     cycleAbLoop,
-    initPlayer,
     jumpChapter,
-    loadFiles,
     player,
-    resyncState,
     setPicture,
     cycleLoop,
   } from '$lib/player.svelte';
@@ -192,23 +157,14 @@
     initCurtain,
   } from '$lib/curtain.svelte';
   import {
-    applyAlwaysOnTop,
-    loadWindowPrefs,
     initWindowShape,
     mini,
-    restoreGeometry,
-    scheduleGeometrySave,
-    scheduleMiniSnap,
-    syncMenuChecks,
     toggleMini,
   } from '$lib/window-prefs.svelte';
   import {
-    loadPlaylist,
-    loadPlaylistPrefs,
+    removeFromQueue,
   } from '$lib/playlist.svelte';
-  import { loadSeekSteps } from '$lib/seek-steps.svelte';
   import {
-    initUpscale,
     initUpscaleWatch,
     upscale,
   } from '$lib/upscale.svelte';
@@ -218,19 +174,13 @@
     torrentResume,
     watchedFiles,
     trackTorrentPlayback,
-    loadTorrentPrefs,
     answerVpnAsk,
     net,
   } from '$lib/torrent.svelte';
   import {
     cast,
-    diagnoseDevice,
-    diagnosisText,
-    type CheckLine,
-    type TvDevice,
   } from '$lib/cast.svelte';
-  import { loadThumbPrefs, maybeStartThumbs, thumbs } from '$lib/thumbs.svelte';
-  import { markZoomLuaLoaded, reclampPan } from '$lib/zoom.svelte';
+  import { maybeStartThumbs } from '$lib/thumbs.svelte';
 
   // Sidecar frame stepping (StepEngine) is off: stepping goes through mpv,
   // which shows the correct picture (HDR tone mapping included), made fast by
@@ -238,461 +188,14 @@
 
   // The dark fill under the UI until mpv paints — see start-screen.svelte.ts.
   initVideoReady();
-
-  /// Chapter boundaries as percentages of the bar. The one at zero is dropped:
-  /// containers write it for the first chapter almost every time, and a notch
-  /// under the very end of the track reads as a rendering artifact rather than
-  /// as a boundary.
-  const chapterMarks = $derived(
-    resume.barDuration > 0
-      ? player.chapters
-          .filter((c) => c.time > 0 && c.time < resume.barDuration)
-          .map((c) => (c.time / resume.barDuration) * 100)
-      : [],
-  );
-  /// The looping segment as a band on the bar. Drawn while only A is set too —
-  /// a mark that appears the moment you press the key is what tells you the key
-  /// did anything, and the band then grows with the playhead.
-  const abRegion = $derived.by(() => {
-    if (player.loopA === null || resume.barDuration <= 0) return null;
-    const from = Math.max(0, Math.min(player.loopA, resume.barDuration));
-    const to = Math.max(from, Math.min(player.loopB ?? player.timePos, resume.barDuration));
-    // mpv only loops while the position is inside the segment; past B it keeps
-    // the marks but stops acting on them, and re-arms when playback returns.
-    // The band says which of the two it is, or it would be claiming that
-    // something is looping when nothing is.
-    const armed = player.loopB === null || player.timePos < player.loopB;
-    return {
-      left: (from / resume.barDuration) * 100,
-      width: ((to - from) / resume.barDuration) * 100,
-      armed,
-    };
-  });
-
-  /// Whether the hover popup can show a frame at all. The storyboard is off for
-  /// a stream (it would pull the whole thing again), so the popup must not
-  /// reserve space for a picture that is never coming — an empty gray rectangle
-  /// reads as a broken preview rather than as an absent one.
-  /// The preview box's shape, and it **only ever moves to a real value**.
-  ///
-  /// `dwidth`/`dheight` are observed with `none`, so mpv reports them as
-  /// *unavailable* whenever the VO reconfigures — which on a torrent happens
-  /// every time playback stalls for pieces. Read directly, the box fell back to
-  /// 16:9 for those frames and snapped back, which is the blink seen while
-  /// hovering. Same rule as `media-title`, where a transient null must not erase
-  /// what is already known: keep the last real one.
-  let lastAspect = $state('16 / 9');
-  $effect(() => {
-    if (player.videoW > 0 && player.videoH > 0) {
-      lastAspect = `${player.videoW} / ${player.videoH}`;
-    }
-  });
-  const thumbAspect = $derived(lastAspect);
-
-  /// Whether the hover popup has a frame to show. Read from the thumbnail
-  /// module rather than from the source kind: a torrent earns previews part-way
-  /// through playback, when its file finishes downloading, which no test of the
-  /// URL could tell you.
-  const hasThumbs = $derived(thumbs.available);
-
-  const hoverChapter = $derived(
-    seek.hoverTime !== null && player.hasChapters ? chapterAt(seek.hoverTime) : null,
-  );
+  // The hover preview's shape, kept at the last real one — see seekbar.svelte.ts.
+  initThumbAspect();
 
   const osdState = $derived(osd());
 
-  let unlisteners: Array<() => void> = [];
-  let tipEl = $state<HTMLDivElement | undefined>();
-  // Custom tooltips: one delegated mechanism for every [data-tip]
-  let tooltip = $state<{ text: string; pos: { x: number; y: number } | null } | null>(null);
-  let tipTimer: ReturnType<typeof setTimeout> | undefined;
+  onMount(boot);
 
-  onMount(async () => {
-    // The frame-stepper lives here, so the seek module reaches it through
-    // hooks: a seek has to cancel a step in progress, and this keeps
-    // seek.svelte.ts from knowing the FFmpeg sidecar exists.
-    initSeek({
-      stepMode: () => step.on,
-      cancelStep,
-      flushStepThenCancel,
-      schedulePrewarm,
-      useStepEngine: USE_STEP_ENGINE,
-    });
-
-    // The system's own double-click interval, used by the cast click path. Not
-    // awaited and not on the critical path: the module's 500 ms default is right
-    // on both platforms if the call is slow or fails.
-    void loadDoubleClickInterval();
-    // When the window was activated, for the click that did it (see
-    // `activation` in input.svelte.ts).
-    unlisteners.push(initInput());
-    // Invitations to a shared viewing. Not awaited, for the same reason: a link
-    // that opened the player is picked up by `getCurrent` inside, and the
-    // dialog it raises is a decision the viewer has to make anyway — nothing
-    // before the first frame depends on it.
-    void initDeepLinks();
-    // Whether the verbose log is on: `FP_CAST_DEBUG` may have turned it on
-    // before the window existed, and the console ring follows it.
-    void syncDebugLog();
-    // "Open with" file and the post-update resume: both are learned BEFORE the
-    // window is shown — if a file is on its way, the start screen must not
-    // flash in front of the video (a black background holds until it loads).
-    const initial = await invoke<string[]>('take_pending_files').catch(() => []);
-    const resumeRaw = localStorage.getItem('frameplayer.resume');
-    localStorage.removeItem('frameplayer.resume');
-    if (initial.length || resumeRaw) {
-      startScreen.showEmpty = false;
-      // The OSC is on screen from here on, so prime it before mpv even starts.
-      if (initial.length) primeResumeKnob(initial[0]);
-      // safety net: the file may be gone or fail to open — bring the picker back.
-      // Not while something is still being opened: a torrent restored after an
-      // update has to start its session and re-add itself first, which routinely
-      // takes longer than this, and the picker flashed in front of a video that
-      // was on its way. Re-checked instead, until the attempt settles.
-      const safetyNet = () => {
-        if (player.filename !== null) return;
-        if (opening.busy) {
-          setTimeout(safetyNet, 1000);
-          return;
-        }
-        startScreen.showEmpty = true;
-        void loadRecent();
-      };
-      setTimeout(safetyNet, 5000);
-    }
-
-    // Geometry strictly before show(): restoring an already visible window
-    // reads as a jump. Anything off-screen is caught by window_guard.
-    loadHistoryPrefs();
-    loadPlaylistPrefs();
-    loadSeekSteps();
-    loadThumbPrefs();
-    loadTorrentPrefs();
-    // **Awaited**, unlike everything else started here, and both are cheap: the
-    // recents list settles after one batched `stat` (its posters keep filling in
-    // afterwards on their own) and the torrent list is one directory read. What
-    // it buys is the start screen being *complete* in its first frame. Started
-    // un-awaited, the window appeared holding only the panel and the buttons and
-    // then grew a rail and a torrent list under them a moment later — a reflow
-    // on every launch, and the one moment where the player has nothing else to
-    // do but be ready.
-    if (startScreen.showEmpty) await Promise.all([loadRecent(), refreshTorrents()]);
-    loadWindowPrefs();
-    await restoreGeometry();
-    void applyAlwaysOnTop();
-    // The native menu is built in English and only learns the real language
-    // here. The check marks are synced after that on purpose: a rebuild
-    // replaces the items, so syncing first would leave them all unchecked.
-    // Both commands hop to the main thread through the same queue, so they run
-    // in the order they were sent.
-    if (IS_MAC) {
-      void invoke('set_menu_locale', { locale: locale() })
-        .catch(() => {})
-        .finally(() => syncMenuChecks());
-    }
-
-    // The window was created hidden (visible: false in tauri.conf.json) — show
-    // it only now that the webview has painted a black background: no white
-    // flash, no position jump, no see-through window.
-    // ...and take focus straight away: after an update restart the new process
-    // comes up behind whatever app the user switched to meanwhile, and the
-    // player had to be dug out by hand.
-    void getCurrentWindow()
-      .show()
-      .then(() => getCurrentWindow().setFocus())
-      .catch(() => {});
-
-    // mpv comes up here; the module owns the option surface and the mirrors,
-    // and hands back everything that has to be torn down.
-    unlisteners.push(
-      await listen<number>('frameplayer://ytdlp-progress', (e) => {
-        if (opening.ytdlpBusy) opening.ytdlpPct = e.payload;
-      }),
-    );
-
-    unlisteners.push(
-      ...(await initPlayer(playerHooks)),
-    );
-    if (player.initError) return;
-
-    // Atomic zoom+pan: load-script at runtime (unlike the init option it
-    // returns an error if the build has no Lua or the path is wrong)
-    try {
-      const luaPath = await join(await resourceDir(), 'lua', 'zoompan.lua');
-      await command('load-script', [luaPath]);
-      markZoomLuaLoaded();
-    } catch (e) {
-      console.warn('zoompan.lua not loaded, zoom falls back:', e);
-    }
-    initUpscale(await join(await resourceDir(), 'shaders'));
-
-    // Position bookkeeping rides the same timer as the resync: it needs fresh
-    // mirrors, and one interval is easier to reason about than two.
-    const resyncTimer = setInterval(() => {
-      void resyncState().then(() => maybeRecordPosition());
-    }, 1000);
-    unlisteners.push(() => clearInterval(resyncTimer));
-
-    unlisteners.push(
-      await getCurrentWebview().onDragDropEvent((event) => {
-        if (event.payload.type === 'drop' && event.payload.paths.length > 0) {
-          void loadFiles(event.payload.paths);
-        }
-      }),
-    );
-
-    // Which kind of copy this is, and — for a portable one — taking the shell
-    // registration it has no installer to do for it. Not awaited: nothing on
-    // screen waits for either answer.
-    void initPortable();
-
-    // update check: shortly after start and every 6 hours
-    setTimeout(() => void checkForUpdate(), 3000);
-    const updTimer = setInterval(() => void checkForUpdate(), 6 * 3600 * 1000);
-    unlisteners.push(() => clearInterval(updTimer));
-
-    const win = getCurrentWindow();
-    chrome.isMaximized = await win.isMaximized().catch(() => false);
-    unlisteners.push(
-      await win.onResized(() => {
-        void win
-          .isMaximized()
-          .then((m) => (chrome.isMaximized = m))
-          .catch(() => {});
-        // fullscreen can also change from outside — keep the mirror honest
-        void win
-          .isFullscreen()
-          .then((f) => (chrome.fullscreen = f))
-          .catch(() => {});
-        // adaptive veil release: a little after the last resize event
-        // (~2 frames, which is what mpv's child window needs to catch up)
-        if (chrome.fsTransition) scheduleVeilRelease(60);
-        // resizing the window changes the pan bounds
-        reclampPan();
-      }),
-    );
-
-    window.addEventListener('keydown', onKeydown);
-    unlisteners.push(() => window.removeEventListener('keydown', onKeydown));
-
-    // After a mouse click, do not leave focus on the button: a stray Enter
-    // would "press" it again. Keyboard focus (Tab) is left alone — pointerup
-    // only comes from a mouse or touch.
-    const blurOnPointerUp = (e: PointerEvent) => {
-      const btn = (e.target as HTMLElement | null)?.closest('button');
-      if (btn) btn.blur();
-    };
-    window.addEventListener('pointerup', blurOnPointerUp);
-    unlisteners.push(() => window.removeEventListener('pointerup', blurOnPointerUp));
-
-    // Custom tooltips instead of native title: delegated via [data-tip]
-    //
-    // **A tooltip is cleared by the pointer not being over an anchor, never by
-    // being told it left one.** `pointerout` is not delivered when the hovered
-    // node is *removed* (measured, both engines), and the transition from the
-    // start screen into playback removes anchors under a stationary cursor by
-    // the handful — the torrent file picker being the one that gets noticed.
-    // Relying on that event alone left a tooltip nothing could dismiss: moving
-    // the mouse over the video hit the early return below, so only a click
-    // (which clears it in the pointerdown capture handler) or landing on
-    // another anchor would take it away.
-    const onTipOver = (e: PointerEvent) => {
-      const el = (e.target as HTMLElement | null)?.closest('[data-tip]') as HTMLElement | null;
-      const text = el?.getAttribute('data-tip');
-      if (!el || !text) {
-        // The pointer is over something that has no tooltip, which is the
-        // authoritative "nothing to show" — including the pointerover the
-        // browser re-dispatches for whatever is revealed when an element under
-        // the cursor disappears.
-        clearTimeout(tipTimer);
-        tooltip = null;
-        return;
-      }
-      clearTimeout(tipTimer);
-      tipTimer = setTimeout(async () => {
-        // The anchor may have been removed during the wait, and a detached
-        // element's rect is **all zeros** (measured) — which `flipAxis` and
-        // `shiftAxis` then faithfully place in the top-left corner of the
-        // window, where it sat with no anchor left to send a pointerout.
-        if (!el.isConnected) {
-          tooltip = null;
-          return;
-        }
-        // Rendered unplaced first, then measured, then moved — all before
-        // paint. Measuring has to happen at the window's origin, because a box
-        // positioned with `left` has only the space to its right to lay out
-        // in: a tip near the right edge wrapped to one word per line, and the
-        // clamp that followed then read that wrapped width and called it a
-        // fit. It is placed with a transform for the same reason — a transform
-        // moves the box after layout instead of deciding it.
-        tooltip = { text, pos: null };
-        await tick();
-        // `tooltip` already null means something else cleared it — a click, or
-        // the pointer leaving — and this pass has simply been overtaken.
-        if (!tipEl || !tooltip) return;
-        // Checked again on this side of the await, because `tick()` is exactly
-        // when a pending unmount flushes: the anchor can be connected when the
-        // timer fires and gone one line later.
-        if (!el.isConnected) {
-          tooltip = null;
-          return;
-        }
-        const r = el.getBoundingClientRect();
-        const w = tipEl.offsetWidth;
-        const h = tipEl.offsetHeight;
-        // Above by default, which is right for anything in a bar: the tip
-        // appears over the picture rather than over the next control. An
-        // element opts out with `data-tip-below` when the thing it names is
-        // *above* it and would be covered — a recents card, where the tip
-        // belongs to the poster it would otherwise hide. Only the preference
-        // moves; flipAxis still puts the tip on whichever side has the room.
-        const v = flipAxis({
-          near: r.top,
-          far: r.bottom,
-          size: h,
-          limit: window.innerHeight,
-          gap: 7,
-          preferBefore: !el.hasAttribute('data-tip-below'),
-        });
-        tooltip = {
-          text,
-          pos: { x: shiftAxis(r.left + r.width / 2 - w / 2, w, window.innerWidth), y: v.pos },
-        };
-      }, 450);
-    };
-    const onTipOut = (e: PointerEvent) => {
-      if (!(e.target as HTMLElement | null)?.closest('[data-tip]')) return;
-      clearTimeout(tipTimer);
-      tooltip = null;
-    };
-    window.addEventListener('pointerover', onTipOver);
-    window.addEventListener('pointerout', onTipOut);
-    unlisteners.push(() => {
-      window.removeEventListener('pointerover', onTipOver);
-      window.removeEventListener('pointerout', onTipOut);
-    });
-
-    // Playback position on window close (plus the periodic 5 s write)
-    const saveOnUnload = () => flushPosition();
-    window.addEventListener('beforeunload', saveOnUnload);
-    unlisteners.push(() => window.removeEventListener('beforeunload', saveOnUnload));
-
-    // Closing with a video open (Alt+F4, taskbar): the libmpv plugin
-    // intercepts CloseRequested and destroys mpv FIRST, with the window still
-    // on screen — the transparent window showed the desktop for the whole
-    // fade-out. This listener races it: the API wrapper calls destroy() as
-    // soon as the handler returns without preventDefault, and destroying the
-    // window is milliseconds while the mpv teardown is tens of them — the
-    // window gets cloaked while the last frame is still composed, so the
-    // close animation keeps the video frame. mpv itself is reclaimed by the
-    // process exit that follows Destroyed (lib.rs). The ✕ button does not
-    // even get here — closeWindow() destroys directly, no race at all.
-    unlisteners.push(
-      await getCurrentWindow().onCloseRequested(() => {
-        // destroy() skips beforeunload — flush the position by hand
-        flushPosition();
-      }),
-    );
-
-    pokeUi();
-
-    // "Open with" files. The event is only a "look in the buffer" signal; the
-    // list itself is fetched by a command (see deliver_files in lib.rs).
-    unlisteners.push(
-      await listen('frameplayer://open-file', () => {
-        void drainPendingFiles();
-      }),
-    );
-    // A second, independent trigger: opening a file from Finder or Explorer
-    // always activates the app, and activation gives the webview focus. If the
-    // signal failed to arrive for any reason, the file is still picked up here
-    // — a single delivery channel is exactly why opening a second file in an
-    // already running player silently did nothing.
-    const onWindowFocus = () => void drainPendingFiles();
-    window.addEventListener('focus', onWindowFocus);
-    unlisteners.push(() => window.removeEventListener('focus', onWindowFocus));
-
-    unlisteners.push(
-      await listen<string>('frameplayer://menu', (e) => runMenuAction(e.payload)),
-    );
-
-    // Geometry persistence. onMoved/onResized fire for every pixel of a drag,
-    // so the localStorage write is debounced.
-    unlisteners.push(
-      await getCurrentWindow().onMoved(() => {
-        scheduleGeometrySave();
-        scheduleMiniSnap();
-      }),
-    );
-    unlisteners.push(await getCurrentWindow().onResized(() => scheduleGeometrySave()));
-    void invoke('open_file_ready').catch(() => {});
-    // Restore after an update restart: same file, same position with the
-    // offset. An explicit file from the arguments takes priority.
-    // (initial/resumeRaw were fetched at the top of onMount, before show.)
-    if (initial.length) {
-      void loadFiles(initial);
-    } else if (resumeRaw) {
-      try {
-        const r = JSON.parse(resumeRaw) as { path: string; pos: number; paused: boolean };
-        setPendingResume(r.pos, r.paused);
-        void openResumeSnapshot(r.path).then((opened) => {
-          if (!opened) {
-            startScreen.showEmpty = true;
-            void loadRecent();
-          }
-        });
-      } catch {
-        // corrupt entry — ignore
-      }
-    }
-
-    // Menus close on a click anywhere outside them: capture phase, because
-    // clicks on OSC/title-bar buttons are swallowed by their stopPropagation.
-    const closeMenusOnOutsideClick = (e: PointerEvent) => {
-      clearTimeout(tipTimer);
-      tooltip = null;
-      // The earliest event of a gesture (capture on window), which is why the
-      // previous flag is cleared here: a native drag loop may have swallowed
-      // the click, and without a reset the suppression would leak into the next
-      // press.
-      clearClickSuppression();
-      // This handler runs in the pointerdown capture phase, i.e. before the
-      // click on the video. Without the flag, onVideoClick would see an already
-      // closed menu, fail to recognize a "closing" click and toggle pause.
-      if (dismissOnOutsideClick(e.target as HTMLElement | null)) armClickSuppression();
-    };
-    // Trackpad scroll gesture phase (macOS only, see macos_chrome.rs).
-    unlisteners.push(
-      await listen<boolean>('frameplayer://window-resizing', (e) => {
-        chrome.resizing = e.payload;
-        // Letting go of the edge counts as a mouse move, which the web view did
-        // not see one of for the whole of the drag: the bars come back, and
-        // from there the "hide the controls" setting has them again — its
-        // timer runs from now, not from before the resize.
-        if (!e.payload) pokeUi();
-      }),
-    );
-    unlisteners.push(
-      await listen<boolean>('frameplayer://scroll-phase', (e) => {
-        seek.fingersDown = e.payload;
-        if (!seek.fingersDown) {
-          // Fingers lifted — the gesture is now allowed to end.
-          scheduleScrubEnd();
-          // ...and the axis may be picked afresh without waiting for the timeout.
-          resetWheelGesture();
-        }
-      }),
-    );
-
-    window.addEventListener('pointerdown', closeMenusOnOutsideClick, true);
-    unlisteners.push(() => window.removeEventListener('pointerdown', closeMenusOnOutsideClick, true));
-  });
-
-  onDestroy(() => {
-    for (const un of unlisteners) un();
-    clearTitleTimer();
-    if (player.ready) void destroy();
-  });
+  onDestroy(shutdown);
 
   // The window's own title, debounced — see title.svelte.ts.
   initWindowTitle();
@@ -780,69 +283,6 @@
     if (invite.code) overlays.room = true;
   });
 
-  /// Save the current geometry. Called debounced from resize/move: writing to
-  /// localStorage for every pixel of a drag is pointless.
-  /// Fit for a new file — once per new resolution.
-  /// Drains the "Open with" files buffered in Rust and opens them. Called from
-  /// several places (the signal, window focus), hence the re-entry guard: two
-  /// drains at once would split the list between them.
-  let drainingFiles = false;
-  async function drainPendingFiles() {
-    if (drainingFiles) return;
-    drainingFiles = true;
-    try {
-      const paths = await invoke<string[]>('take_pending_files').catch(() => []);
-      if (paths.length) await loadFiles(paths);
-    } finally {
-      drainingFiles = false;
-    }
-  }
-
-
-  // ---- Frame export -------------------------------------------------------
-  // mpv writes the file itself, so the saved frame is exactly what the VO
-  // decoded — including HDR tone mapping, which is what made the StepEngine
-  // canvas path unusable for this. `video` is the clean frame (no OSD, no
-  // subtitles); `subtitles` burns them in, which is only worth offering when
-  // subtitles are actually on.
-
-  /// Settings for the temp file behind clipboard copy. It exists for a
-  /// fraction of a second and reaches the clipboard as 8-bit RGBA regardless,
-  /// so every byte of compression work is thrown away — and 16-bit output
-  /// (mpv's default for a 10-bit source) doubles both the encode and the decode
-  /// on the way back, for precision the clipboard cannot carry.
-  let diagBusy = $state<string | null>(null);
-  let diagOpen = $state(false);
-  let diagDevice = $state<TvDevice | null>(null);
-  let diagLines = $state<CheckLine[]>([]);
-
-  async function runDiagnosis(device: TvDevice) {
-    diagBusy = device.key;
-    diagDevice = device;
-    diagLines = [];
-    // The dialog opens at once and fills in: the checks take a couple of
-    // seconds against a device in standby, and a button that does nothing
-    // visible for that long reads as a button that did nothing.
-    diagOpen = true;
-    overlays.menu = null;
-    try {
-      diagLines = await diagnoseDevice(device);
-    } finally {
-      diagBusy = null;
-    }
-  }
-
-  async function copyDiagnosis(device: TvDevice) {
-    // The webview's own clipboard: this is text, and the Rust path next door
-    // exists for an image the clipboard cannot take any other way.
-    try {
-      await navigator.clipboard.writeText(diagnosisText(device, diagLines));
-      showOsd(t('cast.diagnose_copied'));
-    } catch (e) {
-      console.warn('clipboard write failed:', e);
-      showOsd(t('cast.diagnose_copy_failed'));
-    }
-  }
   const castStateLabel = $derived(
     cast.state === 'connecting' ? t('cast.state_connecting')
     : cast.state === 'preparing' ? t('cast.state_preparing')
@@ -853,29 +293,6 @@
 
   // The seekbar and the taskbar follow the TV while casting — see bridge.svelte.ts.
   initCastFollow();
-
-  /// Drop an entry. mpv renumbers what follows, so the list is re-read rather
-  /// than patched — and removing the entry that is playing is allowed, because
-  /// mpv handles it by moving on, which is what the viewer asked for.
-  async function removeFromQueue(index: number) {
-    await command('playlist-remove', [String(index)]).catch(() => {});
-    void loadPlaylist();
-  }
-
-  // ---- Room for the title in the top bar ----------------------------------
-  //
-  // The title is centered in the WINDOW, not in what is left between the side
-  // clusters, so both sides have to be reserved equally or it runs into the
-  // narrower one first. On macOS that is the logo and the app name (the traffic
-  // lights are the system's and live outside this DOM); on Windows it is the
-  // brand on one side and the window buttons on the other.
-  //
-  // Measured rather than assumed, because no constant is right for long: the
-  // right cluster grows by a whole button when an update is waiting, and the
-  // app name is localised. Reserving 46vw and hoping left about 12px of gap at
-  // a 480px window — which is what "the title is touching the logo" was.
-
-
 </script>
 
 <main
@@ -1057,12 +474,12 @@
     />
   {/if}
 
-  {#if diagOpen}
+  {#if diag.open}
       <DiagnosisDialog
-        device={diagDevice}
-        lines={diagLines}
-        busy={diagBusy}
-        onclose={() => (diagOpen = false)}
+        device={diag.device}
+        lines={diag.lines}
+        busy={diag.busy}
+        onclose={() => (diag.open = false)}
         onCopy={(device) => void copyDiagnosis(device)}
       />
     {/if}
@@ -1192,8 +609,8 @@
     <ReportDialog onclose={() => (overlays.report = false)} />
   {/if}
 
-  {#if tooltip}
-    <Tooltip {tooltip} bind:el={tipEl} />
+  {#if tips.tooltip}
+    <Tooltip tooltip={tips.tooltip} bind:el={tips.el} />
   {/if}
 
   <div class="veil" class:on={chrome.fsTransition}></div>
@@ -1255,7 +672,7 @@
     {:else if overlays.menu === 'cast'}
       <CastMenu
         close={() => (overlays.menu = null)}
-        {diagBusy}
+        diagBusy={diag.busy}
         onDiagnose={(device) => void runDiagnosis(device)}
       />
     {:else if overlays.trackMenu}
@@ -1271,11 +688,11 @@
 
     <SeekBar
       barDuration={resume.barDuration}
-      {chapterMarks}
-      {abRegion}
-      {hoverChapter}
-      {hasThumbs}
-      {thumbAspect}
+      chapterMarks={seekbar.chapterMarks}
+      abRegion={seekbar.abRegion}
+      hoverChapter={seekbar.hoverChapter}
+      hasThumbs={seekbar.hasThumbs}
+      thumbAspect={seekbar.thumbAspect}
       mini={mini.on}
     />
     <Controls
