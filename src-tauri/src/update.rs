@@ -46,6 +46,8 @@
 //! swap and takes the installer. The failure mode of getting the packaging
 //! wrong is last year's update path, not a broken installation.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use tauri::AppHandle;

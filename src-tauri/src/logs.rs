@@ -24,6 +24,8 @@
 //! Nothing here sends anything anywhere. The frontend shows the whole report
 //! before it can be copied, saved or attached.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use std::collections::VecDeque;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -289,9 +291,11 @@ fn capture() -> Result<String, String> {
     use std::os::fd::FromRawFd;
 
     let last = || std::io::Error::last_os_error().to_string();
-    // SAFETY: plain descriptor calls on descriptors this function owns; 2 is
-    // replaced, never closed, so nothing holding it sees it vanish.
-    unsafe {
+    // SAFETY: descriptor calls on a local array for `pipe` to fill and on the
+    // descriptors it and `dup` return, which this function opened and nobody
+    // else knows of. Descriptor 2 is replaced, never closed, so nothing
+    // holding it sees it vanish.
+    let (read_fd, original) = unsafe {
         let mut fds = [0; 2];
         if libc::pipe(fds.as_mut_ptr()) != 0 {
             return Err(format!("pipe: {}", last()));
@@ -314,19 +318,23 @@ fn capture() -> Result<String, String> {
         if original >= 0 {
             libc::fcntl(original, libc::F_SETFD, libc::FD_CLOEXEC);
         }
-        let input = std::fs::File::from_raw_fd(read_fd);
-        let out = (original >= 0).then(|| std::fs::File::from_raw_fd(original));
-        let passthrough = Passthrough(out);
-        std::thread::Builder::new()
-            .name("stderr-ring".into())
-            .spawn(move || pump(input, passthrough))
-            .map_err(|e| format!("thread: {e}"))?;
-        Ok(if original >= 0 {
-            "captured (pipe on fd 2, passed through)".into()
-        } else {
-            "captured (pipe on fd 2; the process had no stderr)".into()
-        })
-    }
+        (read_fd, original)
+    };
+    // SAFETY: both are open descriptors this function owns and hands over
+    // here, each to exactly one `File`, which closes it.
+    let input = unsafe { std::fs::File::from_raw_fd(read_fd) };
+    // SAFETY: as above.
+    let out = (original >= 0).then(|| unsafe { std::fs::File::from_raw_fd(original) });
+    let passthrough = Passthrough(out);
+    std::thread::Builder::new()
+        .name("stderr-ring".into())
+        .spawn(move || pump(input, passthrough))
+        .map_err(|e| format!("thread: {e}"))?;
+    Ok(if original >= 0 {
+        "captured (pipe on fd 2, passed through)".into()
+    } else {
+        "captured (pipe on fd 2; the process had no stderr)".into()
+    })
 }
 
 /// The original stderr, if there was one — a console in a debug build, nothing
@@ -367,7 +375,9 @@ impl Passthrough {
                 carry.drain(..valid);
                 let wide: Vec<u16> = text.encode_utf16().collect();
                 let mut written = 0u32;
-                // SAFETY: a handle duplicated for this thread, a live buffer.
+                // SAFETY: a console handle `capture` duplicated for this
+                // thread alone, a buffer of exactly the length passed, and a
+                // local for the count; the reserved argument null.
                 let ok = unsafe {
                     WriteConsoleW(
                         *handle as _,
@@ -408,45 +418,56 @@ fn capture() -> Result<String, String> {
     use windows_sys::Win32::System::Pipes::CreatePipe;
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
-    // SAFETY: handle bookkeeping on handles this function creates or
-    // duplicates; the original standard handle is duplicated, never closed.
-    unsafe {
+    // SAFETY: handle bookkeeping on a local out-parameter: the original
+    // standard handle is duplicated, never closed, and the duplicate is ours.
+    let dup = unsafe {
         let me = GetCurrentProcess();
         let original = GetStdHandle(STD_ERROR_HANDLE);
-        let mut passthrough = Passthrough::None;
-        if !original.is_null() && original != INVALID_HANDLE_VALUE {
-            let mut dup: HANDLE = std::ptr::null_mut();
-            if DuplicateHandle(me, original, me, &mut dup, 0, 0, DUPLICATE_SAME_ACCESS) != 0 {
-                let mut mode = 0u32;
-                passthrough = if GetConsoleMode(dup, &mut mode) != 0 {
-                    Passthrough::Console(dup as isize, Vec::new())
-                } else {
-                    Passthrough::File(std::fs::File::from_raw_handle(dup as _))
-                };
+        let mut dup: HANDLE = std::ptr::null_mut();
+        (!original.is_null()
+            && original != INVALID_HANDLE_VALUE
+            && DuplicateHandle(me, original, me, &mut dup, 0, 0, DUPLICATE_SAME_ACCESS) != 0)
+            .then_some(dup)
+    };
+    let passthrough = match dup {
+        None => Passthrough::None,
+        Some(dup) => {
+            let mut mode = 0u32;
+            // SAFETY: our duplicate and a local for the mode.
+            if unsafe { GetConsoleMode(dup, &mut mode) } != 0 {
+                Passthrough::Console(dup as isize, Vec::new())
+            } else {
+                // SAFETY: the duplicate is ours alone, handed to one `File`,
+                // which closes it.
+                Passthrough::File(unsafe { std::fs::File::from_raw_handle(dup as _) })
             }
         }
-        let mut read: HANDLE = std::ptr::null_mut();
-        let mut write: HANDLE = std::ptr::null_mut();
-        if CreatePipe(&mut read, &mut write, std::ptr::null(), 0) == 0 {
-            return Err(format!("CreatePipe: {}", std::io::Error::last_os_error()));
-        }
-        if SetStdHandle(STD_ERROR_HANDLE, write) == 0 {
-            return Err(format!("SetStdHandle: {}", std::io::Error::last_os_error()));
-        }
-        let crt = redirect_crt(write);
-        let input = std::fs::File::from_raw_handle(read as _);
-        std::thread::Builder::new()
-            .name("stderr-ring".into())
-            .spawn(move || pump(input, passthrough))
-            .map_err(|e| format!("thread: {e}"))?;
-        Ok(format!("captured (std handle; ucrt: {crt})"))
+    };
+    let mut read: HANDLE = std::ptr::null_mut();
+    let mut write: HANDLE = std::ptr::null_mut();
+    // SAFETY: two locals for the ends, default security, default size.
+    if unsafe { CreatePipe(&mut read, &mut write, std::ptr::null(), 0) } == 0 {
+        return Err(format!("CreatePipe: {}", std::io::Error::last_os_error()));
     }
+    // SAFETY: the write end just created, which the process keeps open from
+    // here on as its standard error.
+    if unsafe { SetStdHandle(STD_ERROR_HANDLE, write) } == 0 {
+        return Err(format!("SetStdHandle: {}", std::io::Error::last_os_error()));
+    }
+    let crt = redirect_crt(write);
+    // SAFETY: the read end, ours alone, handed to one `File`, which closes it.
+    let input = unsafe { std::fs::File::from_raw_handle(read as _) };
+    std::thread::Builder::new()
+        .name("stderr-ring".into())
+        .spawn(move || pump(input, passthrough))
+        .map_err(|e| format!("thread: {e}"))?;
+    Ok(format!("captured (std handle; ucrt: {crt})"))
 }
 
 /// Point the universal CRT's descriptor 2 and its `stderr` stream at `pipe`.
 /// Returns what happened, for the report.
 #[cfg(windows)]
-unsafe fn redirect_crt(pipe: windows_sys::Win32::Foundation::HANDLE) -> String {
+fn redirect_crt(pipe: windows_sys::Win32::Foundation::HANDLE) -> String {
     use std::ffi::c_void;
     use windows_sys::Win32::Foundation::{DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE};
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
@@ -463,17 +484,27 @@ unsafe fn redirect_crt(pipe: windows_sys::Win32::Foundation::HANDLE) -> String {
     const IONBF: i32 = 0x0004;
 
     let name: Vec<u16> = "ucrtbase.dll\0".encode_utf16().collect();
-    let module = GetModuleHandleW(name.as_ptr());
+    // SAFETY: a NUL-terminated UTF-16 name alive for the call. The module is
+    // only looked up, so its handle is only good while it stays loaded — and
+    // the CRT every module of the process runs on is never unloaded.
+    let module = unsafe { GetModuleHandleW(name.as_ptr()) };
     if module.is_null() {
         return "not loaded".into();
     }
     macro_rules! sym {
-        ($name:literal, $ty:ty) => {
-            match GetProcAddress(module, concat!($name, "\0").as_ptr()) {
-                Some(f) => std::mem::transmute::<unsafe extern "system" fn() -> isize, $ty>(f),
+        ($name:literal, $ty:ty) => {{
+            // SAFETY: an export of the loaded UCRT, looked up by a
+            // NUL-terminated name and typed as the UCRT documents that
+            // function — `$ty` is written from its prototype.
+            let found = unsafe {
+                GetProcAddress(module, concat!($name, "\0").as_ptr())
+                    .map(|f| std::mem::transmute::<unsafe extern "system" fn() -> isize, $ty>(f))
+            };
+            match found {
+                Some(f) => f,
                 None => return format!("no {}", $name),
             }
-        };
+        }};
     }
     let iob = sym!("__acrt_iob_func", IobFunc);
     let freopen_s = sym!("freopen_s", FreopenS);
@@ -483,29 +514,42 @@ unsafe fn redirect_crt(pipe: windows_sys::Win32::Foundation::HANDLE) -> String {
     let setvbuf = sym!("setvbuf", Setvbuf);
 
     // The CRT closes what it is given, so it gets a handle of its own.
-    let me = GetCurrentProcess();
     let mut own: HANDLE = std::ptr::null_mut();
-    if DuplicateHandle(me, pipe, me, &mut own, 0, 0, DUPLICATE_SAME_ACCESS) == 0 {
+    // SAFETY: a handle and a local out-parameter for the duplicate.
+    let duplicated = unsafe {
+        let me = GetCurrentProcess();
+        DuplicateHandle(me, pipe, me, &mut own, 0, 0, DUPLICATE_SAME_ACCESS) != 0
+    };
+    if !duplicated {
         return "DuplicateHandle failed".into();
     }
-    let fd = open_osfhandle(own as isize, O_BINARY);
-    if fd < 0 {
-        return "_open_osfhandle failed".into();
-    }
-    let stderr = iob(2);
-    // In a GUI process the stream belongs to no descriptor (`_fileno` is -2),
-    // and `_dup2` onto 2 would not change that: reopening it on NUL first is
-    // what gives it one to redirect.
-    let mut reopened: *mut c_void = std::ptr::null_mut();
-    let mut stream_fd = fileno(stderr);
-    if stream_fd < 0 && freopen_s(&mut reopened, c"NUL".as_ptr().cast(), c"w".as_ptr().cast(), stderr) == 0 {
-        stream_fd = fileno(stderr);
-    }
-    let fd2 = dup2(fd, 2) == 0;
-    let stream = if stream_fd == 2 { fd2 } else { stream_fd >= 0 && dup2(fd, stream_fd) == 0 };
-    if stream {
-        setvbuf(stderr, std::ptr::null_mut(), IONBF, 0);
-    }
+    // SAFETY: the UCRT's own functions, each typed from its prototype (see
+    // `sym!`), called with what those take: a handle we own and give away to
+    // the CRT, the CRT's own `stderr` stream (`__acrt_iob_func(2)`, which is
+    // never null), NUL-terminated mode strings, a local for `freopen_s` to
+    // fill, and descriptors the CRT itself returned. Nothing else writes
+    // through `stderr` yet: this runs once, at startup.
+    let (fd2, stream) = unsafe {
+        let fd = open_osfhandle(own as isize, O_BINARY);
+        if fd < 0 {
+            return "_open_osfhandle failed".into();
+        }
+        let stderr = iob(2);
+        // In a GUI process the stream belongs to no descriptor (`_fileno` is
+        // -2), and `_dup2` onto 2 would not change that: reopening it on NUL
+        // first is what gives it one to redirect.
+        let mut reopened: *mut c_void = std::ptr::null_mut();
+        let mut stream_fd = fileno(stderr);
+        if stream_fd < 0 && freopen_s(&mut reopened, c"NUL".as_ptr().cast(), c"w".as_ptr().cast(), stderr) == 0 {
+            stream_fd = fileno(stderr);
+        }
+        let fd2 = dup2(fd, 2) == 0;
+        let stream = if stream_fd == 2 { fd2 } else { stream_fd >= 0 && dup2(fd, stream_fd) == 0 };
+        if stream {
+            setvbuf(stderr, std::ptr::null_mut(), IONBF, 0);
+        }
+        (fd2, stream)
+    };
     match (fd2, stream) {
         (true, true) => "fd 2 and stderr".into(),
         (true, false) => "fd 2 only".into(),
