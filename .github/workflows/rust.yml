@@ -50,11 +50,21 @@ on:
       - 'scripts/macos-libs-key.sh'
       - '.github/workflows/rust.yml'
   workflow_dispatch:
+  # Weekly, whatever was pushed. The `paths` filter is right for a push, but it
+  # means a week with no Rust change checks nothing, while what the job stands
+  # on keeps moving underneath: the hosted runner images, the SDKs fetched from
+  # upstream, the caches being evicted. Without this, the first run to meet any
+  # of that is a release. Monday 03:17 UTC: a quiet hour, and off the full hour
+  # every other scheduled workflow on GitHub asks for.
+  schedule:
+    - cron: '17 3 * * 1'
 
-# A second push to the same branch makes the first run's answer worthless.
+# A second push to the same branch makes the first run's answer worthless. The
+# weekly run gives way rather than taking a push's run down with it: a run it
+# would cancel is checking a real change, and the next week will come.
 concurrency:
   group: rust-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 env:
   CARGO_TERM_COLOR: always
