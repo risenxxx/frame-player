@@ -234,7 +234,11 @@ section[id], #download { scroll-margin-top: 72px; }
 .btn-lg { height: 50px; padding: 0 24px; font-size: 16px; border-radius: 10px; }
 .btn-sm { height: 32px; padding: 0 12px; font-size: 13px; }
 .btn svg { width: 17px; height: 17px; flex: none; }
-.btn-lg svg { width: 19px; height: 19px; }
+/* At 16px in a 50px button Onest sets its letters about a pixel above the
+   middle of the box, so an icon centred on the box read as dropped below the
+   label. The lift lines the two inks up, measured in Chrome at 1x, 2x and 4x.
+   The small buttons land their letters on the middle already and keep none. */
+.btn-lg svg { width: 19px; height: 19px; translate: 0 -0.08em; }
 
 /* The markup makes Windows the primary download; a visitor on a Mac gets the
    two swapped — first and filled — before the first paint, from the `data-os`
