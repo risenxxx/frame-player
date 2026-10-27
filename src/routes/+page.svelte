@@ -446,11 +446,6 @@
     word-break: break-word;
   }
 
-  /* Form controls do not inherit the font by default (UA styles), which is why
-     buttons were drawn in the system font instead of Rubik */
-
-  /* ---- Content languages (ROADMAP 25) ---- */
-
   /* Above the entire UI: layout jumps during the transition stay invisible.
      Color: on the start screen — its background (so the transition does not
      blink black), with video — black; set via --veil-color on .player and
@@ -471,8 +466,6 @@
     opacity: 1;
     transition: none;
   }
-
-  /* ---- Casting ------------------------------------------------------------ */
 
   .player {
     position: fixed;
