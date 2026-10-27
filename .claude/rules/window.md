@@ -5,9 +5,15 @@ paths:
   - "src/lib/window-*.ts"
   - "src/lib/window-prefs.svelte.ts"
   - "src/lib/curtain.svelte.ts"
+  - "src/lib/start-screen.svelte.ts"
+  - "src/lib/title.svelte.ts"
+  - "src/lib/boot.ts"
+  - "src/lib/app-menu.ts"
   - "src/lib/activation.ts"
   - "src/lib/components/TopBar.svelte"
   - "src/lib/components/Curtain.svelte"
+  - "src/lib/components/ResizeEdges.svelte"
+  - "src/lib/components/MiniButton.svelte"
   - "src/routes/veil/**"
   - "src-tauri/src/lib.rs"
   - "src-tauri/src/window_*.rs"
@@ -29,6 +35,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 | Path | What lives there |
 |---|---|
 | `src/lib/chrome.svelte.ts`, `endscreen.svelte.ts`, `step-engine.svelte.ts`, `updater.svelte.ts` | What came out of the page's script. `chrome` is the window shell — fullscreen and its veil, the title bar, the window buttons, the resize edges and the idle rules; it is one module rather than two because the chrome's visibility *is* the idle state. `endscreen` is the end of a file and the skip offer, which belong together because on the last chapter one becomes the other and `Enter` answers either. Each of them takes its inputs (`chrome.overlayOpen`, `chrome.sheetOpen`) rather than importing a dialog, and each exposes an `initX()` for its standing effects — see the `$effect` rule in [rules/frontend.md](../../docs/rules/frontend.md) |
+| `src/lib/start-screen.svelte.ts`, `title.svelte.ts`, `boot.ts`, `app-menu.ts` | Also out of the page's script. `start-screen` is what is under the interface with no picture — the start screen (`showEmpty`, its debounce, `enterStartScreen`, `backToStart`) and the dark fill until mpv paints (`videoReady`, `armVideoReady`), together because they are the two answers to gotcha 10. `title` is the title bar's text, its playlist slide and the window's own title. `boot` is the page's old `onMount`/`onDestroy` as `boot()`/`shutdown()`, **in their original order** — what must happen before the window is shown comes first. `app-menu` is the macOS menu bar's id → verb table |
 | `src/lib/window-prefs.svelte.ts`, `window-fit.ts` | Geometry persistence, the window's shape ("match video aspect ratio": the fit, the minimum and the resize constraint, in `adoptShape`), always-on-top, macOS menu check marks, and what a trackpad pinch does right now (`windowPrefs.pinch` and the effect that tells the native side). `window-fit.ts` is the arithmetic, pure and tested — `pinchResizes` included |
 | `src/lib/curtain.svelte.ts` | The dark between two files: when it comes down (before mpv is handed the next file), what lifts it (the window reporting the picture settled, and three ways back besides), and who draws it — the video view's own opacity on macOS, `Curtain.svelte` elsewhere. A leaf: it imports `player` and nothing above it |
 | `src/routes/veil/+page.svelte` | Black shutter window content (fullscreen transition masking). Windows only: the window is built in `create_veil` (lib.rs), not declared in tauri.conf.json, because a declared window is a web view on macOS too, which never shows it |

@@ -127,18 +127,18 @@ are under "Commands" in its `.claude/rules/` file.
 
 | Path | What lives there | Short form |
 |---|---|---|
-| `src/routes/+page.svelte` | What is left after the split: hotkeys, the fullscreen veil, idle and cursor, the wheel dispatch, the mpv → UI bridge | frontend, window, mpv-playback |
+| `src/routes/+page.svelte` | The shell: the `<main>` root and its event handlers, the order the standing effects start in (`initX()` calls), and the components it composes | frontend, window, mpv-playback |
 | `src/lib/components/`, `src/lib/settings/` | The UI, one file per surface — the settings sheet one per tab, under `components/settings/`, with its mpv.conf state in `src/lib/settings/`; a rule and the markup it styles live in the same file | ui-surfaces, css |
-| `src/lib/{player,playback,seek,frame-step,crop,picture-adjust,upscale,now-playing,audio-output}…`, `src/lib/player/` | mpv's mirrors and commands (`player.svelte.ts` the public face, the code under `player/`), playback whichever machine decodes, everything that moves the playhead, the picture | mpv-playback |
+| `src/lib/{player,playback,seek,frame-step,crop,picture-adjust,upscale,now-playing,audio-output}…`, `src/lib/player/`, `src/lib/{bridge,seekbar}.svelte.ts` | mpv's mirrors and commands (`player.svelte.ts` the public face, the code under `player/`), playback whichever machine decodes, everything that moves the playhead, the picture, and the bridge from mpv's events to the interface | mpv-playback |
 | `src/lib/thumbs.svelte.ts`, `src-tauri/src/{thumb_service,color,step_engine}.rs` | Hover thumbnails, the FFmpeg sidecar, colour | thumbnails |
 | `src/lib/{tracks,resume,subs}.svelte.ts`, `languages.ts`, `src-tauri/src/{opensubtitles,external_dirs}.rs` | Tracks, the remembered choice, subtitle search | tracks-and-subtitles |
 | `src/lib/{open,torrent}.svelte.ts`, `src/lib/torrent/` (re-exported by `torrent.svelte.ts`), `feed.ts`, `src-tauri/src/torrent/`, `src-tauri/src/{torrent_storage,feed}.rs` | Opening a source, torrent streaming | torrents-core, torrents-playback |
 | `src-tauri/src/{net_route,upnp}.rs`, `src-tauri/vendor/`, `src/lib/torrent/prefs.svelte.ts` | The swarm's network, vendored librqbit | torrents-network |
-| `src-tauri/src/{cast,dlna}/`, `src-tauri/src/{lan_sweep,airplay,airplay_hls}.rs`, `src/lib/cast.svelte.ts` + `src/lib/cast/` | Google Cast, DLNA, AirPlay | casting |
+| `src-tauri/src/{cast,dlna}/`, `src-tauri/src/{lan_sweep,airplay,airplay_hls}.rs`, `src/lib/cast.svelte.ts` + `src/lib/cast/`, `src/lib/cast-diagnosis.svelte.ts` | Google Cast, DLNA, AirPlay | casting |
 | `src/lib/sync/`, `services/`, `shared/` | Watching together, the Go services, the contracts two languages keep | sync |
 | `src-tauri/src/catalog.rs`, `src/lib/catalog.svelte.ts`, `services/tmdb/` | The catalog | catalog |
 | `src/lib/{history,report}.svelte.ts`, `source.ts`, `redact.ts`, `src-tauri/src/{logs,install_count,shell_handler}.rs` | What a source is, the watch history, the issue report, privacy | sources-and-privacy |
-| `src/lib/{chrome,window-prefs,curtain,endscreen}.svelte.ts`, `src-tauri/src/{lib,window_*,macos_*}.rs`, `src/routes/veil/` | The window shell, geometry, fullscreen, the app's lifecycle | window |
+| `src/lib/{chrome,window-prefs,curtain,endscreen,start-screen,title}.svelte.ts`, `src/lib/{boot,app-menu}.ts`, `src-tauri/src/{lib,window_*,macos_*}.rs`, `src/routes/veil/` | The window shell, geometry, fullscreen, the start screen and the title, the app's lifecycle | window |
 | `src/lib/{keys,i18n,input}.svelte.ts`, `i18n/`, `wheel.ts`, `latest.ts`, `*.test.ts` | Hotkeys, localisation, input, the tests | frontend |
 | `src/app.css` + `src/routes/+layout.svelte` | Document-level styles | css |
 | `scripts/`, `.github/workflows/`, `licenses/`, `patches/`, `.changeset/`, `changelog/`, `src-tauri/src/{update,portable,webview2,libmpv_load}.rs` | Build, signing, release, the notices, the Windows update, portable copies | build-and-release |
@@ -158,7 +158,7 @@ are under "Commands" in its `.claude/rules/` file.
 8. **Hotkeys use `e.code`** (physical keys) so they work in any keyboard layout. Keep it that way — the editor stores codes for the same reason. They live in `ACTIONS` in [keys.svelte.ts](src/lib/keys.svelte.ts), not in a `switch`: `onKeydown` resolves a chord to an action and calls `runAction`, and every place that *shows* a key reads `hint()` from the same table. Two defaults worth knowing: `L` is seek-forward (the J/K/L trio) and **loop is `Shift+L`** — mpv's own binding; the A–B loop that would have taken mpv's plain `l` therefore lives on `A` (`Shift+A` clears it). `noRepeat` and `quiet` are fields of the *action*, not lists of key codes, because neither is a property of a key once the key can be moved.
 9. **A bar's gradient tail must not be part of its hit area.** → `.claude/rules/css.md`
 10. **The window is transparent, so "nothing painted" means "desktop visible"** → `.claude/rules/window.md`
-11. **Buttons/inputs get `font-family: inherit`** via a reset in +page.svelte — form controls don't inherit fonts by default and silently fall back to the system font.
+11. **Buttons/inputs get `font-family: inherit`** via a reset in app.css — form controls don't inherit fonts by default and silently fall back to the system font.
 12. **HMR resets JS mirrors** (videoW/videoH etc.) while mpv keeps state and won't re-fire unchanged property events — after editing +page.svelte, reproduce bugs with a full dev restart, not just HMR.
 13. **tauri.conf.json / capabilities / icons changes need a dev restart** (and icons are tracked by build.rs `rerun-if-changed`); frontend-only changes hot-reload. **The main window is not in that file** — `app.windows` is deliberately empty and `create_main_window` in lib.rs carries the title, the size, the minimum, the transparency and the rest, because a portable copy's webview data directory has to be an absolute path and the configuration only takes a relative one. Changing the window means changing that function, and `MIN_WINDOW_W/H` in window-prefs duplicates its minimum.
 14. **A Windows update has two paths, and only one of them comes back.** → `.claude/rules/build-and-release.md`

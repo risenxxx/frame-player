@@ -167,7 +167,7 @@ as well as making the user wait.
 
 | Path | What is there |
 |---|---|
-| `src/routes/+page.svelte` | Markup, CSS, and everything gesture-shaped: seekbar, wheel, hotkeys, menus, overlays |
+| `src/routes/+page.svelte` | The shell: the root element and its handlers, the standing effects in the order they start, and the components it composes. Start-up is `boot.ts`, the mpv → UI bridge `bridge.svelte.ts`, gestures `input.svelte.ts` |
 | `src/lib/player.svelte.ts` · `src/lib/player/` | mpv state mirrors, initialization, commands, tracks, file loading — the public face re-exports, the code is one module per seam under `player/` |
 | `src/lib/*.svelte.ts` | State modules: history, playlist, torrents, casting, thumbnails, zoom, window prefs |
 | `src-tauri/src/lib.rs` | Plugin registration, window lifecycle, the small commands |

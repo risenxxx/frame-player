@@ -1,6 +1,8 @@
 ---
 paths:
   - "src/routes/+page.svelte"
+  - "src/lib/bridge.svelte.ts"
+  - "src/lib/seekbar.svelte.ts"
   - "src/lib/player.svelte.ts"
   - "src/lib/player/**"
   - "src/lib/playback.svelte.ts"
@@ -24,6 +26,7 @@ paths:
   - "src/lib/components/QueueMenu.svelte"
   - "src/lib/components/EndScreen.svelte"
   - "src/lib/components/SeekBar.svelte"
+  - "src/lib/components/Osc.svelte"
   - "src-tauri/src/frame_step.rs"
   - "src-tauri/src/step_engine.rs"
   - "src-tauri/src/crop.rs"
@@ -57,6 +60,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 | `src/lib/upscale.svelte.ts`, `upscale-plan.ts` | The upscaler (ROADMAP 38): a neural-network shader from `src-tauri/shaders/` chosen per file or per playlist in the picture panel, plus one unbound hotkey. `upscale-plan.ts` is the pure half — the modes, each shader's threshold, the ratio the shaders themselves test (from the `osd-dimensions/*` mirrors) and the scope resolution — and is tested. See the upscaler line in [rules/mpv-playback](../../docs/rules/mpv-playback.md) |
 | `src-tauri/src/now_playing.rs` + `src/lib/now-playing.svelte.ts` | Now Playing on macOS: the Control Center entry, the keyboard's play/pause key, the AirPods' pause. The frontend reports what plays, the native side hands it to MediaPlayer and sends the system's commands back as an event. See the Now Playing line in [rules/mpv-playback](../../docs/rules/mpv-playback.md) |
 | `src-tauri/src/audio_output.rs` + `src/lib/audio-output.svelte.ts` | A sound offset per output device, for the lag of a Bluetooth speaker: which device the system plays through (polled natively, since mpv on `auto` does not say), the offsets kept per device, and the one rule that `audio-delay` holds file delay + device offset with `tracks.svelte.ts` keeping the halves apart. See the line in [rules/mpv-playback](../../docs/rules/mpv-playback.md) |
+| `src/lib/bridge.svelte.ts`, `seekbar.svelte.ts` | What the page used to call the "bridge between mpv state and the page": `playerHooks` (what `initPlayer` is handed — `beforeLoad`, `property`, `fileLoaded`, `playbackRestart` and the rest), the Windows taskbar's progress, and `initCastFollow` (the seekbar and the taskbar following the television). `seekbar` is what the bar draws besides the playhead: chapter notches, the A–B band, the hover chapter and the preview's last real shape |
 | `src-tauri/src/screenshot.rs` | Frame export: destination dir (created on demand), temp path + clipboard hand-off. mpv writes the PNG; this only supplies what mpv cannot do |
 | `src-tauri/lua/zoompan.lua` | Atomic zoom+pan on mpv's core thread (copied next to the dev exe by build.rs; bundled via resources) |
 
