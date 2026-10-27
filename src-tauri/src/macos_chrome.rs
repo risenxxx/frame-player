@@ -13,6 +13,8 @@
 //! whole window, no title is drawn, and the system window buttons stay where
 //! macOS users expect them, on the left.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use objc2::rc::Retained;
 use objc2::Message;
 use objc2_app_kit::{
@@ -39,6 +41,167 @@ pub(crate) fn ns_window(window: &tauri::WebviewWindow) -> Option<Retained<NSWind
     // a reference of our own rather than ownership, so what is returned stays
     // valid after the borrow ends. Retaining is thread-safe.
     unsafe { Retained::retain(ptr) }
+}
+
+// ---- The unsafe parts, once each -----------------------------------------
+//
+// Everything AppKit is reached through below is one of a handful of patterns,
+// and each has one wrapper here with the reasoning for it: a window
+// notification, a local event monitor, an animation group, a walk up the view
+// tree, and a method added to the window's class. The rest of the module is
+// safe code.
+
+/// The window notifications this module listens for.
+#[derive(Clone, Copy)]
+enum WindowNote {
+    WillEnterFullScreen,
+    DidEnterFullScreen,
+    WillExitFullScreen,
+    DidExitFullScreen,
+    WillStartLiveResize,
+    DidEndLiveResize,
+}
+
+impl WindowNote {
+    fn name(self) -> &'static objc2_foundation::NSNotificationName {
+        use objc2_app_kit::{
+            NSWindowDidEndLiveResizeNotification, NSWindowDidEnterFullScreenNotification,
+            NSWindowDidExitFullScreenNotification, NSWindowWillEnterFullScreenNotification,
+            NSWindowWillExitFullScreenNotification, NSWindowWillStartLiveResizeNotification,
+        };
+        // SAFETY: AppKit's exported constant strings, set by the loader before
+        // any code of ours runs and never written after.
+        unsafe {
+            match self {
+                Self::WillEnterFullScreen => NSWindowWillEnterFullScreenNotification,
+                Self::DidEnterFullScreen => NSWindowDidEnterFullScreenNotification,
+                Self::WillExitFullScreen => NSWindowWillExitFullScreenNotification,
+                Self::DidExitFullScreen => NSWindowDidExitFullScreenNotification,
+                Self::WillStartLiveResize => NSWindowWillStartLiveResizeNotification,
+                Self::DidEndLiveResize => NSWindowDidEndLiveResizeNotification,
+            }
+        }
+    }
+}
+
+type NoteBlock = block2::DynBlock<dyn Fn(core::ptr::NonNull<objc2_foundation::NSNotification>)>;
+
+/// Run `block` each time `ns` posts `note`, for the life of the process.
+/// Scoped to this window: the veil window toggles fullscreen throughout a
+/// transition and none of that is our business.
+fn observe(ns: &NSWindow, note: WindowNote, block: &NoteBlock) {
+    let center = objc2_foundation::NSNotificationCenter::defaultCenter();
+    // SAFETY: the object is the window itself, the type the notification is
+    // posted with. With no queue the block runs on the posting thread, and
+    // AppKit posts a window's notifications on the main thread, so the block —
+    // which captures main-thread objects and is not `Send` — is never called
+    // from anywhere else. The center keeps the observer (and with it the block
+    // and whatever it captured) until it is removed, which is never; the token
+    // returned is only our reference to it.
+    let _ = unsafe {
+        center.addObserverForName_object_queue_usingBlock(Some(note.name()), Some(ns), None, block)
+    };
+}
+
+/// Show every event of `mask` to `handler` before it is delivered, for the
+/// life of the process; `false` from the handler swallows the event.
+fn local_monitor(
+    mask: objc2_app_kit::NSEventMask,
+    handler: impl Fn(&objc2_app_kit::NSEvent, MainThreadMarker) -> bool + 'static,
+) {
+    use objc2_app_kit::NSEvent;
+
+    let block = block2::RcBlock::new(move |event: core::ptr::NonNull<NSEvent>| -> *mut NSEvent {
+        // SAFETY: AppKit calls a local monitor from its event loop, on the
+        // main thread, with an event that is alive for the call.
+        let (e, mtm) = unsafe { (event.as_ref(), MainThreadMarker::new_unchecked()) };
+        if handler(e, mtm) {
+            event.as_ptr()
+        } else {
+            std::ptr::null_mut()
+        }
+    });
+    // SAFETY: the block answers with the event it was given or with null —
+    // the two returns the header allows ("valid pointer or null"). AppKit
+    // keeps the monitor and its block; the token is only our reference to it.
+    let _ = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) };
+}
+
+/// Run `changes` in an animation group of `duration` seconds, and `done` once
+/// it has finished.
+fn animate(duration: f64, changes: impl Fn(), done: Option<&block2::DynBlock<dyn Fn()>>) {
+    use objc2_app_kit::NSAnimationContext;
+
+    let changes = block2::RcBlock::new(move |ctx: core::ptr::NonNull<NSAnimationContext>| {
+        // SAFETY: AppKit hands the group's context, alive for the length of
+        // this call.
+        unsafe { ctx.as_ref() }.setDuration(duration);
+        changes();
+    });
+    NSAnimationContext::runAnimationGroup_completionHandler(&changes, done);
+}
+
+/// A view's superview. Main thread only, as the `&NSView` already is.
+fn superview(view: &objc2_app_kit::NSView) -> Option<Retained<objc2_app_kit::NSView>> {
+    // SAFETY: `superview` is unsafe because a view does not retain its
+    // superview. Here it is read in one main-thread turn, inside a window whose
+    // own hierarchy keeps every view alive, and each is retained as it is
+    // handed back — so nothing returned can dangle.
+    unsafe { view.superview() }
+}
+
+/// Why `add_override` did not add anything.
+enum NoOverride {
+    /// The superclass has no implementation to build on.
+    NothingInherited,
+    /// The window's class already defines the method itself.
+    AlreadyDefined,
+}
+
+/// Add `ours` as the implementation of `sel` in the window's own class (tao's
+/// `TaoWindow`), and answer the implementation it inherits, which `ours` ends
+/// in. Adding, never replacing: if the class defines the method itself
+/// nothing changes. Main thread only, so the method cannot be called between
+/// it being added and the caller storing the inherited implementation.
+///
+/// # Safety
+///
+/// `F` must be an `unsafe extern "C-unwind" fn` pointer whose parameters are
+/// the receiver, the selector and then `sel`'s arguments exactly as the
+/// superclass's implementation takes them, and `ours` must be a function of
+/// that type — the runtime will call it with whatever it calls the inherited
+/// one with, and the inherited one is handed back typed as `F`.
+unsafe fn add_override<F: Copy>(ns: &NSWindow, sel: objc2::runtime::Sel, ours: F) -> Result<F, NoOverride> {
+    use objc2::runtime::{AnyClass, Imp};
+
+    const { assert!(std::mem::size_of::<F>() == std::mem::size_of::<Imp>()) };
+    let class = ns.class();
+    let method = class
+        .superclass()
+        .and_then(|s| s.instance_method(sel))
+        .ok_or(NoOverride::NothingInherited)?;
+    // SAFETY: both are function pointers of the same size (asserted above),
+    // and by the caller's contract `F` is the signature the runtime calls this
+    // selector with, so neither is ever called through the wrong type.
+    let (next, imp) = unsafe {
+        (std::mem::transmute_copy::<Imp, F>(&method.implementation()), std::mem::transmute_copy::<F, Imp>(&ours))
+    };
+    // SAFETY: a live class, a selector, a function of the signature the
+    // inherited method has (the caller's contract) and the inherited method's
+    // own type encoding to describe it.
+    let added = unsafe {
+        objc2::ffi::class_addMethod(
+            (class as *const AnyClass).cast_mut(),
+            sel,
+            imp,
+            objc2::ffi::method_getTypeEncoding(method),
+        )
+    };
+    if added.as_bool() {
+        Ok(next)
+    } else {
+        Err(NoOverride::AlreadyDefined)
+    }
 }
 
 /// Main thread only (AppKit forgives nothing else).
@@ -89,7 +252,9 @@ pub fn apply(window: &tauri::WebviewWindow) {
     // toolbar at all, and `titlebarSeparatorStyle` changes it by not one pixel.)
     // Nothing in the frontend keys off `prefers-color-scheme`, so this only
     // affects system-drawn parts.
-    let dark = unsafe { NSAppearance::appearanceNamed(NSAppearanceNameDarkAqua) };
+    // SAFETY: an AppKit constant string, set by the loader before any code of
+    // ours runs and never written after.
+    let dark = NSAppearance::appearanceNamed(unsafe { NSAppearanceNameDarkAqua });
     ns.setAppearance(dark.as_deref());
 
     // No window-appear animation. This dates from when the traffic lights were
@@ -249,13 +414,7 @@ pub fn enter_fullscreen(window: &tauri::WebviewWindow) -> bool {
 /// away again.
 fn toolbar_off_in_fullscreen(ns: &NSWindow) {
     use block2::RcBlock;
-    use objc2_app_kit::{
-        NSWindowDidExitFullScreenNotification, NSWindowWillEnterFullScreenNotification,
-        NSWindowWillExitFullScreenNotification,
-    };
-    use objc2_foundation::{NSNotification, NSNotificationCenter};
-
-    let center = NSNotificationCenter::defaultCenter();
+    use objc2_foundation::NSNotification;
 
     let win = ns.retain();
     let entering = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
@@ -293,20 +452,9 @@ fn toolbar_off_in_fullscreen(ns: &NSWindow) {
         }
     });
 
-    // Scoped to this window: the veil window toggles fullscreen throughout a
-    // transition and none of that is our business.
-    for (name, block) in [
-        (
-            unsafe { NSWindowWillEnterFullScreenNotification },
-            &entering,
-        ),
-        (unsafe { NSWindowWillExitFullScreenNotification }, &leaving),
-        (unsafe { NSWindowDidExitFullScreenNotification }, &left),
-    ] {
-        let _ = unsafe {
-            center.addObserverForName_object_queue_usingBlock(Some(name), Some(ns), None, block)
-        };
-    }
+    observe(ns, WindowNote::WillEnterFullScreen, &entering);
+    observe(ns, WindowNote::WillExitFullScreen, &leaving);
+    observe(ns, WindowNote::DidExitFullScreen, &left);
 }
 
 /// Trackpad scroll gesture phase. The DOM has nothing like it: while the
@@ -318,13 +466,13 @@ fn toolbar_off_in_fullscreen(ns: &NSWindow) {
 /// The monitor is local: it sees the event before delivery to the webview and
 /// returns it untouched, so ordinary scrolling keeps working.
 pub fn watch_scroll_phase<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    use block2::RcBlock;
-    use objc2_app_kit::{NSEvent, NSEventMask, NSEventPhase};
+    use objc2_app_kit::{NSEventMask, NSEventPhase};
     use tauri::Emitter;
 
     let app = app.clone();
-    let handler = RcBlock::new(move |event: core::ptr::NonNull<NSEvent>| -> *mut NSEvent {
-        let phase = unsafe { event.as_ref().phase() };
+    // The monitor lives for the whole process; nothing to release.
+    local_monitor(NSEventMask::ScrollWheel, move |event, _| {
+        let phase = event.phase();
         // Began/Changed/Stationary — fingers on the trackpad. Ended/Canceled —
         // lifted. Inertia after lifting arrives with phase = None and does not
         // count as either.
@@ -339,13 +487,8 @@ pub fn watch_scroll_phase<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
             let _ = app.emit("frameplayer://scroll-phase", down);
         }
         // Return the event as-is, or scrolling never reaches the webview.
-        event.as_ptr()
+        true
     });
-
-    // The monitor lives for the whole process; nothing to release.
-    let _ = unsafe {
-        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::ScrollWheel, &handler)
-    };
 }
 
 // ---- Pinch to resize -------------------------------------------------------
@@ -472,14 +615,13 @@ fn pinch_step(window: &tauri::WebviewWindow, pinch: &mut Pinch, magnification: f
 /// Not generic over the runtime like the scroll monitor: this one reaches the
 /// window itself, and `ns_window` is written for the one runtime there is.
 pub fn watch_pinch(app: &tauri::AppHandle) {
-    use block2::RcBlock;
-    use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags, NSEventPhase};
+    use objc2_app_kit::{NSEventMask, NSEventModifierFlags, NSEventPhase};
     use std::sync::atomic::Ordering;
     use tauri::Manager;
 
     let app = app.clone();
-    let handler = RcBlock::new(move |event: core::ptr::NonNull<NSEvent>| -> *mut NSEvent {
-        let e = unsafe { event.as_ref() };
+    // For the life of the process, like the scroll monitor above.
+    local_monitor(NSEventMask::Magnify, move |e, _| {
         let phase = e.phase();
         let began = phase.contains(NSEventPhase::Began);
         let ended = phase.contains(NSEventPhase::Ended) || phase.contains(NSEventPhase::Cancelled);
@@ -509,18 +651,9 @@ pub fn watch_pinch(app: &tauri::AppHandle) {
         if ended {
             *pinch = None;
         }
-        if ours {
-            // Eaten: the web view never sees it, so nothing zooms.
-            std::ptr::null_mut()
-        } else {
-            event.as_ptr()
-        }
+        // Eaten when ours: the web view never sees it, so nothing zooms.
+        !ours
     });
-
-    // For the life of the process, like the scroll monitor above.
-    let _ = unsafe {
-        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::Magnify, &handler)
-    };
 }
 
 /// The frontend's last instruction to `set_buttons_visible`, i.e. whether the
@@ -722,6 +855,14 @@ type SetFrame =
 /// `NSWindow`'s own `setFrame:display:`, which ours ends in.
 static NEXT_SET_FRAME: std::sync::OnceLock<SetFrame> = std::sync::OnceLock::new();
 
+/// `setFrame:display:` for the window's class: the frame AppKit asks for, with
+/// the corner kept during a live resize, handed on to NSWindow's own.
+///
+/// # Safety
+///
+/// Called only by the Objective-C runtime, as the implementation `add_override`
+/// installed for `setFrame:display:`: `this` is the receiver and `cmd` that
+/// selector.
 unsafe extern "C-unwind" fn set_frame_keeping_corner(
     this: &NSWindow,
     cmd: objc2::runtime::Sel,
@@ -747,6 +888,8 @@ unsafe extern "C-unwind" fn set_frame_keeping_corner(
         }
     }
     if let Some(next) = NEXT_SET_FRAME.get() {
+        // SAFETY: NSWindow's own implementation of the selector the runtime
+        // called us for, with the receiver and arguments it called us with.
         unsafe { next(this, cmd, frame, display) };
     }
 }
@@ -767,25 +910,23 @@ const CORNER_BAND: f64 = 10.0;
 /// still said nothing. The press itself does reach a local monitor at once, and
 /// whether it lands on an edge is geometry, as there is no asking AppKit.
 fn say_resizing_on_press() {
-    use block2::RcBlock;
-    use objc2_app_kit::{NSEvent, NSEventMask, NSEventType, NSWindowStyleMask};
+    use objc2_app_kit::{NSEventMask, NSEventType, NSWindowStyleMask};
     use std::sync::atomic::Ordering;
 
-    let handler = RcBlock::new(move |event: core::ptr::NonNull<NSEvent>| -> *mut NSEvent {
-        let e = unsafe { event.as_ref() };
-        // A local monitor runs on the main thread, inside the event loop.
-        let window = e.window(unsafe { MainThreadMarker::new_unchecked() });
+    // For the life of the process, like the other monitors.
+    local_monitor(NSEventMask::LeftMouseDown | NSEventMask::LeftMouseUp, move |e, mtm| {
+        let window = e.window(mtm);
         let ours = window.as_deref().is_some_and(|w| {
             KEPT_WINDOW.load(Ordering::Relaxed) == w as *const NSWindow as usize
         });
         if !ours {
-            return event.as_ptr();
+            return true;
         }
         if e.r#type() == NSEventType::LeftMouseUp {
             // A resize swallows its own mouse-up, and `DidEndLiveResize` says
             // it is over; one that arrives here was a press on the picture.
             crate::window_shape::say_resizing(false);
-            return event.as_ptr();
+            return true;
         }
         let window = window.unwrap();
         let mask = window.styleMask();
@@ -793,7 +934,7 @@ fn say_resizing_on_press() {
             || mask.contains(NSWindowStyleMask::FullScreen)
             || FS_TRANSITION.load(Ordering::Relaxed)
         {
-            return event.as_ptr();
+            return true;
         }
         let size = window.frame().size;
         let at = e.locationInWindow();
@@ -805,59 +946,39 @@ fn say_resizing_on_press() {
         if edge || corner {
             crate::window_shape::say_resizing(true);
         }
-        event.as_ptr()
+        true
     });
-    // For the life of the process, like the other monitors.
-    let _ = unsafe {
-        NSEvent::addLocalMonitorForEventsMatchingMask_handler(
-            NSEventMask::LeftMouseDown | NSEventMask::LeftMouseUp,
-            &handler,
-        )
-    };
 }
 
 fn keep_corner_in_live_resize(window: &tauri::WebviewWindow, ns: &NSWindow) {
     use block2::RcBlock;
-    use objc2::runtime::AnyObject;
     use objc2::sel;
-    use objc2_app_kit::{
-        NSEventType, NSWindowDidEndLiveResizeNotification, NSWindowDidEnterFullScreenNotification,
-        NSWindowDidExitFullScreenNotification, NSWindowWillEnterFullScreenNotification,
-        NSWindowWillExitFullScreenNotification, NSWindowWillStartLiveResizeNotification,
-    };
-    use objc2_foundation::{NSNotification, NSNotificationCenter};
+    use objc2_app_kit::NSEventType;
+    use objc2_foundation::NSNotification;
     use std::sync::atomic::Ordering;
 
-    let class = unsafe { &*(ns as *const NSWindow).cast::<AnyObject>() }.class();
-    let sel = sel!(setFrame:display:);
     // Whatever the window's class inherits today. If tao comes to define the
-    // method itself, the add below fails and the window resizes as AppKit has
-    // it — a regression in feel, never in function.
-    let Some(method) = class.superclass().and_then(|s| s.instance_method(sel)) else {
-        log_warn("no setFrame:display: to build on; live resize keeps AppKit's corner");
-        return;
+    // method itself, the add fails and the window resizes as AppKit has it — a
+    // regression in feel, never in function.
+    // SAFETY: `SetFrame` is `setFrame:display:` as NSWindow implements it —
+    // receiver, selector, an `NSRect` and a `BOOL`, nothing returned — and
+    // `set_frame_keeping_corner` is of that type.
+    let added = unsafe { add_override::<SetFrame>(ns, sel!(setFrame:display:), set_frame_keeping_corner) };
+    let next = match added {
+        Ok(next) => next,
+        Err(NoOverride::NothingInherited) => {
+            log_warn("no setFrame:display: to build on; live resize keeps AppKit's corner");
+            return;
+        }
+        Err(NoOverride::AlreadyDefined) => {
+            log_warn("the window's class has its own setFrame:display:; live resize keeps AppKit's corner");
+            return;
+        }
     };
-    let next: SetFrame = unsafe { std::mem::transmute(method.implementation()) };
-    let ours: objc2::runtime::Imp =
-        unsafe { std::mem::transmute(set_frame_keeping_corner as SetFrame) };
-    let added = unsafe {
-        objc2::ffi::class_addMethod(
-            (class as *const objc2::runtime::AnyClass).cast_mut(),
-            sel,
-            ours,
-            objc2::ffi::method_getTypeEncoding(method),
-        )
-    };
-    if !added.as_bool() {
-        log_warn("the window's class has its own setFrame:display:; live resize keeps AppKit's corner");
-        return;
-    }
     let _ = NEXT_SET_FRAME.set(next);
     crate::window_shape::report_to(window);
     KEPT_WINDOW.store(ns as *const NSWindow as usize, Ordering::Relaxed);
     say_resizing_on_press();
-
-    let center = NSNotificationCenter::defaultCenter();
 
     let win = ns.retain();
     let starting = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
@@ -899,24 +1020,12 @@ fn keep_corner_in_live_resize(window: &tauri::WebviewWindow, ns: &NSWindow) {
     let settled = RcBlock::new(|_: core::ptr::NonNull<NSNotification>| {
         FS_TRANSITION.store(false, Ordering::Relaxed);
     });
-    for (name, block) in [
-        (unsafe { NSWindowWillEnterFullScreenNotification }, &transition),
-        (unsafe { NSWindowWillExitFullScreenNotification }, &transition),
-        (unsafe { NSWindowDidEnterFullScreenNotification }, &settled),
-        (unsafe { NSWindowDidExitFullScreenNotification }, &settled),
-    ] {
-        let _ = unsafe {
-            center.addObserverForName_object_queue_usingBlock(Some(name), Some(ns), None, block)
-        };
-    }
-    for (name, block) in [
-        (unsafe { NSWindowWillStartLiveResizeNotification }, &starting),
-        (unsafe { NSWindowDidEndLiveResizeNotification }, &ended),
-    ] {
-        let _ = unsafe {
-            center.addObserverForName_object_queue_usingBlock(Some(name), Some(ns), None, block)
-        };
-    }
+    observe(ns, WindowNote::WillEnterFullScreen, &transition);
+    observe(ns, WindowNote::WillExitFullScreen, &transition);
+    observe(ns, WindowNote::DidEnterFullScreen, &settled);
+    observe(ns, WindowNote::DidExitFullScreen, &settled);
+    observe(ns, WindowNote::WillStartLiveResize, &starting);
+    observe(ns, WindowNote::DidEndLiveResize, &ended);
 }
 
 // ---- The picture going dark ----------------------------------------------
@@ -1164,7 +1273,7 @@ fn lift_after(delay: std::time::Duration) {
 
 /// Take the window's content off the screen. Main thread only.
 fn mask_transition(ns: &NSWindow) {
-    use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext};
+    use objc2_app_kit::NSAnimatablePropertyContainer;
     use std::sync::atomic::Ordering;
 
     mask_trace("down");
@@ -1175,11 +1284,7 @@ fn mask_transition(ns: &NSWindow) {
         // Through the animator with no duration, so a fade-in still running
         // from the previous transition is replaced rather than left to finish
         // over the black.
-        let changes = block2::RcBlock::new(move |ctx: core::ptr::NonNull<NSAnimationContext>| {
-            unsafe { ctx.as_ref() }.setDuration(0.0);
-            content.animator().setAlphaValue(0.0);
-        });
-        NSAnimationContext::runAnimationGroup(&changes);
+        animate(0.0, move || content.animator().setAlphaValue(0.0), None);
     }
     frame_chrome_shown(ns, false);
     lift_after(MASK_CEILING);
@@ -1209,22 +1314,19 @@ fn frame_chrome_shown(ns: &NSWindow, shown: bool) {
 /// later macOS hides nothing rather than the wrong thing.
 fn titlebar_container(ns: &NSWindow) -> Option<Retained<objc2_app_kit::NSView>> {
     let button = ns.standardWindowButton(NSWindowButton::CloseButton)?;
-    // `superview` is unsafe because the view does not retain its superview;
-    // the window's own hierarchy keeps every one of these alive, and each is
-    // retained as it is handed back.
-    let mut view = unsafe { button.superview() };
+    let mut view = superview(&button);
     while let Some(v) = view {
         if v.class().name().to_string_lossy().contains("TitlebarContainer") {
             return Some(v);
         }
-        view = unsafe { v.superview() };
+        view = superview(&v);
     }
     None
 }
 
 /// Put the content back, fading. Main thread only.
 fn lift_transition_mask(ns: &NSWindow) {
-    use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext};
+    use objc2_app_kit::NSAnimatablePropertyContainer;
     use std::sync::atomic::Ordering;
 
     if !TRANSITION_MASKED.swap(false, Ordering::Relaxed) {
@@ -1237,17 +1339,13 @@ fn lift_transition_mask(ns: &NSWindow) {
         return;
     };
     let mask = MASK_GEN.load(Ordering::SeqCst);
-    let changes = block2::RcBlock::new(move |ctx: core::ptr::NonNull<NSAnimationContext>| {
-        unsafe { ctx.as_ref() }.setDuration(MASK_FADE);
-        content.animator().setAlphaValue(1.0);
-    });
     let win = ns.retain();
     let done = block2::RcBlock::new(move || {
         if MASK_GEN.load(Ordering::SeqCst) == mask && !TRANSITION_MASKED.load(Ordering::Relaxed) {
             restore_fill(&win);
         }
     });
-    NSAnimationContext::runAnimationGroup_completionHandler(&changes, Some(&done));
+    animate(MASK_FADE, move || content.animator().setAlphaValue(1.0), Some(&done));
 }
 
 /// Mask ahead of a transition the caller is about to start, for the
@@ -1266,6 +1364,14 @@ pub fn mask_fullscreen_transition(window: &tauri::WebviewWindow) -> bool {
     true
 }
 
+/// `toggleFullScreen:` for the window's class: the mask first, then NSWindow's
+/// own, `MASK_LEAD` later.
+///
+/// # Safety
+///
+/// Called only by the Objective-C runtime, as the implementation `add_override`
+/// installed for `toggleFullScreen:`: `this` is the receiver, `cmd` that
+/// selector and `sender` its argument.
 unsafe extern "C-unwind" fn toggle_behind_mask(
     this: &NSWindow,
     cmd: objc2::runtime::Sel,
@@ -1280,6 +1386,8 @@ unsafe extern "C-unwind" fn toggle_behind_mask(
         if is_masked_window(this) {
             mask_trace("toggle");
         }
+        // SAFETY: NSWindow's own implementation of the selector the runtime
+        // called us for, with the receiver and arguments it called us with.
         unsafe { next(this, cmd, sender) };
         return;
     }
@@ -1300,13 +1408,8 @@ unsafe extern "C-unwind" fn toggle_behind_mask(
 
 fn mask_fullscreen_transitions(window: &tauri::WebviewWindow, ns: &NSWindow) {
     use block2::RcBlock;
-    use objc2::runtime::AnyObject;
     use objc2::sel;
-    use objc2_app_kit::{
-        NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification,
-        NSWindowWillEnterFullScreenNotification, NSWindowWillExitFullScreenNotification,
-    };
-    use objc2_foundation::{NSNotification, NSNotificationCenter};
+    use objc2_foundation::NSNotification;
     use std::sync::atomic::Ordering;
 
     if MASK_HANDLE.set(window.clone()).is_err() {
@@ -1314,32 +1417,22 @@ fn mask_fullscreen_transitions(window: &tauri::WebviewWindow, ns: &NSWindow) {
     }
     MASKED_WINDOW.store(ns as *const NSWindow as usize, Ordering::Relaxed);
 
-    let class = unsafe { &*(ns as *const NSWindow).cast::<AnyObject>() }.class();
-    let toggle = sel!(toggleFullScreen:);
-    match class.superclass().and_then(|s| s.instance_method(toggle)) {
-        Some(method) => {
-            let next: ToggleImp = unsafe { std::mem::transmute(method.implementation()) };
+    // SAFETY: `ToggleImp` is `toggleFullScreen:` as NSWindow implements it —
+    // receiver, selector and the sender object, nothing returned — and
+    // `toggle_behind_mask` is of that type.
+    match unsafe { add_override::<ToggleImp>(ns, sel!(toggleFullScreen:), toggle_behind_mask) } {
+        Ok(next) => {
             let _ = NEXT_TOGGLE.set(next);
-            let ours: objc2::runtime::Imp =
-                unsafe { std::mem::transmute(toggle_behind_mask as ToggleImp) };
-            let added = unsafe {
-                objc2::ffi::class_addMethod(
-                    (class as *const objc2::runtime::AnyClass).cast_mut(),
-                    toggle,
-                    ours,
-                    objc2::ffi::method_getTypeEncoding(method),
-                )
-            };
-            if !added.as_bool() {
-                // tao has come to define it itself: the notifications below
-                // still mask, only later.
-                log_warn("the window's class has its own toggleFullScreen:; masking from WillEnter only");
-            }
         }
-        None => log_warn("no toggleFullScreen: to build on; masking from WillEnter only"),
+        // tao has come to define it itself: the notifications below still
+        // mask, only later.
+        Err(NoOverride::AlreadyDefined) => {
+            log_warn("the window's class has its own toggleFullScreen:; masking from WillEnter only")
+        }
+        Err(NoOverride::NothingInherited) => {
+            log_warn("no toggleFullScreen: to build on; masking from WillEnter only")
+        }
     }
-
-    let center = NSNotificationCenter::defaultCenter();
 
     let win = ns.retain();
     let starting = RcBlock::new(move |_: core::ptr::NonNull<NSNotification>| {
@@ -1355,16 +1448,10 @@ fn mask_fullscreen_transitions(window: &tauri::WebviewWindow, ns: &NSWindow) {
         // from its delegate method and lands after it (see `refocus_web_view`).
         on_main_after(MASK_SETTLE, refocus_web_view);
     });
-    for (name, block) in [
-        (unsafe { NSWindowWillEnterFullScreenNotification }, &starting),
-        (unsafe { NSWindowWillExitFullScreenNotification }, &starting),
-        (unsafe { NSWindowDidEnterFullScreenNotification }, &finished),
-        (unsafe { NSWindowDidExitFullScreenNotification }, &finished),
-    ] {
-        let _ = unsafe {
-            center.addObserverForName_object_queue_usingBlock(Some(name), Some(ns), None, block)
-        };
-    }
+    observe(ns, WindowNote::WillEnterFullScreen, &starting);
+    observe(ns, WindowNote::WillExitFullScreen, &starting);
+    observe(ns, WindowNote::DidEnterFullScreen, &finished);
+    observe(ns, WindowNote::DidExitFullScreen, &finished);
 }
 
 // The window's frame in the coordinates the frontend has: top-left origin,
@@ -1380,6 +1467,8 @@ extern "C" {
 }
 
 fn main_display_height() -> f64 {
+    // SAFETY: both take and return plain integers and touch no memory of ours;
+    // an ID that names no display gives a height of 0, not an error.
     unsafe { CGDisplayPixelsHigh(CGMainDisplayID()) as f64 }
 }
 
@@ -1485,7 +1574,7 @@ pub fn set_float_over_fullscreen(window: &tauri::WebviewWindow, on: bool) {
         if saved.is_some() {
             return; // Already promoted; re-entering would save the panel state.
         }
-        let was = unsafe { &*obj }.class();
+        let was = ns.class();
         let panel = NSPanel::class();
         // The object was allocated at its own class's size. Shrinking the
         // declared size is harmless, growing it is memory corruption — so this
@@ -1499,6 +1588,10 @@ pub fn set_float_over_fullscreen(window: &tauri::WebviewWindow, on: bool) {
         let style = ns.styleMask();
         let behavior = ns.collectionBehavior();
 
+        // SAFETY: NSPanel adds no ivars to NSWindow and is checked above to be
+        // no larger than the class the object was allocated as, so the
+        // object's memory is a valid NSPanel; the window is only touched from
+        // the main thread, so no other call sees it mid-change.
         unsafe { objc2::ffi::object_setClass(obj, panel as *const AnyClass) };
         ns.setStyleMask(style | NSWindowStyleMask::NonactivatingPanel);
         // Panels hide themselves when the app deactivates, which is the exact
@@ -1538,6 +1631,8 @@ pub fn set_float_over_fullscreen(window: &tauri::WebviewWindow, on: bool) {
         // set through NSPanel's implementation.
         ns.setCollectionBehavior(prev.behavior);
         ns.setStyleMask(prev.style);
+        // SAFETY: the class this very object was allocated as, saved on the way
+        // in; the main thread only, as above.
         unsafe { objc2::ffi::object_setClass(obj, prev.class as *const AnyClass) };
     }
 }
