@@ -9,7 +9,7 @@ reported on MKV files that declare no color at all (`ffprobe` shows neither
 The short answer, measured: **the difference is real, it is not about missing
 metadata, and the recipe from IINA is wrong for this player** — its ICC half
 colour-manages our picture twice. What does match QuickTime is in
-`SDR_COLOR_OPTIONS` in `src/lib/player.svelte.ts`, offered as
+`SDR_COLOR_OPTIONS` in `src/lib/player/filters.ts`, offered as
 Settings → Video → "SDR video color" → "As in macOS". The rule is in
 [rules/mpv-playback.md](rules/mpv-playback.md).
 
