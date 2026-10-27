@@ -5,8 +5,6 @@
 //! GOP. Meanwhile mpv sits paused behind a canvas overlay, and the frontend
 //! walks it to the displayed frame with a background pre-seek.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, MutexGuard};
 

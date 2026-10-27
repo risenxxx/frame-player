@@ -219,6 +219,17 @@ windows-registry = "0.5"
 [lints.clippy]
 too_many_arguments = "allow"
 type_complexity = "allow"
+# Every `unsafe` block says what it relies on, in a `// SAFETY:` comment above
+# it — the invariant (who owns the pointer, why it is alive, which thread), not
+# a retelling of the call. A repeated pattern is a small safe wrapper with one
+# such comment rather than the same comment at every use.
+undocumented_unsafe_blocks = "deny"
+
+# An `unsafe fn` documents its contract in a `# Safety` section; its body still
+# marks, and documents, each unsafe operation it performs, as edition 2024 will
+# require anyway.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
 
 # librqbit crates vendored with changes upstream has in no release — see
 # vendor/README.md for each one. The DHT survives Windows' routine UDP recv

@@ -32,8 +32,6 @@
 //! one interface available at that point, and the bootstrapper serializes
 //! concurrent runs itself.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 /// Microsoft's permanent link to the Evergreen bootstrapper. A redirector
 /// rather than a versioned file, which is the point: it is the address
 /// Microsoft documents for exactly this and does not go stale.

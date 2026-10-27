@@ -17,8 +17,6 @@
 //! microseconds to ask and changes when somebody pairs a speaker — a second
 //! and a half late is not a thing anybody watching a film can see.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use serde::Serialize;
 use std::sync::Mutex;
 use std::time::Duration;

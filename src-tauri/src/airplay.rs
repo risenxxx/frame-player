@@ -15,8 +15,6 @@
 //! commands call, logging each step — how the transport was measured, and how
 //! it is checked against a new receiver.
 
-#![deny(clippy::undocumented_unsafe_blocks)]
-
 use serde::{Deserialize, Serialize};
 
 /// Where the menu row is, in the page's CSS pixels — the picker is put exactly
