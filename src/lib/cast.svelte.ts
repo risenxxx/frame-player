@@ -1,5 +1,5 @@
 /**
- * Casting to TV (Google Cast): the frontend half of cast.rs.
+ * Casting to TV (Google Cast): the frontend half of src-tauri/src/cast/.
  *
  * While a session is active the player window is a remote control: mpv sits
  * paused on the file it already has, the position flows *back* from the TV
@@ -231,7 +231,7 @@ class Cast {
   /// The session's device as its row drew it, for the same icon over the
   /// disconnect button. AirPlay's mark until the chosen set is known as a row.
   kind = $state<DeviceKind | 'airplay' | null>(null);
-  /// Mirror of cast.rs's state string: connecting | connected | loading |
+  /// Mirror of cast/castv2.rs's state string: connecting | connected | loading |
   /// buffering | playing | paused | ended | stopped | error.
   state = $state('idle');
   time = $state(0);

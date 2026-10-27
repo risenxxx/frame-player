@@ -173,7 +173,7 @@ as well as making the user wait.
 | `src-tauri/src/lib.rs` | Plugin registration, window lifecycle, the small commands |
 | `src-tauri/src/thumb_service.rs` | Seekbar thumbnails and posters: decoding, scoring, disk cache |
 | `src-tauri/src/torrent/` | The torrent session and the loopback HTTP server |
-| `src-tauri/src/cast.rs` · `dlna.rs` | Casting: the CASTV2 client, the LAN file server, the UPnP transport |
+| `src-tauri/src/cast/` · `dlna.rs` | Casting: the CASTV2 client, the LAN file server, the UPnP transport |
 | `src/lib/frame-step.svelte.ts` · `src-tauri/src/frame_step.rs` | Frame stepping through mpv: software decoding while stepping, backward decoding on slow files, the group probe |
 | `src-tauri/src/step_engine.rs` | The frame-stepping sidecar (disabled, kept working) |
 

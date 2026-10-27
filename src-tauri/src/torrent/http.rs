@@ -142,7 +142,7 @@ impl TorrentService {
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::CONTENT_TYPE, mime_for(name))
             // A DLNA renderer reads these before it will seek; harmless to
-            // everyone else (see cast.rs, where the same pair is set).
+            // everyone else (see cast/server.rs, where the same pair is set).
             .header("transferMode.dlna.org", "Streaming")
             .header(
                 "contentFeatures.dlna.org",
@@ -206,7 +206,7 @@ pub(super) fn stream_url(port: u16, info_hash: &str, index: usize, path: &str) -
 
 /// Percent-encode everything that is not unreserved. Small and local rather than
 /// a dependency: this escapes one file name for one loopback URL. `pub(crate)`
-/// because cast.rs builds its URLs the same way.
+/// because cast/ builds its URLs the same way.
 pub(crate) fn urlencode(s: &str) -> String {
     urlencode_bytes(s.as_bytes())
 }
@@ -229,7 +229,7 @@ pub(super) fn urlencode_bytes(s: &[u8]) -> String {
 /// (which is served as the whole file, per RFC 9110).
 ///
 /// Only the single-range `bytes=` form: that is what ffmpeg sends (and what a
-/// Cast receiver sends — cast.rs shares this parser), and a multipart response
+/// Cast receiver sends — cast/server.rs shares this parser), and a multipart response
 /// to a media player would be answering a question nobody asked.
 pub(crate) fn parse_range(value: &str, total: u64) -> Option<Option<(u64, u64)>> {
     let spec = value.trim().strip_prefix("bytes=")?;
