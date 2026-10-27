@@ -2,7 +2,7 @@ use std::path::Path;
 
 /// In dev the exe lives in target/<profile>/ — the linked FFmpeg DLLs have to
 /// sit next to it, or the Windows loader will not find them. `ffmpeg.exe` goes
-/// with them: the cast prepare step (cast.rs) spawns the CLI, which in the
+/// with them: the cast prepare step (cast/prepare.rs) spawns the CLI, which in the
 /// shared build is a ~0.5 MB shim over those same DLLs.
 fn copy_ffmpeg_dlls() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();

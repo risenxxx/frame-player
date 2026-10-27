@@ -12,7 +12,7 @@
 //! So each address is also asked directly, in the way each protocol answers:
 //!
 //! - **Cast: `:8009` open, then `GET :8008/setup/eureka_info`** for the name
-//!   (cast.rs). The obvious route, an mDNS query sent straight to the device's
+//!   (cast/discovery.rs). The obvious route, an mDNS query sent straight to the device's
 //!   own address, was measured first and is dead: a Cast soundbar that answered
 //!   ping and served `eureka_info` stayed silent to it from an ephemeral port,
 //!   from 5353, with and without the QU bit — Cast's responder listens on the

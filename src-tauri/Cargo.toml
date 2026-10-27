@@ -81,7 +81,7 @@ tokio = { version = "1", features = ["net", "rt", "io-util", "macros", "sync", "
 tokio-util = { version = "0.7", features = ["io"] }
 bytes = "1"
 
-# Casting (Google Cast) — cast.rs. The CASTV2 sender protocol is spoken
+# Casting (Google Cast) — src/cast/. The CASTV2 sender protocol is spoken
 # directly: TLS to the device's 8009, 4-byte-BE-length-framed protobuf envelopes
 # whose payloads are JSON in four namespaces. `rust_cast` was tried first and
 # rejected after reading its source (see casting.md): its MessageManager holds
