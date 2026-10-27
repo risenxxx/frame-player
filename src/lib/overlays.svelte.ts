@@ -231,6 +231,18 @@ export function dismissOnOutsideClick(target: HTMLElement | null): boolean {
 }
 
 /**
+ * The window stopped being the one in front — a click on the desktop or in
+ * another app. The menus go, as a system menu would: a viewer reported
+ * clicking the desktop to put the subtitle panel away, and it stayed. Only the
+ * menus, not the dialogs — a dialog holds work (a search, a form) that a
+ * glance at another window must not throw away.
+ */
+export function dismissMenus() {
+  overlays.ctxAt = null;
+  overlays.menu = null;
+}
+
+/**
  * A click on the video itself. Same verdict, without the "outside" test: the
  * video is outside everything.
  */

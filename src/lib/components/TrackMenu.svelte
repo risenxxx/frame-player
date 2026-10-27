@@ -138,9 +138,29 @@
         {t('osc.subs_off')}
       </button>
     {/if}
-    <button class="menu-item" onclick={() => onAddFile(kind!)}>
-      {t('osc.add_file')}
+    <!-- The choices end here and the actions begin. They used to run on as one
+         list of identical rows — "eng", "SDH • eng", "Off", "Add file…",
+         "Find subtitles…" — and a viewer reported not being able to tell at a
+         glance which rows were subtitles. The rule and the leading glyph are
+         what say it now: a choice is a name, an action is a verb with a mark. -->
+    {#if kind === 'sub' || player.audioTracks.length > 0}
+      <div class="menu-sep"></div>
+    {/if}
+    <button class="menu-item track-action" onclick={() => onAddFile(kind!)}>
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M8 3.5v9M3.5 8h9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      </svg>
+      <span>{t('osc.add_file')}</span>
     </button>
+    {#if kind === 'sub'}
+      <button class="menu-item track-action" onclick={() => { close(); void openSubsDialog(); }}>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <path d="M10.2 10.2 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        <span>{t('subs.find')}</span>
+      </button>
+    {/if}
     {#if canMulti}
       <div class="menu-sep"></div>
       <!-- A mode, not an action: it changes what a click on a track does and
@@ -157,11 +177,6 @@
       >
         <span class="mix-name">{t('osc.audio_multi')}</span>
         <span class="mini-switch" class:on={multi} aria-hidden="true"></span>
-      </button>
-    {/if}
-    {#if kind === 'sub'}
-      <button class="menu-item" onclick={() => { close(); void openSubsDialog(); }}>
-        {t('subs.find')}
       </button>
     {/if}
     <div class="menu-sep"></div>
@@ -290,6 +305,28 @@
     display: flex;
     align-items: center;
     gap: 10px;
+  }
+
+  /* An action under the list of choices: a leading glyph and a quieter label,
+     so it cannot be read as one more track. Quieter, not dim — `#6a6a74` is
+     what a disabled row looks like, and these always work. Full strength on
+     hover, like every row. Two classes against `.menu-item`'s one, for its
+     `display: block` (the same lesson as `.mix-item`). */
+  .menu-item.track-action {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #a8a8b2;
+  }
+
+  .menu-item.track-action:hover {
+    color: #e8e8ec;
+  }
+
+  .track-action svg {
+    flex: none;
+    width: 14px;
+    height: 14px;
   }
 
   .mix-name {

@@ -64,6 +64,14 @@
   /// How much of each end fades: a row and a third.
   const FADE = 42;
 
+  /// A chevron's click: just under a view, so the row at the edge stays in
+  /// sight and carries the eye across — the recents rail's arrows, turned on
+  /// their side. The scroll this starts arrives as the viewer's own, so the
+  /// edges fade as they do under a wheel.
+  function page(dir: -1 | 1) {
+    el?.scrollBy({ top: dir * el.clientHeight * 0.8, behavior: 'smooth' });
+  }
+
   $effect(() => {
     const box = el;
     const frame = box?.parentElement;
@@ -166,29 +174,49 @@
     {@render children()}
   </div>
   <!-- Outside the list, because everything inside it is under the mask — at
-       the two edges most of all. Decorative for the reason `ScrollFade` gives:
-       a screen reader already has "there is more" from the scroll container
-       itself. -->
-  <svg class="menu-edge up" class:on={above} class:instant viewBox="0 0 16 16" aria-hidden="true">
-    <path
-      d="M3.5 10 8 5.5 12.5 10"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.8"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
-  </svg>
-  <svg class="menu-edge down" class:on={more} class:instant viewBox="0 0 16 16" aria-hidden="true">
-    <path
-      d="M3.5 6 8 10.5 12.5 6"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.8"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
-  </svg>
+       the two edges most of all. A chevron that looks like a button gets
+       clicked like one: it was a caption only, and a viewer reported the arrow
+       "doing nothing". So a click turns the page. Still hidden from a screen
+       reader and out of the tab order — the list scrolls by itself for both,
+       and "there is more" is something the scroll container already says. -->
+  <button
+    class="menu-edge up"
+    class:on={above}
+    class:instant
+    tabindex="-1"
+    aria-hidden="true"
+    onclick={() => page(-1)}
+  >
+    <svg viewBox="0 0 16 16">
+      <path
+        d="M3.5 10 8 5.5 12.5 10"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  </button>
+  <button
+    class="menu-edge down"
+    class:on={more}
+    class:instant
+    tabindex="-1"
+    aria-hidden="true"
+    onclick={() => page(1)}
+  >
+    <svg viewBox="0 0 16 16">
+      <path
+        d="M3.5 6 8 10.5 12.5 6"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  </button>
 </div>
 
 <style>
@@ -310,31 +338,62 @@
   /* `ScrollFade`'s chevron: the same glyph, the same 8px from the edge it
      points past. Centered on the rows rather than on the panel, which differ by
      half a scrollbar. Opacity, because this one appears and disappears — the
-     three-strength rule about small glyphs is for controls that stay. */
+     three-strength rule about small glyphs is for controls that stay.
+
+     The button is the hit area and the glyph sits in it: 48×27, its glyph 15px
+     and 6px from the button's own edge, so the button stands 2px in from the
+     list's edge and the glyph lands on the 8px it always did. Wider than tall
+     because the rows under it are wide and short — a target that is a square
+     the width of a row's height covers the middle of the faded row and no
+     more. */
   .menu-edge {
     position: absolute;
     left: calc((100% - var(--menu-bar, 0px)) / 2);
-    width: 15px;
-    height: 15px;
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 27px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
     transform: translateX(-50%);
     color: rgba(232, 232, 236, 0.66);
-    /* A caption on the scroll position, never a target: a click here is a
-       click on the row underneath. */
+    cursor: pointer;
+    /* A target only while it is shown: a faded-out chevron is a click on the
+       row underneath, as it always was. */
     pointer-events: none;
     opacity: 0;
     transition: opacity 140ms ease;
   }
 
+  .menu-edge svg {
+    width: 15px;
+    height: 15px;
+  }
+
   .menu-edge.up {
-    top: 8px;
+    top: 2px;
+    align-items: start;
+    padding-top: 6px;
   }
 
   .menu-edge.down {
-    bottom: 8px;
+    bottom: 2px;
+    align-items: end;
+    padding-bottom: 6px;
   }
 
   .menu-edge.on {
+    pointer-events: auto;
     opacity: 1;
+  }
+
+  /* Colour on hover, not a fill: a pill appearing over the faded rows would be
+     paint over the see-through panel, the dark band this file exists to
+     avoid. */
+  .menu-edge.on:hover {
+    color: #fff;
   }
 
   .menu-edge.instant {

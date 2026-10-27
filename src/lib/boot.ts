@@ -30,7 +30,7 @@ import {
   resetWheelGesture,
 } from './input.svelte';
 import { opening, openResumeSnapshot, refreshTorrents } from './open.svelte';
-import { dismissOnOutsideClick } from './overlays.svelte';
+import { dismissMenus, dismissOnOutsideClick } from './overlays.svelte';
 import { IS_MAC } from './platform';
 import { initPlayer, loadFiles, player, resyncState } from './player.svelte';
 import { loadPlaylistPrefs } from './playlist.svelte';
@@ -376,6 +376,20 @@ export async function boot() {
 
   window.addEventListener('pointerdown', closeMenusOnOutsideClick, true);
   unlisteners.push(() => window.removeEventListener('pointerdown', closeMenusOnOutsideClick, true));
+
+  // A click outside the window — the desktop, another app — is outside the
+  // menus too, and the pointerdown above never sees it. The window's own
+  // `blur`, not an element's: no capture, so a focus moving between controls
+  // inside the page does not reach it. The system file dialog takes the focus
+  // as well, and that one is ours: "Add file…" leaves its menu open so the new
+  // track shows up in the list.
+  const closeMenusOnBlur = () => {
+    if (chrome.fileDialogOpen) return;
+    hideTooltip();
+    dismissMenus();
+  };
+  window.addEventListener('blur', closeMenusOnBlur);
+  unlisteners.push(() => window.removeEventListener('blur', closeMenusOnBlur));
 }
 
 export function shutdown() {

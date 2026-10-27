@@ -48,6 +48,13 @@
   /// scrolled to its end is worse than one that leaves a hair early.
   const EDGE = 2;
 
+  /// The chevron's click: just under a view, as the panels' chevrons and the
+  /// recents rail's arrows do, so the line at the edge stays in sight.
+  function page() {
+    const box = el?.parentElement;
+    box?.scrollBy({ top: box.clientHeight * 0.8, behavior: 'smooth' });
+  }
+
   $effect(() => {
     const box = el?.parentElement;
     if (!el || !box) return;
@@ -128,22 +135,27 @@
   });
 </script>
 
-<!-- Decorative, and deliberately so: "there is more below" is something a
-     screen reader already knows from the scroll container itself, so
+<!-- Hidden from a screen reader, and deliberately so: "there is more below" is
+     something it already knows from the scroll container itself, so
      announcing it here would be the same fact twice — and as a live region it
-     would be that fact again on every scroll. -->
+     would be that fact again on every scroll. The chevron is still a target
+     for the pointer, because it looks like one: the panels over the control
+     bar were reported for an arrow that "does nothing", and this is the same
+     arrow. Out of the tab order for the same reason it is hidden. -->
 <div class="scrollfade" class:on={more} class:instant bind:this={el} aria-hidden="true">
   <span class="scrollfade-paint"></span>
-  <svg class="scrollfade-arrow" viewBox="0 0 16 16">
-    <path
-      d="M3.5 6 8 10.5 12.5 6"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.8"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
-  </svg>
+  <button class="scrollfade-arrow" tabindex="-1" aria-hidden="true" onclick={page}>
+    <svg viewBox="0 0 16 16">
+      <path
+        d="M3.5 6 8 10.5 12.5 6"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  </button>
 </div>
 
 <style>
@@ -160,9 +172,10 @@
        a stacking context of their own, so the arrow's own layering cannot
        reach anything outside. */
     z-index: 2;
-    /* This is a caption on the scroll position, never a target: a click here
-       is a click on the row underneath, exactly as it would be without the
-       fade. The same rule the bars' gradient tails carry. */
+    /* The fade is a caption on the scroll position, not a target: a click on
+       it is a click on the row underneath, exactly as it would be without the
+       fade. The same rule the bars' gradient tails carry. The arrow alone
+       takes the pointer back, below. */
     pointer-events: none;
     color: rgba(232, 232, 236, 0.66);
     opacity: 0;
@@ -215,11 +228,37 @@
      downward one is symmetric about the axis it is centered on. */
   .scrollfade-arrow {
     position: absolute;
-    bottom: calc(8px - var(--fade-overhang, 0px));
+    /* The button is the hit area, 48×27 like the panels' chevrons, with the
+       glyph 6px above its bottom edge — so the glyph stays the 8px above the
+       visible edge it always was. */
+    bottom: calc(2px - var(--fade-overhang, 0px));
     left: 50%;
+    display: grid;
+    place-items: end center;
+    width: 48px;
+    height: 27px;
+    padding: 0 0 6px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    transform: translateX(-50%);
+  }
+
+  .scrollfade-arrow svg {
     display: block;
     width: 15px;
     height: 15px;
-    transform: translateX(-50%);
+  }
+
+  /* A target only while it is shown — the rest of the fade stays a caption,
+     and a faded-out arrow is a click on whatever is under it. */
+  .scrollfade.on .scrollfade-arrow {
+    pointer-events: auto;
+  }
+
+  .scrollfade.on .scrollfade-arrow:hover {
+    color: #fff;
   }
 </style>
