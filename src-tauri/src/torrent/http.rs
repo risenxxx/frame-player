@@ -338,4 +338,29 @@ mod tests {
         // The extension survives encoding — ffmpeg probes by it.
         assert!(url.ends_with(".mkv"));
     }
+
+    /// mpv opens what `stream_url` builds, and the name is part of it — and a
+    /// release named in Cyrillic or with brackets and spaces is the ordinary
+    /// case, not the edge. Each byte of the UTF-8 is escaped, a slash inside a
+    /// name never becomes a path separator, and the unreserved four stay as
+    /// they are (RFC 3986), so the extension ffmpeg probes by survives.
+    #[test]
+    fn names_are_escaped_byte_by_byte() {
+        assert_eq!(urlencode("Брат 2.mkv"), "%D0%91%D1%80%D0%B0%D1%82%202.mkv");
+        assert_eq!(urlencode("a/b?c#d&e"), "a%2Fb%3Fc%23d%26e");
+        assert_eq!(urlencode("A-z_0.9~"), "A-z_0.9~");
+        assert_eq!(urlencode("%20"), "%2520");
+    }
+
+    /// What mpv is told a stream is. By the extension and in any case, and an
+    /// unknown one is octet-stream rather than a guess — a wrong video type is
+    /// worse than none, since the demuxer probes the bytes either way.
+    #[test]
+    fn mime_by_extension() {
+        assert_eq!(mime_for("Film.MKV"), "video/x-matroska");
+        assert_eq!(mime_for("a.b.mp4"), "video/mp4");
+        assert_eq!(mime_for("clip.m2ts"), "video/mp2t");
+        assert_eq!(mime_for("README"), "application/octet-stream");
+        assert_eq!(mime_for("noext."), "application/octet-stream");
+    }
 }
