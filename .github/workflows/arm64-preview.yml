@@ -1,0 +1,91 @@
+# TEMPORARY - remove before merging. The Windows ARM64 release steps from
+# release.yml, run on this branch without any secret: an unsigned updater, no
+# OpenSubtitles key. It proves the bundle builds and packs, and its artifacts
+# are a build somebody with ARM hardware can try before a release exists.
+name: ARM64 preview
+
+on:
+  push:
+    branches: [windows-arm64]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-11-arm
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: moonrepo/setup-toolchain@v0
+        with:
+          auto-install: true
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: preview-windows-aarch64
+
+      - name: Toolchain
+        shell: pwsh
+        run: |
+          rustc -vV
+          node -p "process.arch"
+          bun --version
+          Get-Command clang -ErrorAction SilentlyContinue | Format-List Source
+
+      - name: Fetch native SDKs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1 -Arch arm64
+
+      - run: bun install --frozen-lockfile
+
+      - run: node scripts/gen-notices.mjs --check
+
+      # No signing key on this branch, so no updater signature either.
+      - name: Build
+        shell: pwsh
+        run: |
+          '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -Encoding ascii $env:RUNNER_TEMP/preview.json
+          bun run tauri build --target aarch64-pc-windows-msvc --config "$env:RUNNER_TEMP/preview.json"
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $exe = 'src-tauri/target/aarch64-pc-windows-msvc/release/frameplayer.exe'
+          $out = Join-Path $env:RUNNER_TEMP 'zip'
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 -Version $version -OutDir $out -Arch arm64 -Exe $exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 -Version $version -OutDir $out -Portable -Arch arm64 -Exe $exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $setup = Get-ChildItem 'src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
+          Write-Output "bundler named it: $($setup.Name)"
+          Copy-Item $setup.FullName "dist/FramePlayer_${version}_arm64-setup.exe"
+          Copy-Item "$out/FramePlayer_${version}_arm64-portable.zip" dist/
+          Get-ChildItem dist, $out | Format-Table Name, Length
+
+      # Every PE file that ships, by machine type: the bundler, the SDKs and the
+      # build must all agree on ARM64 (vulkan-1.dll is ARM64X, which also says so).
+      - name: Machine types
+        shell: pwsh
+        run: |
+          $dir = 'src-tauri/target/aarch64-pc-windows-msvc/release'
+          Copy-Item src-tauri/lib/*.dll $dir
+          $dumpbin = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -find 'VC\Tools\MSVC\*\bin\Hostarm64\arm64\dumpbin.exe' | Select-Object -First 1
+          foreach ($f in 'frameplayer.exe', 'libmpv-2.dll', 'libmpv-wrapper.dll', 'vulkan-1.dll', 'avcodec-62.dll') {
+            Write-Output "== $f"
+            & $dumpbin /headers "$dir/$f" | Select-String 'machine'
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: FramePlayer-windows-arm64-preview
+          path: dist
+          retention-days: 30

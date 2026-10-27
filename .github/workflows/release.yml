@@ -54,14 +54,32 @@ jobs:
     needs: check-version
     if: needs.check-version.outputs.should_release == 'true'
     strategy:
-      # Both artifacts are needed for a complete latest.json, so let each
-      # platform report its own failure instead of canceling its sibling.
+      # Every artifact is needed for a complete latest.json, so let each
+      # platform report its own failure instead of canceling its siblings.
       fail-fast: false
       matrix:
         include:
+          # `platform` is the updater's own key for the build, `arch` the word
+          # in the file names and what fetch-libs.ps1 takes, `out` where the
+          # bundler leaves its output.
           - platform: windows-x86_64
             runner: windows-latest
             rust_target: x86_64-pc-windows-msvc
+            arch: x64
+            out: src-tauri/target/release
+            tauri_args: ''
+          # Windows on ARM, built natively on an ARM64 runner (free for a public
+          # repository). `--target` is explicit here, unlike x64, because the
+          # bundler takes the installer's architecture from the target, and a
+          # toolchain that happened to default to x64 would otherwise produce
+          # an "ARM64" release out of x64 binaries — which fetch-libs.ps1 and
+          # pack-windows-update.ps1 refuse anyway, by reading the PE headers.
+          - platform: windows-aarch64
+            runner: windows-11-arm
+            rust_target: aarch64-pc-windows-msvc
+            arch: arm64
+            out: src-tauri/target/aarch64-pc-windows-msvc/release
+            tauri_args: --target aarch64-pc-windows-msvc
           # Apple Silicon only. Intel would be a second entry here (macos-26-intel
           # + darwin-x86_64); see FINDINGS-macos.md for why it is not worth it yet.
           #
@@ -101,7 +119,8 @@ jobs:
       # libmpv (LGPL), libmpv-wrapper, the FFmpeg SDK (LGPL) and libclang for
       # bindgen. The Actions cache is free (it does not count against storage
       # billing; 10 GB per repository with LRU eviction), so the download only
-      # runs when the script itself changed.
+      # runs when the script itself changed. Keyed on the architecture as well,
+      # since both Windows runners report the same `runner.os`.
       - name: Cache native SDKs (Windows)
         if: runner.os == 'Windows'
         id: sdk-cache
@@ -111,7 +130,7 @@ jobs:
             src-tauri/lib
             src-tauri/ffmpeg
             src-tauri/tools
-          key: native-sdks-${{ runner.os }}-${{ hashFiles('scripts/fetch-libs.ps1') }}
+          key: native-sdks-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/fetch-libs.ps1') }}
 
       # The two `releases/latest` lookups in that script go to the GitHub API,
       # which gives an anonymous caller 60 requests an hour counted **per IP** —
@@ -124,7 +143,7 @@ jobs:
         if: runner.os == 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1
+        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1 -Arch ${{ matrix.arch }}
 
       # --- macOS native libs ---------------------------------------------------
       # Downloaded, not built. The set is produced once by the `macOS libs`
@@ -198,7 +217,7 @@ jobs:
       # their terms rather than caution.
       - name: Build Tauri app (Windows)
         if: runner.os == 'Windows'
-        run: bun run tauri build
+        run: bun run tauri build ${{ matrix.tauri_args }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
@@ -338,7 +357,8 @@ jobs:
       # from `bundle.resources` and the main binary, signed with the same key as
       # the installer, and published under a manifest key of its own -
       # `windows-x86_64-zip` - so that every client older than this release keeps
-      # reading `windows-x86_64` and keeps getting the installer.
+      # reading `windows-x86_64` and keeps getting the installer. The ARM64 build
+      # publishes the same pair as `windows-aarch64` / `windows-aarch64-zip`.
       #
       # Deliberately not fatal. A release whose payload did not build still goes
       # out with its installer key intact, and every client falls back to the
@@ -353,6 +373,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
           $version = "${{ needs.check-version.outputs.version }}"
+          $arch = "${{ matrix.arch }}"
+          $exe = "${{ matrix.out }}/frameplayer.exe"
           $out = Join-Path $env:RUNNER_TEMP 'zip'
           # Out of dist/ on purpose: everything in dist/ is uploaded to R2 as
           # it stands, and the signature is not a thing to publish. Only the
@@ -362,9 +384,9 @@ jobs:
           # (and the one package.json calls fetch-libs.ps1 with), and running
           # the packaging in CI under a shell nobody has exercised is how a
           # release discovers a difference between them.
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 -Version $version -OutDir $out
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 -Version $version -OutDir $out -Arch $arch -Exe $exe
           if ($LASTEXITCODE -ne 0) { Write-Error "packing the payload failed with $LASTEXITCODE" }
-          $zip = Join-Path $out "FramePlayer_${version}_x64.zip"
+          $zip = Join-Path $out "FramePlayer_${version}_${arch}.zip"
           if (-not (Test-Path $zip)) { Write-Error "no payload at $zip" }
           bun run tauri signer sign $zip
           if (-not (Test-Path "$zip.sig")) { Write-Error "the payload was not signed" }
@@ -377,9 +399,9 @@ jobs:
           # above, whose file set is the same one — so it belongs on the GitHub
           # release, where assets are kept, rather than in the update bucket,
           # which is pruned to the last few versions.
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 -Version $version -OutDir $out -Portable
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 -Version $version -OutDir $out -Portable -Arch $arch -Exe $exe
           if ($LASTEXITCODE -ne 0) { Write-Error "packing the portable download failed with $LASTEXITCODE" }
-          $portable = Join-Path $out "FramePlayer_${version}_x64-portable.zip"
+          $portable = Join-Path $out "FramePlayer_${version}_${arch}-portable.zip"
           if (-not (Test-Path $portable)) { Write-Error "no portable download at $portable" }
           New-Item -ItemType Directory -Force -Path dist/portable | Out-Null
           Copy-Item $portable dist/portable/
@@ -395,9 +417,12 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $version = "${{ needs.check-version.outputs.version }}"
-          $exe = Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          $arch = "${{ matrix.arch }}"
+          $key = "${{ matrix.platform }}"
+          $exe = Get-ChildItem "${{ matrix.out }}/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          if ($null -eq $exe) { Write-Error "no installer under ${{ matrix.out }}/bundle/nsis"; exit 1 }
           # space-free name -> clean URLs in the update manifest
-          $name = "FramePlayer_${version}_x64-setup.exe"
+          $name = "FramePlayer_${version}_${arch}-setup.exe"
           Copy-Item $exe.FullName "dist/$name"
           $sig = (Get-Content "$($exe.FullName).sig" -Raw).Trim()
           # A variable, like the bucket names: this address is printed in the
@@ -408,14 +433,18 @@ jobs:
           # Unset would produce `/FramePlayer_….exe` in the manifest: a relative
           # URL that fails at the client, days later, with nothing here to show.
           if (-not $base) { Write-Error "R2_PUBLIC_URL_UPDATES is not set"; exit 1 }
-          $platforms = [ordered]@{ "windows-x86_64" = @{ signature = $sig; url = "$base/$name" } }
+          # `windows-x86_64` / `windows-aarch64`: the key the updater derives
+          # from the build that reads it. Every installed x64 copy depends on
+          # the first one - including those running under emulation on ARM64
+          # machines, which stay x64 until somebody installs the ARM64 build.
+          $platforms = [ordered]@{ $key = @{ signature = $sig; url = "$base/$name" } }
           # The in-place payload's key, when the step above produced one. Second
           # rather than instead: the installer key is what an older client reads
           # and what this one falls back to.
-          $zipName = "FramePlayer_${version}_x64.zip"
+          $zipName = "FramePlayer_${version}_${arch}.zip"
           $zipSig = Join-Path $env:RUNNER_TEMP "zip/$zipName.sig"
           if (Test-Path $zipSig) {
-            $platforms["windows-x86_64-zip"] = @{
+            $platforms["$key-zip"] = @{
               signature = (Get-Content $zipSig -Raw).Trim(); url = "$base/$zipName"
             }
           } else {
@@ -423,7 +452,7 @@ jobs:
           }
           $platforms |
             ConvertTo-Json -Depth 4 |
-            Set-Content "dist/platform-windows-x86_64.json" -Encoding utf8
+            Set-Content "dist/platform-$key.json" -Encoding utf8
 
       - name: Stage artifacts (macOS)
         if: runner.os == 'macOS'
@@ -464,9 +493,12 @@ jobs:
           retention-days: 1
 
   publish:
-    # Both platforms are required: publish must not start if one of them failed,
-    # or latest.json gets half a manifest and the other half of the users are
-    # left without updates.
+    # Every platform is required: publish must not start if one of them failed,
+    # or latest.json gets part of a manifest and the rest of the users are left
+    # without updates. That includes ARM64, although it has the fewest users:
+    # a release that went out without it would leave every ARM64 copy reading a
+    # manifest with no key for it, and rust.yml builds it on every Rust change
+    # and weekly, so a break shows up there before it can hold a release.
     needs: [check-version, build]
     runs-on: ubuntu-latest
     permissions:
@@ -526,9 +558,11 @@ jobs:
           | File | Description |
           |------|-------------|
           | `FramePlayer_*_x64-setup.exe` | Installer (Windows 10/11 x64) |
+          | `FramePlayer_*_arm64-setup.exe` | Installer (Windows on ARM) |
           | `FramePlayer_*_aarch64.dmg` | Disk image (macOS, Apple Silicon) |
-          | `FramePlayer_*_x64.zip` | The Windows installation's own files, which the in-place update downloads |
           | `FramePlayer_*_x64-portable.zip` | Portable (Windows 10/11 x64): unpack anywhere, keeps settings and history in its own folder |
+          | `FramePlayer_*_arm64-portable.zip` | Portable (Windows on ARM) |
+          | `FramePlayer_*_x64.zip`, `FramePlayer_*_arm64.zip` | The Windows installation's own files, which the in-place update downloads |
 
           The player updates automatically: when a new version is released,
           an update button appears in the app.

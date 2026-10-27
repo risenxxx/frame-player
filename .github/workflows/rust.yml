@@ -77,7 +77,20 @@ env:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    # Both architectures the release ships, each on a machine of its own kind:
+    # an ARM64 runner builds natively, so bindgen, the C parts of the TLS stack
+    # and the tests all run on the architecture they are for. `windows-11-arm`
+    # costs a public repository nothing, like the others. Neither cancels the
+    # other: a lint that only one of them hits is exactly what this is for.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -92,11 +105,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: check-windows
+          key: check-windows-${{ matrix.arch }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # The same key as `release.yml`, so the two workflows share one copy and
-      # the download runs only when the script changes. `.cargo/config.toml`
+      # the download runs only when the script changes. The architecture is part
+      # of it: both runners report `Windows` as their OS, and an ARM64 job
+      # restoring the x64 set would fail at link time, far from the cause. `.cargo/config.toml`
       # points FFMPEG_DIR and LIBCLANG_PATH at what this puts on disk.
       - name: Cache native SDKs
         id: sdk-cache
@@ -106,7 +121,7 @@ jobs:
             src-tauri/lib
             src-tauri/ffmpeg
             src-tauri/tools
-          key: native-sdks-${{ runner.os }}-${{ hashFiles('scripts/fetch-libs.ps1') }}
+          key: native-sdks-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/fetch-libs.ps1') }}
 
       # Authenticated for the reason given in `release.yml`: the anonymous API
       # allowance is per IP, and a hosted runner shares its address.
@@ -114,7 +129,7 @@ jobs:
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1
+        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1 -Arch ${{ matrix.arch }}
 
       - name: Clippy
         working-directory: src-tauri

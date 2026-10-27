@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Builds the Windows in-place update payload: FramePlayer_<version>_x64.zip
-  and the manifest the player checks it against.
+  (or _arm64.zip) and the manifest the player checks it against.
 
 .DESCRIPTION
   The zip is the second Windows release artifact. The first one — the NSIS
@@ -41,7 +41,15 @@
   Defaults to the version in tauri.conf.json.
 
 .PARAMETER Exe
-  The built main binary. Defaults to src-tauri/target/release/<crate name>.exe.
+  The built main binary. Defaults to src-tauri/target/release/<crate name>.exe,
+  or, for -Arch arm64, the same under target/aarch64-pc-windows-msvc/ when a
+  build with an explicit --target put it there.
+
+.PARAMETER Arch
+  x64 (the default) or arm64: the architecture in the archive's name, and the
+  one the binary is checked against before anything is packed. The resources
+  come from src-tauri/{lib,ffmpeg}, which hold whichever architecture
+  fetch-libs.ps1 was last run for - so its libmpv is checked as well.
 
 .PARAMETER OutDir
   Where the zip and the staging tree go. Defaults to ./dist.
@@ -73,7 +81,9 @@ param(
   [string]$Exe,
   [string]$OutDir = 'dist',
   [string]$CompareWith,
-  [switch]$Portable
+  [switch]$Portable,
+  [ValidateSet('x64', 'arm64')]
+  [string]$Arch = 'x64'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -119,10 +129,30 @@ if (-not $Exe) {
     Write-Error 'could not read the crate name out of src-tauri/Cargo.toml'
   }
   $Exe = Join-Path $tauriDir "target/release/$($Matches[1]).exe"
+  if ($Arch -eq 'arm64') {
+    $cross = Join-Path $tauriDir "target/aarch64-pc-windows-msvc/release/$($Matches[1]).exe"
+    if (Test-Path -LiteralPath $cross) { $Exe = $cross }
+  }
 }
 if (-not (Test-Path -LiteralPath $Exe)) {
   Write-Error "no built binary at $Exe - run 'bun run tauri build' first"
 }
+
+# An archive named for one architecture and holding the other would install,
+# and then fail to start with error 193 - or, as an update, refuse nothing,
+# since the file set is the same. The COFF machine field of the PE header is
+# what decides: the 'PE\0\0' signature sits at the offset stored at 0x3C.
+$machine = @{ x64 = 0x8664; arm64 = 0xAA64 }[$Arch]
+function Assert-Machine([string]$Path) {
+  $bytes = [IO.File]::ReadAllBytes($Path)
+  $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+  $found = [BitConverter]::ToUInt16($bytes, $pe + 4)
+  if ($found -ne $machine) {
+    Write-Error ('{0} is built for machine 0x{1:X4}, not {2}' -f $Path, $found, $Arch)
+  }
+}
+Assert-Machine $Exe
+Assert-Machine (Join-Path $tauriDir 'lib/libmpv-2.dll')
 
 <#
   One entry of `bundle.resources` resolved the way the bundler resolves it: the
@@ -227,7 +257,7 @@ $manifestFile = [IO.Path]::GetTempFileName()
 
 $suffix = ''
 if ($Portable) { $suffix = '-portable' }
-$zip = Join-Path $outPath "FramePlayer_${Version}_x64${suffix}.zip"
+$zip = Join-Path $outPath "FramePlayer_${Version}_${Arch}${suffix}.zip"
 if (Test-Path -LiteralPath $zip) { Remove-Item -Force -LiteralPath $zip }
 # Entry by entry rather than CreateFromDirectory, for two reasons. It saves
 # copying 260 MB into a staging tree only to read it straight back. And

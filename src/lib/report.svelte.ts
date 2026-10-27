@@ -272,7 +272,9 @@ export async function buildReport(): Promise<Report> {
   ]);
   applyState(collected.state);
 
-  const os = `${collected.os}, ${collected.arch}${collected.translated ? ' (Rosetta)' : ''}`;
+  // Rosetta on a Mac; on Windows, an x64 copy on an ARM64 machine.
+  const emulated = collected.os.startsWith('macOS') ? ' (Rosetta)' : ' (emulated on ARM64)';
+  const os = `${collected.os}, ${collected.arch}${collected.translated ? emulated : ''}`;
   const conf = userConfOptionNames();
   const since = debugLog.since ? ` since ${utc(new Date(debugLog.since))}` : '';
   const summary: Array<[string, string]> = [
