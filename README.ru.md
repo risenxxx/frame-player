@@ -509,7 +509,7 @@ go run ./services/relay/cmd/probe -room ABC123 -hold 20s     # hold the room, on
 | `src-tauri/src/thumb_service.rs` | Миниатюры на шкале перемотки: декодирование, фоновая раскадровка, дисковый кэш |
 | `src-tauri/src/step_engine.rs` | Покадровый движок на сайдкаре FFmpeg (поддерживается в рабочем состоянии, по умолчанию выключен) |
 | `src-tauri/src/torrent/` | Торрент-сессия и локальный HTTP-сервер на loopback, который открывает mpv |
-| `src-tauri/src/cast/` · `dlna.rs` | Трансляция: клиент Cast, файловый сервер в локальной сети, транспорт UPnP |
+| `src-tauri/src/cast/` · `dlna/` | Трансляция: клиент Cast, файловый сервер в локальной сети, транспорт UPnP |
 | `src-tauri/src/opensubtitles.rs` | Поиск и загрузка субтитров |
 | `src-tauri/src/catalog.rs` | Каталог: TMDB через наш прокси и поиск раздач |
 | `src/lib/sync/` | Совместный просмотр: протокол, оценка расхождения часов, идентификация содержимого, коррекция рассинхрона |

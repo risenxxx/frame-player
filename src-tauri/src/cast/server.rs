@@ -482,7 +482,7 @@ pub(super) fn cast_mime(name: &str) -> &'static str {
 /// fresh token and hand back the URL a device on `device_ip`'s subnet can fetch
 /// it from. The Cast path does this inline in `cast_load` with its own privacy
 /// and HLS rules; this is the same three steps for anything else that hands a
-/// television a URL — today the DLNA reconnaissance in dlna.rs.
+/// television a URL — today the DLNA reconnaissance in dlna/.
 pub(crate) async fn serve_one_file(
     service: &Arc<CastService>,
     device_ip: IpAddr,
