@@ -148,7 +148,7 @@ jobs:
       # Downloadable from the run itself, which is what makes a dry run useful:
       # unpack it and look before anything is published.
       - name: Upload as a workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.key.outputs.name }}
           path: ${{ steps.key.outputs.name }}.tar.gz*
