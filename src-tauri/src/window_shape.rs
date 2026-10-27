@@ -24,6 +24,8 @@
 //! (`window_frame_glide`): the position and the size as one frame, over time —
 //! and the picture going dark and coming back around it (`window_video_fade`).
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 // ---- Saying that a resize is under way -----------------------------------
 //
 // The web content is pinned to the window's top-left corner and drawn a frame
@@ -206,12 +208,24 @@ pub fn install(window: &tauri::WebviewWindow) {
 
     let Ok(hwnd) = window.hwnd() else { return };
     report_to(window);
+    // SAFETY: called from `setup`, on the thread that owns the window, which
+    // is the one thread a subclass may be installed from; `sizing_proc` has
+    // the SUBCLASSPROC signature and removes itself on `WM_NCDESTROY`, so it
+    // is never called for a window that has gone.
     let ok = unsafe { SetWindowSubclass(hwnd.0 as _, Some(sizing_proc), SUBCLASS_ID, 0) };
     if ok == 0 {
         eprintln!("[window_shape] could not subclass the window; resizing stays free-form");
     }
 }
 
+/// The window's subclass procedure: the shape held while an edge is dragged,
+/// mpv's window kept under the client area, and the resize reported.
+///
+/// # Safety
+///
+/// Called only by the system, as the subclass `install` put on the window:
+/// the arguments are a message for `hwnd` as the system delivers it, on the
+/// window's own thread.
 #[cfg(windows)]
 unsafe extern "system" fn sizing_proc(
     hwnd: windows_sys::Win32::Foundation::HWND,
@@ -237,6 +251,8 @@ unsafe extern "system" fn sizing_proc(
         // sends `WM_EXITSIZEMOVE` for one.
         WM_NCLBUTTONDOWN if (HTLEFT as usize..=HTBOTTOMRIGHT as usize).contains(&wparam) => {
             say_resizing(true);
+            // SAFETY: the message this procedure was called with, handed on
+            // unchanged from inside it — what DefSubclassProc is for.
             let result = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
             say_resizing(false);
             return result;
@@ -255,13 +271,7 @@ unsafe extern "system" fn sizing_proc(
                     // place.
                     let r = unsafe { &mut *rect };
                     let drag = Bounds { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
-                    let held = hold_shape(
-                        drag,
-                        grip,
-                        ratio,
-                        unsafe { frame_extent(hwnd) },
-                        unsafe { min_track(hwnd) },
-                    );
+                    let held = hold_shape(drag, grip, ratio, frame_extent(hwnd), min_track(hwnd));
                     r.left = held.left;
                     r.top = held.top;
                     r.right = held.right;
@@ -285,8 +295,8 @@ unsafe extern "system" fn sizing_proc(
                 // WINDOWPOS it owns for the duration of the message.
                 let pos = unsafe { &*pos };
                 if (pos.flags & SWP_NOSIZE) == 0 {
-                    let (frame_w, frame_h) = unsafe { frame_extent(hwnd) };
-                    unsafe { cover_video(hwnd, pos.cx - frame_w, pos.cy - frame_h, true) };
+                    let (frame_w, frame_h) = frame_extent(hwnd);
+                    cover_video(hwnd, pos.cx - frame_w, pos.cy - frame_h, true);
                 }
             }
         }
@@ -295,13 +305,17 @@ unsafe extern "system" fn sizing_proc(
         // subtract and no guess about it.
         WM_SIZE => {
             let size = lparam as u32;
-            unsafe { cover_video(hwnd, (size & 0xffff) as i32, (size >> 16) as i32, false) };
+            cover_video(hwnd, (size & 0xffff) as i32, (size >> 16) as i32, false);
         }
         WM_NCDESTROY => {
+            // SAFETY: the subclass `install` added, by the same procedure and
+            // id, on the window's own thread; the window is still there for
+            // the length of this message.
             unsafe { RemoveWindowSubclass(hwnd, Some(sizing_proc), SUBCLASS_ID) };
         }
         _ => {}
     }
+    // SAFETY: as above, the message handed on unchanged.
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
 
@@ -328,15 +342,10 @@ fn grip_of(wparam: windows_sys::Win32::Foundation::WPARAM) -> Option<Grip> {
 /// rather than assumed to be zero: the window is undecorated, but whether that
 /// leaves a frame is tao's decision and has changed between its versions.
 #[cfg(windows)]
-unsafe fn frame_extent(hwnd: windows_sys::Win32::Foundation::HWND) -> (i32, i32) {
-    use windows_sys::Win32::Foundation::RECT;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
-
-    let mut outer = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-    let mut inner = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-    if unsafe { GetWindowRect(hwnd, &mut outer) } == 0 || unsafe { GetClientRect(hwnd, &mut inner) } == 0 {
+fn frame_extent(hwnd: windows_sys::Win32::Foundation::HWND) -> (i32, i32) {
+    let (Some(outer), Some(inner)) = (win::window_rect(hwnd), win::client_rect(hwnd)) else {
         return (0, 0);
-    }
+    };
     (
         ((outer.right - outer.left) - (inner.right - inner.left)).max(0),
         ((outer.bottom - outer.top) - (inner.bottom - inner.top)).max(0),
@@ -347,10 +356,13 @@ unsafe fn frame_extent(hwnd: windows_sys::Win32::Foundation::HWND) -> (i32, i32)
 /// `WM_GETMINMAXINFO` from the constraints the frontend set, the mini player's
 /// included. Zero where nothing is set.
 #[cfg(windows)]
-unsafe fn min_track(hwnd: windows_sys::Win32::Foundation::HWND) -> (i32, i32) {
+fn min_track(hwnd: windows_sys::Win32::Foundation::HWND) -> (i32, i32) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SendMessageW, MINMAXINFO, WM_GETMINMAXINFO};
 
     let mut info = MINMAXINFO::default();
+    // SAFETY: `lParam` of WM_GETMINMAXINFO is a MINMAXINFO for the window to
+    // fill in, and this one is a local that outlives the call — SendMessage
+    // returns only once the window has answered.
     unsafe { SendMessageW(hwnd, WM_GETMINMAXINFO, 0, &mut info as *mut MINMAXINFO as _) };
     (info.ptMinTrackSize.x.max(0), info.ptMinTrackSize.y.max(0))
 }
@@ -435,7 +447,7 @@ static VIDEO_CHILD: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIs
 /// The window mpv draws into, or `None` where there is none — audio-only
 /// playback, or any moment before the video output is up.
 #[cfg(windows)]
-unsafe fn video_child(
+fn video_child(
     parent: windows_sys::Win32::Foundation::HWND,
 ) -> Option<windows_sys::Win32::Foundation::HWND> {
     use std::sync::atomic::Ordering;
@@ -443,14 +455,15 @@ unsafe fn video_child(
     use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetParent, IsWindow};
 
     let cached = VIDEO_CHILD.load(Ordering::Relaxed) as HWND;
-    if !cached.is_null()
-        && unsafe { IsWindow(cached) } != 0
-        && unsafe { GetParent(cached) } == parent
-        && unsafe { has_class(cached, MPV_CLASS) }
-    {
+    // SAFETY: handles only (see `win`) — a recycled or vanished one makes the
+    // checks fail, which is what they are for.
+    let still = !cached.is_null() && unsafe { IsWindow(cached) != 0 && GetParent(cached) == parent };
+    if still && has_class(cached, MPV_CLASS) {
         return Some(cached);
     }
     let class: Vec<u16> = MPV_CLASS.encode_utf16().chain(std::iter::once(0)).collect();
+    // SAFETY: the class name is a NUL-terminated UTF-16 string alive for the
+    // call, and a null title and a null "after" are the documented "any".
     let found =
         unsafe { FindWindowExW(parent, std::ptr::null_mut(), class.as_ptr(), std::ptr::null()) };
     VIDEO_CHILD.store(found as isize, Ordering::Relaxed);
@@ -461,10 +474,12 @@ unsafe fn video_child(
 /// the window anything, so it is safe to ask about a window on another thread
 /// from inside a sizing loop.
 #[cfg(windows)]
-unsafe fn has_class(hwnd: windows_sys::Win32::Foundation::HWND, name: &str) -> bool {
+fn has_class(hwnd: windows_sys::Win32::Foundation::HWND, name: &str) -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::GetClassNameW;
 
     let mut buf = [0u16; 64];
+    // SAFETY: a local buffer of exactly the length passed, which the call
+    // writes no further than (truncating a longer name).
     let n = unsafe { GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
     n > 0 && String::from_utf16_lossy(&buf[..n as usize]) == name
 }
@@ -473,53 +488,71 @@ unsafe fn has_class(hwnd: windows_sys::Win32::Foundation::HWND, name: &str) -> b
 /// `grow_only` it is left alone wherever that would make it smaller — which is
 /// what makes this safe to call *before* the window itself has changed.
 #[cfg(windows)]
-unsafe fn cover_video(
-    parent: windows_sys::Win32::Foundation::HWND,
-    w: i32,
-    h: i32,
-    grow_only: bool,
-) {
-    use windows_sys::Win32::Foundation::RECT;
+fn cover_video(parent: windows_sys::Win32::Foundation::HWND, w: i32, h: i32, grow_only: bool) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClientRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOOWNERZORDER,
-        SWP_NOSENDCHANGING, SWP_NOZORDER,
+        SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOOWNERZORDER, SWP_NOSENDCHANGING, SWP_NOZORDER,
     };
 
     if w <= 0 || h <= 0 {
         return;
     }
-    let Some(child) = (unsafe { video_child(parent) }) else {
+    let Some(child) = video_child(parent) else {
         return;
     };
-    let mut had = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-    if unsafe { GetClientRect(child, &mut had) } == 0 {
+    let Some(had) = win::client_rect(child) else {
         return;
-    }
+    };
     let (w, h) = if grow_only { (w.max(had.right), h.max(had.bottom)) } else { (w, h) };
     // Nothing to do is the common case once a grow has already landed the exact
     // size: the `WM_SIZE` that follows then costs two reads and no round trip.
     if (had.right, had.bottom) == (w, h) {
         return;
     }
-    unsafe {
-        SetWindowPos(
-            child,
-            std::ptr::null_mut(),
-            0,
-            0,
-            w,
-            h,
-            // Deliberately *not* `SWP_ASYNCWINDOWPOS`: waiting for mpv's thread
-            // is the whole point. `SWP_NOCOPYBITS` because the system would
-            // otherwise blit the old client bits into the new rectangle, which
-            // is exactly what a half-duplicated frame looks like, and mpv
-            // repaints the whole surface regardless.
-            SWP_NOZORDER
-                | SWP_NOOWNERZORDER
-                | SWP_NOACTIVATE
-                | SWP_NOSENDCHANGING
-                | SWP_NOCOPYBITS,
-        );
+    win::set_pos(
+        child,
+        (0, 0, w, h),
+        // Deliberately *not* `SWP_ASYNCWINDOWPOS`: waiting for mpv's thread is
+        // the whole point. `SWP_NOCOPYBITS` because the system would otherwise
+        // blit the old client bits into the new rectangle, which is exactly
+        // what a half-duplicated frame looks like, and mpv repaints the whole
+        // surface regardless.
+        SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_NOSENDCHANGING | SWP_NOCOPYBITS,
+    );
+}
+
+/// The Win32 window calls this module makes more than once.
+///
+/// An `HWND` is a handle the system checks on every call, not a pointer: a
+/// window that has gone makes the call fail, and one of another thread or
+/// process is answered for by the system. What these calls need from us is
+/// only that their out-parameters are ours to write — locals here — so they
+/// are safe functions.
+#[cfg(windows)]
+mod win {
+    use windows_sys::Win32::Foundation::{HWND, RECT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect, SetWindowPos};
+
+    const EMPTY: RECT = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+
+    /// The window's frame, in screen coordinates.
+    pub fn window_rect(hwnd: HWND) -> Option<RECT> {
+        let mut r = EMPTY;
+        // SAFETY: a handle and a local RECT for the call to fill.
+        (unsafe { GetWindowRect(hwnd, &mut r) } != 0).then_some(r)
+    }
+
+    /// The window's client area; `right` and `bottom` are its size.
+    pub fn client_rect(hwnd: HWND) -> Option<RECT> {
+        let mut r = EMPTY;
+        // SAFETY: a handle and a local RECT for the call to fill.
+        (unsafe { GetClientRect(hwnd, &mut r) } != 0).then_some(r)
+    }
+
+    /// Position and size `(x, y, w, h)` in one call, the Z order left alone.
+    pub fn set_pos(hwnd: HWND, (x, y, w, h): (i32, i32, i32, i32), flags: u32) {
+        // SAFETY: a handle and plain values; the null "insert after" is ignored
+        // under the SWP_NOZORDER every caller passes.
+        unsafe { SetWindowPos(hwnd, std::ptr::null_mut(), x, y, w, h, flags) };
     }
 }
 
@@ -947,14 +980,7 @@ fn set_frame(window: &tauri::WebviewWindow, frame: Frame) {
 
 #[cfg(windows)]
 fn frame_now(window: &tauri::WebviewWindow) -> Option<Frame> {
-    use windows_sys::Win32::Foundation::RECT;
-    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
-
-    let hwnd = window.hwnd().ok()?;
-    let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-    if unsafe { GetWindowRect(hwnd.0 as _, &mut r) } == 0 {
-        return None;
-    }
+    let r = win::window_rect(window.hwnd().ok()?.0 as _)?;
     Some(Frame {
         x: f64::from(r.left),
         y: f64::from(r.top),
@@ -965,22 +991,14 @@ fn frame_now(window: &tauri::WebviewWindow) -> Option<Frame> {
 
 #[cfg(windows)]
 fn set_frame(window: &tauri::WebviewWindow, frame: Frame) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SetWindowPos, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER};
 
     let Ok(hwnd) = window.hwnd() else { return };
-    unsafe {
-        SetWindowPos(
-            hwnd.0 as _,
-            std::ptr::null_mut(),
-            frame.x as i32,
-            frame.y as i32,
-            frame.w as i32,
-            frame.h as i32,
-            SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE,
-        );
-    }
+    win::set_pos(
+        hwnd.0 as _,
+        (frame.x as i32, frame.y as i32, frame.w as i32, frame.h as i32),
+        SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE,
+    );
 }
 
 #[cfg(test)]
