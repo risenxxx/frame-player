@@ -4,10 +4,11 @@ import { resolve } from 'node:path'
 /**
  * Where the download buttons point, resolved once at build time.
  *
- * The release workflow uploads three files per version to the update bucket,
- * flat, with the version in every name:
+ * The release workflow uploads these per version to the update bucket, flat,
+ * with the version in every name (and the in-place update's zips beside them):
  *
  *     FramePlayer_<version>_x64-setup.exe        the Windows installer
+ *     FramePlayer_<version>_arm64-setup.exe      the same for Windows on ARM
  *     FramePlayer_<version>_aarch64.dmg          the macOS disk image
  *     FramePlayer_<version>_aarch64.app.tar.gz   what the updater installs
  *
@@ -15,7 +16,9 @@ import { resolve } from 'node:path'
  * the authority on which version exists, and the file names follow from it.
  * The manifest's macOS URL points at the `.app.tar.gz` — that is the updater's
  * payload, not a thing a person should be handed, so the image is composed from
- * the version instead.
+ * the version instead. The ARM64 installer is linked only when the manifest
+ * has a `windows-aarch64` key: releases before it have no such file, and a
+ * link composed from the version alone would be a 404.
  *
  * Old versions are pruned from the bucket after `latest.json` names the new
  * one, which is why this is resolved at build time from the manifest rather
@@ -28,10 +31,15 @@ import { resolve } from 'node:path'
  * page never invents a number.
  */
 const GITHUB = 'https://github.com/risenxxx/frame-player'
+/** Where a download falls back to: always correct, never stale. */
+export const RELEASES_PAGE = `${GITHUB}/releases/latest`
 
 export interface Release {
   version: string
   windows: string
+  /** The Windows on ARM installer, or null when this release has none — the
+      page then offers no such link rather than one that leads nowhere. */
+  windowsArm: string | null
   macos: string
   /** When that version was published, ISO 8601, from `latest.json`'s `pub_date`.
       Null when the manifest could not be read — a date is either known or not
@@ -57,7 +65,11 @@ async function versionFromRepo(): Promise<string> {
  * The addresses that stay put across releases. `astro.config.ts` writes them
  * into `_redirects`, pointing at whatever `release()` resolved.
  */
-export const DOWNLOAD_PATHS = { windows: '/download/windows', macos: '/download/macos' } as const
+export const DOWNLOAD_PATHS = {
+  windows: '/download/windows',
+  windowsArm: '/download/windows-arm64',
+  macos: '/download/macos',
+} as const
 
 /**
  * What the buttons link to: the stable addresses rather than the files, so a
@@ -67,15 +79,18 @@ export const DOWNLOAD_PATHS = { windows: '/download/windows', macos: '/download/
  */
 export async function downloads(): Promise<Release> {
   const resolved = await release()
-  return import.meta.env.DEV ? resolved : { ...resolved, ...DOWNLOAD_PATHS }
+  if (import.meta.env.DEV) return resolved
+  return { ...resolved, ...DOWNLOAD_PATHS, windowsArm: resolved.windowsArm && DOWNLOAD_PATHS.windowsArm }
 }
 
 export async function release(): Promise<Release> {
   const origin = process.env.UPDATES_ORIGIN?.replace(/\/+$/, '')
   const fallback = async (): Promise<Release> => ({
     version: await versionFromRepo(),
-    windows: `${GITHUB}/releases/latest`,
-    macos: `${GITHUB}/releases/latest`,
+    windows: RELEASES_PAGE,
+    // Unknown without the manifest; the release page lists whatever there is.
+    windowsArm: RELEASES_PAGE,
+    macos: RELEASES_PAGE,
     date: null,
     direct: false,
   })
@@ -85,12 +100,17 @@ export async function release(): Promise<Release> {
   try {
     const res = await fetch(`${origin}/latest.json`, { signal: AbortSignal.timeout(8000) })
     if (!res.ok) throw new Error(`latest.json: ${res.status}`)
-    const manifest = (await res.json()) as { version?: string; pub_date?: string }
+    const manifest = (await res.json()) as {
+      version?: string
+      pub_date?: string
+      platforms?: Record<string, unknown>
+    }
     const version = manifest.version
     if (!version) throw new Error('latest.json carries no version')
     return {
       version,
       windows: `${origin}/FramePlayer_${version}_x64-setup.exe`,
+      windowsArm: manifest.platforms?.['windows-aarch64'] ? `${origin}/FramePlayer_${version}_arm64-setup.exe` : null,
       macos: `${origin}/FramePlayer_${version}_aarch64.dmg`,
       date: manifest.pub_date ?? null,
       direct: true,

@@ -5,7 +5,7 @@ heading: Frame Player or VLC?
 lede: VLC is the player everybody already has, and it has earned that — it plays almost anything, on almost any device. Frame Player is built on a different engine, mpv, with an interface designed from scratch around it. Here is where each of them is the better choice.
 eyebrow: Comparison
 short: Frame Player vs VLC
-updated: 2026-09-22
+updated: 2026-10-28
 order: 45
 related:
   - compare/iina
@@ -24,7 +24,7 @@ faq:
   - q: Is Frame Player free like VLC?
     a: Yes. Both are free and open source — Frame Player under the GPL-3.0, VLC under the GPL-2.0 or later. Neither has an account, a subscription or advertising.
   - q: Does Frame Player run on Linux, Android or iPhone?
-    a: No — Windows 10 and 11, and macOS on Apple Silicon. On Linux, on a phone, on an Intel Mac or on a Windows ARM laptop, VLC is the one to use.
+    a: No — Windows 10 and 11 (on x64 and on ARM), and macOS on Apple Silicon. On Linux, on a phone or on an Intel Mac, VLC is the one to use.
 ---
 
 import Mock from '../../../components/prose/Mock.astro'
@@ -46,7 +46,7 @@ through an extension. [Frame Player](/) was built for exactly that part.
 
 | Compared | [Frame Player](/) | VLC |
 |---|---|---|
-| Runs on | Windows 10 and 11, macOS on Apple Silicon | Windows (including ARM), macOS, Linux, Android, iOS and more |
+| Runs on | Windows 10 and 11, including ARM; macOS on Apple Silicon | Windows (including ARM), macOS, Linux, Android, iOS and more |
 | Engine | libmpv, with FFmpeg's decoders | libVLC, with FFmpeg's decoders |
 | Seekbar previews | Built in | — |
 | Subtitle search | Built in, OpenSubtitles, matched to the exact release | VLSub extension, OpenSubtitles |
@@ -162,8 +162,8 @@ The details are in [how casting works](/cast-to-tv).
 ## Where VLC is the better choice
 
 <Note>
-  **On Linux, a phone, an Intel Mac or a Windows ARM laptop**, use VLC: Frame
-  Player runs on Windows on Intel and AMD, and on Apple Silicon Macs.
+  **On Linux, a phone or an Intel Mac**, use VLC: Frame Player runs on Windows,
+  x64 and ARM alike, and on Apple Silicon Macs.
 </Note>
 
 - **It runs everywhere.** One player on the desktop, the phone, the tablet and

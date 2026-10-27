@@ -132,7 +132,13 @@ Google Cast и DLNA, а на Mac ещё и AirPlay через системный
 | Платформа | Файл | Требования |
 |---|---|---|
 | Windows | `FramePlayer_<version>_x64-setup.exe` | Windows 10/11, x64 |
+| Windows на ARM | `FramePlayer_<version>_arm64-setup.exe` | Windows 10/11, ARM64 |
 | macOS | `FramePlayer_<version>_aarch64.dmg` | Apple Silicon |
+
+На ноутбуке с Windows и процессором ARM берите установщик ARM64. Установщик x64
+там тоже работает — через эмуляцию Windows, — но медленнее, и такая копия
+остаётся x64 после каждого обновления: обновление меняет сборку на такую же.
+Переключает её установка ARM64-версии поверх.
 
 На macOS плеер можно поставить и одной командой `brew install --cask` — см.
 [macOS](#macos) ниже.
@@ -151,7 +157,7 @@ Google Cast и DLNA, а на Mac ещё и AirPlay через системный
 
 ### Windows
 
-1. Запустите `FramePlayer_<version>_x64-setup.exe`. SmartScreen покажет синее окно
+1. Запустите `FramePlayer_<version>_x64-setup.exe` (или `_arm64-setup.exe`). SmartScreen покажет синее окно
    **«Система Windows защитила ваш компьютер»** с единственной кнопкой
    *Не выполнять*.
 2. Нажмите **Подробнее** — появится строка с издателем, а вместе с ней кнопка
@@ -414,8 +420,9 @@ macOS тогда не даёт запустить её в первый раз и
 
 Требования: [proto](https://moonrepo.dev/proto) (при первом запуске он ставит
 версии Node.js и bun, закреплённые в [.prototools](.prototools)), Rust (stable) и
-Windows 10/11 x64 или macOS на Apple Silicon (релизные сборки — только aarch64;
-сборка для Intel — это ещё одна запись в CI, но сейчас она не выпускается).
+Windows 10/11 (x64 или ARM64) или macOS на Apple Silicon (релизные сборки для
+macOS — только aarch64; сборка для Intel — это ещё одна запись в CI, но сейчас
+она не выпускается).
 Бинарные SDK не хранятся в репозитории — скрипты ниже скачивают их в
 `src-tauri/{lib,ffmpeg,tools}`, а пути для сборки прописаны в
 [.cargo/config.toml](.cargo/config.toml).
@@ -427,6 +434,12 @@ bun install
 bun run fetch-libs   # libmpv (LGPL) + FFmpeg SDK (LGPL, for the sidecar) + libclang (for bindgen)
 bun run tauri dev    # development run
 bun run tauri build  # NSIS installer
+```
+
+На машине с ARM64 скачайте SDK для ARM64 — сама сборка теми же командами:
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1 -Arch arm64
 ```
 
 ### macOS

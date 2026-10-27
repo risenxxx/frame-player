@@ -5,8 +5,8 @@ heading: 在找 Mac 版的 PotPlayer？
 lede: PotPlayer 只有 Windows 版，没有 Mac 版。Frame Player 在两个系统上都能运行，功能完全相同，所以 Windows 电脑和 Mac 可以用同一个播放器。下面说明从 PotPlayer 过来哪些习惯可以延续，Frame Player 多了什么，以及你会失去什么。
 eyebrow: 对比
 short: Mac 版 PotPlayer
-updated: 2026-10-26
-translated: 2026-10-26
+updated: 2026-10-28
+translated: 2026-10-28
 order: 42
 related:
   - compare/iina
@@ -26,7 +26,7 @@ faq:
   - q: Frame Player 会读取我的 PotPlayer 设置或播放列表吗？
     a: 不会。设置、快捷键和书签都不会迁移过来。Frame Player 的快捷键可以重新绑定，J、K、L 的作用和大多数播放器一样，而且打开一集后，文件夹中的其余几集会自动加入播放队列。
   - q: Frame Player 能在 Windows on ARM 或 Intel Mac 上运行吗？
-    a: 目前不能。它支持搭载 Intel 和 AMD 处理器的 Windows 10 和 11，以及 Apple Silicon Mac。在 Windows ARM 笔记本上，PotPlayer 有对应版本；在 Intel Mac 上，请使用 IINA 或 VLC。
+    a: Windows on ARM 可以：除了 x64 版，还有原生 ARM64 版。Intel Mac 不行：它只支持 Apple Silicon Mac，在 Intel Mac 上请使用 IINA 或 VLC。
 ---
 
 import Mock from '../../../../components/prose/Mock.astro'
@@ -42,7 +42,7 @@ PotPlayer 在 Windows 上有一批忠实用户，这份口碑是实打实挣来�
 
 | 对比项 | [Frame Player](/zh) | PotPlayer |
 |---|---|---|
-| 支持平台 | Windows 10 和 11，Apple Silicon 上的 macOS | Windows 7 到 11，含 ARM64 |
+| 支持平台 | Windows 10 和 11（含 ARM64），Apple Silicon 上的 macOS | Windows 7 到 11，含 ARM64 |
 | 引擎 | libmpv，使用 FFmpeg 的解码器和 libplacebo 的渲染器 | 自有引擎，内置解码器；可通过 OpenCodec 扩展 |
 | 视频渲染器 | mpv 的渲染器，两个系统相同 | 内置 Direct3D 9 和 11、madVR、MPC Video Renderer |
 | 超分辨率 | 神经网络着色器，任何显卡都能用 | D3D11 渲染器中的 GPU Super Resolution、NVIDIA RTX Video、madVR 的缩放算法 |
@@ -86,10 +86,6 @@ PotPlayer 在 Windows 上有一批忠实用户，这份口碑是实打实挣来�
 **种子、投屏和一起看**。磁力链接可以边下边播（[原理](/zh/torrent-streaming)）；电影无需重新编码就能投屏到 Chromecast 或 DLNA 电视，从 Mac 还能投到 AirPlay 电视（[原理](/zh/cast-to-tv)）；一个六位代码就能让身在别处的朋友停在同一帧上（[原理](/zh/watch-together)）。这三项 PotPlayer 都没有内置。
 
 ## PotPlayer 更合适的情况
-
-<Note>
-  **在 Windows ARM 笔记本上**，PotPlayer 有原生版本，Frame Player 没有。
-</Note>
 
 - **配置深度**。如果你想按编码选择解码器、串联视频滤镜，或者细调渲染器，PotPlayer 开放的这类选项远比 Frame Player 多，Frame Player 也永远不会提供那么多。
 - **madVR 和 MPC Video Renderer**。有些用户认定了 madVR 的缩放和色调映射，别的都不要；PotPlayer 能用它，Frame Player 不能。

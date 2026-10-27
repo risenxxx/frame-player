@@ -5,7 +5,7 @@ import { INSTALLS_BASE, installsLabel } from '../installs.ts'
 import T from '../i18n/T.astro'
 import { useLocale } from '../i18n/index.ts'
 
-const { version, windows, macos } = await downloads()
+const { version, windows, windowsArm, macos } = await downloads()
 const { lang, s } = useLocale(Astro)
 ---
 
@@ -19,7 +19,7 @@ const { lang, s } = useLocale(Astro)
         <T s={s.hero.lede} />
       </p>
       <div class="cta cta-c enter" style="--dl:2" id="download">
-        <a class="btn btn-primary btn-lg dl-windows" href={windows}>
+        <a class="btn btn-primary btn-lg dl-windows" href={windows} data-arm={windowsArm}>
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-windows"/></svg>
           <T s={s.download.windows} />
         </a>
@@ -29,7 +29,7 @@ const { lang, s } = useLocale(Astro)
         </a>
       </div>
       <p class="fine facts-line mid enter" style="--dl:3">
-        <span class="nb"><T s={s.download.version} p={{ version }} /></span><span class="sep"></span><span class="nb" data-installs={s.download.installs}>{installsLabel(s.download.installs, INSTALLS_BASE, lang)}</span><span class="sep"></span><span class="nb"><T s={s.download.platforms} /></span><span class="sep"></span><span class="nb"><T s={s.download.license} /></span>
+        <span class="nb"><T s={s.download.version} p={{ version }} /></span><span class="sep"></span><span class="nb" data-installs={s.download.installs}>{installsLabel(s.download.installs, INSTALLS_BASE, lang)}</span><span class="sep"></span><span class="nb"><T s={s.download.platforms} /></span><span class="sep"></span>{windowsArm && <><span class="nb"><a class="dl-arm" href={windowsArm}><T s={s.download.windowsArm} /></a></span><span class="sep"></span></>}<span class="nb"><T s={s.download.license} /></span>
       </p>
     </div>
 

@@ -1,4 +1,5 @@
-# The Rust half: clippy and the unit tests, on both platforms the player ships for.
+# The Rust half: clippy and the unit tests, on both platforms the player ships for
+# (and on Windows, both architectures).
 #
 # `checks.yml` covers the frontend and the Go services and leaves this out,
 # because the crate needs libmpv and the FFmpeg SDK to compile at all. Both are
@@ -17,12 +18,12 @@
 #   - `paths`: a push that touches no Rust does not start it, and that is most of
 #     them. Its own file and `fetch-libs.ps1` are listed because they change what
 #     the job does.
-#   - one job per platform, clippy then the tests in the same job. Build scripts
-#     and proc macros are shared between `check` and `build` artifacts, so the
-#     expensive host-side work (bindgen over FFmpeg, aws-lc's C build) happens
-#     once — and two caches rather than four matters, because the repository's
-#     10 GB cache is shared with `release.yml`, whose caches are the ones a
-#     release waits on.
+#   - one job per platform and architecture, clippy then the tests in the same
+#     job. Build scripts and proc macros are shared between `check` and `build`
+#     artifacts, so the expensive host-side work (bindgen over FFmpeg, aws-lc's
+#     C build) happens once — and three caches rather than six matters,
+#     because the repository's 10 GB cache is shared with `release.yml`, whose
+#     caches are the ones a release waits on.
 #   - no debug info (`CARGO_PROFILE_DEV_DEBUG=0`, which the test profile
 #     inherits): nothing here is ever run under a debugger, and it is most of the
 #     size of the target directory and of the cache.

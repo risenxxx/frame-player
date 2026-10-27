@@ -129,7 +129,13 @@ files from
 | Platform | File | Requirements |
 |---|---|---|
 | Windows | `FramePlayer_<version>_x64-setup.exe` | Windows 10/11, x64 |
+| Windows on ARM | `FramePlayer_<version>_arm64-setup.exe` | Windows 10/11, ARM64 |
 | macOS | `FramePlayer_<version>_aarch64.dmg` | Apple Silicon |
+
+On a Windows laptop with an ARM processor, take the ARM64 installer. The x64 one
+runs there too, under Windows' emulation, but slower — and it stays x64 through
+every update, since an update replaces a build with the same build. Installing
+the ARM64 one over it is what switches.
 
 macOS is also a `brew install --cask` away — see [macOS](#macos) below.
 
@@ -147,7 +153,7 @@ was.
 
 ### Windows
 
-1. Run `FramePlayer_<version>_x64-setup.exe`. SmartScreen shows a blue
+1. Run `FramePlayer_<version>_x64-setup.exe` (or `_arm64-setup.exe`). SmartScreen shows a blue
    **"Windows protected your PC"** dialog with only a *Don't run* button.
 2. Click **More info** — the publisher line appears, and with it a **Run
    anyway** button.
@@ -394,8 +400,8 @@ the menu bar owns the combination.
 ## Building
 
 Requirements: [proto](https://moonrepo.dev/proto) (it installs the Node.js and
-bun versions pinned in [.prototools](.prototools) on first use), Rust (stable), and Windows 10/11 x64 or macOS on
-Apple Silicon (release builds are aarch64-only; an Intel build is a second CI
+bun versions pinned in [.prototools](.prototools) on first use), Rust (stable), and Windows 10/11 (x64 or ARM64) or macOS on
+Apple Silicon (macOS release builds are aarch64-only; an Intel build is a second CI
 entry away but is not currently produced). Binary SDKs are not committed — they are fetched into `src-tauri/{lib,ffmpeg,tools}`
 by the scripts below, and the build paths are wired in
 [.cargo/config.toml](.cargo/config.toml).
@@ -407,6 +413,13 @@ bun install
 bun run fetch-libs   # libmpv (LGPL) + FFmpeg SDK (LGPL, for the sidecar) + libclang (for bindgen)
 bun run tauri dev    # development run
 bun run tauri build  # NSIS installer
+```
+
+On an ARM64 machine, fetch the ARM64 SDKs instead — the build itself is the same
+commands:
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1 -Arch arm64
 ```
 
 ### macOS

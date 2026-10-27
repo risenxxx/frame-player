@@ -140,6 +140,9 @@ section[id], #download { scroll-margin-top: 72px; }
   vertical-align: middle;
 }
 .cta-c + .facts-line, .facts-line.mid { justify-content: center; }
+/* The one link in a row of facts: the Windows on ARM installer. */
+.facts-line .dl-arm { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line3); }
+.facts-line .dl-arm:hover { text-decoration-color: currentColor; }
 
 /*
   Below the width where any of these lines wraps, the facts stack instead.
@@ -152,22 +155,33 @@ section[id], #download { scroll-margin-top: 72px; }
   edge, and these are centred under a centred block of copy.
 
   So the wrap is taken away rather than patched. The breakpoint is measured
-  against the three lines on the page, not guessed: the download facts under the
-  final call to action wrap first, at 700px, the hero's at 480 and the footer's
-  at 360. 760 is the first round number above all of them, and stacking is what
-  this would be at 360 anyway.
+  against the three lines on the page, not guessed: with the Windows on ARM link
+  in both download rows, the Russian one under the final call to action is the
+  widest at 830px of facts and the hero's 807. Add the two 32px gutters and a
+  classic Windows scrollbar (17px, which a media query counts and the layout
+  does not) and that is 911; 920 is the first round number above it. The
+  footer's line is 330px and keeps the 760 it had before that link, and
+  stacking is what either would be at 360 anyway.
 */
-@media (max-width: 760px) {
-  .facts-line {
+@media (max-width: 920px) {
+  .facts-line.mid {
     flex-direction: column;
     align-items: center;
     gap: 4px;
   }
 
-  .facts-line:not(.mid) { align-items: flex-start; }
-
   /* Nothing to separate once each fact has a line of its own. */
-  .facts-line .nb:not(:last-child)::after { display: none; }
+  .facts-line.mid .nb:not(:last-child)::after { display: none; }
+}
+
+@media (max-width: 760px) {
+  .facts-line:not(.mid) {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .facts-line:not(.mid) .nb:not(:last-child)::after { display: none; }
 }
 
 .sep {

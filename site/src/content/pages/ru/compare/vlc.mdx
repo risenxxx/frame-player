@@ -5,8 +5,8 @@ heading: Frame Player или VLC?
 lede: "VLC — плеер, который уже есть у всех, и он это заслужил: играет почти что угодно почти на любом устройстве. Frame Player построен на другом движке, mpv, а интерфейс вокруг него сделан с нуля. Вот в чём лучше один, а в чём — другой."
 eyebrow: Сравнение
 short: Frame Player и VLC
-updated: 2026-09-22
-translated: 2026-09-22
+updated: 2026-10-28
+translated: 2026-10-28
 order: 45
 related:
   - compare/iina
@@ -25,7 +25,7 @@ faq:
   - q: Frame Player бесплатный, как VLC?
     a: Да. Оба бесплатны и с открытым кодом — Frame Player под GPL-3.0, VLC под GPL-2.0 или более поздней. Ни у одного нет аккаунта, подписки или рекламы.
   - q: Работает ли Frame Player на Linux, Android или iPhone?
-    a: Нет — на Windows 10 и 11 и на macOS с Apple Silicon. На Linux, на телефоне, на Mac с Intel или на ноутбуке с Windows на ARM берите VLC.
+    a: Нет — на Windows 10 и 11 (и на x64, и на ARM) и на macOS с Apple Silicon. На Linux, на телефоне или на Mac с Intel берите VLC.
 ---
 
 import Mock from '../../../../components/prose/Mock.astro'
@@ -47,7 +47,7 @@ VLC — ответ по умолчанию на вопрос «чем откры
 
 | Что сравниваем | [Frame Player](/ru) | VLC |
 |---|---|---|
-| Где работает | Windows 10 и 11, macOS на Apple Silicon | Windows (включая ARM), macOS, Linux, Android, iOS и другие |
+| Где работает | Windows 10 и 11, включая ARM; macOS на Apple Silicon | Windows (включая ARM), macOS, Linux, Android, iOS и другие |
 | Движок | libmpv с декодерами FFmpeg | libVLC с декодерами FFmpeg |
 | Превью на шкале перемотки | Встроены | — |
 | Поиск субтитров | Встроен, OpenSubtitles, под ваш конкретный релиз | Расширение VLSub, OpenSubtitles |
@@ -170,9 +170,8 @@ mpv и славится, и это касается в том числе рел�
 ## Когда лучше VLC
 
 <Note>
-  **На Linux, на телефоне, на Mac с Intel или на ноутбуке с Windows на ARM**
-  берите VLC: Frame Player работает на Windows с процессорами Intel и AMD и на
-  Mac с Apple Silicon.
+  **На Linux, на телефоне или на Mac с Intel** берите VLC: Frame Player работает
+  на Windows — и на x64, и на ARM — и на Mac с Apple Silicon.
 </Note>
 
 - **Он работает везде.** Один плеер на компьютере, телефоне, планшете и Apple TV

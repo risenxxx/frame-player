@@ -438,6 +438,48 @@ Two traps in the scripts themselves, both of which cost an hour:
   password goes on the command line (`--password=`) instead. In the workflow,
   where `""` in YAML really is an empty variable, the environment is fine.
 
+### Windows on ARM
+
+Asked for in issue #43. Before anything was changed, the three upstreams were
+checked for ARM64 assets (all three publish them), the ARM64 binaries were
+read for their imports, and the crate was compiled on a `windows-11-arm`
+runner:
+
+- **The ARM64 `libmpv-2.dll` imports `vulkan-1.dll`**, as the x64 one does, so
+  the bundled fallback loader is needed there too. LunarG publishes an ARM64
+  runtime under the platform name `warm`
+  (`sdk.lunarg.com/sdk/download/latest/warm/vulkan-runtime-components.zip`),
+  same license file, same signer; its loader is an ARM64X image at the root of
+  the archive. The x64 libmpv also imports `OPENGL32.dll`; the ARM64 one does
+  not.
+- **BtbN's `winarm64` FFmpeg is laid out like `win64`**: the same DLL names
+  (`avcodec-62.dll` …), `.lib` import libraries for MSVC, the same headers. So
+  `ffmpeg-sys-the-third` links it with no change, and the bundle's file list
+  is the same one.
+- **The Rust graph builds natively** — `ring`, `aws-lc-sys`, the vendored
+  librqbit and bindgen over FFmpeg (with the `win_arm64` libclang wheel) — and
+  clippy and the tests pass there, which is why `rust.yml` runs both
+  architectures rather than the release being the first to find out.
+
+**Native rather than cross-compiled.** An x64 runner can produce ARM64 code
+with MSVC, but bindgen would then need the x64 libclang against ARM64 headers,
+the C parts of the TLS stack would be cross builds, and the tests could not run
+at all. The ARM64 runner costs a public repository nothing, so every ARM64
+binary is built and tested on ARM64.
+
+**What happens to x64 copies on ARM64 machines.** Windows 11 on ARM runs x64
+programs under emulation, so before this build existed somebody on an ARM
+laptop installed the x64 one. That copy reads `windows-x86_64` forever: the
+updater derives the key from the architecture it was built for, and the
+in-place swap could not change architecture anyway — the file set is the same,
+but every file in it would be a different binary under the same name, which is
+exactly what the swap is not allowed to decide. Moving such a copy to ARM64 is a
+deliberate act, the ARM64 installer run over it. The issue report marks such a
+copy (`x86_64 (emulated on ARM64)`), so a report from one is recognisable.
+
+**Not verified on hardware.** Nobody on the project has ARM Windows hardware;
+the build was handed to the issue's author first.
+
 ### A store listing
 
 Packaging for the Microsoft Store is technically possible and buys installation

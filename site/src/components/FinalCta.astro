@@ -3,7 +3,7 @@ import { downloads } from '../release.ts'
 import T from '../i18n/T.astro'
 import { useLocale } from '../i18n/index.ts'
 
-const { version, windows, macos } = await downloads()
+const { version, windows, windowsArm, macos } = await downloads()
 const { s } = useLocale(Astro)
 ---
 
@@ -12,7 +12,7 @@ const { s } = useLocale(Astro)
     <div class="wrap" style="position:relative">
       <h2 data-reveal>{s.final.title.map((line) => <span><T s={line} /></span>)}</h2>
       <div class="cta cta-c" data-reveal style="--dl:1">
-        <a class="btn btn-primary btn-lg dl-windows" href={windows}>
+        <a class="btn btn-primary btn-lg dl-windows" href={windows} data-arm={windowsArm}>
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-windows"/></svg>
           <T s={s.download.windows} />
         </a>
@@ -30,7 +30,7 @@ const { s } = useLocale(Astro)
           </button>
         </span>
         <p class="fine facts-line mid">
-          <span class="nb"><T s={s.download.version} p={{ version }} /></span><span class="sep"></span><span class="nb"><T s={s.final.notarized} /></span><span class="sep"></span><span class="nb"><T s={s.final.unsigned} /></span>
+          <span class="nb"><T s={s.download.version} p={{ version }} /></span><span class="sep"></span>{windowsArm && <><span class="nb"><a class="dl-arm" href={windowsArm}><T s={s.download.windowsArm} /></a></span><span class="sep"></span></>}<span class="nb"><T s={s.final.notarized} /></span><span class="sep"></span><span class="nb"><T s={s.final.unsigned} /></span>
         </p>
       </div>
     </div>
