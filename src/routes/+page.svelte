@@ -40,13 +40,13 @@
   import {
     initSync,
     sync,
-} from '$lib/sync/apply.svelte';
+  } from '$lib/sync/apply.svelte';
   import { initDeepLinks, invite } from '$lib/sync/link.svelte';
   import {
     initSeek,
     scheduleScrubEnd,
     seek,
-} from '$lib/seek.svelte';
+  } from '$lib/seek.svelte';
   import {
     USE_STEP_ENGINE,
     cancelStep,
@@ -76,7 +76,7 @@
     endOfFile,
     initEndScreen,
     takeSkip,
-} from '$lib/endscreen.svelte';
+  } from '$lib/endscreen.svelte';
   import {
     applyEncryption,
     applyProxy,
@@ -102,7 +102,7 @@
     submitUpdate,
     togglePortForward,
     toggleSeeding,
-} from '$lib/open.svelte';
+  } from '$lib/open.svelte';
   import {
     catalog,
     checkTorrentUpdate,
@@ -115,7 +115,7 @@
     nudgeDelayHere,
     resetDelayHere,
     selectTrack,
-} from '$lib/tracks.svelte';
+  } from '$lib/tracks.svelte';
   import {
     clearCastClick,
     clearClickSuppression,
@@ -146,7 +146,7 @@
     primeResumeKnob,
     resume,
     setPendingResume,
-} from '$lib/resume.svelte';
+  } from '$lib/resume.svelte';
   import { initPortable } from '$lib/portable.svelte';
   import { runMenuAction } from '$lib/app-menu';
   import { initCastFollow, playerHooks } from '$lib/bridge.svelte';
@@ -154,7 +154,7 @@
     backToStart,
     initVideoReady,
     startScreen,
-} from '$lib/start-screen.svelte';
+  } from '$lib/start-screen.svelte';
   import { clearTitleTimer, initWindowTitle, title } from '$lib/title.svelte';
   import { checkForUpdate, installUpdate, updater } from '$lib/updater.svelte';
   import { subs } from '$lib/subs.svelte';
@@ -162,7 +162,7 @@
   import { locale, t } from '$lib/i18n.svelte';
   import {
     withKey,
-} from '$lib/keys.svelte';
+  } from '$lib/keys.svelte';
   import { osd, showOsd } from '$lib/osd.svelte';
   import {
     flushPosition,
@@ -170,7 +170,7 @@
     loadHistoryPrefs,
     loadRecent,
     maybeRecordPosition,
-} from '$lib/history.svelte';
+  } from '$lib/history.svelte';
   import { initNowPlaying } from '$lib/now-playing.svelte';
   import { initAudioOutput } from '$lib/audio-output.svelte';
   import { IS_MAC } from '$lib/platform';
@@ -184,13 +184,13 @@
     resyncState,
     setPicture,
     cycleLoop,
-} from '$lib/player.svelte';
+  } from '$lib/player.svelte';
   import {
     curtain,
     curtainCovered,
     curtainSettled,
     initCurtain,
-} from '$lib/curtain.svelte';
+  } from '$lib/curtain.svelte';
   import {
     applyAlwaysOnTop,
     loadWindowPrefs,
@@ -201,17 +201,17 @@
     scheduleMiniSnap,
     syncMenuChecks,
     toggleMini,
-} from '$lib/window-prefs.svelte';
+  } from '$lib/window-prefs.svelte';
   import {
     loadPlaylist,
     loadPlaylistPrefs,
-} from '$lib/playlist.svelte';
+  } from '$lib/playlist.svelte';
   import { loadSeekSteps } from '$lib/seek-steps.svelte';
   import {
     initUpscale,
     initUpscaleWatch,
     upscale,
-} from '$lib/upscale.svelte';
+  } from '$lib/upscale.svelte';
   import {
     torrent,
     torrentPositions,
@@ -221,14 +221,14 @@
     loadTorrentPrefs,
     answerVpnAsk,
     net,
-} from '$lib/torrent.svelte';
+  } from '$lib/torrent.svelte';
   import {
     cast,
     diagnoseDevice,
     diagnosisText,
     type CheckLine,
     type TvDevice,
-} from '$lib/cast.svelte';
+  } from '$lib/cast.svelte';
   import { loadThumbPrefs, maybeStartThumbs, thumbs } from '$lib/thumbs.svelte';
   import { markZoomLuaLoaded, reclampPan } from '$lib/zoom.svelte';
 
@@ -238,8 +238,6 @@
 
   // The dark fill under the UI until mpv paints — see start-screen.svelte.ts.
   initVideoReady();
-
-
 
   /// Chapter boundaries as percentages of the bar. The one at zero is dropped:
   /// containers write it for the first chapter almost every time, and a notch
