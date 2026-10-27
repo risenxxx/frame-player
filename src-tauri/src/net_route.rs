@@ -19,6 +19,8 @@
 //! does not cover the loopback server mpv reads from, the casting server or the
 //! catalog: this is about the swarm.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
 /// One interface, as the settings list shows it.
@@ -169,41 +171,26 @@ pub fn interfaces() -> Vec<NetIface> {
 
     let sc = mac_sc::read();
     let mut by_name: BTreeMap<String, (u32, Vec<IpAddr>)> = BTreeMap::new();
-    unsafe {
-        let mut head: *mut libc::ifaddrs = std::ptr::null_mut();
-        if libc::getifaddrs(&mut head) != 0 {
-            return Vec::new();
+    let Some(list) = IfAddrs::new() else {
+        return Vec::new();
+    };
+    for ifa in list.iter() {
+        let flags = ifa.ifa_flags;
+        if flags & libc::IFF_UP as u32 == 0 || flags & libc::IFF_RUNNING as u32 == 0 {
+            continue;
         }
-        let mut cur = head;
-        while !cur.is_null() {
-            let ifa = &*cur;
-            cur = ifa.ifa_next;
-            let flags = ifa.ifa_flags;
-            if flags & libc::IFF_UP as u32 == 0 || flags & libc::IFF_RUNNING as u32 == 0 {
-                continue;
-            }
-            let name = CStr::from_ptr(ifa.ifa_name).to_string_lossy().into_owned();
-            if ifa.ifa_addr.is_null() {
-                continue;
-            }
-            let ip = match (*ifa.ifa_addr).sa_family as i32 {
-                libc::AF_INET => {
-                    let sin = &*(ifa.ifa_addr as *const libc::sockaddr_in);
-                    IpAddr::V4(Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr)))
-                }
-                libc::AF_INET6 => {
-                    let sin6 = &*(ifa.ifa_addr as *const libc::sockaddr_in6);
-                    IpAddr::from(sin6.sin6_addr.s6_addr)
-                }
-                _ => continue,
-            };
-            let entry = by_name.entry(name).or_insert((flags, Vec::new()));
-            if usable(&ip) {
-                entry.1.push(ip);
-            }
+        // SAFETY: getifaddrs gives every entry a NUL-terminated name, which
+        // lives as long as the list does.
+        let name = unsafe { CStr::from_ptr(ifa.ifa_name) }.to_string_lossy().into_owned();
+        let Some(ip) = sockaddr_ip(ifa.ifa_addr) else {
+            continue;
+        };
+        let entry = by_name.entry(name).or_insert((flags, Vec::new()));
+        if usable(&ip) {
+            entry.1.push(ip);
         }
-        libc::freeifaddrs(head);
     }
+    drop(list);
 
     by_name
         .into_iter()
@@ -215,6 +202,7 @@ pub fn interfaces() -> Vec<NetIface> {
                 || MAC_TUNNEL.iter().any(|p| starts_with_unit(&name, p));
             let index = {
                 let c = std::ffi::CString::new(name.clone()).unwrap_or_default();
+                // SAFETY: a NUL-terminated name alive for the call.
                 unsafe { libc::if_nametoindex(c.as_ptr()) }
             };
             NetIface {
@@ -230,6 +218,62 @@ pub fn interfaces() -> Vec<NetIface> {
             }
         })
         .collect()
+}
+
+/// The list `getifaddrs` returns, owned: freed on drop, walked as references
+/// that cannot outlive it.
+#[cfg(target_os = "macos")]
+struct IfAddrs(*mut libc::ifaddrs);
+
+#[cfg(target_os = "macos")]
+impl IfAddrs {
+    fn new() -> Option<Self> {
+        let mut head: *mut libc::ifaddrs = std::ptr::null_mut();
+        // SAFETY: a local for the call to fill with the head of a list it
+        // allocates, and which `Drop` frees.
+        (unsafe { libc::getifaddrs(&mut head) } == 0).then_some(Self(head))
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &libc::ifaddrs> {
+        let mut cur = self.0;
+        std::iter::from_fn(move || {
+            // SAFETY: a node of the list getifaddrs built, or null at its end;
+            // the list lives until `self` is dropped, which the borrow keeps
+            // from happening while a node is held.
+            let node = unsafe { cur.as_ref() }?;
+            cur = node.ifa_next;
+            Some(node)
+        })
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for IfAddrs {
+    fn drop(&mut self) {
+        // SAFETY: the list getifaddrs allocated, freed once, here.
+        unsafe { libc::freeifaddrs(self.0) };
+    }
+}
+
+/// The address in a `sockaddr` from `getifaddrs`, when it is IPv4 or IPv6.
+#[cfg(target_os = "macos")]
+fn sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
+    // SAFETY: null or an address inside the getifaddrs list, alive for the
+    // call. Its family says which struct it is, and the system allocates each
+    // one at that struct's size, so reading it as that struct stays inside it.
+    unsafe {
+        match sa.as_ref()?.sa_family as i32 {
+            libc::AF_INET => {
+                let sin = &*(sa as *const libc::sockaddr_in);
+                Some(IpAddr::V4(Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr))))
+            }
+            libc::AF_INET6 => {
+                let sin6 = &*(sa as *const libc::sockaddr_in6);
+                Some(IpAddr::from(sin6.sin6_addr.s6_addr))
+            }
+            _ => None,
+        }
+    }
 }
 
 /// `utun4` starts with `utun`, but `en0` must not start with `e`: a prefix
@@ -276,8 +320,76 @@ mod mac_sc {
         pub routed: HashMap<String, u32>,
     }
 
+    /// A string SystemConfiguration lends (the get rule), copied out.
     fn string_of(r: CFStringRef) -> Option<String> {
+        // SAFETY: a non-null CFString owned by an object the caller holds;
+        // wrapping under the get rule takes a reference of our own.
         (!r.is_null()).then(|| unsafe { CFString::wrap_under_get_rule(r) }.to_string())
+    }
+
+    /// BSD name → the name System Settings shows.
+    fn labels() -> HashMap<String, String> {
+        let mut labels = HashMap::new();
+        // SAFETY: SCNetworkInterfaceCopyAll returns an owned array (the
+        // create rule) or null; its items are SCNetworkInterfaces, alive while
+        // the array is, and the two getters lend strings `string_of` copies.
+        unsafe {
+            let all = SCNetworkInterfaceCopyAll();
+            if all.is_null() {
+                return labels;
+            }
+            let all: CFArray<CFType> = CFArray::wrap_under_create_rule(all);
+            for item in all.iter() {
+                let p = item.as_CFTypeRef();
+                if let (Some(bsd), Some(label)) = (
+                    string_of(SCNetworkInterfaceGetBSDName(p)),
+                    string_of(SCNetworkInterfaceGetLocalizedDisplayName(p)),
+                ) {
+                    labels.insert(bsd, label);
+                }
+            }
+        }
+        labels
+    }
+
+    /// A session with the dynamic store, released on drop.
+    struct Store(CFType);
+
+    impl Store {
+        fn new() -> Option<Self> {
+            let name = CFString::new("frame-player");
+            // SAFETY: the default allocator, a live name, and no callout or
+            // context, which the API allows; the store is owned (the create
+            // rule) and released by the `CFType` holding it.
+            unsafe {
+                let store =
+                    SCDynamicStoreCreate(std::ptr::null(), name.as_concrete_TypeRef(), std::ptr::null(), std::ptr::null());
+                (!store.is_null()).then(|| Self(CFType::wrap_under_create_rule(store)))
+            }
+        }
+
+        /// The dictionary at `key`.
+        fn dict(&self, key: &str) -> Option<CFDictionary<CFString, CFType>> {
+            let k = CFString::new(key);
+            // SAFETY: a live store and key; the value is owned (the create
+            // rule) or null, and every value this module asks for is a
+            // dictionary of string keys.
+            unsafe {
+                let v = SCDynamicStoreCopyValue(self.0.as_CFTypeRef(), k.as_concrete_TypeRef());
+                (!v.is_null()).then(|| CFDictionary::wrap_under_create_rule(v as CFDictionaryRef))
+            }
+        }
+
+        /// The keys matching a pattern.
+        fn keys(&self, pattern: &str) -> Option<CFArray<CFType>> {
+            let pattern = CFString::new(pattern);
+            // SAFETY: a live store and pattern; the array is owned (the create
+            // rule) or null.
+            unsafe {
+                let keys = SCDynamicStoreCopyKeyList(self.0.as_CFTypeRef(), pattern.as_concrete_TypeRef());
+                (!keys.is_null()).then(|| CFArray::wrap_under_create_rule(keys))
+            }
+        }
     }
 
     fn dict_string(d: &CFDictionary<CFString, CFType>, key: &str) -> Option<String> {
@@ -287,79 +399,46 @@ mod mac_sc {
     }
 
     pub fn read() -> Sc {
-        let mut sc = Sc::default();
-        unsafe {
-            let all = SCNetworkInterfaceCopyAll();
-            if !all.is_null() {
-                let all: CFArray<CFType> = CFArray::wrap_under_create_rule(all);
-                for item in all.iter() {
-                    let p = item.as_CFTypeRef();
-                    if let (Some(bsd), Some(label)) = (
-                        string_of(SCNetworkInterfaceGetBSDName(p)),
-                        string_of(SCNetworkInterfaceGetLocalizedDisplayName(p)),
-                    ) {
-                        sc.labels.insert(bsd, label);
-                    }
-                }
+        let mut sc = Sc { labels: labels(), ..Sc::default() };
+        let Some(store) = Store::new() else {
+            return sc;
+        };
+
+        // The order System Settings shows, as service ids.
+        let order: Vec<String> = store
+            .dict("Setup:/Network/Global/IPv4")
+            .and_then(|d| d.find(CFString::new("ServiceOrder")).map(|v| v.clone()))
+            // `CFArray` has no `downcast` (it is generic, so not a
+            // `ConcreteCFType`): checked by type id and wrapped by hand.
+            .filter(|v| v.type_of() == CFArray::<CFType>::type_id())
+            // SAFETY: an array, checked by type id just above, held alive by
+            // `v`; the get rule takes a reference of our own.
+            .map(|v| unsafe { CFArray::<CFType>::wrap_under_get_rule(v.as_CFTypeRef() as CFArrayRef) })
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.downcast::<CFString>().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if let Some(keys) = store.keys("State:/Network/Service/[^/]+/IPv4") {
+            for key in keys.iter() {
+                let Some(key) = key.downcast::<CFString>().map(|k| k.to_string()) else {
+                    continue;
+                };
+                let Some(d) = store.dict(&key) else { continue };
+                let (Some(iface), Some(_router)) =
+                    (dict_string(&d, "InterfaceName"), dict_string(&d, "Router"))
+                else {
+                    continue;
+                };
+                let id = key
+                    .trim_start_matches("State:/Network/Service/")
+                    .trim_end_matches("/IPv4");
+                let rank = order.iter().position(|s| s == id).unwrap_or(999) as u32;
+                let e = sc.routed.entry(iface).or_insert(rank);
+                *e = (*e).min(rank);
             }
-
-            let name = CFString::new("frame-player");
-            let store = SCDynamicStoreCreate(
-                std::ptr::null(),
-                name.as_concrete_TypeRef(),
-                std::ptr::null(),
-                std::ptr::null(),
-            );
-            if store.is_null() {
-                return sc;
-            }
-            let store_ref = CFType::wrap_under_create_rule(store);
-
-            let copy_dict = |key: &str| -> Option<CFDictionary<CFString, CFType>> {
-                let k = CFString::new(key);
-                let v = SCDynamicStoreCopyValue(store, k.as_concrete_TypeRef());
-                (!v.is_null()).then(|| {
-                    CFDictionary::wrap_under_create_rule(v as CFDictionaryRef)
-                })
-            };
-
-            // The order System Settings shows, as service ids.
-            let order: Vec<String> = copy_dict("Setup:/Network/Global/IPv4")
-                .and_then(|d| d.find(CFString::new("ServiceOrder")).map(|v| v.clone()))
-                // `CFArray` has no `downcast` (it is generic, so not a
-                // `ConcreteCFType`): checked by type id and wrapped by hand.
-                .filter(|v| v.type_of() == CFArray::<CFType>::type_id())
-                .map(|v| CFArray::<CFType>::wrap_under_get_rule(v.as_CFTypeRef() as CFArrayRef))
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|s| s.downcast::<CFString>().map(|s| s.to_string()))
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            let pattern = CFString::new("State:/Network/Service/[^/]+/IPv4");
-            let keys = SCDynamicStoreCopyKeyList(store, pattern.as_concrete_TypeRef());
-            if !keys.is_null() {
-                let keys: CFArray<CFType> = CFArray::wrap_under_create_rule(keys);
-                for key in keys.iter() {
-                    let Some(key) = key.downcast::<CFString>().map(|k| k.to_string()) else {
-                        continue;
-                    };
-                    let Some(d) = copy_dict(&key) else { continue };
-                    let (Some(iface), Some(_router)) =
-                        (dict_string(&d, "InterfaceName"), dict_string(&d, "Router"))
-                    else {
-                        continue;
-                    };
-                    let id = key
-                        .trim_start_matches("State:/Network/Service/")
-                        .trim_end_matches("/IPv4");
-                    let rank = order.iter().position(|s| s == id).unwrap_or(999) as u32;
-                    let e = sc.routed.entry(iface).or_insert(rank);
-                    *e = (*e).min(rank);
-                }
-            }
-            drop(store_ref);
         }
         sc
     }
@@ -398,6 +477,9 @@ pub fn interfaces() -> Vec<NetIface> {
             return String::new();
         }
         let mut len = 0;
+        // SAFETY: a NUL-terminated UTF-16 string inside the adapter list's
+        // buffer, which outlives every call to this; nothing past the NUL is
+        // read.
         unsafe {
             while *p.add(len) != 0 {
                 len += 1;
@@ -412,6 +494,9 @@ pub fn interfaces() -> Vec<NetIface> {
         }
         // Read by offset rather than through the union-heavy structs: the
         // layout of `sockaddr_in`/`sockaddr_in6` is the one fixed thing here.
+        // SAFETY: an address inside the adapter list's buffer. Its family
+        // says which of the two it is, and the system stores each at that
+        // struct's size, so the bytes read (4 at 4, 16 at 8) are inside it.
         unsafe {
             let bytes = sa as *const u8;
             match (*sa).sa_family {
@@ -440,6 +525,9 @@ pub fn interfaces() -> Vec<NetIface> {
     let mut buf: Vec<u64> = Vec::new();
     for _ in 0..4 {
         buf = vec![0u64; (size as usize).div_ceil(8)];
+        // SAFETY: a buffer of at least `size` bytes, aligned for the structs
+        // (u64), with `size` passed by reference as the call wants; no
+        // reserved pointer.
         let rc = unsafe {
             GetAdaptersAddresses(
                 AF_UNSPEC as u32,
@@ -459,6 +547,8 @@ pub fn interfaces() -> Vec<NetIface> {
     let mut out = Vec::new();
     let mut cur = buf.as_ptr() as *const IP_ADAPTER_ADDRESSES_LH;
     while !cur.is_null() {
+        // SAFETY: a node the call wrote into `buf`, which outlives the loop;
+        // the list ends with a null `Next`.
         let a = unsafe { &*cur };
         cur = a.Next;
         if a.OperStatus != IfOperStatusUp || a.IfType == IF_LOOPBACK {
@@ -467,6 +557,7 @@ pub fn interfaces() -> Vec<NetIface> {
         let mut ips = Vec::new();
         let mut u = a.FirstUnicastAddress;
         while !u.is_null() {
+            // SAFETY: as for the adapter, a node inside `buf`.
             let ua = unsafe { &*u };
             if let Some(ip) = ip_of(ua.Address.lpSockaddr) {
                 if usable(&ip) {
@@ -484,6 +575,7 @@ pub fn interfaces() -> Vec<NetIface> {
             || VPN_WORDS.iter().any(|w| description.contains(w));
         let physical = matches!(a.IfType, IF_ETHERNET | IF_WIFI);
         let name = wide(a.FriendlyName);
+        // SAFETY: a union of plain integers, every bit pattern valid.
         let index = unsafe { a.Anonymous1.Anonymous.IfIndex };
         out.push(NetIface {
             label: name.clone(),

@@ -31,6 +31,8 @@
 //! keeps one list instead of two, so an extension added to the bundle is an
 //! extension this registers.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use tauri::AppHandle;
 
 /// Whether the shell currently points at *this* executable. The settings switch
