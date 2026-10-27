@@ -155,7 +155,7 @@ receivers), and what the set shows once the player is stopped.
   registration (`cast::server_peers`), and the wire log under `FP_CAST_DEBUG`
   now prints the peer on every request — which is how "who is fetching" became
   a line rather than an inference, for all three transports.
-- **Frontend**: `castOverAirPlay` in `cast.svelte.ts`, shaped like
+- **Frontend**: `castOverAirPlay` in `cast/session.ts`, shaped like
   `castOverDlna`; the poll's handover (`airplayLive`), the `not_started` error,
   the name from a known row by address; `transportCommand()` instead of the
   two-way ternaries; `airplayVerdict` and `airplaySummary` for the row. The
