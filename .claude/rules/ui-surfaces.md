@@ -1,6 +1,7 @@
 ---
 paths:
   - "src/lib/components/**"
+  - "src/lib/settings/**"
   - "src/lib/osd.svelte.ts"
   - "src/lib/overlays.svelte.ts"
   - "src/lib/floating.ts"
@@ -21,7 +22,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 
 | Path | What lives there |
 |---|---|
-| `src/lib/components/` | The UI, one file per surface: `Dialog` (the shell all seven dialogs share), `SettingsDialog`, `SubsDialog`, `LinkDialog`, `MediaInfoDialog`, `DiagnosisDialog`, `TorrentPickDialog`, `TorrentUpdateDialog`, `ReportDialog`, `StartScreen`, `EndScreen`, `ContextMenu`, `CastMenu` with `CastIcon` (the row's device kind, from `deviceKind` — only what the device announces), `TopBar`, `Osd`, `Tooltip`, `SkipButton`, `LoadingOverlay`, `CastScreen`, `StepOverlay`, `Curtain`. **A rule and the markup it styles must live in the same file** — Svelte scopes `<style>`, and the compiler's `unused CSS selector` warning does *not* catch a rule left behind, because a `<Child />` tag is opaque to that analysis. `bun run css-orphans` is what catches it, in both directions — a rule left behind, and the mirror image, a class whose **base** rule stayed in another component while one of its users moved out. The second half is the one a diff of the built stylesheet structurally cannot see, because such a comparison has to normalize the scope hash away to be readable at all, and to it `.speedopt.svelte-a` and `.speedopt.svelte-b` are the same rule — which is how five controls (the delay stepper's −/+, three dialog footers, the external-subtitle rows) came to render as unstyled native widgets under a clean report |
+| `src/lib/components/` | The UI, one file per surface: `Dialog` (the shell all seven dialogs share), `SettingsDialog` (the sheet and its tab row; each tab is its own component under `settings/` — `GeneralTab`, `VideoTab`, `PlaybackTab`, `AudioTab`, `SubsTab`, `TorrentsTab`, `TvTab`, `KeysTab` — and the three mpv-backed ones share `MpvRows` and `ConfFoot`, with the mpv.conf values in `src/lib/settings/mpv-settings.svelte.ts`, one instance per opening), `SubsDialog`, `LinkDialog`, `MediaInfoDialog`, `DiagnosisDialog`, `TorrentPickDialog`, `TorrentUpdateDialog`, `ReportDialog`, `StartScreen`, `EndScreen`, `ContextMenu`, `CastMenu` with `CastIcon` (the row's device kind, from `deviceKind` — only what the device announces), `TopBar`, `Osd`, `Tooltip`, `SkipButton`, `LoadingOverlay`, `CastScreen`, `StepOverlay`, `Curtain`. **A rule and the markup it styles must live in the same file** — Svelte scopes `<style>`, and the compiler's `unused CSS selector` warning does *not* catch a rule left behind, because a `<Child />` tag is opaque to that analysis. `bun run css-orphans` is what catches it, in both directions — a rule left behind, and the mirror image, a class whose **base** rule stayed in another component while one of its users moved out. The second half is the one a diff of the built stylesheet structurally cannot see, because such a comparison has to normalize the scope hash away to be readable at all, and to it `.speedopt.svelte-a` and `.speedopt.svelte-b` are the same rule — which is how five controls (the delay stepper's −/+, three dialog footers, the external-subtitle rows) came to render as unstyled native widgets under a clean report |
 
 ## Rules
 

@@ -565,6 +565,112 @@ button.primary:hover {
   text-decoration: none;
 }
 
+/* ---- The settings sheet's sections ----
+   Drawn by every tab of the settings dialog, and each tab is its own component
+   (src/lib/components/settings/), so these are shared vocabulary like the rest
+   of this list. The empty-list line and the stacked pill row are drawn by more
+   than one tab as well. */
+
+.folders-empty {
+  padding: 7px 10px;
+  color: #6a6a74;
+  font-size: 12px;
+}
+
+/* A section heading inside a tab. Born in the key editor and now every tab's
+   that holds more than one subject: a tab is a list read top to bottom, and
+   without these "Основные" was language, cursor, a relay server and the watch
+   history in one undifferentiated run.
+
+   Its own class rather than a borrowed .menu-title. That one is a *menu*
+   heading and carries `padding: 6px 10px` for it, which set every section
+   title 10px right of the rows it labels — and the `padding: 0` written here
+   lost, because the two selectors weigh the same and .menu-title is defined
+   later in the file (measured in the shipped bundle: byte 22325 against
+   27825). Exactly the trap .menu-item.chapter-item is on record for. Same
+   look, no collision to lose. */
+.set-group {
+  /* 24 above against 8 below, and the asymmetry is the whole point: a heading
+     has to bind to the section it labels far more strongly than to the one it
+     follows, or the rows read as one undifferentiated list. The row above
+     contributes nothing — adjoining sibling margins collapse, so the gap is
+     this 24 and not 24 plus the row's own margin. No :first-child case
+     either: the first heading follows the pinned tab row, whose 18px margin
+     collapses into this 24. */
+  margin: 24px 0 8px 2px;
+  color: #9a9aa5;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* What a heading labels: the section's rows on a backing of their own. The
+   heading alone did not hold a section together — an 11px grey caption is
+   lighter than the 12.5px labels under it, so the eye read it as one more
+   row, and the 12px between rows is about the gap inside a row. A block
+   says where a section starts and stops without anybody having to read
+   anything. Tabs with one subject (Audio, TV) get one block and no heading,
+   so every tab is drawn the same way. */
+.set-panel {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+/* The panel's own transition — for the picture panel, whose backing goes with
+   the sheet's while a slider is dragged (`peek-keep` in VideoTab). Every panel
+   is a direct child of the Dialog's sheet, where `.settings > *` (two classes
+   with its scope, and later in the bundle than this file) sets an opacity
+   transition of its own. While the panels and this rule shared a component
+   the rule weighed two classes as well and won on source order; here it
+   would weigh one and lose, so it is written to win on weight instead. That
+   keeps the cascade exactly as it was, including the half nobody chose: the
+   panels a peek hides drop out at once rather than fading with the rest. */
+.settings-backdrop .settings > .set-panel {
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+/* A key row is a dense one-line pair and keeps its own 6px. */
+.set-panel .setting:not(.keyrow) {
+  margin-bottom: 14px;
+}
+
+/* The panel's padding is the space under its last row. Written to outweigh
+   both row rules above and `.setting.keyrow` in KeysTab: as a bare
+   `:last-child` it lost to them, and every panel carried its last row's
+   14px on top of its own padding. */
+.set-panel > .setting:last-child,
+.set-panel > .setting.keyrow:last-child {
+  margin-bottom: 0;
+}
+
+/* The notes under the mpv tabs and the key editor stand apart from the block
+   above them rather than reading as its last line. */
+.set-panel + .settings-foot {
+  margin-top: 14px;
+}
+
+/* A section that has lost its meaning under the current settings: visible
+   but dimmed */
+.setting.muted {
+  opacity: 0.45;
+}
+
+/* Same control, stacked: device names are phrases, and a row of pills would
+   either overflow the dialog or truncate them to uselessness. */
+.segmented.vertical {
+  flex-direction: column;
+  gap: 1px;
+}
+
+.segmented.vertical .segopt {
+  text-align: left;
+  white-space: normal;
+}
+
 .menu {
   position: absolute;
   /* Anchored to the top of the control bar, not to a measured number. The
