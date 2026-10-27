@@ -29,6 +29,8 @@
 //! (`libmpv_load_error`), which says so in place of the plugin's message. If it
 //! succeeds, the wrapper's later load only takes another reference.
 
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 use serde::Serialize;
 
 /// Why libmpv-2.dll could not be loaded, as the frontend shows it.
@@ -163,8 +165,12 @@ mod imp {
     /// Load and keep for the life of the process; the handle is never freed.
     fn load(name: &std::ffi::OsStr, flags: u32) -> Result<(), u32> {
         let w = wide(name);
+        // SAFETY: a NUL-terminated UTF-16 name alive for the call, the
+        // reserved file handle null as required. What the library runs on
+        // load is its own: loading it is the point.
         let h = unsafe { LoadLibraryExW(w.as_ptr(), std::ptr::null_mut(), flags) };
         if h.is_null() {
+            // SAFETY: reads this thread's last error, nothing else.
             Err(unsafe { GetLastError() })
         } else {
             Ok(())
@@ -233,7 +239,10 @@ mod imp {
                 let name = std::ffi::OsStr::new(n);
                 // Already in the process — the bundled vulkan-1.dll, loaded
                 // from a folder no search would visit — counts as found.
-                let loaded = !unsafe { GetModuleHandleW(wide(name).as_ptr()) }.is_null();
+                let wide_name = wide(name);
+                // SAFETY: a NUL-terminated UTF-16 name alive for the call; the
+                // handle is only compared with null, never used.
+                let loaded = !unsafe { GetModuleHandleW(wide_name.as_ptr()) }.is_null();
                 !loaded && load(name, LOAD_LIBRARY_AS_DATAFILE).is_err()
             })
             .collect()
@@ -241,6 +250,9 @@ mod imp {
 
     fn system_message(code: u32) -> String {
         let mut buf: *mut u16 = std::ptr::null_mut();
+        // SAFETY: with ALLOCATE_BUFFER the "buffer" argument is where the
+        // system writes the address of one it allocates, so it is `&mut buf`
+        // cast as the API asks; no source, no inserts.
         let len = unsafe {
             FormatMessageW(
                 FORMAT_MESSAGE_ALLOCATE_BUFFER
@@ -257,7 +269,11 @@ mod imp {
         if len == 0 || buf.is_null() {
             return format!("error {code}");
         }
+        // SAFETY: the system allocated `len` UTF-16 units at `buf` and nothing
+        // frees them before the `LocalFree` below, after the copy.
         let text = String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(buf, len as usize) });
+        // SAFETY: the buffer ALLOCATE_BUFFER handed us, which is ours to free
+        // with LocalFree, once.
         unsafe { LocalFree(buf as _) };
         // The frontend puts the code after it, so not the closing full stop.
         text.trim().trim_end_matches('.').to_string()
