@@ -129,7 +129,7 @@ are under "Commands" in its `.claude/rules/` file.
 |---|---|---|
 | `src/routes/+page.svelte` | What is left after the split: hotkeys, the fullscreen veil, idle and cursor, the wheel dispatch, the mpv → UI bridge | frontend, window, mpv-playback |
 | `src/lib/components/`, `src/lib/settings/` | The UI, one file per surface — the settings sheet one per tab, under `components/settings/`, with its mpv.conf state in `src/lib/settings/`; a rule and the markup it styles live in the same file | ui-surfaces, css |
-| `src/lib/{player,playback,seek,frame-step,crop,picture-adjust,upscale,now-playing,audio-output}…` | mpv's mirrors and commands, playback whichever machine decodes, everything that moves the playhead, the picture | mpv-playback |
+| `src/lib/{player,playback,seek,frame-step,crop,picture-adjust,upscale,now-playing,audio-output}…`, `src/lib/player/` | mpv's mirrors and commands (`player.svelte.ts` the public face, the code under `player/`), playback whichever machine decodes, everything that moves the playhead, the picture | mpv-playback |
 | `src/lib/thumbs.svelte.ts`, `src-tauri/src/{thumb_service,color,step_engine}.rs` | Hover thumbnails, the FFmpeg sidecar, colour | thumbnails |
 | `src/lib/{tracks,resume,subs}.svelte.ts`, `languages.ts`, `src-tauri/src/{opensubtitles,external_dirs}.rs` | Tracks, the remembered choice, subtitle search | tracks-and-subtitles |
 | `src/lib/{open,torrent}.svelte.ts`, `feed.ts`, `src-tauri/src/torrent/`, `src-tauri/src/{torrent_storage,feed}.rs` | Opening a source, torrent streaming | torrents-core, torrents-playback |

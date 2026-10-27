@@ -168,7 +168,7 @@ as well as making the user wait.
 | Path | What is there |
 |---|---|
 | `src/routes/+page.svelte` | Markup, CSS, and everything gesture-shaped: seekbar, wheel, hotkeys, menus, overlays |
-| `src/lib/player.svelte.ts` | mpv state mirrors, initialization, commands, tracks, file loading |
+| `src/lib/player.svelte.ts` · `src/lib/player/` | mpv state mirrors, initialization, commands, tracks, file loading — the public face re-exports, the code is one module per seam under `player/` |
 | `src/lib/*.svelte.ts` | State modules: history, playlist, torrents, casting, thumbnails, zoom, window prefs |
 | `src-tauri/src/lib.rs` | Plugin registration, window lifecycle, the small commands |
 | `src-tauri/src/thumb_service.rs` | Seekbar thumbnails and posters: decoding, scoring, disk cache |
