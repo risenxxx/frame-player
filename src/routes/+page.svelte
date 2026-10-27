@@ -5,8 +5,7 @@
   import { join, resourceDir } from '@tauri-apps/api/path';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
-  import { ProgressBarStatus } from '@tauri-apps/api/window';
-  import { command, destroy, setProperty } from 'tauri-plugin-libmpv-api';
+  import { command, destroy } from 'tauri-plugin-libmpv-api';
   import MediaInfoDialog from '$lib/components/MediaInfoDialog.svelte';
   import SubsDialog from '$lib/components/SubsDialog.svelte';
   import StartScreen from '$lib/components/StartScreen.svelte';
@@ -41,16 +40,13 @@
   import {
     initSync,
     sync,
-    syncNoteFileLoaded,
-    syncNotePlaybackRestart,
-  } from '$lib/sync/apply.svelte';
+} from '$lib/sync/apply.svelte';
   import { initDeepLinks, invite } from '$lib/sync/link.svelte';
   import {
     initSeek,
-    resetSeekProbe,
     scheduleScrubEnd,
     seek,
-  } from '$lib/seek.svelte';
+} from '$lib/seek.svelte';
   import {
     USE_STEP_ENGINE,
     cancelStep,
@@ -59,12 +55,6 @@
     schedulePrewarm,
     step,
   } from '$lib/step-engine.svelte';
-  import {
-    frameStep,
-    frameStepFileChanged,
-    frameStepNotePause,
-    frameStepNoteRestart,
-  } from '$lib/frame-step.svelte';
   import {
     chrome,
     closeWindow,
@@ -85,24 +75,18 @@
     dismissEnd,
     endOfFile,
     initEndScreen,
-    noteLocalPosition,
-    onReachedEnd,
-    resetEnd,
-    resetSkipGuard,
     takeSkip,
-  } from '$lib/endscreen.svelte';
+} from '$lib/endscreen.svelte';
   import {
     applyEncryption,
     applyProxy,
     applyRoute,
-    cancelLoadFailure,
     clearTorrentCache,
     deleteTorrent,
     deleteWatchedFiles,
     dropLink,
     openFileDialog,
     fixYtdlp,
-    noteOpened,
     openLinkDialog,
     openRecent,
     openRememberedTorrent,
@@ -114,8 +98,6 @@
     pickTorrentFile,
     playTorrentFile,
     refreshTorrents,
-    reportLoadFailure,
-    resolveTitleIfMissing,
     submitLink,
     submitUpdate,
     togglePortForward,
@@ -129,13 +111,11 @@
   } from '$lib/catalog.svelte';
   import {
     addTrackFile,
-    applyTiming,
     initTracks,
     nudgeDelayHere,
     resetDelayHere,
-    restoreTrackChoice,
     selectTrack,
-  } from '$lib/tracks.svelte';
+} from '$lib/tracks.svelte';
   import {
     clearCastClick,
     clearClickSuppression,
@@ -163,25 +143,21 @@
     toggleMenu,
   } from '$lib/overlays.svelte';
   import {
-    applyResume,
-    prepareResume,
     primeResumeKnob,
     resume,
     setPendingResume,
-  } from '$lib/resume.svelte';
+} from '$lib/resume.svelte';
   import { initPortable } from '$lib/portable.svelte';
   import { runMenuAction } from '$lib/app-menu';
+  import { initCastFollow, playerHooks } from '$lib/bridge.svelte';
   import {
-    armVideoReady,
     backToStart,
-    enterStartScreen,
     initVideoReady,
     startScreen,
-  } from '$lib/start-screen.svelte';
-  import { clearTitleTimer, initWindowTitle, slideTitle, title } from '$lib/title.svelte';
+} from '$lib/start-screen.svelte';
+  import { clearTitleTimer, initWindowTitle, title } from '$lib/title.svelte';
   import { checkForUpdate, installUpdate, updater } from '$lib/updater.svelte';
   import { subs } from '$lib/subs.svelte';
-  import { playback } from '$lib/playback.svelte';
   import { flipAxis, shiftAxis } from '$lib/floating';
   import { locale, t } from '$lib/i18n.svelte';
   import {
@@ -193,7 +169,6 @@
     forgetRecent,
     loadHistoryPrefs,
     loadRecent,
-    rememberTitle,
     maybeRecordPosition,
 } from '$lib/history.svelte';
   import { initNowPlaying } from '$lib/now-playing.svelte';
@@ -203,60 +178,41 @@
     chapterAt,
     cycleAbLoop,
     initPlayer,
-    pointAtExternalTracks,
-    isNetworkSource,
-    notePlaybackRestart,
     jumpChapter,
     loadFiles,
     player,
-    resetAbLoop,
-    resetPicture,
     resyncState,
     setPicture,
     cycleLoop,
-    type ObservedName,
 } from '$lib/player.svelte';
   import {
     curtain,
     curtainCovered,
-    curtainFileLoaded,
-    curtainFileStarted,
     curtainSettled,
     initCurtain,
-    raiseCurtain,
 } from '$lib/curtain.svelte';
   import {
     applyAlwaysOnTop,
     loadWindowPrefs,
     initWindowShape,
-    scheduleShape,
     mini,
     restoreGeometry,
     scheduleGeometrySave,
     scheduleMiniSnap,
     syncMenuChecks,
-    exitMini,
     toggleMini,
 } from '$lib/window-prefs.svelte';
   import {
-    dropPosters,
     loadPlaylist,
     loadPlaylistPrefs,
-    queueFolder,
 } from '$lib/playlist.svelte';
   import { loadSeekSteps } from '$lib/seek-steps.svelte';
-  import { restoreCrop } from '$lib/crop.svelte';
-  import { restoreAdjust } from '$lib/picture-adjust.svelte';
   import {
     initUpscale,
     initUpscaleWatch,
-    restoreUpscale,
     upscale,
-    upscaleSourceChanged,
-  } from '$lib/upscale.svelte';
+} from '$lib/upscale.svelte';
   import {
-    attachTorrentSubtitles,
-    releaseTorrent,
     torrent,
     torrentPositions,
     torrentResume,
@@ -272,12 +228,9 @@
     diagnosisText,
     type CheckLine,
     type TvDevice,
-    castFollowing,
-    endCast,
-  } from '$lib/cast.svelte';
-  import { backBufferFor } from '$lib/source';
+} from '$lib/cast.svelte';
   import { loadThumbPrefs, maybeStartThumbs, thumbs } from '$lib/thumbs.svelte';
-  import { markZoomLuaLoaded, reclampPan, resetZoom } from '$lib/zoom.svelte';
+  import { markZoomLuaLoaded, reclampPan } from '$lib/zoom.svelte';
 
   // Sidecar frame stepping (StepEngine) is off: stepping goes through mpv,
   // which shows the correct picture (HDR tone mapping included), made fast by
@@ -349,11 +302,8 @@
   );
 
   const osdState = $derived(osd());
-  const hasFile = $derived(player.hasFile);
 
   let unlisteners: Array<() => void> = [];
-  /// Throttles the Windows taskbar progress bar to about once a second.
-  let lastTaskbarUpdate = 0;
   let tipEl = $state<HTMLDivElement | undefined>();
   // Custom tooltips: one delegated mechanism for every [data-tip]
   let tooltip = $state<{ text: string; pos: { x: number; y: number } | null } | null>(null);
@@ -463,57 +413,7 @@
     );
 
     unlisteners.push(
-      ...(await initPlayer({
-        beforeLoad: async (path) => {
-          // Opening another file while casting ends the session first: mpv is
-          // about to start playing locally, and two playbacks at once — one
-          // here, one on the TV — is never what a viewer meant. The exception
-          // is the session moving itself along the queue, which opens the next
-          // episode on purpose and hands it over (`castFollowing`).
-          if (cast.active && !castFollowing()) {
-            await endCast({ osd: t('cast.stopped'), resumeLocal: false });
-          }
-          cancelStep();
-          opening.attempting = path;
-          cancelLoadFailure();
-          opening.busy = isNetworkSource(path);
-          // Primes the knob and points mpv's `start` at the resume position,
-          // which is why this hook is awaited: `start` is a load-time option and
-          // has to land before `loadfile`. The curtain is awaited beside it for
-          // its own reason — the picture on screen has to be dark before mpv
-          // is handed the file that replaces it — and the two wait together
-          // rather than in turn.
-          // The external-track folders join them: `sub-file-paths` and
-          // `audio-file-paths` are read when the file opens, like `start`.
-          await Promise.all([prepareResume(path), raiseCurtain(), pointAtExternalTracks(path)]);
-        },
-        property: onPlayerProperty,
-        fileLoaded: onFileLoaded,
-        // Opening ONE file queues the rest of its folder; opening several is an
-        // explicit selection and is left exactly as it was given.
-        filesOpened: (videos) => {
-          if (videos.length === 1) void queueFolder(videos[0]);
-          else void loadPlaylist();
-        },
-        loadFailed: reportLoadFailure,
-        openTorrentFile: (path) => void openTorrent(path),
-        playbackRestart: () => {
-          armVideoReady();
-          // Frames are being produced, which is the one thing the curtain is
-          // waiting to hear and the picture's own properties may not say: a
-          // file of the same shape as the last can change none of them. The
-          // window looks again and reports (`settled`).
-          if (curtain.on) scheduleShape();
-          // Before the waiters are released: a restart nobody stepping asked
-          // for is a seek that the frame stepper has to turn forward after.
-          frameStepNoteRestart();
-          notePlaybackRestart();
-          // The one event that means frames are actually being produced, which
-          // is what a room has to be told about — a file mpv has merely been
-          // handed looks identical from every other angle.
-          syncNotePlaybackRestart();
-        },
-      })),
+      ...(await initPlayer(playerHooks)),
     );
     if (player.initError) return;
 
@@ -799,132 +699,6 @@
   // The window's own title, debounced — see title.svelte.ts.
   initWindowTitle();
 
-  // ---- Bridge between mpv state and the page ------------------------------
-
-  /// Reactions to mpv property changes that are not the player module's own
-  /// business: the seekbar knob, the taskbar, the start screen, the title
-  /// slide. Runs after the mirror is updated, so `player.x` is already fresh.
-  function onPlayerProperty(name: ObservedName) {
-    switch (name) {
-      case 'pause':
-        if (player.paused && USE_STEP_ENGINE && !step.on) schedulePrewarm();
-        frameStepNotePause();
-        updateTaskbarProgress();
-        if (player.paused) maybeRecordPosition(true);
-        break;
-      case 'time-pos':
-        // While a gesture owns the position, the gesture sets the knob.
-        // Otherwise it jitters: mpv still reports the old position (a seek is
-        // in flight) or one that landed on a keyframe, and the knob bounces
-        // between the finger and the lagging value.
-        if (!seek.dragging && !step.on && !seek.scrubbing && !seek.settling) seek.value = player.timePos;
-        // Releases the skip button's mute and pre-decodes the next poster. In
-        // the `property` hook rather than an $effect for the usual reason: both
-        // must run on a position report, not whenever one of the values they
-        // read happens to change.
-        noteLocalPosition();
-        if (performance.now() - lastTaskbarUpdate > 1000) updateTaskbarProgress();
-        break;
-      case 'duration':
-        maybeStartThumbs();
-        break;
-      case 'video-params/w':
-      case 'video-params/h':
-        upscaleSourceChanged();
-        break;
-      case 'filename':
-        clearTimeout(startScreen.emptyTimer);
-        if (player.filename === null) {
-          updateTaskbarProgress();
-          // the file is gone (switched or closed) — commit the last position
-          flushPosition();
-          dropPosters();
-          void exitMini();
-          // Nothing is playing, so nothing may still be talking to a swarm:
-          // uploading to strangers after the film is closed is not something a
-          // video player gets to do quietly. The pieces stay on disk, so
-          // re-opening the magnet continues rather than starting over.
-          if (torrent.info) void releaseTorrent();
-          // Not when the picker is already up: `backToStart` raises it before
-          // issuing the stop, and re-running this would rebuild the recents
-          // list a second time — visible, because the cards would reshuffle
-          // under the cursor as the posters arrive again.
-          if (!startScreen.showEmpty) startScreen.emptyTimer = setTimeout(enterStartScreen, 300);
-        } else {
-          startScreen.showEmpty = false;
-          // the pause lets media-title update before the slide
-          setTimeout(() => slideTitle(), 120);
-        }
-        break;
-      case 'eof-reached':
-        // Decoding backward, the start of the file is mpv's end: the frame
-        // stepper reaching the first frame is not the film being over.
-        if (frameStep.reverse) break;
-        if (player.eofReached) onReachedEnd();
-        else resetEnd();
-        break;
-      case 'playlist-count':
-        void loadPlaylist();
-        break;
-      case 'media-title':
-        // Free: yt-dlp resolved it, mpv passed it on. Recording it here is what
-        // keeps the recent-links list readable without asking anyone anything.
-        if (player.mediaTitle && player.filePath) rememberTitle(player.filePath, player.mediaTitle);
-        break;
-      case 'path':
-        // The net under `raiseCurtain`: a file that reached mpv by a way that
-        // does not pass through one of our verbs.
-        if (player.filePath) curtainFileStarted();
-        frameStepFileChanged();
-        // The seek-back buffer for where this file's bytes come from — see
-        // `backBufferFor`.
-        void setProperty('demuxer-max-back-bytes', backBufferFor(player.filePath)).catch(() => {});
-        resetSeekProbe();
-        resetSkipGuard();
-        maybeStartThumbs();
-        break;
-      case 'playlist-pos':
-        if (player.playlistPos !== title.lastPlaylistPos) {
-          title.slideDir = player.playlistPos > title.lastPlaylistPos ? 'next' : 'prev';
-          // Consumed by the next slideTitle: mpv reports the new position
-          // before the new filename, so the flag is always set in time.
-          title.playlistStepped = true;
-          title.lastPlaylistPos = player.playlistPos;
-        }
-        break;
-    }
-  }
-
-  function onFileLoaded() {
-    curtainFileLoaded();
-    noteOpened();
-    resetZoom(true);
-    // Rotation and aspect are global mpv options: a phone clip turned upright
-    // would still be turned for the next episode. Loop points and track delays
-    // likewise, and the subtitle frame-rate stretch.
-    resetPicture();
-    restoreCrop();
-    restoreAdjust();
-    restoreUpscale();
-    resetAbLoop();
-    applyTiming();
-    // Subtitles the torrent itself carries. `sub-auto` finds nothing here —
-    // there is no local file to look beside — so without this they sit in the
-    // torrent unreachable while the viewer searches OpenSubtitles for something
-    // already on their own disk.
-    void attachTorrentSubtitles();
-    restoreTrackChoice();
-    resetEnd();
-    void loadPlaylist();
-    resolveTitleIfMissing();
-    // Releases the knob, clears mpv's sticky `start`, and seeks only if the
-    // load did not already begin at the resume point.
-    applyResume();
-    // Last, and deliberately: it reads the title and the duration, which are
-    // what the room shows, and both are worth more once the rest has run.
-    void syncNoteFileLoaded();
-  }
-
   // Poll a torrent's peers and rate while one is playing, and stop the moment
   // it is not. Driven by `path` inside the module rather than started when the
   // magnet was opened, because moving to the next episode of a torrent is a
@@ -1026,30 +800,6 @@
     }
   }
 
-  function updateTaskbarProgress() {
-    // On macOS this is a bar over the Dock icon — not done there, just noise.
-    if (IS_MAC) return;
-    lastTaskbarUpdate = performance.now();
-    const win = getCurrentWindow();
-    // **While casting the position lives on the television.** mpv sits paused
-    // on the file it handed over, so reading its mirrors here pinned the bar to
-    // the moment of the handoff and painted it "paused" for the whole session —
-    // `player.paused` being true is what makes the handover work in the first
-    // place. `playback` is the answer to that for every reader at once.
-    const time = playback.position;
-    const total = playback.duration;
-    const paused = playback.paused;
-    if (!hasFile || total <= 0) {
-      void win.setProgressBar({ status: ProgressBarStatus.None }).catch(() => {});
-      return;
-    }
-    void win
-      .setProgressBar({
-        status: paused ? ProgressBarStatus.Paused : ProgressBarStatus.Normal,
-        progress: Math.min(100, Math.max(0, Math.round((time / total) * 100))),
-      })
-      .catch(() => {});
-  }
 
   // ---- Frame export -------------------------------------------------------
   // mpv writes the file itself, so the saved frame is exactly what the VO
@@ -1103,32 +853,8 @@
     : t('cast.state_playing'),
   );
 
-  /// The seekbar follows the TV while casting. Guarded on `seek.dragging` so the
-  /// gesture owns the knob, exactly like the time-pos observer's guard — and
-  /// safe as an $effect (which the observer guard is not) because on a drag
-  /// release `cast.time` is already the optimistic release position, so the
-  /// re-run cannot yank the knob backwards. `remote`, not `active`: while the
-  /// prepare rung runs, local playback continues and time-pos owns the knob —
-  /// two writers on one seekbar is the jitter bug in a new costume.
-  $effect(() => {
-    const time = cast.time;
-    if (!cast.remote) return;
-    if (!seek.dragging) seek.value = time;
-    // **The taskbar has no other driver while casting.** It is refreshed from
-    // mpv's property events, and with the local player parked `time-pos` never
-    // arrives — so the bar was set once, at the handoff, and sat there for the
-    // whole session. This poll is the only thing that knows the television
-    // moved. Unthrottled on purpose: it runs at the cast poll's 2 Hz, which is
-    // what the observer's 1 s throttle exists to cut a ~10 Hz local report
-    // down to, and a skipped run would leave the bar the wrong colour across a
-    // pause. Inside the `remote` guard for a reason that is easy to miss: the
-    // update reads mpv's mirrors on the local branch, so calling it here
-    // unconditionally would make this effect depend on `time-pos` and re-run
-    // ten times a second all through ordinary playback. Leaving the session
-    // hands the bar back to those same property events, which is where it
-    // belongs — the handback's seek and unpause both fire one.
-    updateTaskbarProgress();
-  });
+  // The seekbar and the taskbar follow the TV while casting — see bridge.svelte.ts.
+  initCastFollow();
 
   /// Drop an entry. mpv renumbers what follows, so the list is re-read rather
   /// than patched — and removing the entry that is playing is allowed, because
