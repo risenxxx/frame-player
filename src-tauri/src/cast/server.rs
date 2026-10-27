@@ -679,4 +679,28 @@ mod tests {
         let picked = pick_lan_ip(&candidates, "172.16.0.9".parse().unwrap());
         assert_eq!(picked, Some("10.8.0.2".parse().unwrap()));
     }
+
+    /// What a receiver is told a file is, before it fetches a byte of it — a
+    /// Cast receiver or a DLNA renderer refuses or mis-plays on a wrong type.
+    /// By the extension, in any case; an unknown one is octet-stream.
+    #[test]
+    fn content_types_by_extension() {
+        assert_eq!(cast_mime("Film.MP4"), "video/mp4");
+        assert_eq!(cast_mime("clip.mov"), "video/mp4");
+        assert_eq!(cast_mime("show.mkv"), "video/x-matroska");
+        assert_eq!(cast_mime("song.opus"), "audio/ogg");
+        assert_eq!(cast_mime("archive.rar"), "application/octet-stream");
+        assert_eq!(cast_mime_for(std::path::Path::new("/x/y/Z.M4V")), "video/mp4");
+
+        assert_eq!(hls_mime("master.m3u8"), "application/x-mpegURL");
+        assert_eq!(hls_mime("seg00012.ts"), "video/mp2t");
+        assert_eq!(hls_mime("sub_ru.vtt"), "text/vtt");
+
+        // DLNA's caption types: SAMI by its two extensions, WebVTT, and SubRip
+        // for everything else, which is what a renderer that takes one takes.
+        assert_eq!(caption_mime(std::path::Path::new("a.SMI")), "smi/caption");
+        assert_eq!(caption_mime(std::path::Path::new("a.vtt")), "text/vtt");
+        assert_eq!(caption_mime(std::path::Path::new("a.srt")), "text/srt");
+        assert_eq!(caption_mime(std::path::Path::new("a")), "text/srt");
+    }
 }

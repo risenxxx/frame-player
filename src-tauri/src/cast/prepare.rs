@@ -446,4 +446,66 @@ mod tests {
         assert!(s.contains("-disposition:a 0 -disposition:a:0 default"));
         assert!(!s.contains("hvc1"));
     }
+
+    /// A temporary file with the given bytes, for a key that reads metadata.
+    fn scratch(name: &str, bytes: &[u8]) -> (PathBuf, std::fs::Metadata) {
+        let dir = std::env::temp_dir().join("frameplayer-prepare-keys");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        let meta = std::fs::metadata(&path).unwrap();
+        (path, meta)
+    }
+
+    /// The prepared copy is found again by this key, and a stale hit is silent:
+    /// the television plays a copy made with another audio track, or the
+    /// original audio a receiver cannot decode, and nothing says so. So
+    /// everything that changes the output changes the key — the track, the
+    /// transcode, the source itself — and nothing else does.
+    #[test]
+    fn prepare_key_changes_with_what_changes_the_copy() {
+        let (path, meta) = scratch("film.mkv", b"one");
+        let key = prepare_key(&path, &meta, 1, false);
+        assert_eq!(key, prepare_key(&path, &meta, 1, false));
+        assert_ne!(key, prepare_key(&path, &meta, 2, false));
+        assert_ne!(key, prepare_key(&path, &meta, 1, true));
+        assert_ne!(key, prepare_key(&path.with_file_name("other.mkv"), &meta, 1, false));
+        // The same path holding another file — a season re-downloaded in place.
+        let (_, longer) = scratch("film.mkv", b"one more");
+        assert_ne!(key, prepare_key(&path, &longer, 1, false));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The multi-track copy's key: the plan and every external file in it.
+    /// A subtitle added beside the film, or edited, is a different copy.
+    #[test]
+    fn tracks_key_follows_the_plan_and_the_external_files() {
+        let (src, meta) = scratch("show.mkv", b"video");
+        let (srt, _) = scratch("show.ru.srt", b"1");
+        let audio = vec![TrackSource { file: None, index: 0, lang: Some("ru".into()), title: None, transcode: false, channels: 2 }];
+        let sub = TrackSource { file: Some(srt.to_string_lossy().into_owned()), index: 0, lang: Some("ru".into()), title: None, transcode: false, channels: 0 };
+
+        let bare = tracks_key(&src, &meta, &audio, &[], false);
+        let with_sub = tracks_key(&src, &meta, &audio, std::slice::from_ref(&sub), false);
+        assert_eq!(bare, tracks_key(&src, &meta, &audio, &[], false));
+        assert_ne!(bare, with_sub);
+        assert_ne!(bare, tracks_key(&src, &meta, &audio, &[], true));
+        let mut eac3 = audio.clone();
+        eac3[0].transcode = true;
+        assert_ne!(bare, tracks_key(&src, &meta, &eac3, &[], false));
+        // A track moved from the audio list to the subtitle list is another plan.
+        assert_ne!(
+            tracks_key(&src, &meta, &[audio[0].clone(), audio[0].clone()], &[], false),
+            tracks_key(&src, &meta, &audio, std::slice::from_ref(&audio[0]), false),
+        );
+
+        std::fs::write(&srt, b"1 edited").unwrap();
+        assert_ne!(with_sub, tracks_key(&src, &meta, &audio, std::slice::from_ref(&sub), false));
+
+        // Never mistaken for a single-track copy's key in the same cache.
+        assert!(bare.starts_with('t'));
+        assert_ne!(bare, prepare_key(&src, &meta, -1, false));
+        let _ = std::fs::remove_file(&src);
+        let _ = std::fs::remove_file(&srt);
+    }
 }
