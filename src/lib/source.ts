@@ -84,7 +84,7 @@ export function isMagnet(src: string): boolean {
  * ways in do not survive: a `.torrent` file is a path that can be moved or
  * deleted, and a `.torrent` URL is a page that can go down — while the info
  * hash names the torrent for as long as BitTorrent exists, and the metadata
- * cache beside it (torrent.rs) means reopening one costs no lookup at all.
+ * cache beside it (torrent/dirs.rs) means reopening one costs no lookup at all.
  * So everything remembered about a torrent is keyed by this rather than by
  * whatever the viewer happened to hand over.
  *
@@ -132,7 +132,7 @@ export function proxyLooksValid(url: string): boolean {
 /**
  * A torrent stream served by our own local server, taken apart.
  *
- * The route is `http://127.0.0.1:<port>/t/<infohash>/<index>/<name>` (torrent.rs
+ * The route is `http://127.0.0.1:<port>/t/<infohash>/<index>/<name>` (torrent/http.rs
  * builds it, `stream_url`), and the shape exists so that the identity can be
  * read straight back out of the URL: the info hash says *which torrent* and the
  * index says *which file in it*, while the port — the one part that changes

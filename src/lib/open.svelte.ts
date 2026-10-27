@@ -587,7 +587,7 @@ export function resolveTitleIfMissing() {
 // What comes back is a *list*. A torrent with one film plays it; a torrent
 // holding a season is a question only the viewer can answer, so it gets a
 // picker. Either way every video in it becomes a queue entry, which costs
-// nothing until one is played (see torrent.rs).
+// nothing until one is played (see torrent/mod.rs).
 
 export async function openTorrent(source: string, origin?: CatalogOrigin) {
   opening.box.torrentError = null;
@@ -600,7 +600,7 @@ export async function openTorrent(source: string, origin?: CatalogOrigin) {
     // **What is remembered is a magnet, whatever was handed over.** A dropped
     // `.torrent` file is a path that can be moved or deleted and a `.torrent`
     // URL is a page that can go down, while the info hash names the torrent for
-    // good — and the metadata cache beside it (torrent.rs) makes reopening from
+    // good — and the metadata cache beside it (torrent/dirs.rs) makes reopening from
     // a bare magnet cost no lookup at all. So a file opened once keeps working
     // after it is thrown away, which is what people do with `.torrent` files.
     const key = isMagnet(source) ? source : magnetFor(info.info_hash, info.name);
