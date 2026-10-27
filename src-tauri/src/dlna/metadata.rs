@@ -89,7 +89,7 @@ pub(super) fn didl(
 /// as `video/x-mkv`, AVI has four live forms, MPEG-TS three. Sending a name the
 /// device does not list earns UPnP 714 "illegal MIME type" from a strict one.
 ///
-/// Kept in step with `DLNA_MIME` in `src/lib/cast.svelte.ts`, which answers the
+/// Kept in step with `DLNA_MIME` in `src/lib/cast/devices.ts`, which answers the
 /// neighbouring question — whether to *offer* the device at all. A divergence
 /// costs a worse guess rather than a failure: [`negotiate_mime`] falls back to
 /// the first spelling here, so the frontend saying yes and this table saying
