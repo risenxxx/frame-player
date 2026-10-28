@@ -1,4 +1,5 @@
-# The Rust half: clippy and the unit tests, on both platforms the player ships for.
+# The Rust half: clippy and the unit tests, on both platforms the player ships for
+# (and on Windows, both architectures).
 #
 # `checks.yml` covers the frontend and the Go services and leaves this out,
 # because the crate needs libmpv and the FFmpeg SDK to compile at all. Both are
@@ -17,12 +18,12 @@
 #   - `paths`: a push that touches no Rust does not start it, and that is most of
 #     them. Its own file and `fetch-libs.ps1` are listed because they change what
 #     the job does.
-#   - one job per platform, clippy then the tests in the same job. Build scripts
-#     and proc macros are shared between `check` and `build` artifacts, so the
-#     expensive host-side work (bindgen over FFmpeg, aws-lc's C build) happens
-#     once — and two caches rather than four matters, because the repository's
-#     10 GB cache is shared with `release.yml`, whose caches are the ones a
-#     release waits on.
+#   - one job per platform and architecture, clippy then the tests in the same
+#     job. Build scripts and proc macros are shared between `check` and `build`
+#     artifacts, so the expensive host-side work (bindgen over FFmpeg, aws-lc's
+#     C build) happens once — and three caches rather than six matters,
+#     because the repository's 10 GB cache is shared with `release.yml`, whose
+#     caches are the ones a release waits on.
 #   - no debug info (`CARGO_PROFILE_DEV_DEBUG=0`, which the test profile
 #     inherits): nothing here is ever run under a debugger, and it is most of the
 #     size of the target directory and of the cache.
@@ -77,7 +78,20 @@ env:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    # Both architectures the release ships, each on a machine of its own kind:
+    # an ARM64 runner builds natively, so bindgen, the C parts of the TLS stack
+    # and the tests all run on the architecture they are for. `windows-11-arm`
+    # costs a public repository nothing, like the others. Neither cancels the
+    # other: a lint that only one of them hits is exactly what this is for.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -92,11 +106,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: check-windows
+          key: check-windows-${{ matrix.arch }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # The same key as `release.yml`, so the two workflows share one copy and
-      # the download runs only when the script changes. `.cargo/config.toml`
+      # the download runs only when the script changes. The architecture is part
+      # of it: both runners report `Windows` as their OS, and an ARM64 job
+      # restoring the x64 set would fail at link time, far from the cause. `.cargo/config.toml`
       # points FFMPEG_DIR and LIBCLANG_PATH at what this puts on disk.
       - name: Cache native SDKs
         id: sdk-cache
@@ -106,7 +122,7 @@ jobs:
             src-tauri/lib
             src-tauri/ffmpeg
             src-tauri/tools
-          key: native-sdks-${{ runner.os }}-${{ hashFiles('scripts/fetch-libs.ps1') }}
+          key: native-sdks-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/fetch-libs.ps1') }}
 
       # Authenticated for the reason given in `release.yml`: the anonymous API
       # allowance is per IP, and a hosted runner shares its address.
@@ -114,7 +130,7 @@ jobs:
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1
+        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1 -Arch ${{ matrix.arch }}
 
       - name: Clippy
         working-directory: src-tauri

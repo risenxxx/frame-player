@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import type { AstroIntegration } from 'astro'
 import { defineConfig } from 'astro/config'
 import mdx from '@astrojs/mdx'
-import { DOWNLOAD_PATHS, release } from './src/release'
+import { DOWNLOAD_PATHS, RELEASES_PAGE, release } from './src/release'
 
 /*
   One page, static output, no framework runtime. `SITE_ORIGIN` lets a preview
@@ -63,9 +63,12 @@ function downloads(): AstroIntegration {
     name: 'site-downloads',
     hooks: {
       'astro:build:done': async ({ dir }) => {
-        const { windows, macos } = await release()
+        const { windows, windowsArm, macos } = await release()
         const lines = [
           `${DOWNLOAD_PATHS.windows} ${windows} 302`,
+          // Written even for a release with no ARM64 build, so the address a
+          // link was given never 404s: it then lands on the release page.
+          `${DOWNLOAD_PATHS.windowsArm} ${windowsArm ?? RELEASES_PAGE} 302`,
           `${DOWNLOAD_PATHS.macos} ${macos} 302`,
           `/download/mac ${macos} 302`,
         ]

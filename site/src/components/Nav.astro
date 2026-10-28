@@ -28,7 +28,7 @@ interface Props {
 }
 
 const { download = '#download' } = Astro.props
-const { windows, macos } = await downloads()
+const { windows, windowsArm, macos } = await downloads()
 const { s, home, href } = useLocale(Astro)
 const section = (id: string) => (home ? `#${id}` : href(`/#${id}`))
 ---
@@ -55,7 +55,7 @@ const section = (id: string) => (home ? `#${id}` : href(`/#${id}`))
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-github"/></svg>GitHub
       </a>
       <a class="btn btn-primary btn-sm nav-dl" href={download}><T s={s.nav.download} /></a>
-      <a class="btn btn-primary btn-sm nav-dl nav-dl-windows" href={windows}><T s={s.nav.download} /></a>
+      <a class="btn btn-primary btn-sm nav-dl nav-dl-windows" href={windows} data-arm={windowsArm}><T s={s.nav.download} /></a>
       <a class="btn btn-primary btn-sm nav-dl nav-dl-macos" href={macos}><T s={s.nav.download} /></a>
     </div>
   </div>

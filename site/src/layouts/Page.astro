@@ -214,6 +214,20 @@ const jsonLd = { '@context': 'https://schema.org', '@graph': [website, app, ...s
       // a touch screen, and anything else keeps the link to the download block.
       if (/win/i.test(platform)) document.documentElement.dataset.dl = 'windows'
       else if (/mac/i.test(platform) && navigator.maxTouchPoints < 2) document.documentElement.dataset.dl = 'macos'
+      // Windows on ARM reports x64 in its user agent. Chromium tells the truth
+      // when asked, but asynchronously, so the answer lands after the first
+      // paint: only the address of the Windows buttons changes then, never
+      // their text, and nothing on the page moves. Firefox does not answer at
+      // all, which is why the "Windows on ARM" link is always beside them.
+      const uad = navigator.userAgentData
+      if (/win/i.test(platform) && uad && uad.getHighEntropyValues) {
+        uad.getHighEntropyValues(['architecture']).then((v) => {
+          if (v.architecture !== 'arm') return
+          const swap = () => document.querySelectorAll('a[data-arm]').forEach((a) => { a.href = a.dataset.arm })
+          if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', swap)
+          else swap()
+        }, () => {})
+      }
       try {
         const theme = localStorage.getItem('fp-theme')
         if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme

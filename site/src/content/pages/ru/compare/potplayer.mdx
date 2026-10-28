@@ -5,8 +5,8 @@ heading: Ищете PotPlayer для Mac?
 lede: PotPlayer есть только для Windows, версии для Mac нет. Frame Player работает на обеих системах с одними и теми же возможностями, поэтому может стать единственным плеером и на компьютере с Windows, и на Mac. Вот что переносится из PotPlayer, что Frame Player добавляет и от чего придётся отказаться.
 eyebrow: Сравнение
 short: PotPlayer для Mac
-updated: 2026-10-26
-translated: 2026-10-26
+updated: 2026-10-28
+translated: 2026-10-28
 order: 42
 related:
   - compare/iina
@@ -26,7 +26,7 @@ faq:
   - q: Прочитает ли Frame Player мои настройки или плейлисты из PotPlayer?
     a: Нет. Настройки, горячие клавиши и закладки не переносятся. Горячие клавиши во Frame Player переназначаются, J, K и L работают как в большинстве плееров, а когда вы открываете одну серию, остальные из папки сами встают в очередь.
   - q: Работает ли Frame Player на Windows на ARM или на Mac с Intel?
-    a: Пока нет. Он работает на Windows 10 и 11 с процессорами Intel и AMD и на Mac с Apple Silicon. Для ноутбука с Windows на ARM у PotPlayer есть сборка; на Mac с Intel берите IINA или VLC.
+    a: На Windows на ARM — да, рядом со сборкой для x64 есть нативная для ARM64. На Mac с Intel — нет: он работает только на Mac с Apple Silicon, а там берите IINA или VLC.
 ---
 
 import Mock from '../../../../components/prose/Mock.astro'
@@ -50,7 +50,7 @@ import Note from '../../../../components/prose/Note.astro'
 
 | Что сравниваем | [Frame Player](/ru) | PotPlayer |
 |---|---|---|
-| Где работает | Windows 10 и 11, macOS на Apple Silicon | Windows с 7 по 11, включая ARM64 |
+| Где работает | Windows 10 и 11, включая ARM64; macOS на Apple Silicon | Windows с 7 по 11, включая ARM64 |
 | Движок | libmpv с декодерами FFmpeg и рендерером libplacebo | Собственный, со встроенными кодеками; дополнительные — через OpenCodec |
 | Видеорендереры | Рендерер mpv, одинаковый на обеих системах | Встроенные Direct3D 9 и 11, madVR, MPC Video Renderer |
 | Повышение чёткости | Нейросетевые шейдеры, на любой видеокарте | GPU Super Resolution в рендерере D3D11, NVIDIA RTX Video, масштабировщики madVR |
@@ -127,11 +127,6 @@ DLNA-телевизор без перекодирования, а с Mac — н�
 встроено.
 
 ## Когда лучше PotPlayer
-
-<Note>
-  **На ноутбуке с Windows на ARM** у PotPlayer есть нативная сборка, а у Frame
-  Player нет.
-</Note>
 
 - **Глубина настройки.** Если вы хотите выбирать декодер для каждого кодека,
   выстраивать цепочки видеофильтров или детально настраивать рендерер, PotPlayer

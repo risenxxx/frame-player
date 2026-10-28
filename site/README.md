@@ -31,6 +31,16 @@ at the next release. `astro.config.ts` writes them into `_redirects` from the
 same `release()` the buttons use, and the release workflow rebuilds the site,
 which is what moves them on.
 
+`/download/windows-arm64` is the Windows on ARM installer. It is linked only
+when `latest.json` has a `windows-aarch64` key — a release without that build
+gets no link, and the address itself falls back to the release page. Windows on
+ARM reports x64 in its user agent, so the Windows buttons stay x64 in the HTML
+and the head script (`Page.astro`) swaps their address to `data-arm` only when
+Chromium's `getHighEntropyValues(['architecture'])` answers `arm`: the text
+does not change, so the late answer moves nothing. Firefox does not answer at
+all, which is why the "Windows on ARM" link always stands in the download
+facts beside the buttons.
+
 ## The installation count
 
 The hero's "870+ installs" is live: the player reports its first launch once

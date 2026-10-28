@@ -693,7 +693,8 @@ pub struct Collected {
     mpv_log: Option<MpvLog>,
     os: String,
     arch: &'static str,
-    /// An x86_64 build running under Rosetta.
+    /// An x86_64 build running under Rosetta, or under Windows' own x64
+    /// emulation on an ARM64 machine.
     translated: bool,
     portable: bool,
     installed: bool,
@@ -821,9 +822,22 @@ fn os_version() -> String {
     format!("{name} {display} (build {build}.{ubr})")
 }
 
+/// An x64 build on an ARM64 machine. x64 emulation is not WOW64, so the
+/// process machine comes back as "unknown"; the native machine is what tells.
+/// Worth a line in a report because such a copy keeps updating as x64 — it is
+/// how somebody who installed before the ARM64 build existed shows up.
 #[cfg(windows)]
 fn translated() -> bool {
-    false
+    use windows_sys::Win32::System::SystemInformation::IMAGE_FILE_MACHINE_ARM64;
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, IsWow64Process2};
+    if cfg!(target_arch = "aarch64") {
+        return false;
+    }
+    let (mut process, mut native) = (0u16, 0u16);
+    // SAFETY: the pseudo-handle needs no closing, and both out parameters are
+    // u16s, which is what IMAGE_FILE_MACHINE is.
+    let ok = unsafe { IsWow64Process2(GetCurrentProcess(), &mut process, &mut native) };
+    ok != 0 && native == IMAGE_FILE_MACHINE_ARM64
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]

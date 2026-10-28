@@ -80,7 +80,10 @@ HTML。正因如此，它才能是一个真正的界面，而不是 OSC 脚本�
 | 平台 | 文件 | 要求 |
 |---|---|---|
 | Windows | `FramePlayer_<version>_x64-setup.exe` | Windows 10/11，x64 |
+| Windows ARM 版 | `FramePlayer_<version>_arm64-setup.exe` | Windows 10/11，ARM64 |
 | macOS | `FramePlayer_<version>_aarch64.dmg` | Apple Silicon |
+
+在搭载 ARM 处理器的 Windows 笔记本上，请使用 ARM64 安装程序。x64 版本在那里也能通过 Windows 的仿真运行，但速度更慢，而且每次更新后仍是 x64：更新只会换成同一种版本。要切换，请运行 ARM64 安装程序：它会先提示卸载 x64 版本，你的设置和观看历史会保留。
 
 macOS 也可以用一条 `brew install --cask` 安装，见下文 [macOS](#macos)。
 
@@ -90,7 +93,7 @@ macOS 版本使用 Apple Developer ID 签名并经过公证，因此能像其他
 
 ### Windows
 
-1. 运行 `FramePlayer_<version>_x64-setup.exe`。SmartScreen 会显示一个蓝色的 **“Windows 已保护你的电脑”** 对话框，上面只有一个*不运行*按钮。
+1. 运行 `FramePlayer_<version>_x64-setup.exe`（或 `_arm64-setup.exe`）。SmartScreen 会显示一个蓝色的 **“Windows 已保护你的电脑”** 对话框，上面只有一个*不运行*按钮。
 2. 点击 **更多信息**，随即会出现发布者一行，以及一个 **仍要运行** 按钮。
 3. 点击该按钮，安装程序即可正常进行。
 
@@ -231,7 +234,7 @@ brew install --cask risenxxx/tap/frame-player
 
 ## 构建
 
-要求：[proto](https://moonrepo.dev/proto)（首次使用时，它会安装 [.prototools](.prototools) 中固定的 Node.js 和 bun 版本）、Rust（stable），以及 Windows 10/11 x64 或 Apple Silicon 上的 macOS（发布版本仅提供 aarch64；Intel 版本只需在 CI 中再加一项，但目前不提供）。二进制 SDK 不提交到仓库，而是由下面的脚本下载到 `src-tauri/{lib,ffmpeg,tools}`，构建路径在 [.cargo/config.toml](.cargo/config.toml) 中配置。
+要求：[proto](https://moonrepo.dev/proto)（首次使用时，它会安装 [.prototools](.prototools) 中固定的 Node.js 和 bun 版本）、Rust（stable），以及 Windows 10/11（x64 或 ARM64）或 Apple Silicon 上的 macOS（macOS 发布版本仅提供 aarch64；Intel 版本只需在 CI 中再加一项，但目前不提供）。二进制 SDK 不提交到仓库，而是由下面的脚本下载到 `src-tauri/{lib,ffmpeg,tools}`，构建路径在 [.cargo/config.toml](.cargo/config.toml) 中配置。
 
 ### Windows
 
@@ -240,6 +243,12 @@ bun install
 bun run fetch-libs   # libmpv (LGPL) + FFmpeg SDK (LGPL, for the sidecar) + libclang (for bindgen)
 bun run tauri dev    # development run
 bun run tauri build  # NSIS installer
+```
+
+在 ARM64 机器上，请改为下载 ARM64 的 SDK，构建命令本身不变：
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1 -Arch arm64
 ```
 
 ### macOS

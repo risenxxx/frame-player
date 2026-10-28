@@ -73,6 +73,9 @@ export const en = {
   download: {
     windows: 'Download for Windows',
     macos: 'Download for macOS',
+    /* The ARM64 installer, beside the buttons: the Windows button switches to
+       it by itself only where the browser says what the processor is. */
+    windowsArm: 'Windows on ARM',
     version: 'Version {version}',
     platforms: 'Windows 10/11{sep}Apple Silicon',
     license: 'free and open source, GPL-3.0',
@@ -232,7 +235,7 @@ export const en = {
       },
       {
         q: 'Does Frame Player run on Linux or Intel Macs?',
-        a: 'Not yet. Frame Player is built for Windows 10 and 11 (x64) and for Macs with Apple Silicon.',
+        a: 'Not yet. Frame Player is built for Windows 10 and 11, on x64 and on ARM, and for Macs with Apple Silicon.',
       },
     ] as { q: string; a: string; more?: { href: string; label: string } }[],
   },
@@ -318,11 +321,11 @@ export const en = {
     ],
     version: 'Version {version}{released}. Licence: GPL-3.0-or-later.',
     released: ', released {date}',
-    platforms: 'Windows 10 and 11 (x64), macOS on Apple Silicon. No account, no tracking; one anonymous report of the first launch.',
+    platforms: 'Windows 10 and 11 (x64 and ARM64), macOS on Apple Silicon. No account, no tracking; one anonymous report of the first launch.',
     start: 'Start here',
     home: '[Home]({url}): what the player is, with every feature in short.',
     updates: '[Updates]({url}): what every release changed, newest first.',
-    downloads: '[Download for Windows]({windows}) · [Download for macOS]({macos}): always the current release.',
+    downloads: '[Download for Windows]({windows}) · [Windows on ARM]({windowsArm}) · [Download for macOS]({macos}): always the current release.',
     features: 'Features',
     comparisons: 'Comparisons',
     guides: 'Guides',

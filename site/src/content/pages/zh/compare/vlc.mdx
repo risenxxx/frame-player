@@ -5,8 +5,8 @@ heading: 选 Frame Player 还是 VLC？
 lede: VLC 是人人都装过的播放器，这份地位来之不易：它几乎什么都能播，几乎在任何设备上都能运行。Frame Player 基于另一个引擎 mpv，界面围绕它从零设计。下面说明两者各自更适合什么情况。
 eyebrow: 对比
 short: Frame Player 与 VLC
-updated: 2026-09-22
-translated: 2026-09-22
+updated: 2026-10-28
+translated: 2026-10-28
 order: 45
 related:
   - compare/iina
@@ -25,7 +25,7 @@ faq:
   - q: Frame Player 和 VLC 一样免费吗？
     a: 是的。两者都免费开源：Frame Player 采用 GPL-3.0，VLC 采用 GPL-2.0 或更高版本。两者都没有账号、订阅或广告。
   - q: Frame Player 能在 Linux、Android 或 iPhone 上运行吗？
-    a: 不能。它支持 Windows 10 和 11，以及 Apple Silicon 上的 macOS。在 Linux、手机、Intel Mac 或 Windows ARM 笔记本上，请使用 VLC。
+    a: 不能。它支持 Windows 10 和 11（x64 和 ARM 均可），以及 Apple Silicon 上的 macOS。在 Linux、手机或 Intel Mac 上，请使用 VLC。
 ---
 
 import Mock from '../../../../components/prose/Mock.astro'
@@ -41,7 +41,7 @@ import Note from '../../../../components/prose/Note.astro'
 
 | 对比项 | [Frame Player](/zh) | VLC |
 |---|---|---|
-| 支持平台 | Windows 10 和 11，Apple Silicon 上的 macOS | Windows（含 ARM）、macOS、Linux、Android、iOS 等 |
+| 支持平台 | Windows 10 和 11（含 ARM），Apple Silicon 上的 macOS | Windows（含 ARM）、macOS、Linux、Android、iOS 等 |
 | 引擎 | libmpv，使用 FFmpeg 的解码器 | libVLC，使用 FFmpeg 的解码器 |
 | 进度条预览 | 内置 | — |
 | 字幕搜索 | 内置，OpenSubtitles，精确匹配你的版本 | VLSub 扩展，OpenSubtitles |
@@ -97,7 +97,7 @@ Frame Player 的投屏是对照真实电视开发和测量的，思路正好相�
 ## VLC 更合适的情况
 
 <Note>
-  **在 Linux、手机、Intel Mac 或 Windows ARM 笔记本上**，请使用 VLC：Frame Player 运行于搭载 Intel 和 AMD 处理器的 Windows，以及 Apple Silicon Mac。
+  **在 Linux、手机或 Intel Mac 上**，请使用 VLC：Frame Player 运行于 Windows（x64 和 ARM 均可）以及 Apple Silicon Mac。
 </Note>
 
 - **它到处都能运行**。桌面、手机、平板和 Apple TV 上用同一个播放器，这很有价值，没有别的播放器覆盖得这么全。

@@ -6,7 +6,8 @@
 //! client older than this one, because `latest.json` keeps its `windows-x86_64`
 //! key pointing at the setup executable. This one reads a **second** key,
 //! `windows-x86_64-zip`, whose payload is the installation itself as a zip
-//! (`scripts/pack-windows-update.ps1` builds it). Anything that makes the swap
+//! (`scripts/pack-windows-update.ps1` builds it). An ARM64 build reads the
+//! same pair under `windows-aarch64`. Anything that makes the swap
 //! unsafe falls back to that installer, which is why a mistake here costs a
 //! release its *new* update path and never its working one.
 //!
@@ -53,6 +54,15 @@ use tauri::AppHandle;
 /// The manifest key the in-place payload is published under. A key of its own
 /// rather than a replacement: `windows-x86_64` stays the installer, so a client
 /// that predates this file keeps updating exactly as it did.
+///
+/// One per architecture, beside the installer keys the updater itself derives
+/// from the build (`windows-x86_64`, `windows-aarch64`). An x64 copy running
+/// under emulation on an ARM64 machine is an x64 build and keeps reading the
+/// x64 keys: the file set it would swap is the x64 one, so moving it to ARM64
+/// is the installer's job, done by downloading the ARM64 one.
+#[cfg(target_arch = "aarch64")]
+const ZIP_TARGET: &str = "windows-aarch64-zip";
+#[cfg(not(target_arch = "aarch64"))]
 const ZIP_TARGET: &str = "windows-x86_64-zip";
 
 /// The payload's own description of itself, at the root of the zip and

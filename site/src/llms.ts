@@ -39,7 +39,7 @@ export async function llmsText(lang: Locale, site: URL): Promise<string> {
     '',
     `- ${fill(s.home, { url: at(localePath(lang, '/')) })}`,
     `- ${fill(s.updates, { url: at('/updates.md') })}`,
-    `- ${fill(s.downloads, { windows: at('/download/windows'), macos: at('/download/macos') })}`,
+    `- ${fill(s.downloads, { windows: at('/download/windows'), windowsArm: at('/download/windows-arm64'), macos: at('/download/macos') })}`,
     ...group(s.features, (id) => !id.includes('/')),
     ...group(s.comparisons, (id) => id.startsWith('compare/')),
     ...group(s.guides, (id) => id.startsWith('guides/')),

@@ -5,7 +5,7 @@ heading: Looking for PotPlayer on a Mac?
 lede: PotPlayer is Windows only, and there is no Mac version. Frame Player runs on both systems with the same features on each, so it can be the one player on a Windows PC and a Mac. Here is what carries over from PotPlayer, what Frame Player adds, and what you would be giving up.
 eyebrow: Comparison
 short: PotPlayer for Mac
-updated: 2026-10-26
+updated: 2026-10-28
 order: 42
 related:
   - compare/iina
@@ -25,7 +25,7 @@ faq:
   - q: Will Frame Player read my PotPlayer settings or playlists?
     a: No. Settings, hotkeys and bookmarks do not carry over. Frame Player's hotkeys are rebindable, J, K and L work as they do in most players, and opening one episode puts the rest of the folder in the queue by itself.
   - q: Does Frame Player run on Windows on ARM or an Intel Mac?
-    a: Not at the moment. It runs on Windows 10 and 11 on Intel and AMD processors, and on Macs with Apple Silicon. On a Windows ARM laptop PotPlayer has a build; on an Intel Mac, IINA or VLC is the one to use.
+    a: On Windows on ARM, yes — there is a native ARM64 build beside the x64 one. On an Intel Mac, no — it runs on Macs with Apple Silicon only, and IINA or VLC is the one to use there.
 ---
 
 import Mock from '../../../components/prose/Mock.astro'
@@ -49,7 +49,7 @@ and on macOS.
 
 | Compared | [Frame Player](/) | PotPlayer |
 |---|---|---|
-| Runs on | Windows 10 and 11, macOS on Apple Silicon | Windows 7 to 11, including ARM64 |
+| Runs on | Windows 10 and 11, including ARM64; macOS on Apple Silicon | Windows 7 to 11, including ARM64 |
 | Engine | libmpv, with FFmpeg's decoders and libplacebo's renderer | Its own, with built-in codecs; more through OpenCodec |
 | Video renderers | mpv's, the same on both systems | Built-in Direct3D 9 and 11, madVR, MPC Video Renderer |
 | Upscaling | Neural-network shaders, on any graphics card | GPU Super Resolution in the D3D11 renderer, NVIDIA RTX Video, madVR's scalers |
@@ -124,11 +124,6 @@ the same frame ([how](/watch-together)). None of the three is built into
 PotPlayer.
 
 ## Where PotPlayer is the better choice
-
-<Note>
-  **On a Windows ARM laptop**, PotPlayer has a native build and Frame Player does
-  not.
-</Note>
 
 - **Depth of configuration.** If you want to choose the decoder per codec, chain
   video filters or tune the renderer in detail, PotPlayer exposes far more of
