@@ -98,11 +98,42 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup toolchain
+        if: matrix.arch != 'arm64'
         uses: moonrepo/setup-toolchain@v0
         with:
           # Node and bun at exactly the versions `.prototools` pins — the file
           # proto reads on a developer's machine, so CI cannot drift from it.
           auto-install: true
+
+      # The same pins on the ARM64 runner, installed without proto. proto
+      # (0.63) installs the x64 builds of Node, bun and Go there, to run under
+      # emulation, and its Node download hung in all three attempts of the
+      # first ARM64 release while the same file came from nodejs.org in a
+      # quarter of a second by curl. These two put native ARM64 builds in its
+      # place — which also makes bun pick the ARM64 Tauri CLI — and read the
+      # versions from `.prototools`, so the pin is still one line there.
+      - name: Toolchain pins (ARM64)
+        if: matrix.arch == 'arm64'
+        id: pins
+        shell: bash
+        run: |
+          node=$(sed -n 's/^node *= *"\(.*\)"/\1/p' .prototools)
+          bun=$(sed -n 's/^bun *= *"\(.*\)"/\1/p' .prototools)
+          [ -n "$node" ] && [ -n "$bun" ] || { echo "no node/bun pin in .prototools" >&2; exit 1; }
+          echo "node=$node" >> "$GITHUB_OUTPUT"
+          echo "bun=$bun" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node (ARM64)
+        if: matrix.arch == 'arm64'
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ steps.pins.outputs.node }}
+
+      - name: Setup bun (ARM64)
+        if: matrix.arch == 'arm64'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.pins.outputs.bun }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
