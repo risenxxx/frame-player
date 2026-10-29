@@ -28,9 +28,21 @@ const { s } = useLocale(Astro)
             <p class="st-title">Frame Player</p>
             <p class="st-hint"><T s={s.mock.start.hint} /></p>
             <div class="st-actions">
-              <span class="btn btn-primary btn-sm"><T s={s.mock.start.openFile} /></span>
-              <span class="btn btn-ghost btn-sm"><T s={s.mock.start.openLink} /></span>
-              <span class="btn btn-catalog btn-sm"><T s={s.mock.start.catalog} /></span>
+              <span class="st-btn st-primary"><T s={s.mock.common.withKey} p={{ label: s.mock.start.openFile, key: 'O' }} /></span>
+              <span class="st-btn st-outline">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M10 13.5a4.6 4.6 0 0 0 6.9.5l2.7-2.7a4.6 4.6 0 0 0-6.5-6.5L11.5 6.4"/>
+                  <path d="M14 10.5a4.6 4.6 0 0 0-6.9-.5l-2.7 2.7a4.6 4.6 0 0 0 6.5 6.5l1.6-1.6"/>
+                </svg>
+                <T s={s.mock.start.openLink} />
+              </span>
+              <span class="st-btn st-outline st-catalog">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="10.5" cy="10.5" r="6.5"/>
+                  <path d="M15.4 15.4 19.5 19.5"/>
+                </svg>
+                <T s={s.mock.start.catalog} />
+              </span>
             </div>
             <p class="st-sec"><T s={s.mock.start.continue} /></p>
             <div class="rail">

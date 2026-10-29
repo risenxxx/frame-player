@@ -36,6 +36,7 @@ const MOCK_STRINGS: Record<string, Mapping> = {
   'mock.common.addFile': { key: 'osc.add_file' },
   'mock.common.left': { key: 'start.remaining', rename: { t: 'time' } },
   'mock.common.download': { key: 'subs.download' },
+  'mock.common.withKey': { key: 'osc.with_key' },
   'mock.opener.title': { key: 'start.link' },
   'mock.opener.go': { key: 'link.open' },
   'mock.cast.title': { key: 'cast.title' },

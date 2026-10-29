@@ -332,6 +332,7 @@ export const zh: Translation = {
       left: '剩余 {t}',
       peers: '{n} 个用户',
       download: '下载',
+      withKey: '{label}（{key}）',
     },
     opener: {
       title: '打开链接',

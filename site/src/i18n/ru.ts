@@ -337,6 +337,7 @@ export const ru: Translation = {
       left: 'осталось {t}',
       peers: '{n} источн.',
       download: 'Скачать',
+      withKey: '{label} ({key})',
     },
     opener: {
       title: 'Открыть ссылку',

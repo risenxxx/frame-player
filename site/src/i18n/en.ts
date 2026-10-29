@@ -375,6 +375,7 @@ export const en = {
       left: '{t} left',
       peers: '{n} peers',
       download: 'Download',
+      withKey: '{label} ({key})',
     },
     opener: {
       title: 'Open a link',

@@ -33,9 +33,6 @@
 }
 
 .win .mono { font-family: inherit; font-variant-numeric: tabular-nums; }
-/* The start screen borrows the page's buttons for their shape; the lettering
-   is the window's. */
-.win .btn { font-family: inherit; letter-spacing: normal; }
 
 /*
   The same title bar in every mock, and the same one the hero window carries:
@@ -1576,23 +1573,58 @@
 
 /* No surface of its own: the start screen is the window, title bar included. */
 .startscr { padding: 14px 24px 24px; text-align: center; }
-/* The weight is the application's own (`.panel h1`: 600); only the size is
-   scaled to the mock. The name is written the way the player writes it — the
-   all-caps version here was mine, and it read as a different typeface. */
-.st-title { font-size: 26px; font-weight: 600; }
-.st-hint { margin-top: 6px; font-size: 12.5px; color: var(--fg3); }
-.st-actions { margin-top: 18px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+/* The title is the application's `.panel h1` — weight 600 and 0.06em of
+   tracking — with only the size scaled to the mock; without the tracking the
+   name reads denser than the player draws it. */
+.st-title { font-size: 26px; font-weight: 600; letter-spacing: 0.06em; }
+.st-hint { margin-top: 6px; font-size: 12.5px; color: var(--fg2); }
+.st-actions { margin-top: 16px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 10px; }
+
+/*
+  The ways in, drawn after the application's own `button.primary` and
+  `button.btn-outline` (src/app.css) rather than borrowed from the page's
+  `.btn`: the player sets them at weight 400 with a little tracking, where the
+  page's buttons are 500 and tight, and its primary is the indigo fill, not
+  the page's white one. "Open file" carries its key the way the player writes
+  it, through `osc.with_key`.
+*/
+.st-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 15px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.st-primary { background: #6366f1; color: #fff; }
+.st-outline { padding-left: 12px; border-color: var(--line2); color: var(--fg); }
+.st-outline svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
 
 /*
   The catalog button wears a gradient hairline and no fill — the application's
   one exception to "indigo means selected", and the reason it works is that a
-  ring is a different token from a fill.
+  ring is a different token from a fill. Its glyph carries the accent too.
 */
-.btn-catalog {
-  background: linear-gradient(var(--win), var(--win)) padding-box, linear-gradient(90deg, #818cf8, #6366f1 55%, #a855f7) border-box;
-  border: 1px solid transparent;
-  color: var(--fg);
+.st-catalog {
+  background: linear-gradient(var(--win), var(--win)) padding-box, linear-gradient(90deg, #818cf8, #6366f1 45%, #a855f7) border-box;
+  border-color: transparent;
 }
+.st-catalog svg { color: var(--acc); opacity: 1; }
 
 .st-sec { margin-top: 26px; display: flex; align-items: baseline; gap: 10px; font-size: 12px; color: var(--fg3); text-align: left; }
 .st-sec::after { content: ""; flex: 1; height: 1px; background: var(--line); }
