@@ -536,6 +536,7 @@ export const zh = {
   'ctx.fullscreen': '全屏',
   'ctx.mini': '迷你播放器',
   'ctx.mini_exit': '退出迷你播放器',
+  'ctx.geometry': '尺寸与旋转',
   'ctx.picture': '画面',
   'ctx.rotate': '旋转',
   'ctx.aspect': '画面比例',

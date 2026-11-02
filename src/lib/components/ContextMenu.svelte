@@ -2,9 +2,9 @@
   /// The right-click menu.
   ///
   /// Grouped rather than listed: anything with more than two related entries
-  /// (file, frame, playback, picture, window) is a submenu, which took it from
-  /// ~19 rows to 11 — a menu that had to scroll in an ordinary window was the
-  /// sign it had outgrown a flat list. What stays at the top level is what has
+  /// (file, frame, playback, geometry, picture, window) is a submenu, which took
+  /// it from ~19 rows to 12 — a menu that had to scroll in an ordinary window
+  /// was the sign it had outgrown a flat list. What stays at the top level is what has
   /// no group and is reached often.
   ///
   /// The submenu machinery lives here because nothing outside needs it: which
@@ -157,7 +157,7 @@
   /// itself still needs a single ref, while the ANCHORS need one each: every
   /// head is always in the DOM, and sharing a ref would leave it pointing at
   /// whichever rendered last rather than at the open one.
-  type CtxSub = 'file' | 'frame' | 'playback' | 'picture' | 'window';
+  type CtxSub = 'file' | 'frame' | 'playback' | 'geometry' | 'picture' | 'window';
   let ctxSubmenu = $state<CtxSub | null>(null);
   let ctxSubEl = $state<HTMLDivElement | undefined>();
   /// One anchor per head, keyed by submenu. A plain object rather than $state:
@@ -306,13 +306,14 @@
   oncontextmenu={blockContextMenu}
 >
   <!-- Grouped rather than listed: anything with more than two related
-       entries becomes a submenu, which takes the menu from ~19 rows to 11
+       entries becomes a submenu, which takes the menu from ~19 rows to 12
        and makes it fit windows it used to have to scroll in. What stays at
        the top level is what has no group and is reached often — the two
        size modes, the settings. -->
   {@render submenuHead('file', t('ctx.file'), false)}
   {@render submenuHead('frame', t('ctx.frame'), !hasFile)}
   {@render submenuHead('playback', t('ctx.playback'), !hasFile)}
+  {@render submenuHead('geometry', t('ctx.geometry'), !hasFile)}
   {@render submenuHead('picture', t('ctx.picture'), !hasFile)}
   <div class="menu-sep"></div>
   <button class="menu-item" onclick={() => { close(); actions.toggleFullscreen(); }}>
@@ -355,6 +356,7 @@
 {@render submenuPanel('file', fileItems)}
 {@render submenuPanel('frame', frameItems)}
 {@render submenuPanel('playback', playbackItems)}
+{@render submenuPanel('geometry', geometryItems)}
 {@render submenuPanel('picture', pictureItems)}
 {@render submenuPanel('window', windowItems)}
 
@@ -493,8 +495,11 @@
   </div>
 {/snippet}
 
-{#snippet pictureItems()}
-  <!-- Every option here stays open: these are tried against the picture and
+{#snippet geometryItems()}
+  <!-- Split from the picture panel: the shape of the frame is set once per
+       file from rows of pills, while the colour sliders are worked at, and
+       together they made a panel that scrolled in the mini player. Every
+       option in both stays open: these are tried against the picture and
        compared, not chosen once from a list — the same reasoning as the
        delay stepper in the track menus. -->
   <div class="menu-title">{t('ctx.rotate')}</div>
@@ -556,7 +561,9 @@
   >
     {t('ctx.panscan')}
   </button>
-  <div class="menu-sep"></div>
+{/snippet}
+
+{#snippet pictureItems()}
   <div class="menu-title">{t('upscale.title')}</div>
   {#if upscale.userShaders}
     <div class="crop-note">{t('upscale.user_conf')}</div>

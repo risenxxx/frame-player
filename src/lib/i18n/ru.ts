@@ -623,6 +623,7 @@ export const ru = {
   'ctx.fullscreen': 'Полноэкранный режим',
   'ctx.mini': 'Мини-плеер',
   'ctx.mini_exit': 'Выйти из мини-плеера',
+  'ctx.geometry': 'Геометрия',
   'ctx.picture': 'Изображение',
   'ctx.rotate': 'Поворот',
   'ctx.aspect': 'Пропорции',

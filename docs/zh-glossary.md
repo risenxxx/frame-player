@@ -76,6 +76,7 @@ Frame Player, mpv, mpv.conf, FFmpeg, yt-dlp, OpenSubtitles, BitTorrent, DHT, MSE
 | volume / mute | 音量 / 静音 | |
 | repeat / loop | 循环 | `Repeat: all` → 循环：全部 |
 | A–B loop / segment | A-B 循环 / 片段 | |
+| geometry (the context-menu group: rotation, aspect, crop) | 尺寸与旋转 | 几何 reads as mathematics; the group is named by what it holds |
 | aspect ratio | 画面比例 | |
 | crop / black bars | 裁剪 / 黑边 | |
 | zoom | 缩放 | |

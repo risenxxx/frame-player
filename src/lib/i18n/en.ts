@@ -604,6 +604,7 @@ export const en = {
   'ctx.fullscreen': 'Fullscreen',
   'ctx.mini': 'Mini player',
   'ctx.mini_exit': 'Leave the mini player',
+  'ctx.geometry': 'Geometry',
   'ctx.picture': 'Picture',
   'ctx.rotate': 'Rotation',
   'ctx.aspect': 'Aspect ratio',
