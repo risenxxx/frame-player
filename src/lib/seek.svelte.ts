@@ -103,6 +103,10 @@ class Seek {
   settling = false;
   /// A wheel scrub is running.
   scrubbing = false;
+  /// The scrub muted mpv for itself. The sound is silent, but the viewer did
+  /// not ask for silence, so the volume bar and the mute icon must not show
+  /// it: they read `playback.muted`, which looks past this.
+  gestureMuted = $state(false);
   /// Fingers on the trackpad (from NSEvent.phase in Rust, see macos_chrome.rs).
   /// While true the gesture cannot end by timeout: stopping the fingers
   /// mid-seek must not resume playback.
@@ -608,6 +612,7 @@ export function scrubBy(deltaSeconds: number) {
       .then((m) => {
         if (!m && seek.scrubbing) {
           scrubUnmute = true;
+          seek.gestureMuted = true;
           void setProperty('mute', true);
         }
       })
@@ -664,4 +669,5 @@ export function endScrub() {
     scrubUnmute = false;
     void setProperty('mute', false);
   }
+  seek.gestureMuted = false;
 }

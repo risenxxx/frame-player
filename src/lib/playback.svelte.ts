@@ -83,7 +83,7 @@ import {
   unmute as mpvUnmute,
 } from './player.svelte';
 import { type PlaylistEntry, playEntry } from './playlist.svelte';
-import { seekPercent, seekRelative } from './seek.svelte';
+import { seek, seekPercent, seekRelative } from './seek.svelte';
 import { togglePlayback } from './step-engine.svelte';
 
 /**
@@ -158,9 +158,12 @@ class Playback {
   }
 
   /// "Shows as silent", which locally includes a volume dialled to zero — that
-  /// is what the icon has always meant and it is what the viewer sees.
+  /// is what the icon has always meant and it is what the viewer sees. Not the
+  /// mute a scrub puts on for itself (`seek.gestureMuted`): the volume bar
+  /// dropped to zero for every wheel seek.
   get muted(): boolean {
-    return cast.remote ? cast.muted : player.muted || player.volume === 0;
+    if (cast.remote) return cast.muted;
+    return (player.muted && !seek.gestureMuted) || player.volume === 0;
   }
 
   /// Which chapter the film is actually in.
