@@ -20,6 +20,8 @@
   import { t } from '$lib/i18n.svelte';
   import { wire } from '$lib/sync/wire.svelte';
   import { hint } from '$lib/keys.svelte';
+  import { leveling, toggleLeveling } from '$lib/leveling.svelte';
+  import { playback } from '$lib/playback.svelte';
   import { showOsd } from '$lib/osd.svelte';
   import { IS_MAC } from '$lib/platform';
   import { ASPECT_AUTO, LOOP_LABEL, isNetworkSource, player, type PictureProp } from '$lib/player.svelte';
@@ -480,6 +482,18 @@
   <button class="menu-item" class:active={player.loopA !== null} disabled={!hasFile} onclick={() => actions.cycleAbLoop()}>
     {t(player.loopA === null ? 'ctx.ab_set_a' : player.loopB === null ? 'ctx.ab_set_b' : 'ctx.ab_clear')}
     <span class="hint">{hint('ab_loop')}</span>
+  </button>
+  <!-- A preference rather than something about this file, but it is a part of
+       how the film plays and this is where somebody looks for it at night.
+       Lit by the stored choice, like the loop row; under bitstreaming it stays
+       clickable so the OSD can say why nothing changes. -->
+  <button
+    class="menu-item"
+    class:active={player.normalize && !leveling.bitstream}
+    disabled={!playback.can.leveling}
+    onclick={() => { close(); toggleLeveling(); }}
+  >
+    {t('set.normalize')} <span class="hint">{hint('normalize')}</span>
   </button>
   <div class="menu-title">{t('ctx.speed')}</div>
   <div class="speedrow">

@@ -64,6 +64,7 @@ export type ActionId =
   | 'volume_up'
   | 'volume_down'
   | 'mute'
+  | 'normalize'
   | 'audio_delay_down'
   | 'audio_delay_up'
   | 'sub_delay_down'
@@ -168,6 +169,8 @@ export const ACTIONS: ActionDef[] = [
   { id: 'volume_up', group: 'audio', def: ['ArrowUp'], quiet: true },
   { id: 'volume_down', group: 'audio', def: ['ArrowDown'], quiet: true },
   { id: 'mute', group: 'audio', def: ['KeyM'], noRepeat: true },
+  // Raises its own OSD, which says which way it went.
+  { id: 'normalize', group: 'audio', def: ['KeyN'], noRepeat: true, quiet: true },
   { id: 'audio_delay_down', group: 'audio', def: ['ctrl+Minus'], quiet: true },
   { id: 'audio_delay_up', group: 'audio', def: ['ctrl+Equal'], quiet: true },
 

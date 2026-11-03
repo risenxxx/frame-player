@@ -21,6 +21,7 @@ import { playerHooks } from './bridge.svelte';
 import { chrome, pokeUi, scheduleVeilRelease } from './chrome.svelte';
 import { flushPosition, loadHistoryPrefs, loadRecent, maybeRecordPosition } from './history.svelte';
 import { locale } from './i18n.svelte';
+import { refreshLeveling } from './leveling.svelte';
 import {
   armClickSuppression,
   clearClickSuppression,
@@ -189,6 +190,7 @@ export async function boot() {
     ...(await initPlayer(playerHooks)),
   );
   if (player.initError) return;
+  void refreshLeveling();
 
   // Atomic zoom+pan: load-script at runtime (unlike the init option it
   // returns an error if the build has no Lua or the path is wrong)

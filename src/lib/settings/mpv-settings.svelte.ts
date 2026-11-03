@@ -13,6 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { command, getProperty } from 'tauri-plugin-libmpv-api';
 
 import { refreshAudioOutput } from '$lib/audio-output.svelte';
+import { refreshLeveling } from '$lib/leveling.svelte';
 import { IS_MAC } from '$lib/platform';
 import { t } from '$lib/i18n.svelte';
 import { mpvLangValue, parseLangList } from '$lib/languages';
@@ -373,6 +374,8 @@ export class MpvSettings {
     const applied = command('set', [def.key, v ?? def.liveDefault]).catch(() => {});
     // Another device has its own offset (audio-output.svelte.ts).
     if (def.key === 'audio-device') void applied.then(() => refreshAudioOutput());
+    // Bitstreaming leaves the leveling filter nothing to work on (leveling.svelte.ts).
+    if (def.key === 'audio-spdif') void applied.then(() => refreshLeveling());
     // persist into mpv.conf (surgically, leaving the rest alone)
     clearTimeout(this.#confWrites.get(def.key));
     const write = () => {

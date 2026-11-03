@@ -29,6 +29,7 @@ import { chrome, exitFullscreen, pokeUi, toggleFullscreen } from './chrome.svelt
 import { inTextField } from './dom';
 import { cancelAdvance, endOfFile, takeSkip } from './endscreen.svelte';
 import { actionFor, chordOf, isDigitJump, type ActionId } from './keys.svelte';
+import { toggleLeveling } from './leveling.svelte';
 import { openFileDialog, openLinkDialog } from './open.svelte';
 import { closeTopmost, dismissTopmostOnClick, overlays, toggleInfo } from './overlays.svelte';
 import {
@@ -471,6 +472,7 @@ export function runAction(id: ActionId) {
     case 'volume_up': nudgeVolume(VOLUME_KEY_STEP); break;
     case 'volume_down': nudgeVolume(-VOLUME_KEY_STEP); break;
     case 'mute': toggleMute(); break;
+    case 'normalize': toggleLeveling(); break;
     case 'audio_delay_down': nudgeDelayHere('audio', -DELAY_STEP); break;
     case 'audio_delay_up': nudgeDelayHere('audio', DELAY_STEP); break;
     case 'sub_delay_down': nudgeDelayHere('sub', -DELAY_STEP); break;

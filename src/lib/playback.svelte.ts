@@ -119,7 +119,8 @@ export type Feature =
   | 'mini'
   | 'trash'
   | 'picture'
-  | 'audioMix';
+  | 'audioMix'
+  | 'leveling';
 
 class Playback {
   /// The television owns playback and this window is a remote. False while
@@ -207,6 +208,8 @@ class Playback {
       // own. `active`, like `trash`: a mix started while a session is being
       // prepared would be handed a file whose audio the receiver never hears.
       audioMix: !cast.active,
+      // A filter on the local decoder's output; the television decodes its own.
+      leveling: !remote,
     };
   }
 }
@@ -477,6 +480,7 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
   volume_up: 'local',
   volume_down: 'local',
   mute: 'local',
+  normalize: 'leveling',
   audio_delay_down: 'delays',
   audio_delay_up: 'delays',
   sub_delay_down: 'delays',
@@ -564,6 +568,7 @@ const SYNC_BEHAVIOR: Record<ActionId, 'shared' | 'personal' | 'solo'> = {
   volume_up: 'personal',
   volume_down: 'personal',
   mute: 'personal',
+  normalize: 'personal',
   audio_delay_down: 'personal',
   audio_delay_up: 'personal',
   sub_delay_down: 'personal',

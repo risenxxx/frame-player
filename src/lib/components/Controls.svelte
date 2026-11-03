@@ -9,6 +9,7 @@
   import { cast } from '$lib/cast.svelte';
   import { t } from '$lib/i18n.svelte';
   import { hintPair, withKey } from '$lib/keys.svelte';
+  import { levelingHeard, toggleLeveling } from '$lib/leveling.svelte';
   import {
     VOLUME_SCALE,
     advance,
@@ -236,6 +237,21 @@
   />
   {#if player.speed !== 1 && playback.can.speed}
     <span class="speed" data-tip={t('osc.speed')} aria-label={t('osc.speed')}>{player.speed}×</span>
+  {/if}
+  <!-- Shown only while leveling is on and heard, like the speed beside it: a
+       state that changes how everything sounds should not be invisible once
+       the evening is over. A click turns it off; turning it on is the key and
+       the context menu's row. Narrower than the row's 36px buttons because it
+       is a readout first, and the left cluster has no fold of its own. -->
+  {#if levelingHeard()}
+    <button
+      class="leveling active"
+      data-tip={withKey(t('osc.leveling'), 'normalize')}
+      aria-label={t('osc.leveling')}
+      onclick={toggleLeveling}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 4.5h18V6H3zM3 18h18v1.5H3zM5 9h2v6H5zm4-1.5h2v9H9zm4 0h2v9h-2zm4 1.5h2v6h-2z"/></svg>
+    </button>
   {/if}
   </div>
   <div class="cluster cl-center" bind:this={centerEl}>
@@ -526,6 +542,10 @@
     font-weight: 600;
     padding: 0 6px;
     text-shadow: var(--ui-shadow);
+  }
+
+  .controls button.leveling {
+    width: 28px;
   }
 
   .volumebar {

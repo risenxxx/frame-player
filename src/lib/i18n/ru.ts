@@ -98,6 +98,9 @@ export const ru = {
   'osd.ab_a': 'Начало отрезка: {time}',
   'osd.ab_on': 'Повтор отрезка, {time}',
   'osd.ab_off': 'Повтор отрезка выключен',
+  'osd.leveling_on': 'Выравнивание громкости: включено',
+  'osd.leveling_off': 'Выравнивание громкости: выключено',
+  'osd.leveling_spdif': 'Недоступно при выводе битстрима на ресивер',
   'osd.ab_after_a': 'Конец отрезка должен быть позже начала',
   'osd.loop_off': 'Повтор: выключен',
   'osd.loop_all': 'Повтор: все файлы',
@@ -907,6 +910,7 @@ export const ru = {
   'keys.volume_up': 'Громче',
   'keys.volume_down': 'Тише',
   'keys.mute': 'Выключить звук',
+  'keys.normalize': 'Выравнивание громкости',
   'keys.audio_delay_down': 'Звук раньше',
   'keys.audio_delay_up': 'Звук позже',
   'keys.sub_delay_down': 'Субтитры раньше',
@@ -1024,6 +1028,7 @@ export const ru = {
 
   'osc.sound': 'Звук',
   'osc.speed': 'Скорость ([ / ])',
+  'osc.leveling': 'Выравнивание громкости включено — нажмите, чтобы выключить',
   // The key is a parameter rather than part of the sentence: it is editable now,
   // so a translation carrying "(пробел)" would go stale the moment it is moved.
   'osc.prev': 'Предыдущий файл',
