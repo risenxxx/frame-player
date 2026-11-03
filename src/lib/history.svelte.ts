@@ -98,7 +98,7 @@ type TrackEntry = {
   /// In the folder store only: the crop mode chosen anywhere in this playlist
   /// ('none' included, so turning it off on one episode turns it off for all).
   cropMode?: string;
-  /// Brightness, contrast, saturation and gamma (picture-adjust.svelte.ts). In
+  /// Brightness, contrast, saturation, gamma and hue (picture-adjust.svelte.ts). In
   /// the file store when it applies to one file, in the folder store when it
   /// applies to the playlist.
   adjust?: Adjust;
@@ -109,8 +109,14 @@ type TrackEntry = {
   ts: number;
 };
 
-/// mpv's four equalizer properties, each -100..100.
-export type Adjust = { brightness: number; contrast: number; saturation: number; gamma: number };
+/// mpv's five equalizer properties, each -100..100.
+export type Adjust = { brightness: number; contrast: number; saturation: number; gamma: number; hue: number };
+
+/// A record written before hue existed has four fields; reading it as five
+/// keeps every consumer from seeing `undefined` where a slider wants a number.
+function fullAdjust(a: Partial<Adjust> | null | undefined): Adjust | null {
+  return a ? { brightness: 0, contrast: 0, saturation: 0, gamma: 0, hue: 0, ...a } : null;
+}
 
 /// How a crop was chosen, and the rectangle it came to. The rectangle is stored
 /// rather than recomputed so reopening a file does not decode it again; the
@@ -511,8 +517,8 @@ export function adjustScopes(path: string): {
   const folderKey = folderScopeKey(path);
   const priv = isPrivatePath(path);
   return {
-    file: priv ? null : (entriesLoad(TRACKS_KEY)[sourceId(path)]?.adjust ?? null),
-    folder: priv || !folderKey ? null : (entriesLoad(FOLDER_TRACKS_KEY)[folderKey]?.adjust ?? null),
+    file: priv ? null : fullAdjust(entriesLoad(TRACKS_KEY)[sourceId(path)]?.adjust),
+    folder: priv || !folderKey ? null : fullAdjust(entriesLoad(FOLDER_TRACKS_KEY)[folderKey]?.adjust),
     all: loadAdjustAll(),
     hasFolder: !!folderKey,
   };
@@ -521,7 +527,7 @@ export function adjustScopes(path: string): {
 export function loadAdjustAll(): Adjust | null {
   try {
     const raw = localStorage.getItem(ADJUST_KEY);
-    return raw ? (JSON.parse(raw) as Adjust) : null;
+    return raw ? fullAdjust(JSON.parse(raw) as Partial<Adjust>) : null;
   } catch {
     return null;
   }

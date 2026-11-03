@@ -81,6 +81,8 @@ export type ActionId =
   | 'saturation_up'
   | 'gamma_down'
   | 'gamma_up'
+  | 'hue_down'
+  | 'hue_up'
   | 'adjust_reset'
   | 'upscale_cycle'
   | 'open_file'
@@ -178,7 +180,7 @@ export const ACTIONS: ActionDef[] = [
   { id: 'mini', group: 'view', def: ['KeyP'], noRepeat: true, menuMac: 'shift+meta+KeyM' },
   { id: 'info', group: 'view', def: ['KeyI'], noRepeat: true, menuMac: 'meta+KeyI' },
   { id: 'reset_zoom', group: 'view', def: ['ctrl+Digit0'], quiet: true },
-  // The picture panel is the only one with a default key: the eight steps below
+  // The picture panel is the only one with a default key: the ten steps below
   // are for somebody who adjusts often enough to want them, and mpv's own keys
   // for them (1–8) are the digit jumps here.
   { id: 'picture_menu', group: 'picture', def: ['KeyC'], noRepeat: true },
@@ -190,6 +192,8 @@ export const ACTIONS: ActionDef[] = [
   { id: 'saturation_up', group: 'picture', def: [], quiet: true },
   { id: 'gamma_down', group: 'picture', def: [], quiet: true },
   { id: 'gamma_up', group: 'picture', def: [], quiet: true },
+  { id: 'hue_down', group: 'picture', def: [], quiet: true },
+  { id: 'hue_up', group: 'picture', def: [], quiet: true },
   { id: 'adjust_reset', group: 'picture', def: [], noRepeat: true, quiet: true },
   { id: 'upscale_cycle', group: 'picture', def: [], noRepeat: true, quiet: true },
 

@@ -126,6 +126,17 @@ describe('WheelGesture', () => {
     expect(g.feed(ev(100, 0, true), 'volume', 5, false, false)).toBeNull();
   });
 
+  it('re-decides when the pointer moves onto the seekbar mid-gesture, dropping what was collected', () => {
+    // Volume over the video, then the same gesture reaches the seekbar, which
+    // asks for a seek: the 15 px collected towards volume do not leak into it.
+    const g = new WheelGesture();
+    expect(g.feed(ev(0, -15), 'volume', 5, false, true)).toBeNull();
+    expect(g.feed(ev(0, -100), 'seek', 5, false, true)).toEqual({ seek: 5 });
+    expect(g.channel).toBe('notch');
+    // And back off it.
+    expect(g.feed(ev(0, -100), 'volume', 5, false, true)).toEqual({ volume: 5 });
+  });
+
   it('counts lines and pages in pixels', () => {
     // Three lines of 16 px.
     expect(run([ev(0, -3, false, 1)], 'volume')).toEqual([{ volume: 2 }]);

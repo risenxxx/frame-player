@@ -108,7 +108,7 @@ describe('picture adjustments', () => {
     setAdjustScope('file');
     setAdjust('saturation', 0);
     open(OTHER);
-    expect(adjustScopes(B).file).toEqual({ brightness: 0, contrast: 0, saturation: 0, gamma: 0 });
+    expect(adjustScopes(B).file).toEqual({ brightness: 0, contrast: 0, saturation: 0, gamma: 0, hue: 0 });
     open(B);
     expect(adjust.values.saturation).toBe(0);
     open(A);
@@ -126,6 +126,14 @@ describe('picture adjustments', () => {
     expect(adjust.values.brightness).toBe(30);
     setGlobalAdjust('brightness', 20);
     expect(sent.brightness).toBe(20);
+  });
+
+  it('reads a record from before hue as hue zero, and sends it', () => {
+    // Written by a release that had four sliders.
+    localStorage.setItem('frameplayer.picture', JSON.stringify({ brightness: 8, contrast: 0, saturation: 0, gamma: 0 }));
+    open(A);
+    expect(adjust.values).toEqual({ brightness: 8, contrast: 0, saturation: 0, gamma: 0, hue: 0 });
+    expect(sent.hue).toBe(0);
   });
 
   it('a file showing nothing starts following the global values', () => {
@@ -158,7 +166,7 @@ describe('picture adjustments', () => {
       setUp();
       resolveAdjustConflict('mine');
       expect(adjust.scope).toBe('all');
-      expect(adjust.global).toEqual({ brightness: 12, contrast: 0, saturation: 0, gamma: 0 });
+      expect(adjust.global).toEqual({ brightness: 12, contrast: 0, saturation: 0, gamma: 0, hue: 0 });
       open(OTHER);
       expect(adjust.values.brightness).toBe(12);
       expect(adjust.values.contrast).toBe(0);
@@ -168,7 +176,7 @@ describe('picture adjustments', () => {
       setUp();
       resolveAdjustConflict('theirs');
       expect(adjust.scope).toBe('all');
-      expect(adjust.values).toEqual({ brightness: 0, contrast: 25, saturation: 0, gamma: 0 });
+      expect(adjust.values).toEqual({ brightness: 0, contrast: 25, saturation: 0, gamma: 0, hue: 0 });
       expect(sent.contrast).toBe(25);
       expect(sent.brightness).toBe(0);
       expect(adjustScopes(A).file).toBeNull();

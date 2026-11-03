@@ -1,7 +1,11 @@
 /**
- * Brightness, contrast, saturation and gamma: mpv's equalizer, set from the
- * context menu's picture panel, from the settings sheet (the global values
- * only) and from four pairs of unbound hotkeys.
+ * Brightness, contrast, saturation, gamma and hue: mpv's equalizer, set from
+ * the context menu's picture panel, from the settings sheet (the global values
+ * only) and from five pairs of unbound hotkeys.
+ *
+ * Hue came last and is the one that rotates colour rather than scaling it:
+ * -100..100 is mpv's ±180°. It acts on the chroma planes, so a source that is
+ * already RGB (a PNG, some screen recordings) does not respond to it.
  *
  * **Three scopes, and the narrowest one that has something wins.** A value is
  * kept for this file, for its playlist (the folder, or the torrent; the same
@@ -38,7 +42,7 @@ import { isUserConfKey, player } from './player.svelte';
 
 export type { Adjust, AdjustScope };
 
-export const ADJUST_PARAMS = ['brightness', 'contrast', 'saturation', 'gamma'] as const;
+export const ADJUST_PARAMS = ['brightness', 'contrast', 'saturation', 'gamma', 'hue'] as const;
 export type AdjustParam = (typeof ADJUST_PARAMS)[number];
 
 export const ADJUST_SCOPES: readonly AdjustScope[] = ['file', 'folder', 'all'];
@@ -51,7 +55,7 @@ export const ADJUST_KEY_STEP = 2;
 /// writing down.
 const WRITE_MS = 400;
 
-export const ZERO: Adjust = { brightness: 0, contrast: 0, saturation: 0, gamma: 0 };
+export const ZERO: Adjust = { brightness: 0, contrast: 0, saturation: 0, gamma: 0, hue: 0 };
 
 export function isZero(a: Adjust | null): boolean {
   return !a || ADJUST_PARAMS.every((k) => !a[k]);

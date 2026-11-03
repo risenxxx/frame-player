@@ -80,7 +80,7 @@ Frame Player, mpv, mpv.conf, FFmpeg, yt-dlp, OpenSubtitles, BitTorrent, DHT, MSE
 | aspect ratio | 画面比例 | |
 | crop / black bars | 裁剪 / 黑边 | |
 | zoom | 缩放 | |
-| brightness / contrast / saturation / gamma | 亮度 / 对比度 / 饱和度 / 伽马 | |
+| brightness / contrast / saturation / gamma / hue | 亮度 / 对比度 / 饱和度 / 伽马 / 色相 | 色相, not 色调: 色调 is already “tone” in 色调映射 |
 | tone mapping | 色调映射 | |
 | hardware / software decoding | 硬件解码 / 软件解码 | short pill label: 硬件 / 软件 |
 | media information | 媒体信息 | |

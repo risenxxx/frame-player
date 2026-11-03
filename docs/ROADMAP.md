@@ -42,7 +42,7 @@ nothing about watching a film.
 | 28 | Subtitles lifted clear of the control bar while it is up |
 | 34 | Black bars removed: measured across the whole file, or cut to a named shape; the choice holds for the whole playlist and each file is measured for itself |
 | 35 | Seek steps the viewer sets, for the arrows and for J/L |
-| 36 | Brightness, contrast, saturation and gamma, per file, per playlist or for every file, set in a menu that turns see-through while a slider moves |
+| 36 | Brightness, contrast, saturation, gamma and hue, per file, per playlist or for every file, set in a menu that turns see-through while a slider moves |
 | 37 | AirPlay on the Mac, through the system's own player and list of receivers; deliberately not on Windows ([airplay.md](airplay.md)) |
 | 38 | Upscaling by neural-network shaders, for one file or a whole playlist, saying when the size on screen makes it unnecessary |
 

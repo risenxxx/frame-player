@@ -840,7 +840,7 @@
     border-radius: 11px;
   }
 
-  /* The picture sliders. Three columns so the four tracks start and end on the
+  /* The picture sliders. Three columns so the five tracks start and end on the
      same x whatever the label, and a fixed readout so the digits do not push
      the track while it moves. */
   .adjust {

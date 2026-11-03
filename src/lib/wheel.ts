@@ -77,11 +77,16 @@ export class WheelGesture {
   /// Whether the lock came from Shift rather than from the event's own deltas,
   /// so that letting Shift go can unlock it again.
   shifted = false;
+  /// The mode the lock was taken under. The pointer moving onto the seekbar
+  /// or the volume slider changes it mid-gesture, and that re-decides the
+  /// channel the way Shift does.
+  private mode: WheelMode | null = null;
   private accum = 0;
 
   reset() {
     this.channel = null;
     this.shifted = false;
+    this.mode = null;
     this.accum = 0;
   }
 
@@ -97,9 +102,11 @@ export class WheelGesture {
     // explicit ask rather than the diagonal noise the lock exists for, so it
     // re-decides the channel instead of waiting the gesture out. The
     // accumulator goes with it, or the fraction of a second already collected
-    // lands as volume, and the other way round.
-    if (shifted !== this.shifted) {
+    // lands as volume, and the other way round. The mode changing is the same
+    // kind of ask: the pointer crossing onto the seekbar or the volume slider.
+    if (shifted !== this.shifted || mode !== this.mode) {
       this.shifted = shifted;
+      this.mode = mode;
       this.channel = null;
       this.accum = 0;
     }

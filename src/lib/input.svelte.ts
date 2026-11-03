@@ -56,7 +56,7 @@ import { nudgeDelayHere } from './tracks.svelte';
 import { mini, toggleMini, windowPrefs } from './window-prefs.svelte';
 import { isZoomed, panBy, resetZoom, zoomAt } from './zoom.svelte';
 import { zoomStep } from './zoom-step';
-import { WheelGesture } from './wheel';
+import { WheelGesture, type WheelMode } from './wheel';
 import { IS_MAC } from './platform';
 
 /// Set once from the system rather than guessed: the cast click path waits it
@@ -365,6 +365,19 @@ export function resetWheelGesture() {
   wheel.reset();
 }
 
+/**
+ * The wheel over a control means that control, whatever the setting says: over
+ * the seekbar (its hover preview included) it seeks, over the volume slider it
+ * sets the volume. Everywhere else — the video, the rest of the bar — it is the
+ * viewer's choice. Shift still swaps the two, as it does over the video.
+ */
+function wheelModeAt(target: EventTarget | null): WheelMode {
+  const el = target as HTMLElement | null;
+  if (el?.closest('.seekwrap')) return 'seek';
+  if (el?.closest('.volumebar')) return 'volume';
+  return seekSteps.wheel;
+}
+
 export function onWheel(e: WheelEvent) {
   const onSurface = !!(e.target as HTMLElement | null)?.closest(WHEEL_SURFACES);
   if (e.ctrlKey) {
@@ -401,7 +414,7 @@ export function onWheel(e: WheelEvent) {
   const remote = playback.remote;
   const r = wheel.feed(
     remote ? { deltaX: 0, deltaY: e.deltaY, deltaMode: e.deltaMode, shiftKey: false } : e,
-    remote ? 'volume' : seekSteps.wheel,
+    remote ? 'volume' : wheelModeAt(e.target),
     seekSteps.wheelStep,
     IS_MAC,
     player.hasFile && player.duration > 0,
@@ -475,6 +488,8 @@ export function runAction(id: ActionId) {
     case 'saturation_up': nudgeAdjust('saturation', ADJUST_KEY_STEP); break;
     case 'gamma_down': nudgeAdjust('gamma', -ADJUST_KEY_STEP); break;
     case 'gamma_up': nudgeAdjust('gamma', ADJUST_KEY_STEP); break;
+    case 'hue_down': nudgeAdjust('hue', -ADJUST_KEY_STEP); break;
+    case 'hue_up': nudgeAdjust('hue', ADJUST_KEY_STEP); break;
     case 'adjust_reset': resetAdjust(); break;
     case 'upscale_cycle': cycleUpscale(); break;
     case 'open_file': void openFileDialog(); break;
