@@ -705,6 +705,7 @@ export const ru = {
   'ctx.playback': 'Воспроизведение',
   'ctx.win_size': 'Размер по видео',
   'ctx.settings': 'Параметры…',
+  'ctx.about': 'О программе',
   'ctx.default_apps': 'Приложения по умолчанию…',
 
   'set.title': 'Параметры',

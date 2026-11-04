@@ -58,6 +58,7 @@
       backToStart: () => void backToStart(),
       toggleInfo: () => toggleInfo(player.hasFile),
       openSettings: () => (overlays.settings = true),
+      openAbout: () => openSettingsAt('about'),
       openRoom: () => (overlays.room = true),
       toggleFullscreen: () => void toggleFullscreen(),
       cycleLoop,

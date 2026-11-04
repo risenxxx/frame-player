@@ -80,6 +80,7 @@
       backToStart: () => void;
       toggleInfo: () => void;
       openSettings: () => void;
+      openAbout: () => void;
       openRoom: () => void;
       toggleFullscreen: () => void;
       cycleLoop: () => void;
@@ -336,6 +337,12 @@
   </button>
   <button class="menu-item" onclick={() => { close(); actions.openSettings(); }}>
     {t('ctx.settings')}
+  </button>
+  <!-- The version and the links live at the bottom of Settings → General,
+       where nobody looks for them; Windows has no menu bar to hold an About,
+       so this is where it goes. -->
+  <button class="menu-item" onclick={() => { close(); actions.openAbout(); }}>
+    {t('ctx.about')}
   </button>
   <!-- Windows only: ms-settings: is a Windows scheme, and on macOS this
        item silently did nothing. macOS has no single-link equivalent (the

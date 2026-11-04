@@ -588,6 +588,21 @@ export function onTitlebarMouseDown(e: MouseEvent) {
   }
 }
 
+/**
+ * A press on a dialog's backdrop where the title bar is: the window is dragged
+ * rather than the dialog closed. The backdrop covers the whole window, title
+ * bar included, so with the settings open the first press on the bar used to
+ * close them and only the second one moved the window. Returns whether it took
+ * the press, so the backdrop can let the click that follows go.
+ */
+export function dragFromTitleStrip(e: MouseEvent): boolean {
+  if (e.button !== 0 || e.target !== e.currentTarget || e.clientY > TITLEBAR_STRIP) return false;
+  if (chrome.fullscreen || mini.on) return false;
+  e.preventDefault();
+  void getCurrentWindow().startDragging();
+  return true;
+}
+
 export function minimizeWindow() {
   void getCurrentWindow().minimize();
 }

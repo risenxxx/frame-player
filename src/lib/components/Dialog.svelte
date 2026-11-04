@@ -20,6 +20,7 @@
   import type { Snippet } from 'svelte';
   import ScrollFade from '$lib/components/ScrollFade.svelte';
   import { blockContextMenu } from '$lib/dom';
+  import { dragFromTitleStrip } from '$lib/chrome.svelte';
   import { t } from '$lib/i18n.svelte';
 
   interface Props {
@@ -96,6 +97,10 @@
     if (closeDisabled) return;
     onclose();
   }
+
+  /// The press went to moving the window (see `dragFromTitleStrip`); the click
+  /// it may still produce is not a request to close.
+  let pressMovedWindow = false;
 </script>
 
 <!-- Clicking the backdrop closes the dialog, and its keyboard equivalent is
@@ -106,7 +111,11 @@
   class="settings-backdrop"
   class:peeking={peek}
   role="presentation"
-  onclick={requestClose}
+  onmousedown={(e) => (pressMovedWindow = dragFromTitleStrip(e))}
+  onclick={() => {
+    if (pressMovedWindow) pressMovedWindow = false;
+    else requestClose();
+  }}
   ondblclick={(e) => e.stopPropagation()}
   oncontextmenu={blockContextMenu}
 >

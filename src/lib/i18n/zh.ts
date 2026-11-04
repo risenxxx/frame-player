@@ -617,6 +617,7 @@ export const zh = {
   'ctx.playback': '播放',
   'ctx.win_size': '按视频尺寸',
   'ctx.settings': '设置…',
+  'ctx.about': '关于 Frame Player',
   'ctx.default_apps': '默认应用…',
   'set.title': '设置',
   'sec.interface': '界面',

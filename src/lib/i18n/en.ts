@@ -686,6 +686,7 @@ export const en = {
   'ctx.playback': 'Playback',
   'ctx.win_size': 'Size from video',
   'ctx.settings': 'Settings…',
+  'ctx.about': 'About Frame Player',
   'ctx.default_apps': 'Default apps…',
 
   'set.title': 'Settings',

@@ -15,6 +15,7 @@
   /// One deliberate behavior change came with that. The display's HDR state
   /// used to be polled every three seconds for the whole life of the app; it is
   /// only ever shown here, so the timer now runs only while the dialog is open.
+  import { untrack } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { getVersion } from '@tauri-apps/api/app';
   import { getProperty } from 'tauri-plugin-libmpv-api';
@@ -103,6 +104,19 @@
   let settingsTab = $state<SettingsTab>(
     TABS.find((tab) => tab === initialTab) ?? 'general',
   );
+
+  /// `about` is not a tab: it is the last section of General, which is where
+  /// the right-click menu's "About" lands. The section is at the bottom of a
+  /// long page, so the sheet is scrolled to it — once the version has arrived,
+  /// since the panel is a line shorter until then.
+  let aboutPending = untrack(() => initialTab) === 'about';
+  $effect(() => {
+    if (!aboutPending || appVersion === null) return;
+    aboutPending = false;
+    requestAnimationFrame(() =>
+      document.querySelector('.set-panel.about')?.scrollIntoView({ block: 'end' }),
+    );
+  });
 
   /// The picture slider being dragged, which turns the sheet see-through (see
   /// `peek` on Dialog). The control bar is kept away from the first touch until

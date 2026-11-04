@@ -27,6 +27,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 
 ## Rules
 
+- **A dialog's backdrop does not take the title bar away.** The backdrop covers the whole window, so a press in the top `TITLEBAR_STRIP` of it starts a window drag (`dragFromTitleStrip` in chrome.svelte.ts) instead of closing the dialog, and the click that press produces is let go (`pressMovedWindow` in Dialog). Before it, moving the window with the settings open took two presses: the first closed them. Not in fullscreen or the mini player, where nothing drags.
 - **mpv option surface**: defaults are set in `initialOptions` in `initPlayer` (player/session.ts); user overrides come from `%APPDATA%/<identifier>/mpv.conf` (command `user_mpv_conf`, template in lib.rs, `wid` filtered out). → [ui-surfaces](../../docs/rules/ui-surfaces.md)
 - **Returning to the start screen is a destination, not a blank to wait out.** `showEmpty` is debounced by 300 ms because a playlist transition blanks `filename` for a moment and the picker must not flash through it. → [ui-surfaces](../../docs/rules/ui-surfaces.md)
 - **A control's actions belong to the control, not to the list around it.** The delay stepper's reset used to be a `.menu-item` under the −/+ pill, which is correct for a list row and wrong beside a control: a menu row is … → [ui-surfaces](../../docs/rules/ui-surfaces.md)
