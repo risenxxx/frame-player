@@ -661,6 +661,8 @@ export const zh = {
   'set.cursor_hide_always': '始终',
   'set.cursor_hide_never': '从不',
   'set.cursor_hide_hint': '“始终”会在鼠标静止后隐藏指针，即使控制栏仍显示在屏幕上也是如此。指针悬停在控制栏上或位于对话框内时不会隐藏。',
+  'set.fs_mask': '进入全屏时经由黑场过渡',
+  'set.fs_mask_hint': '用黑场遮住窗口改变大小时的闪烁。关闭后切换即时完成，但可能会有一瞬间看到拉伸的画面和跳动的控件。',
   'set.video_click': '点击画面',
   'set.video_click_both': '暂停和全屏',
   'set.video_click_fullscreen': '仅全屏',

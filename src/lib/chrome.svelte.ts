@@ -449,6 +449,9 @@ async function maskFullscreenTransition() {
     await invoke('window_fullscreen_mask').catch(() => {});
     return;
   }
+  // The viewer turned the dark off (`windowPrefs.fsMask`, Windows only): the
+  // transition is instant and shows what the veil was there to hide.
+  if (!windowPrefs.fsMask) return;
   // The shutter color must match the veil (the release relies on an
   // invisible seam between them) — announce it before show().
   await emitTo('veil', 'veil-color', chrome.startScreen ? '#101016' : '#000').catch(() => {});

@@ -88,11 +88,12 @@
   }
 </script>
 
-{#snippet windowSwitch(key: WindowSwitch, label: string)}
+{#snippet windowSwitch(key: WindowSwitch, label: string, hint?: string)}
   <div class="setting">
     <div class="row-toggle">
       <div class="row-text">
         <div class="setting-label">{label}</div>
+        {#if hint}<div class="setting-hint">{hint}</div>{/if}
       </div>
       <button
         class="switch"
@@ -234,6 +235,11 @@
   </div>
   {@render windowSwitch('alwaysOnTop', t('ctx.win_ontop'))}
   {@render windowSwitch('snapMini', t('ctx.win_snap'))}
+  <!-- Windows only: on macOS the dark is AppKit's snapshot animation being
+       masked, and without it the title bar shows twice mid-transition. -->
+  {#if !IS_MAC}
+    {@render windowSwitch('fsMask', t('set.fs_mask'), t('set.fs_mask_hint'))}
+  {/if}
 </div>
 
 <div class="set-group">{t('sec.together')}</div>

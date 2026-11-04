@@ -162,6 +162,11 @@ class WindowPrefs {
   pinch = $state<PinchAction>('resize');
   /// What a click on the picture does — see `VideoClick`.
   videoClick = $state<VideoClick>('both');
+  /// Windows: whether going in and out of fullscreen goes through black (the
+  /// veil and the shutter in chrome.svelte.ts). Off trades the dark for what
+  /// it hides — a stretched frame and the controls jumping for a moment — for
+  /// a viewer to whom a black flash in a dark room is the worse of the two.
+  fsMask = $state(true);
   geometry = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 }
 
@@ -470,6 +475,7 @@ export function loadWindowPrefs() {
     if (saved.videoClick && VIDEO_CLICK_CHOICES.includes(saved.videoClick)) {
       windowPrefs.videoClick = saved.videoClick;
     }
+    if (typeof saved.fsMask === 'boolean') windowPrefs.fsMask = saved.fsMask;
     if (saved.geometry) windowPrefs.geometry = saved.geometry;
   } catch {
     // corrupt entry — the defaults stay
@@ -492,6 +498,7 @@ function saveWindowPrefs() {
         cursorHide: windowPrefs.cursorHide,
         pinch: windowPrefs.pinch,
         videoClick: windowPrefs.videoClick,
+        fsMask: windowPrefs.fsMask,
         geometry: windowPrefs.geometry,
       }),
     );
@@ -1068,7 +1075,7 @@ export function setVideoClick(v: VideoClick) {
   saveWindowPrefs();
 }
 
-export type WindowSwitch = 'remember' | 'alwaysOnTop' | 'snapMini';
+export type WindowSwitch = 'remember' | 'alwaysOnTop' | 'snapMini' | 'fsMask';
 
 export function windowFit(): WindowFit {
   if (!windowPrefs.fitToVideo) return 'free';

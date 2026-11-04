@@ -733,6 +733,8 @@ export const en = {
   'set.cursor_hide_never': 'Never',
   'set.cursor_hide_hint':
     '“Always” hides the cursor once the mouse rests, even while the controls stay on screen. It never hides over the controls or in a dialog.',
+  'set.fs_mask': 'Fade through black into fullscreen',
+  'set.fs_mask_hint': 'Hides the flicker while the window changes size. Without it the switch is instant, but a stretched frame and jumping controls can show for a split second.',
   'set.video_click': 'Click on the picture',
   'set.video_click_both': 'Pause and fullscreen',
   'set.video_click_fullscreen': 'Fullscreen only',

@@ -1,0 +1,7 @@
+---
+"frameplayer": minor
+---
+
+Fullscreen without the black flash, on Windows
+
+Going in and out of fullscreen passes through a moment of black, which hides the window flickering as it changes size. In a dark room that flash can be harder on the eyes than the flicker, so it can now be turned off in Settings → General → Window; the switch is then instant.
