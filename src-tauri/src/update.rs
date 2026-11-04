@@ -355,30 +355,32 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
 }
 
 /// Whether the swap may run at all: the paths on disk against the paths coming
-/// in. Returns the reason for the log when they differ, naming the first path
-/// each way — a reason that says only "they differ" is a bug report nobody can
-/// act on.
-pub fn file_sets_match(installed: &[String], incoming: &[String]) -> Result<(), String> {
+/// in. Only a path the payload **adds** refuses it — the uninstaller's delete
+/// list was written by the last installer run and would not know the new file.
+/// A path on disk the payload does not carry is left where it is and does not
+/// refuse anything: the uninstaller either knows it (it is the file a release
+/// just dropped) or never did (a file an older release left behind), and the
+/// installer would not have removed it either — it runs with `/UPDATE`, which
+/// skips the uninstall pass. Refusing on it sent every later update through the
+/// installer for good, after downloading the payload first: the progress bar
+/// filled twice on every update for anybody who ever installed a release whose
+/// file was later renamed. Returns the reason for the log, naming the first
+/// added path — a reason that says only "they differ" is a bug report nobody
+/// can act on — and the paths left behind, for the log as well.
+pub fn file_sets_match(installed: &[String], incoming: &[String]) -> Result<Vec<String>, String> {
     let on_disk: std::collections::BTreeSet<String> =
         installed.iter().map(|p| p.to_lowercase()).collect();
     let arriving: std::collections::BTreeSet<String> =
         incoming.iter().map(|p| p.to_lowercase()).collect();
     let added: Vec<&String> = arriving.difference(&on_disk).collect();
-    let dropped: Vec<&String> = on_disk.difference(&arriving).collect();
-    if added.is_empty() && dropped.is_empty() {
-        return Ok(());
-    }
-    let mut parts = Vec::new();
     if let Some(p) = added.first() {
-        parts.push(format!("{} would be added ({} in all)", p, added.len()));
+        return Err(format!(
+            "the file set changes: {} would be added ({} in all) - only the installer can rewrite the uninstaller's list",
+            p,
+            added.len()
+        ));
     }
-    if let Some(p) = dropped.first() {
-        parts.push(format!("{} would be dropped ({} in all)", p, dropped.len()));
-    }
-    Err(format!(
-        "the file set changes: {} - only the installer can rewrite the uninstaller's list",
-        parts.join(", ")
-    ))
+    Ok(on_disk.difference(&arriving).cloned().collect())
 }
 
 /// A name left by a previous update, which the sweep may delete: the suffix
@@ -775,7 +777,13 @@ mod imp {
 
         let incoming: Vec<String> = manifest.files.iter().map(|e| e.path.clone()).collect();
         let installed = walk_installed(install)?;
-        file_sets_match(&installed, &incoming)?;
+        let stale = file_sets_match(&installed, &incoming)?;
+        if let Some(first) = stale.first() {
+            eprintln!(
+                "[update] {} file(s) on disk the payload does not carry, left in place ({first}, ...)",
+                stale.len()
+            );
+        }
 
         // A fresh staging directory: what a previous attempt left could be a
         // different version's files under the same names.
@@ -1212,19 +1220,19 @@ mod tests {
     }
 
     #[test]
-    fn a_changed_file_set_is_refused_and_says_which_way() {
+    fn only_an_added_path_refuses_the_swap() {
         let installed: Vec<String> = ["frameplayer.exe", "lib/libmpv-2.dll"]
             .iter()
             .map(|s| s.to_string())
             .collect();
-        assert!(file_sets_match(&installed, &installed).is_ok());
+        assert_eq!(file_sets_match(&installed, &installed), Ok(vec![]));
 
         // Case alone is not a change.
         let shouted: Vec<String> = ["FramePlayer.exe", "lib/LIBMPV-2.dll"]
             .iter()
             .map(|s| s.to_string())
             .collect();
-        assert!(file_sets_match(&installed, &shouted).is_ok());
+        assert_eq!(file_sets_match(&installed, &shouted), Ok(vec![]));
 
         let added: Vec<String> = ["frameplayer.exe", "lib/libmpv-2.dll", "lib/new.dll"]
             .iter()
@@ -1234,10 +1242,14 @@ mod tests {
         assert!(why.contains("lib/new.dll"), "{why}");
         assert!(why.contains("added"), "{why}");
 
+        // A file on disk the payload no longer carries — a shader an older
+        // release shipped under another name — is reported, not refused: the
+        // installer would leave it behind just the same.
         let dropped: Vec<String> = ["frameplayer.exe"].iter().map(|s| s.to_string()).collect();
-        let why = file_sets_match(&installed, &dropped).unwrap_err();
-        assert!(why.contains("lib/libmpv-2.dll"), "{why}");
-        assert!(why.contains("dropped"), "{why}");
+        assert_eq!(
+            file_sets_match(&installed, &dropped),
+            Ok(vec!["lib/libmpv-2.dll".to_string()])
+        );
     }
 
     #[test]

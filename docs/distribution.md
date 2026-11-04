@@ -250,10 +250,10 @@ recorded rather than taken, and the number is here for whoever wants to revisit
 it. The other half of the gap is the FFmpeg duplication above, which would
 shrink both artifacts at once and is the better lever of the two.
 
-**The uninstaller is why the file set is frozen.** The NSIS uninstaller deletes a
+**The uninstaller is why no path may be added.** The NSIS uninstaller deletes a
 list of paths generated when it was built, then removes the directories it knows
 about and nothing else; only an installer run writes a new one. So an in-place
-update that added or dropped a path would leave an uninstaller unable to clean up
+update that added a path would leave an uninstaller unable to clean up
 after itself — and a release that renames a library, which a major FFmpeg bump
 does, would leave ninety megabytes behind after an uninstall with nothing to say
 so. Three ways out were considered:
@@ -268,9 +268,22 @@ so. Three ways out were considered:
   whatever else is in that directory — and `$INSTDIR` is whatever the person
   typed during installation, so somebody who installed into `D:\Utilities`
   rather than `D:\Utilities\Frame Player` would lose `D:\Utilities`.
-- **Refuse the swap when the set changes**, which is what runs. The release that
-  changes the file set goes through the installer once, the installer rewrites
-  the uninstaller, and every release after it is in place again.
+- **Refuse the swap when a path is added**, which is what runs. The release that
+  adds one goes through the installer once, the installer rewrites the
+  uninstaller, and every release after it is in place again.
+
+It first refused a *dropped* path too, and that half never converged. The
+fallback runs the installer with `/UPDATE`, and in that mode Tauri's template
+skips the uninstall pass (`PageLeaveReinstall` jumps straight to `reinst_done`),
+so a file the new release no longer ships is still on disk after the installer —
+and the next update's walk finds it again. 1.36.0 shipped
+`shaders/ArtCNN_C4F16.glsl`, the next release renamed it, and every installation
+that had been through 1.36.0 downloaded the zip, refused it and downloaded the
+installer on every update after that: the progress bar filled twice. A dropped
+path costs the uninstaller nothing — it either still lists the file or never did,
+and the installer leaves it behind either way — and a stale file is inert, since
+every resource is loaded by its name. So a dropped path is now left in place and
+logged, and only an added one refuses the swap.
 
 The set on disk is read by *walking the installation* rather than from a manifest
 a previous version left behind, which is what makes the first in-place update
@@ -280,7 +293,7 @@ installed beside the binaries would itself be a path the uninstaller does not
 know, and the very first swap would refuse itself.
 
 That comparison is also the safety property worth stating plainly: **if the
-payload's layout ever stops matching what the installer lays down, every client
+payload ever carries a path the installer does not lay down, every client
 refuses the swap and falls back to the installer.** Getting the packaging wrong
 costs a release its new update path; it cannot produce a broken installation.
 
