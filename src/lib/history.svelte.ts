@@ -15,7 +15,7 @@ import { baseName, displayName, pathUnder } from './format';
 import { t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
 import { type Attempt, latest } from './latest';
-import { isNetworkSource, player, type TrackWish } from './player.svelte';
+import { isNetworkSource, isSong, player, type TrackWish } from './player.svelte';
 import { parseTorrentUrl, sourceId, torrentFolderKey } from './source';
 import type { UpscaleMode } from './upscale-plan';
 
@@ -691,7 +691,11 @@ export function persistPosition(path: string, pos: number, dur: number, title?: 
     const startedAt = dur > 0 ? Math.min(15, dur * 0.05) : 15;
     const watched = pos >= startedAt;
     const finished = dur > 0 && pos / dur > FINISHED_FRACTION;
-    if (!watched || finished) delete map[id];
+    // A song starts from the top every time and is not something to "continue
+    // watching": an album played through would otherwise fill the start screen
+    // with half-heard tracks, and the next play of each would open mid-verse.
+    // Records written before this rule are dropped as the song plays.
+    if (!watched || finished || isSong(path, dur)) delete map[id];
     // The title is only overwritten by a real one: mpv reports `media-title` a
     // beat after the file opens, and a null in the meantime must not erase what
     // an earlier viewing recorded.

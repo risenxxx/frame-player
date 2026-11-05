@@ -165,6 +165,21 @@ export class MpvSettings {
       hint: t('vset.spdif_hint'),
     },
     {
+      kind: 'segmented',
+      tab: 'audio',
+      key: 'replaygain',
+
+      group: 'audio',
+      label: t('vset.replaygain'),
+      liveDefault: 'no',
+      options: [
+        { v: null, label: t('vset.replaygain_off') },
+        { v: 'track', label: t('vset.replaygain_track') },
+        { v: 'album', label: t('vset.replaygain_album') },
+      ],
+      hint: t('vset.replaygain_hint'),
+    },
+    {
       kind: 'devices',
       tab: 'audio',
       key: 'audio-device',

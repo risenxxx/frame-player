@@ -33,7 +33,10 @@
 
 export {
   AUDIO_EXTENSIONS,
+  isAudioPath,
   isNetworkSource,
+  isSong,
+  SONG_MAX_S,
   pointAtExternalTracks,
   SUBTITLE_EXTENSIONS,
   VIDEO_EXTENSIONS,
@@ -71,6 +74,9 @@ export {
   togglePause,
   unmute,
   VOLUME_MAX,
+  applyAmplify,
+  loadAmplify,
+  volumeCeiling,
   type PictureProp,
 } from './player/commands';
 export {

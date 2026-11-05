@@ -45,6 +45,7 @@ nothing about watching a film.
 | 36 | Brightness, contrast, saturation, gamma and hue, per file, per playlist or for every file, set in a menu that turns see-through while a slider moves |
 | 37 | AirPlay on the Mac, through the system's own player and list of receivers; deliberately not on Windows ([airplay.md](airplay.md)) |
 | 38 | Upscaling by neural-network shaders, for one file or a whole playlist, saying when the size on screen makes it unnecessary |
+| 39 | Audio files as music: the cover (in the file or beside it), the tags and `.lrc` lyrics on a screen of their own, an album queued in track order and played on without a gap, ReplayGain, and songs kept out of the watch history |
 
 Details for the larger ones: [torrents.md](torrents.md), [casting.md](casting.md),
 [watch-together.md](watch-together.md), [catalog.md](catalog.md).

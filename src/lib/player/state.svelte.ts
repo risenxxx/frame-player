@@ -128,6 +128,18 @@ class Player {
 
   audioTracks = $state<Track[]>([]);
   subTracks = $state<Track[]>([]);
+  /// Video tracks that are a picture to watch — not cover art, which mpv lists
+  /// as a video track with `albumart` set. Zero with audio tracks present is
+  /// what makes a file an audio file (`audio-screen.svelte.ts`).
+  pictureTracks = $state(0);
+  /// The file the three lists above were read for. They are re-read a beat
+  /// after every file change, and until then they describe the previous file.
+  tracksOf = $state<string | null>(null);
+
+  /// `sub-text`: the subtitle line being shown, as plain text. Only the audio
+  /// screen reads it — over a picture mpv draws subtitles itself, but with no
+  /// picture its drawing is under the web view's own screen.
+  subText = $state('');
 
   /// Fill of the network cache, 0..100, or null when there is no cache — which
   /// is the normal state for a local file.
@@ -154,6 +166,10 @@ class Player {
   /// Volume normalization (a labeled `af` filter). Ours to remember: mpv
   /// answers `af` with an escaped form that cannot be compared against.
   normalize = $state(false);
+
+  /// Whether the volume may go past 100 (`applyAmplify`). Ours to remember:
+  /// `volume-max` is the ceiling, not the choice.
+  amplify = $state(true);
 
   /// How an SDR picture's tone curve is drawn on macOS: mpv's own reading of
   /// BT.709, or the one QuickTime uses. Ours to

@@ -1,7 +1,7 @@
 <script lang="ts">
   /// Settings → Audio: mpv's output rows and the player's own leveling.
   import { t } from '$lib/i18n.svelte';
-  import { applyNormalize, player } from '$lib/player.svelte';
+  import { applyAmplify, applyNormalize, player } from '$lib/player.svelte';
   import type { MpvSettings } from '$lib/settings/mpv-settings.svelte';
   import MpvRows from '$lib/components/settings/MpvRows.svelte';
 
@@ -16,6 +16,26 @@
 
 <div class="set-panel">
   <MpvRows {mpv} group="audio" />
+  <!-- Kept by the player like the leveling below: the switch decides the
+       ceiling of the keys and the wheel, and `volume-max` follows it. -->
+  <div class="setting">
+    <div class="row-toggle">
+      <div class="row-text">
+        <div class="setting-label">{t('set.amplify')}</div>
+        <div class="setting-hint">{t('set.amplify_hint')}</div>
+      </div>
+      <button
+        class="switch"
+        class:on={player.amplify}
+        role="switch"
+        aria-checked={player.amplify}
+        aria-label={t('set.amplify')}
+        onclick={() => applyAmplify(!player.amplify)}
+      >
+        <span class="switch-knob"></span>
+      </button>
+    </div>
+  </div>
   <!-- Bitstream passthrough hands the receiver an undecoded stream, and a
        filter has nothing to attach to — so the switch says why it is
        unavailable rather than silently doing nothing. Kept by the player

@@ -24,8 +24,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
+import { audioScreen } from './audio-screen.svelte';
 import { advance, playback, seekFraction, togglePause } from './playback.svelte';
-import { player } from './player.svelte';
+import { isNetworkSource, player } from './player.svelte';
 import { IS_MAC } from './platform';
 
 /// How far the position may stray from the system's extrapolation of it before
@@ -42,6 +43,11 @@ interface Report {
   paused: boolean;
   next: boolean;
   previous: boolean;
+  audio: boolean;
+  artist: string | null;
+  album: string | null;
+  /// The file whose cover the native side reads, for an audio file.
+  artwork: string | null;
 }
 
 interface RemoteCommand {
@@ -106,7 +112,20 @@ export function initNowPlaying() {
   $effect(() => {
     if (!player.hasFile) {
       if (sent?.playing !== false) {
-        report({ playing: false, title: '', duration: 0, position: 0, rate: 0, paused: true, next: false, previous: false });
+        report({
+          playing: false,
+          title: '',
+          duration: 0,
+          position: 0,
+          rate: 0,
+          paused: true,
+          next: false,
+          previous: false,
+          audio: false,
+          artist: null,
+          album: null,
+          artwork: null,
+        });
       }
       return;
     }
@@ -120,6 +139,10 @@ export function initNowPlaying() {
       paused,
       next: player.playlistPos < player.playlistCount - 1,
       previous: player.playlistPos > 0,
+      audio: audioScreen.on,
+      artist: audioScreen.on ? audioScreen.tags.artist : null,
+      album: audioScreen.on ? audioScreen.tags.album : null,
+      artwork: audioScreen.on && !isNetworkSource(player.filePath) ? player.filePath : null,
     };
     const last = sent;
     if (last?.playing) {
@@ -130,7 +153,11 @@ export function initNowPlaying() {
         last.paused === info.paused &&
         last.rate === info.rate &&
         last.next === info.next &&
-        last.previous === info.previous;
+        last.previous === info.previous &&
+        last.audio === info.audio &&
+        last.artist === info.artist &&
+        last.album === info.album &&
+        last.artwork === info.artwork;
       if (same && Math.abs(info.position - expected) < DRIFT_S) return;
     }
     report(info);

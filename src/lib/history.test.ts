@@ -116,6 +116,18 @@ describe('persistPosition', () => {
     expect(positionsLoad()['/f/clip.mkv']).toMatchObject({ pos: 1 });
   });
 
+  it('keeps songs out, and long audio in', () => {
+    // A song starts from the top; an audiobook chapter resumes like a film.
+    persistPosition('/m/01 song.flac', 90, 240);
+    expect(positionsLoad()['/m/01 song.flac']).toBeUndefined();
+    persistPosition('/m/chapter.mp3', 900, 3600);
+    expect(positionsLoad()['/m/chapter.mp3']).toMatchObject({ pos: 900 });
+    // A record from before the rule goes as the song plays.
+    localStorage.setItem(POSITIONS, JSON.stringify({ '/m/old.mp3': { pos: 60, dur: 200, ts: 1 } }));
+    persistPosition('/m/old.mp3', 70, 200);
+    expect(positionsLoad()['/m/old.mp3']).toBeUndefined();
+  });
+
   it('keeps the title a real one, and never lets a null erase it', () => {
     // mpv reports `media-title` a beat after the file opens; the null in
     // between must not wipe what an earlier viewing recorded.

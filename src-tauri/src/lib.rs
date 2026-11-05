@@ -9,6 +9,7 @@ mod macos_chrome;
 mod macos_menu;
 mod airplay;
 mod airplay_hls;
+mod audio_meta;
 mod audio_output;
 mod cast;
 mod color;
@@ -1337,6 +1338,8 @@ pub fn run() {
             thumb_service::thumb_start,
             thumb_service::thumb_get,
             thumb_service::container_titles,
+            audio_meta::cover_art,
+            audio_meta::audio_track_numbers,
             thumb_service::poster_frame,
             thumb_service::crop_detect,
             thumb_service::set_private_paths,

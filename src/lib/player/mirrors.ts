@@ -62,6 +62,10 @@ export const OBSERVED = [
   // `file-loaded` for every container, and `chapter-list` itself is a node.
   ['chapter-list/count', 'int64', 'none'],
   ['chapter', 'int64', 'none'],
+  // The subtitle line as text — lyrics, for an audio file with an `.lrc`
+  // beside it. With no picture mpv's own drawing of it is under the web view's
+  // audio screen, which therefore draws the line itself.
+  ['sub-text', 'string', 'none'],
   // Picture geometry. Observed rather than read when the menu opens, so the
   // menu can tick the value that is actually in force — including one that came
   // from the user's own mpv.conf.
@@ -216,6 +220,9 @@ const RESYNC: Record<ObservedName, boolean> = {
   'time-pos': false,
   duration: false,
   'cache-buffering-state': false,
+  // Re-reported at the next line; a lost one leaves a line up a few seconds
+  // too long.
+  'sub-text': false,
   'dwidth': false,
   'dheight': false,
   // Set once per file and then stands, and what hangs off it is the shape the
@@ -373,6 +380,7 @@ export function applyProperty(ev: PropertyChange) {
     case 'track-list/count': void loadTracks(); break;
     case 'chapter-list/count': void loadChapters(); break;
     case 'chapter': player.chapterIndex = ev.data ?? -1; break;
+    case 'sub-text': player.subText = ev.data ?? ''; break;
     case 'cache-buffering-state': player.cacheBuffering = ev.data; break;
     case 'paused-for-cache': player.stalled = ev.data ?? false; break;
     case 'ab-loop-a': player.loopA = parseAbPoint(ev.data); break;

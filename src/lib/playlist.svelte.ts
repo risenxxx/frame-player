@@ -21,7 +21,16 @@ import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 import { raiseCurtain } from './curtain.svelte';
 import { baseName, displayName, extensionOf, samePath } from './format';
 import { latest } from './latest';
-import { VIDEO_EXTENSIONS, isNetworkSource, player, pointAtExternalTracks, readList } from './player.svelte';
+import { type TrackNumber, albumOrder, naturalOrder } from './music';
+import {
+  AUDIO_EXTENSIONS,
+  VIDEO_EXTENSIONS,
+  isAudioPath,
+  isNetworkSource,
+  player,
+  pointAtExternalTracks,
+  readList,
+} from './player.svelte';
 
 export interface PlaylistEntry {
   index: number;
@@ -321,10 +330,19 @@ export async function queueFolder(openedPath: string) {
   const siblings = await invoke<string[]>('folder_entries', { path: openedPath }).catch(
     () => [] as string[],
   );
-  const videos = siblings.filter((p) => VIDEO_EXTENSIONS.includes(extensionOf(p)));
-  if (videos.length < 2) return;
-
-  videos.sort((a, b) => naturalOrder.compare(baseName(a), baseName(b)));
+  // A song queues the songs beside it, an episode the episodes: a folder
+  // holding a film and its soundtrack is two queues, not one.
+  const audio = isAudioPath(openedPath);
+  const kind = audio ? AUDIO_EXTENSIONS : VIDEO_EXTENSIONS;
+  const found = siblings.filter((p) => kind.includes(extensionOf(p)));
+  if (found.length < 2) return;
+  const videos = audio
+    ? albumOrder(
+        found,
+        await invoke<TrackNumber[]>('audio_track_numbers', { paths: found }).catch(() => []),
+        baseName,
+      )
+    : found.sort((a, b) => naturalOrder.compare(baseName(a), baseName(b)));
   // `samePath`, never `===`: the two sides come from different places — a
   // stored record or mpv's `path` against a directory read in Rust — and on
   // Windows one mixed `E:/Videos\ep1.mkv` costs the whole queue in silence.
@@ -367,8 +385,6 @@ export async function queueTorrent(files: { path: string; url: string }[], opene
   );
 }
 
-/// Natural order, the way a file manager sorts: "ep2" before "ep10".
-const naturalOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 /// Drop an entry. mpv renumbers what follows, so the list is re-read rather
 /// than patched — and removing the entry that is playing is allowed, because

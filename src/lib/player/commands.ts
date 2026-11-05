@@ -17,6 +17,40 @@ import { player, type LoopMode } from './state.svelte';
 /// is 130.
 export const VOLUME_MAX = 150;
 
+/// Where the volume stops when amplification is turned off: the file's own
+/// level, never louder than it was mixed.
+export const VOLUME_UNITY = 100;
+
+const AMPLIFY_KEY = 'frameplayer.amplify';
+
+/** Whether the volume may go past 100. On unless the viewer turned it off. */
+export function loadAmplify(): boolean {
+  return localStorage.getItem(AMPLIFY_KEY) !== 'off';
+}
+
+/** The ceiling the keys, the wheel and mpv itself are held to right now. */
+export function volumeCeiling(): number {
+  return player.amplify ? VOLUME_MAX : VOLUME_UNITY;
+}
+
+/**
+ * Allow or forbid amplification. The slider stops at 100 either way; this is
+ * the keys and the wheel, which used to carry on to 150 past the end of the
+ * bar. `volume-max` moves with it so a `add volume` from anywhere else (an
+ * input.conf line, a script) meets the same ceiling — and the volume comes
+ * down first, because lowering `volume-max` does not lower a volume above it.
+ */
+export function applyAmplify(on: boolean) {
+  player.amplify = on;
+  if (!on && player.volume > VOLUME_UNITY) setVolume(VOLUME_UNITY);
+  void setProperty('volume-max', volumeCeiling()).catch(() => {});
+  try {
+    localStorage.setItem(AMPLIFY_KEY, on ? 'on' : 'off');
+  } catch {
+    // not critical: the choice simply will not survive a restart
+  }
+}
+
 /// Step for the subtitle/audio delay nudges, in seconds. mpv's own is the same.
 export const DELAY_STEP = 0.1;
 
@@ -38,7 +72,7 @@ export async function togglePause() {
 }
 
 export function setVolume(v: number): number {
-  const clamped = Math.max(0, Math.min(VOLUME_MAX, Math.round(v)));
+  const clamped = Math.max(0, Math.min(volumeCeiling(), Math.round(v)));
   void setProperty('volume', clamped);
   localStorage.setItem('frameplayer.volume', String(clamped));
   return clamped;

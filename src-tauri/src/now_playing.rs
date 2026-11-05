@@ -45,6 +45,9 @@ extern "C" {
     static MPNowPlayingInfoPropertyPlaybackRate: &'static NSString;
     static MPNowPlayingInfoPropertyDefaultPlaybackRate: &'static NSString;
     static MPNowPlayingInfoPropertyMediaType: &'static NSString;
+    static MPMediaItemPropertyArtist: &'static NSString;
+    static MPMediaItemPropertyAlbumTitle: &'static NSString;
+    static MPMediaItemPropertyArtwork: &'static NSString;
 }
 
 /// `MPNowPlayingPlaybackState`.
@@ -54,6 +57,10 @@ const STATE_PLAYING: isize = 1;
 const STATE_PAUSED: isize = 2;
 #[cfg(target_os = "macos")]
 const STATE_STOPPED: isize = 3;
+
+/// `MPNowPlayingInfoMediaTypeAudio`.
+#[cfg(target_os = "macos")]
+const MEDIA_TYPE_AUDIO: usize = 1;
 
 /// `MPNowPlayingInfoMediaTypeVideo`.
 #[cfg(target_os = "macos")]
@@ -81,6 +88,30 @@ pub struct NowPlaying {
     /// the next and previous buttons.
     pub next: bool,
     pub previous: bool,
+    /// An audio file: the listing says so, which is what puts the cover in the
+    /// artwork slot rather than a video frame's.
+    #[serde(default)]
+    pub audio: bool,
+    #[serde(default)]
+    pub artist: Option<String>,
+    #[serde(default)]
+    pub album: Option<String>,
+    /// The file whose cover to show — the same picture the audio screen shows
+    /// (`audio_meta::cover_bytes`). Read here rather than sent, so the cover
+    /// crosses no bridge on the frequent position reports.
+    #[serde(default)]
+    pub artwork: Option<String>,
+}
+
+/// The file whose cover was last read, so a report repeating it reads nothing.
+#[cfg(target_os = "macos")]
+static ARTWORK_FOR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+#[cfg(target_os = "macos")]
+thread_local! {
+    /// The artwork object for `ARTWORK_FOR`, on the main thread that made it.
+    static ARTWORK: std::cell::RefCell<Option<(String, Retained<AnyObject>)>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// A command from the system, as the `frameplayer://remote` event carries it.
@@ -108,9 +139,37 @@ fn command_center() -> Option<Retained<AnyObject>> {
     Some(unsafe { msg_send![class, sharedCommandCenter] })
 }
 
-/// Main thread only.
+/// An `MPMediaItemArtwork` for a picture's bytes, or None for bytes AppKit
+/// cannot read as an image. Main thread only.
 #[cfg(target_os = "macos")]
-fn apply(info: &NowPlaying) {
+fn make_artwork(bytes: &[u8]) -> Option<Retained<AnyObject>> {
+    use objc2_foundation::{NSData, NSSize};
+    let image_class = AnyClass::get(c"NSImage")?;
+    let artwork_class = AnyClass::get(c"MPMediaItemArtwork")?;
+    let data = NSData::with_bytes(bytes);
+    // SAFETY: `-[NSImage initWithData:]` takes an NSData and answers nil for
+    // bytes it cannot decode, which `Option` receives; `size` is an NSSize.
+    // `-[MPMediaItemArtwork initWithBoundsSize:requestHandler:]` copies the
+    // block, which returns an NSImage the block itself keeps alive (it holds a
+    // strong reference), so the unretained pointer it hands back stays valid.
+    unsafe {
+        let image: Option<Retained<AnyObject>> = msg_send![msg_send![image_class, alloc], initWithData: &*data];
+        let image = image?;
+        let size: NSSize = msg_send![&*image, size];
+        let block = block2::RcBlock::new(move |_: NSSize| -> *mut AnyObject { Retained::as_ptr(&image) as *mut AnyObject });
+        let artwork: Option<Retained<AnyObject>> =
+            msg_send![msg_send![artwork_class, alloc], initWithBoundsSize: size, requestHandler: &*block];
+        artwork
+    }
+}
+
+/// Main thread only. `fresh` is a cover just read for `info.artwork`.
+#[cfg(target_os = "macos")]
+fn apply(info: &NowPlaying, fresh: Option<(String, Option<Vec<u8>>)>) {
+    if let Some((path, bytes)) = fresh {
+        let artwork = bytes.as_deref().and_then(make_artwork);
+        ARTWORK.with(|a| *a.borrow_mut() = artwork.map(|art| (path, art)));
+    }
     let Some(center) = info_center() else {
         return;
     };
@@ -144,8 +203,24 @@ fn apply(info: &NowPlaying) {
         dict.insert(MPNowPlayingInfoPropertyDefaultPlaybackRate, &*number(1.0));
         dict.insert(
             MPNowPlayingInfoPropertyMediaType,
-            &*Retained::into_super(NSNumber::new_usize(MEDIA_TYPE_VIDEO)),
+            &*Retained::into_super(NSNumber::new_usize(if info.audio { MEDIA_TYPE_AUDIO } else { MEDIA_TYPE_VIDEO })),
         );
+        if let Some(artist) = &info.artist {
+            dict.insert(MPMediaItemPropertyArtist, &*Retained::into_super(NSString::from_str(artist)));
+        }
+        if let Some(album) = &info.album {
+            dict.insert(MPMediaItemPropertyAlbumTitle, &*Retained::into_super(NSString::from_str(album)));
+        }
+        ARTWORK.with(|a| {
+            if let (Some((path, art)), Some(want)) = (&*a.borrow(), &info.artwork) {
+                if path == want {
+                    // An `MPMediaItemArtwork`, the type the key names; every
+                    // Objective-C object here is an NSObject.
+                    let art: &NSObject = &*(Retained::as_ptr(art) as *const NSObject);
+                    dict.insert(MPMediaItemPropertyArtwork, art);
+                }
+            }
+        });
         let _: () = msg_send![&*center, setNowPlayingInfo: &*dict];
         let state = if info.paused { STATE_PAUSED } else { STATE_PLAYING };
         let _: () = msg_send![&*center, setPlaybackState: state];
@@ -277,11 +352,49 @@ pub fn now_playing_start(app: AppHandle) -> Result<(), String> {
 
 /// What is playing, or that nothing is.
 #[tauri::command]
-pub fn now_playing_set(app: AppHandle, info: NowPlaying) -> Result<(), String> {
+pub async fn now_playing_set(app: AppHandle, info: NowPlaying) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        app.run_on_main_thread(move || apply(&info))
-            .map_err(|e| e.to_string())
+        // Async, so the cover is read on a worker: a sync command runs on the
+        // main thread, which is the one drawing the picture. One report at a
+        // time, start to finish: a report waiting on its cover must not land
+        // after the next one and put back what that one corrected (measured —
+        // the tags arrived first, then the cover's report wrote them out).
+        static ORDER: std::sync::OnceLock<tauri::async_runtime::Mutex<()>> = std::sync::OnceLock::new();
+        let _turn = ORDER.get_or_init(|| tauri::async_runtime::Mutex::new(())).lock().await;
+        let fresh = match &info.artwork {
+            Some(path) => {
+                let changed = {
+                    let mut last = ARTWORK_FOR.lock().unwrap_or_else(|e| e.into_inner());
+                    let changed = last.as_deref() != Some(path.as_str());
+                    if changed {
+                        *last = Some(path.clone());
+                    }
+                    changed
+                };
+                if changed {
+                    let p = path.clone();
+                    let bytes = tauri::async_runtime::spawn_blocking(move || crate::audio_meta::cover_bytes(&p))
+                        .await
+                        .ok()
+                        .flatten();
+                    Some((path.clone(), bytes))
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+        // Applied before the turn is given up, so the order holds on the main
+        // thread too.
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.run_on_main_thread(move || {
+            apply(&info, fresh);
+            let _ = tx.send(());
+        })
+        .map_err(|e| e.to_string())?;
+        let _ = tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(std::time::Duration::from_secs(2))).await;
+        Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {

@@ -816,6 +816,9 @@ export const en = {
     'Could not read THIRD-PARTY-NOTICES.md — it should sit beside the application.',
   'lic.reveal_mac': 'show the file in Finder',
   'lic.reveal_win': 'show the file in Explorer',
+  'set.amplify': 'Volume above 100%',
+  'set.amplify_hint':
+    'The keys and the mouse wheel can raise the volume up to 150% for quiet files. Louder than the file itself, it can distort.',
   'set.normalize': 'Volume leveling',
   'set.normalize_hint':
     'Lifts quiet dialogue and holds back loud scenes. Useful at night and on headphones.',
@@ -970,6 +973,12 @@ export const en = {
   'vset.spdif': 'Bitstream to receiver',
   'vset.spdif_off': 'Off',
   'vset.spdif_hint': 'The receiver decodes it; the player volume stops having any effect',
+  'vset.replaygain': 'ReplayGain',
+  'vset.replaygain_off': 'Off',
+  'vset.replaygain_track': 'Per track',
+  'vset.replaygain_album': 'Per album',
+  'vset.replaygain_hint':
+    'Evens out music by the loudness tags in the files. Per album keeps the intended difference between quiet and loud tracks',
   'vset.device': 'Output device',
   'vset.device_hint': 'The list is refreshed when this window opens',
   'vset.alang': 'Audio language',

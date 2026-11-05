@@ -20,8 +20,8 @@ import { t } from '../i18n.svelte';
 import { showOsd } from '../osd.svelte';
 import { IS_MAC } from '../platform';
 import { loadChapters } from './chapters';
-import { applyLoopMode, loadLoopMode, loopOptions, VOLUME_MAX } from './commands';
-import { AUDIO_EXTENSIONS, PATH_LIST_SEP, SUB_DIRS, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS } from './files';
+import { applyLoopMode, loadAmplify, loadLoopMode, loopOptions, volumeCeiling } from './commands';
+import { AUDIO_EXTENSIONS, isAudioPath, PATH_LIST_SEP, SUB_DIRS, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS } from './files';
 import { applyNormalize, applySdrColor, loadNormalize, loadSdrColor, setUserConfKeys } from './filters';
 import { applyProperty, OBSERVED, resyncState, type ObservedName } from './mirrors';
 import { player } from './state.svelte';
@@ -86,7 +86,13 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
   hooks = config;
   const unlisteners: Array<() => void> = [];
 
-  const savedVolume = Number(localStorage.getItem('frameplayer.volume') ?? '100');
+  // Before the options: both the ceiling and the restored volume depend on it,
+  // and a volume saved at 140 must not come back louder than the switch allows.
+  player.amplify = loadAmplify();
+  const savedVolume = Math.min(
+    volumeCeiling(),
+    Number(localStorage.getItem('frameplayer.volume') ?? '100'),
+  );
   // Where yt-dlp is, if anywhere. Asked for BEFORE init because the answer goes
   // into the initial options — mpv reads `ytdl_hook-ytdl_path` when the hook
   // loads, not when a URL is opened.
@@ -132,8 +138,14 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
     // every episode. `fuzzy` for the reason `sub-auto` is: the file is named
     // after the episode, with a studio or a language after it.
     'audio-file-auto': 'fuzzy',
-    // mpv's own default is 130; quiet films regularly need more than that.
-    'volume-max': VOLUME_MAX,
+    // Cover art is the web view's to show (audio-screen.svelte.ts). Drawn by
+    // mpv it would be the video: the window took its square shape at its own
+    // size — 250 px for a typical release — and a cover with any other name
+    // than mpv's few never appeared at all.
+    'audio-display': 'no',
+    // mpv's own default is 130; quiet films regularly need more than that —
+    // unless the viewer turned amplification off, and then it is 100.
+    'volume-max': volumeCeiling(),
     // mpv defaults to zlib level 7, which is a size-first choice that buys
     // nothing here. Measured on a 4K frame of photographic content (the same
     // libavcodec PNG encoder mpv uses for screenshots): level 7 took 1.46 s for
@@ -351,8 +363,12 @@ export async function loadFiles(paths: string[]) {
   }
 
   // Audio with nothing to attach it to is a file to play, not a track to add —
-  // dropping an album on an idle player should start it.
-  if (!videos.length && !player.hasFile && audios.length) {
+  // dropping an album on an idle player should start it. Nor is a song a dub
+  // for the song playing now: a picture is what a dub is attached to.
+  const playingAudio =
+    player.hasFile &&
+    (isAudioPath(player.filePath) || (player.tracksOf === player.filePath && player.pictureTracks === 0));
+  if (!videos.length && (!player.hasFile || playingAudio) && audios.length) {
     videos.push(...audios.splice(0));
   }
   if (!videos.length) {

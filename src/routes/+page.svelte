@@ -20,6 +20,7 @@
   import LoadingOverlay from '$lib/components/LoadingOverlay.svelte';
   import CastScreen from '$lib/components/CastScreen.svelte';
   import SkipButton from '$lib/components/SkipButton.svelte';
+  import AudioScreen from '$lib/components/AudioScreen.svelte';
   import EndScreen from '$lib/components/EndScreen.svelte';
   import QueueMenu from '$lib/components/QueueMenu.svelte';
   import ChapterMenu from '$lib/components/ChapterMenu.svelte';
@@ -112,6 +113,7 @@
     forgetRecent,
   } from '$lib/history.svelte';
   import { initNowPlaying } from '$lib/now-playing.svelte';
+  import { audioScreen, initAudioScreen } from '$lib/audio-screen.svelte';
   import { initAudioOutput } from '$lib/audio-output.svelte';
   import { IS_MAC } from '$lib/platform';
   import {
@@ -215,6 +217,7 @@
   // Releases the skip guard from the *television's* position: while casting,
   // mpv is paused and `noteLocalPosition` never fires.
   initEndScreen();
+  initAudioScreen();
   // Keeps the window shell told what is over the video.
   initOverlays();
   // Measures how late this process's own timer runs, which is the only way to
@@ -299,6 +302,10 @@
       onDeleteTorrent={(row) => void deleteTorrent(row)}
       onDeleteWatched={(row) => void deleteWatchedFiles(row)}
     />
+  {:else if audioScreen.on}
+    <!-- An audio file's end is its screen with the play button: the cards
+         would offer a poster decoded from a file that has no picture. -->
+    <AudioScreen />
   {:else if endOfFile.shown}
     <EndScreen
       prev={endOfFile.prev}

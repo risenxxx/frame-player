@@ -24,6 +24,24 @@ export const AUDIO_EXTENSIONS = [
   'mka', 'wma', 'alac', 'aiff',
 ];
 
+/// What the extension says: a sound file. The tracks decide in the end —
+/// `audio-screen.svelte.ts` waits for them — but the extension is known before
+/// the file opens, which is when the queue is built and the screen is kept up.
+export function isAudioPath(path: string | null): boolean {
+  if (!path || isNetworkSource(path)) return false;
+  const dot = path.lastIndexOf('.');
+  return dot > 0 && AUDIO_EXTENSIONS.includes(path.slice(dot + 1).toLowerCase());
+}
+
+/// Longer than this, an audio file is listened to the way a film is watched —
+/// an audiobook chapter, a podcast, a concert — and resumes where it stopped.
+/// Shorter, it is a song: it starts from the top and stays out of the history.
+export const SONG_MAX_S = 20 * 60;
+
+export function isSong(path: string | null, duration: number): boolean {
+  return isAudioPath(path) && duration > 0 && duration < SONG_MAX_S;
+}
+
 /**
  * A source mpv can open that is not a file on this machine.
  *

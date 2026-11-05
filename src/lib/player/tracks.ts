@@ -74,13 +74,22 @@ const trackReads = latest();
 
 export async function loadTracks() {
   const run = trackReads.begin();
+  const of = player.filePath;
   try {
     const count = (await getProperty('track-list/count', 'int64')) ?? 0;
     const audio: Track[] = [];
     const subs: Track[] = [];
+    let pictures = 0;
     for (let i = 0; i < count; i++) {
       const base = `track-list/${i}`;
       const type = await getProperty(`${base}/type`, 'string').catch(() => null);
+      if (type === 'video') {
+        // Cover art is a video track to mpv — embedded, or `cover.jpg` found
+        // beside the file — and a picture to watch it is not.
+        const art = await getProperty(`${base}/albumart`, 'flag').catch(() => false);
+        if (!art) pictures++;
+        continue;
+      }
       if (type !== 'audio' && type !== 'sub') continue;
       const id = (await getProperty(`${base}/id`, 'int64').catch(() => null)) ?? 0;
       const selected = (await getProperty(`${base}/selected`, 'flag').catch(() => false)) ?? false;
@@ -127,10 +136,14 @@ export async function loadTracks() {
     if (run.stale) return;
     player.audioTracks = audio;
     player.subTracks = subs;
+    player.pictureTracks = pictures;
+    player.tracksOf = of;
   } catch {
     if (run.stale) return;
     player.audioTracks = [];
     player.subTracks = [];
+    player.pictureTracks = 0;
+    player.tracksOf = null;
   }
 }
 
