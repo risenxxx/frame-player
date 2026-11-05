@@ -218,7 +218,9 @@ Cloudflare's "Markdown for Agents" without its plan: the Markdown is built with
 the site rather than converted at the edge, so what an agent reads is the
 page's own source. `run_worker_first` in `wrangler.jsonc` keeps everything with
 an extension — the hashed bundles, the pictures — on the CDN, where the worker
-never sees it.
+never sees it, except `.md`: a twin fetched at its own address goes out with
+`Link: <page>; rel="canonical"`, because the page's head links to it and
+without that header a search engine finds a second copy of every page.
 
 The same worker is the page counter's address. Visits are counted by
 [Rybbit](https://rybbit.com) — no cookies, nothing written to the device — and

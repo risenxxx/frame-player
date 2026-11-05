@@ -13,6 +13,10 @@
     one, so the exclusions name the extensions the site serves (`.js` lives only
     under `/_astro`) rather than `!/*.*`, which would hand the counter's script
     to the CDN as a 404.
+
+    `.md` is deliberately not excluded: a Markdown twin fetched at its own
+    address gets a `Link: rel="canonical"` header naming its page, or a search
+    engine counts it as a duplicate of that page.
   */
   "main": "worker/index.ts",
   "assets": {
@@ -25,7 +29,6 @@
       "!/gen/*",
       "!/og/*",
       "!/*.html",
-      "!/*.md",
       "!/*.txt",
       "!/*.xml",
       "!/*.png",

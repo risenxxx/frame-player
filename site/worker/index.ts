@@ -235,6 +235,18 @@ export default {
     if (url.pathname.startsWith(ANALYTICS_PREFIX)) return counter(request, url.pathname.slice(ANALYTICS_PREFIX.length))
     if (url.pathname === '/api/install') return installs(request, env)
 
+    /* A twin at its own address is a second copy of the page as far as a search
+       engine knows: it is linked from the page's head, so it gets crawled. The
+       Link header names the page as the canonical one, which keeps the twin
+       out of the index without hiding it from anybody reading it. */
+    if (url.pathname.endsWith('.md')) {
+      const twin = await env.ASSETS.fetch(request)
+      if (!twin.ok) return twin
+      const headers = new Headers(twin.headers)
+      headers.set('link', `<${url.origin}${url.pathname.slice(0, -'.md'.length)}>; rel="canonical"`)
+      return new Response(twin.body, { status: twin.status, statusText: twin.statusText, headers })
+    }
+
     if ((request.method === 'GET' || request.method === 'HEAD') && wantsMarkdown(request.headers.get('accept') ?? '')) {
       const twin = twinOf(url.pathname)
       if (twin) {
