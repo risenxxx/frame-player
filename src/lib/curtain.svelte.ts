@@ -59,6 +59,15 @@ export const NO_PICTURE_MS = 700;
 /// frame, shorter than anybody waits before deciding the player has hung.
 export const CAP_MS = 2500;
 
+/// How long `bare` may hold the bars back. A file that opens shows its first
+/// frame and settles the window well inside this; one that does not — damaged,
+/// still downloading, a queue of them failing one after another — left the
+/// window with no controls at all for as long as the curtain stayed down,
+/// close button included, and a queue made that blink on and off. Past this
+/// the bars come back over the dark, which is the price of a move that may
+/// still follow: they can blink once on a slow file, never vanish on a broken one.
+export const BARE_MAX_MS = 1000;
+
 class Curtain {
   /// Down over the picture.
   on = $state(false);
@@ -118,6 +127,7 @@ let armed = false;
 
 let capTimer: ReturnType<typeof setTimeout> | undefined;
 let pictureTimer: ReturnType<typeof setTimeout> | undefined;
+let bareTimer: ReturnType<typeof setTimeout> | undefined;
 
 /// Whether the page has a load under way — the loading plate is up. A hook
 /// because that flag is the page's, set in `beforeLoad` and cleared on
@@ -154,6 +164,8 @@ function lower() {
   // away until the swarm produced a first frame. A black window, for as long
   // as the slowest wait in the player takes.
   curtain.bare = !showing && !loading();
+  clearTimeout(bareTimer);
+  if (curtain.bare) bareTimer = setTimeout(() => (curtain.bare = false), BARE_MAX_MS);
   present();
   return showing;
 }

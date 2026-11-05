@@ -12,6 +12,7 @@
   import {
     addExcludedFolder,
     clearHistory,
+    clearRecent,
     history,
     removeExcludedFolder,
     toggleHistory,
@@ -348,6 +349,12 @@
   </div>
 
   <div class="setting">
+    <div class="setting-label">{t('set.clear_recent')}</div>
+    <div class="setting-hint">{t('set.clear_recent_hint')}</div>
+    <button class="btn-outline clear-recent" onclick={clearRecent}>{t('set.clear_recent_btn')}</button>
+  </div>
+
+  <div class="setting">
     <div class="setting-label">{t('set.clear')}</div>
     <div class="setting-hint">{t('set.clear_hint')}</div>
     <button class="btn-danger" onclick={() => void clearHistory()}>{t('set.clear_btn')}</button>
@@ -589,6 +596,12 @@
   }
 
   /* The About panel: a name and a version, two links, two notes. */
+  /* The danger button below gets its 10px from app.css; this one is the
+     shared outline button, which carries none. */
+  .clear-recent {
+    margin-top: 10px;
+  }
+
   .report-row {
     display: flex;
     margin-bottom: 4px;

@@ -7,6 +7,9 @@
   /// is that the knob reads `seek.value`, never `player.timePos`: while a
   /// gesture owns the position those two disagree on purpose.
   import { formatTime } from '$lib/format';
+  import { t } from '$lib/i18n.svelte';
+  import { playback } from '$lib/playback.svelte';
+  import { remainingSeconds, timeReadout, toggleRemaining } from '$lib/seekbar.svelte';
   import { chapterTitle, player, type Chapter } from '$lib/player.svelte';
   import { onSeekCancel, onSeekDown, onSeekMove, onSeekUp, seek } from '$lib/seek.svelte';
   import { thumbs } from '$lib/thumbs.svelte';
@@ -37,6 +40,8 @@
   }: Props = $props();
 
   const hasFile = $derived(player.hasFile);
+  /// Speed is 1× on a television, which plays at its own pace.
+  const speed = $derived(playback.remote ? 1 : player.speed || 1);
 </script>
 
 <div class="seekrow" class:mini>
@@ -135,7 +140,19 @@
       <div class="seekknob" style="left: {barDuration > 0 ? (seek.value / barDuration) * 100 : 0}%"></div>
     </div>
   </div>
-  <span class="time">{formatTime(barDuration)}</span>
+  <!-- A click switches between the length and what is left of it (in real
+       time at the current speed). A button for the click, dressed as the
+       readout it is. -->
+  <button
+    class="time time-toggle"
+    data-tip={t(timeReadout.remaining ? 'osc.time_show_total' : 'osc.time_show_left')}
+    aria-label={t(timeReadout.remaining ? 'osc.time_show_total' : 'osc.time_show_left')}
+    onclick={toggleRemaining}
+  >
+    {timeReadout.remaining && barDuration > 0
+      ? `−${formatTime(remainingSeconds(barDuration, seek.value, speed))}`
+      : formatTime(barDuration)}
+  </button>
 </div>
 
 <style>
@@ -380,6 +397,19 @@
     width: 22px;
     height: 22px;
   }
+  /* The readout as a button: no box of its own, only the text it already
+     was, and a pointer to say it can be clicked. */
+  .time-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .time-toggle:hover {
+    color: #fff;
+  }
+
   .seekrow.mini .time {
     font-size: 10.5px;
   }

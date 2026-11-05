@@ -9,6 +9,7 @@ import { command, getProperty, setProperty } from 'tauri-plugin-libmpv-api';
 import { formatTime } from '../format';
 import { t } from '../i18n.svelte';
 import { showOsd } from '../osd.svelte';
+import { SPEED_MAX, SPEED_MIN, clampSpeed } from '../speed';
 import { resyncState } from './mirrors';
 import { player, type LoopMode } from './state.svelte';
 
@@ -163,12 +164,12 @@ export function cycleLoop() {
 }
 
 /// Returns what it settled on, so a caller that has to report the change —
-/// `playback.changeSpeed`, which tells a shared room — does not have to repeat
+/// `playback.setSpeed`, which tells a shared room — does not have to repeat
 /// the clamping and rounding and end up disagreeing with what mpv was given.
-export function changeSpeed(factor: number, from = player.speed): number {
-  const next = Math.round(Math.max(0.25, Math.min(4, from * factor)) * 100) / 100;
+export function setSpeed(value: number): number {
+  const next = clampSpeed(value);
   void setProperty('speed', next);
-  showOsd(t('osd.speed', { value: next }), { progress: (next - 0.25) / 3.75 });
+  showOsd(t('osd.speed', { value: next }), { progress: (next - SPEED_MIN) / (SPEED_MAX - SPEED_MIN) });
   return next;
 }
 

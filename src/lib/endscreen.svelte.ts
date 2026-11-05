@@ -22,6 +22,8 @@
 
 import { chrome } from './chrome.svelte';
 import { frameStep } from './frame-step.svelte';
+import { t } from './i18n.svelte';
+import { showOsd } from './osd.svelte';
 import { jumpToChapter, openEntry, playback } from './playback.svelte';
 import { chapterAt, player, skipKind } from './player.svelte';
 import { ADVANCE_MS, ensurePoster, neighbour, playlist } from './playlist.svelte';
@@ -196,7 +198,12 @@ export function onReachedEnd() {
     // Re-read rather than closing over `next`: the countdown outlives several
     // frames, and the queue can be edited from the panel while it runs.
     const target = neighbour(1);
-    if (target) openEntry(target);
+    if (!target) return;
+    openEntry(target);
+    // Said out loud: the queue moving on by itself was otherwise visible only
+    // as the title sliding — a viewer who did not know the folder was queued
+    // saw the picture change for no reason they could find.
+    showOsd(t('osd.next_file', { title: target.title }));
   }, ADVANCE_MS);
 }
 

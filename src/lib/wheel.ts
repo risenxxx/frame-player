@@ -153,3 +153,39 @@ export class WheelGesture {
     return { volume: steps };
   }
 }
+
+/**
+ * The wheel as playback speed: over the speed control on the bar, or anywhere
+ * with the modifier the viewer chose. One rung of the speed ladder per notch,
+ * up is faster — the volume's direction, and the same macOS sign — and a
+ * trackpad's small deltas collect towards a notch the way they do for volume.
+ */
+export class SpeedWheel {
+  private accum = 0;
+
+  reset() {
+    this.accum = 0;
+  }
+
+  /// Rungs to move: positive is faster.
+  feed(deltaY: number, deltaMode: number, mac: boolean): number {
+    const scale = deltaMode === 1 ? 16 : deltaMode === 2 ? 400 : 1;
+    const py = deltaY * scale;
+    this.accum += mac ? py : -py;
+    const steps = Math.trunc(this.accum / NOTCH_PX);
+    if (!steps) return 0;
+    this.accum -= steps * NOTCH_PX;
+    return steps;
+  }
+}
+
+/// Which modifier turns the wheel into speed anywhere over the video. Not Ctrl
+/// alone (the zoom) and not Shift alone (the other axis).
+export type SpeedWheelMod = 'off' | 'alt' | 'ctrlShift';
+
+export function speedModHeld(e: { altKey: boolean; ctrlKey: boolean; shiftKey: boolean; metaKey: boolean }, mod: SpeedWheelMod): boolean {
+  if (mod === 'alt') return e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey;
+  if (mod === 'ctrlShift') return e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
+  return false;
+}
+

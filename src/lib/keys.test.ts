@@ -17,6 +17,7 @@ import { setLocale } from './i18n.svelte';
 import {
   ACTIONS,
   actionFor,
+  actionMatches,
   actionLabel,
   assign,
   chordLabel,
@@ -239,5 +240,20 @@ describe('chordLabel', () => {
     const label = chordLabel('ctrl+shift+KeyS');
     expect(label).toMatch(/S$/);
     expect(label.length).toBeGreaterThan(1);
+  });
+});
+
+describe('the editor search', () => {
+  it('finds an action by name, by group and by key, in any case', () => {
+    setLocale('en');
+    expect(actionMatches('speed_reset', 'SPEED 1')).toBe(true);
+    // The group name lists the whole group.
+    expect(ACTIONS.filter((a) => actionMatches(a.id, 'playback')).every((a) => a.group === 'playback')).toBe(true);
+    expect(actionMatches('pause', 'playback')).toBe(true);
+    // A key finds what is on it.
+    expect(actionMatches('speed_down', '[')).toBe(true);
+    expect(actionMatches('speed_up', '[')).toBe(false);
+    expect(actionMatches('pause', '')).toBe(true);
+    expect(actionMatches('pause', 'zzzz')).toBe(false);
   });
 });

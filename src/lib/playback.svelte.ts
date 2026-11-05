@@ -66,12 +66,13 @@ import {
 import { publishState, wire } from './sync/wire.svelte';
 import { raiseCurtain } from './curtain.svelte';
 import { formatTime } from './format';
+import { nextSpeed } from './speed';
 import { t } from './i18n.svelte';
 import type { ActionId } from './keys.svelte';
 import { showOsd } from './osd.svelte';
 import {
   type Chapter,
-  changeSpeed as mpvChangeSpeed,
+  setSpeed as mpvSetSpeed,
   chapterAt,
   chapterTitle,
   jumpChapter,
@@ -426,12 +427,31 @@ export function toggleMute() {
  * that is this machine catching up with the room, not a change to what the room
  * is doing, and publishing it would have every peer chasing every other peer.
  */
-export function changeSpeed(factor: number) {
+export function setSpeed(value: number) {
   if (refusedByRoom()) return;
-  // From the room's speed while in one, for the same reason `share` publishes
-  // it: mpv's own may be mid-correction, and a step taken from 1.04 is 1.14.
-  const next = mpvChangeSpeed(factor, wire.on ? wire.timeline.speed || 1 : undefined);
-  share({ speed: next });
+  share({ speed: mpvSetSpeed(value) });
+}
+
+/// The position, the length and what is left — the last in real time, so at
+/// 2× a minute of film that remains takes thirty seconds. Whichever machine is
+/// playing: the television's clock while casting, where speed is always 1×.
+export function showTime() {
+  const dur = playback.duration;
+  if (!(dur > 0)) return;
+  const pos = Math.min(dur, Math.max(0, playback.position));
+  const speed = playback.remote ? 1 : player.speed || 1;
+  const left = formatTime((dur - pos) / speed);
+  showOsd(t('osd.time', { pos: formatTime(pos), dur: formatTime(dur) }), {
+    sub: speed === 1 ? t('osd.time_left', { time: left }) : t('osd.time_left_speed', { time: left, speed }),
+    progress: pos / dur,
+  });
+}
+
+/// One rung of `SPEED_LADDER` up or down. From the room's speed while in one,
+/// for the same reason `share` publishes it: mpv's own may be mid-correction,
+/// and a step taken from 1.04 must land on 1.25, not on the rung after.
+export function stepSpeed(dir: 1 | -1) {
+  setSpeed(nextSpeed(wire.on ? wire.timeline.speed || 1 : player.speed, dir));
 }
 
 // ---- Hotkeys while a television owns playback -------------------------------
@@ -474,6 +494,7 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
   playlist_next: 'local',
   speed_down: 'speed',
   speed_up: 'speed',
+  speed_reset: 'speed',
   loop: 'loop',
   ab_loop: 'loop',
   ab_clear: 'loop',
@@ -488,6 +509,8 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
   fullscreen: 'local',
   mini: 'mini',
   info: 'local',
+  show_time: 'local',
+  open_settings: 'local',
   reset_zoom: 'zoom',
   picture_menu: 'local',
   brightness_down: 'picture',
@@ -503,6 +526,8 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
   adjust_reset: 'picture',
   upscale_cycle: 'picture',
   open_file: 'local',
+  back_to_start: 'local',
+  quit: 'local',
   open_link: 'local',
   screenshot: 'screenshot',
   screenshot_subs: 'screenshot',
@@ -560,6 +585,7 @@ const SYNC_BEHAVIOR: Record<ActionId, 'shared' | 'personal' | 'solo'> = {
   playlist_next: 'shared',
   speed_down: 'shared',
   speed_up: 'shared',
+  speed_reset: 'shared',
   ab_loop: 'solo',
   ab_clear: 'solo',
   frame_prev: 'personal',
@@ -576,6 +602,8 @@ const SYNC_BEHAVIOR: Record<ActionId, 'shared' | 'personal' | 'solo'> = {
   fullscreen: 'personal',
   mini: 'personal',
   info: 'personal',
+  show_time: 'personal',
+  open_settings: 'personal',
   reset_zoom: 'personal',
   picture_menu: 'personal',
   brightness_down: 'personal',
@@ -591,6 +619,8 @@ const SYNC_BEHAVIOR: Record<ActionId, 'shared' | 'personal' | 'solo'> = {
   adjust_reset: 'personal',
   upscale_cycle: 'personal',
   open_file: 'personal',
+  back_to_start: 'personal',
+  quit: 'personal',
   open_link: 'personal',
   screenshot: 'personal',
   screenshot_subs: 'personal',

@@ -25,7 +25,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { ActivationGate } from './activation';
-import { chrome, exitFullscreen, pokeUi, toggleFullscreen } from './chrome.svelte';
+import { chrome, closeWindow, exitFullscreen, pokeUi, toggleFullscreen } from './chrome.svelte';
+import { backToStart } from './start-screen.svelte';
 import { inTextField } from './dom';
 import { cancelAdvance, endOfFile, takeSkip } from './endscreen.svelte';
 import { actionFor, chordOf, isDigitJump, type ActionId } from './keys.svelte';
@@ -34,7 +35,9 @@ import { openFileDialog, openLinkDialog } from './open.svelte';
 import { closeTopmost, dismissTopmostOnClick, overlays, toggleInfo } from './overlays.svelte';
 import {
   advance,
-  changeSpeed,
+  setSpeed,
+  showTime,
+  stepSpeed,
   nudgeVolume,
   openEntry,
   playback,
@@ -57,7 +60,7 @@ import { nudgeDelayHere } from './tracks.svelte';
 import { mini, toggleMini, windowPrefs } from './window-prefs.svelte';
 import { isZoomed, panBy, resetZoom, zoomAt } from './zoom.svelte';
 import { zoomStep } from './zoom-step';
-import { WheelGesture, type WheelMode } from './wheel';
+import { SpeedWheel, WheelGesture, speedModHeld, type WheelMode } from './wheel';
 import { IS_MAC } from './platform';
 
 /// Set once from the system rather than guessed: the cast click path waits it
@@ -345,6 +348,7 @@ export function onVideoDblClick(e: MouseEvent) {
 // what is left here is the timer that ends a gesture on Windows, where nothing
 // says the wheel has stopped, and who the result goes to.
 const wheel = new WheelGesture();
+const speedWheel = new SpeedWheel();
 let wheelAxisTimer: ReturnType<typeof setTimeout> | undefined;
 const WHEEL_AXIS_RESET_MS = 400;
 
@@ -364,6 +368,7 @@ const WHEEL_SURFACES = '.ctxmenu, .menu, .settings, .settings-backdrop, .overlay
  */
 export function resetWheelGesture() {
   wheel.reset();
+  speedWheel.reset();
 }
 
 /**
@@ -372,6 +377,13 @@ export function resetWheelGesture() {
  * sets the volume. Everywhere else — the video, the rest of the bar — it is the
  * viewer's choice. Shift still swaps the two, as it does over the video.
  */
+/// The wheel over the speed control on the bar, or anywhere over the video
+/// with the modifier chosen in the settings.
+function speedWheelAsked(e: WheelEvent): boolean {
+  if ((e.target as HTMLElement | null)?.closest('.controls button.speed')) return true;
+  return speedModHeld(e, seekSteps.speedMod);
+}
+
 function wheelModeAt(target: EventTarget | null): WheelMode {
   const el = target as HTMLElement | null;
   if (el?.closest('.seekwrap')) return 'seek';
@@ -381,6 +393,19 @@ function wheelModeAt(target: EventTarget | null): WheelMode {
 
 export function onWheel(e: WheelEvent) {
   const onSurface = !!(e.target as HTMLElement | null)?.closest(WHEEL_SURFACES);
+  // The speed, ahead of everything else: the chosen modifier may include Ctrl
+  // (Ctrl+Shift), which below is the zoom.
+  if (!onSurface && speedWheelAsked(e)) {
+    e.preventDefault();
+    if (!player.hasFile || !playback.can.speed) return;
+    clearTimeout(wheelAxisTimer);
+    wheelAxisTimer = setTimeout(() => speedWheel.reset(), WHEEL_AXIS_RESET_MS);
+    // A Shift-held mouse wheel arrives sideways on macOS, so the larger axis.
+    const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    const steps = speedWheel.feed(delta, e.deltaMode, IS_MAC);
+    for (let i = 0; i < Math.abs(steps); i++) stepSpeed(steps > 0 ? 1 : -1);
+    return;
+  }
   if (e.ctrlKey) {
     // Ctrl+wheel zooms the video around the point under the cursor. On a
     // trackpad this is the pinch gesture, whose sign the device sets itself —
@@ -464,8 +489,9 @@ export function runAction(id: ActionId) {
     case 'chapter_next': stepChapter(1); break;
     case 'playlist_prev': advance(-1); break;
     case 'playlist_next': advance(1); break;
-    case 'speed_down': changeSpeed(1 / 1.25); break;
-    case 'speed_up': changeSpeed(1.25); break;
+    case 'speed_down': stepSpeed(-1); break;
+    case 'speed_up': stepSpeed(1); break;
+    case 'speed_reset': setSpeed(1); break;
     case 'loop': cycleLoop(); break;
     case 'ab_loop': cycleAbLoop(); break;
     case 'ab_clear': clearAbLoop(); break;
@@ -480,6 +506,8 @@ export function runAction(id: ActionId) {
     case 'fullscreen': void toggleFullscreen(); break;
     case 'mini': if (player.hasFile || mini.on) void toggleMini(); break;
     case 'info': toggleInfo(player.hasFile); break;
+    case 'show_time': showTime(); break;
+    case 'open_settings': overlays.settings = true; break;
     case 'reset_zoom': resetZoom(); break;
     case 'picture_menu': togglePictureMenu(); break;
     case 'brightness_down': nudgeAdjust('brightness', -ADJUST_KEY_STEP); break;
@@ -495,6 +523,8 @@ export function runAction(id: ActionId) {
     case 'adjust_reset': resetAdjust(); break;
     case 'upscale_cycle': cycleUpscale(); break;
     case 'open_file': void openFileDialog(); break;
+    case 'back_to_start': if (player.hasFile) void backToStart(); break;
+    case 'quit': closeWindow(); break;
     case 'open_link': void openLinkDialog(); break;
     case 'screenshot': void saveScreenshot(false); break;
     case 'screenshot_subs': void saveScreenshot(true); break;
@@ -592,6 +622,10 @@ export function onKeydown(e: KeyboardEvent) {
     // that leaves `isFullscreen()` disagreeing with the button (macos_chrome.rs).
     e.preventDefault();
     closeTopmost();
+    pokeUi();
   }
-  pokeUi();
+  // Any other key is not ours, and it does not raise the controls either. It
+  // used to: a modifier on its own (someone reaching for a chord, or Alt, the
+  // Windows habit of opening a menu bar this window does not have) and every
+  // unbound key put the bars over the picture for nothing.
 }

@@ -55,7 +55,7 @@ export { initPlayer, loadFiles, pickAndLoadFiles, type PlayerHooks } from './pla
 export {
   applyLoopMode,
   ASPECT_AUTO,
-  changeSpeed,
+  setSpeed,
   clearAbLoop,
   cycleAbLoop,
   cycleLoop,

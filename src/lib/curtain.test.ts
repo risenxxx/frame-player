@@ -31,6 +31,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import {
+  BARE_MAX_MS,
   CAP_MS,
   LIFT_MS,
   NO_PICTURE_MS,
@@ -304,6 +305,17 @@ describe('over no picture', () => {
     void raiseCurtain();
     await vi.advanceTimersByTimeAsync(CAP_MS + 10);
     expect(curtain.bare).toBe(false);
+  });
+
+  it('gives the bars back to a file that shows nothing, while the curtain stays', async () => {
+    // A damaged or half-downloaded file: no frame, no file-loaded, so the dark
+    // waits for its cap — the controls must not wait with it.
+    nothing();
+    void raiseCurtain();
+    expect(curtain.bare).toBe(true);
+    await vi.advanceTimersByTimeAsync(BARE_MAX_MS + 10);
+    expect(curtain.bare).toBe(false);
+    expect(curtain.on).toBe(true);
   });
 
   it('is not bare when the loading plate was up before it came down', () => {

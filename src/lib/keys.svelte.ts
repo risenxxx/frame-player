@@ -58,6 +58,7 @@ export type ActionId =
   | 'playlist_next'
   | 'speed_down'
   | 'speed_up'
+  | 'speed_reset'
   | 'loop'
   | 'ab_loop'
   | 'ab_clear'
@@ -72,6 +73,8 @@ export type ActionId =
   | 'fullscreen'
   | 'mini'
   | 'info'
+  | 'show_time'
+  | 'open_settings'
   | 'reset_zoom'
   | 'picture_menu'
   | 'brightness_down'
@@ -87,6 +90,8 @@ export type ActionId =
   | 'adjust_reset'
   | 'upscale_cycle'
   | 'open_file'
+  | 'back_to_start'
+  | 'quit'
   | 'open_link'
   | 'screenshot'
   | 'screenshot_subs'
@@ -131,6 +136,8 @@ export const ACTIONS: ActionDef[] = [
   { id: 'pause', group: 'playback', def: ['Space', 'KeyK'], noRepeat: true },
   { id: 'speed_down', group: 'playback', def: ['BracketLeft'] },
   { id: 'speed_up', group: 'playback', def: ['BracketRight'] },
+  // VLC's key for it, and free: Ctrl+= is the audio delay, not this.
+  { id: 'speed_reset', group: 'playback', def: ['Equal'], noRepeat: true },
   { id: 'loop', group: 'playback', def: ['shift+KeyL'], noRepeat: true, quiet: true },
   { id: 'ab_loop', group: 'playback', def: ['KeyA'], noRepeat: true },
   { id: 'ab_clear', group: 'playback', def: ['shift+KeyA'], noRepeat: true },
@@ -182,6 +189,10 @@ export const ACTIONS: ActionDef[] = [
   { id: 'fullscreen', group: 'view', def: ['KeyF'], noRepeat: true, menuMac: 'ctrl+meta+KeyF' },
   { id: 'mini', group: 'view', def: ['KeyP'], noRepeat: true, menuMac: 'shift+meta+KeyM' },
   { id: 'info', group: 'view', def: ['KeyI'], noRepeat: true, menuMac: 'meta+KeyI' },
+  // The position and what is left, in real time at the current speed. T as in
+  // VLC; `quiet` because it is a popup of its own.
+  { id: 'show_time', group: 'view', def: ['KeyT'], noRepeat: true, quiet: true },
+  { id: 'open_settings', group: 'view', def: ['ctrl+Comma'], defMac: [], noRepeat: true, menuMac: 'meta+Comma' },
   { id: 'reset_zoom', group: 'view', def: ['ctrl+Digit0'], quiet: true },
   // The picture panel is the only one with a default key: the ten steps below
   // are for somebody who adjusts often enough to want them, and mpv's own keys
@@ -202,6 +213,10 @@ export const ACTIONS: ActionDef[] = [
 
   // File and frames
   { id: 'open_file', group: 'file', def: ['KeyO'], noRepeat: true, menuMac: 'meta+KeyO' },
+  // Closing the file is Ctrl+W on Windows, as a tab is; on macOS ⌘W is the
+  // menu's Close Window, so nothing is taken from it by default.
+  { id: 'back_to_start', group: 'file', def: ['ctrl+KeyW'], defMac: [], noRepeat: true },
+  { id: 'quit', group: 'file', def: ['ctrl+KeyQ'], defMac: [], noRepeat: true, menuMac: 'meta+KeyQ' },
   {
     id: 'open_link',
     group: 'file',
@@ -536,6 +551,22 @@ export function actionLabel(id: ActionId): string {
   if (id === 'seek_back_10' || id === 'seek_fwd_10') return t(`keys.${id}`, { s: seekSteps.long });
   const key: MessageKey = `keys.${id}`;
   return t(key);
+}
+
+/**
+ * Whether a row of the editor answers the search field: by its name, by its
+ * group's name ("playback" lists the whole group) or by a key it is on ("["
+ * finds the speed). Case does not matter; an empty query matches everything.
+ */
+export function actionMatches(id: ActionId, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const def = BY_ID.get(id);
+  if (!def) return false;
+  if (actionLabel(id).toLowerCase().includes(q)) return true;
+  if (t(`kgroup.${def.group}`).toLowerCase().includes(q)) return true;
+  const chords = [...chordsOf(id), ...(IS_MAC && def.menuMac ? [def.menuMac] : [])];
+  return chords.some((c) => chordLabel(c).toLowerCase().includes(q));
 }
 
 /**

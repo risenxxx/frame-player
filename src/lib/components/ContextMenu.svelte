@@ -14,15 +14,13 @@
   import type { Snippet } from 'svelte';
   import { tick } from 'svelte';
   import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
-  import { setProperty } from 'tauri-plugin-libmpv-api';
 
   import { flipAxis, shiftAxis } from '$lib/floating';
   import { t } from '$lib/i18n.svelte';
   import { wire } from '$lib/sync/wire.svelte';
   import { hint } from '$lib/keys.svelte';
   import { leveling, toggleLeveling } from '$lib/leveling.svelte';
-  import { playback } from '$lib/playback.svelte';
-  import { showOsd } from '$lib/osd.svelte';
+  import { playback, setSpeed } from '$lib/playback.svelte';
   import { IS_MAC } from '$lib/platform';
   import { ASPECT_AUTO, LOOP_LABEL, isNetworkSource, player, type PictureProp } from '$lib/player.svelte';
   import { blockContextMenu, holdSlider } from '$lib/dom';
@@ -508,7 +506,7 @@
       <button
         class="speedopt"
         class:sel={Math.abs(player.speed - s) < 0.01}
-        onclick={() => { close(); void setProperty('speed', s); showOsd(t('osd.speed', { value: s }), { progress: (s - 0.25) / 3.75 }); }}
+        onclick={() => { close(); setSpeed(s); }}
       >
         {s}×
       </button>

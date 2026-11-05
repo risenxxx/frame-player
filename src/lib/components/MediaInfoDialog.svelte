@@ -18,6 +18,7 @@
     overallBitrate,
     type MediaInfo,
   } from '$lib/mediainfo';
+  import { showOsd } from '$lib/osd.svelte';
   import { player } from '$lib/player.svelte';
   import { stalls } from '$lib/stall.svelte';
   import { torrent } from '$lib/torrent.svelte';
@@ -80,6 +81,33 @@
     return t('info.stall_value', { ms: stalls.last.ms, secs, max: stalls.worst });
   }
 
+  let body = $state<HTMLElement | null>(null);
+
+  /// The panel as plain text, for pasting into a forum post or an issue: read
+  /// off what is on screen rather than rebuilt from `mediaInfo`, so the copy is
+  /// exactly the rows the viewer is looking at, in their language.
+  async function copyInfo() {
+    if (!body) return;
+    const lines: string[] = [];
+    for (const el of body.querySelectorAll<HTMLElement>('.info-section, .info-row')) {
+      if (el.classList.contains('info-section')) {
+        if (lines.length) lines.push('');
+        lines.push(el.textContent?.trim() ?? '');
+      } else {
+        const label = el.querySelector('.info-label')?.textContent?.trim() ?? '';
+        const value = el.querySelector('.info-value')?.textContent?.trim() ?? '';
+        lines.push(`${label}: ${value}`);
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      showOsd(t('info.copied'));
+    } catch (e) {
+      console.warn('clipboard write failed:', e);
+      showOsd(t('info.copy_failed'));
+    }
+  }
+
   /// A drop counter and, when something has actually been lost, how long ago.
   function counter(drops: { count: number; last: { delta: number; at: number } | null }): string {
     if (!drops.last) return String(drops.count);
@@ -89,6 +117,9 @@
 </script>
 
 <Dialog title={t('info.title')} scrollable {onclose}>
+  <!-- Selectable, unlike the rest of the interface (app-wide user-select:
+       none): codec names and file names are what people copy out of here. -->
+  <div class="info-body" bind:this={body}>
   {#if mediaInfo}
     {@const info = mediaInfo}
     <div class="info-section">{t('info.file')}</div>
@@ -180,6 +211,10 @@
       )}
     {/if}
   {/if}
+  </div>
+  {#if mediaInfo}
+    <button class="btn-outline info-copy" onclick={() => void copyInfo()}>{t('info.copy')}</button>
+  {/if}
 </Dialog>
 
 {#snippet infoRow(label: string, value: string | null)}
@@ -195,6 +230,15 @@
 {/snippet}
 
 <style>
+  .info-body {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  .info-copy {
+    margin-top: 16px;
+  }
+
   .info-section {
     margin: 16px 0 6px;
     color: #9a9aa5;

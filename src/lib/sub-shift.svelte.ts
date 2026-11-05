@@ -76,7 +76,22 @@ const MARGIN_REFERENCE_H = 720;
 /// mpv's core thread.
 const MIN_STEP = 0.2;
 
+const ENABLED_KEY = 'frameplayer.subLift';
+
+function loadEnabled(): boolean {
+  try {
+    return localStorage.getItem(ENABLED_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
 class SubShift {
+  /// The viewer's switch (Settings → Subtitles). Off, the subtitles stay where
+  /// `sub-pos` puts them and the bar covers them while it is up — which some
+  /// viewers prefer to a line of text that moves every time the mouse does.
+  enabled = $state(loadEnabled());
+
   /// The control bar. Bound by the page; null whenever it is not rendered at
   /// all, which is the start screen.
   oscEl = $state<HTMLElement | null>(null);
@@ -94,6 +109,7 @@ class SubShift {
   /// How far the subtitles are lifted, in percent of window height. Zero means
   /// mpv holds the viewer's own value and nothing of ours is in force.
   lift = $derived.by(() => {
+    if (!this.enabled) return 0;
     if (!this.oscEl || !this.barPx || !this.windowPx) return 0;
     // The bar is faded out and no longer covers anything.
     if (chrome.idle) return 0;
@@ -110,6 +126,15 @@ class SubShift {
 }
 
 export const subShift = new SubShift();
+
+export function setSubLift(on: boolean) {
+  subShift.enabled = on;
+  try {
+    localStorage.setItem(ENABLED_KEY, on ? '1' : '0');
+  } catch {
+    // the choice simply will not survive a restart
+  }
+}
 
 /// The viewer's own `sub-pos` while ours is in force, and null the rest of the
 /// time — which is also the flag for "nothing to restore".

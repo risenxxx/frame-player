@@ -37,6 +37,7 @@ import {
   titleFor,
   type RecentItem,
 } from './history.svelte';
+import { baseName } from './format';
 import { t } from './i18n.svelte';
 import { latest, type Attempt } from './latest';
 import { showOsd } from './osd.svelte';
@@ -474,6 +475,14 @@ export function reportLoadFailure() {
       opening.lastLink = opening.attempting;
       opening.box.failed = true;
       opening.linkOpen = true;
+      return;
+    }
+    // A file on disk has no yt-dlp to blame, and the line that says so sent
+    // people looking for a website. What it can be is said instead.
+    if (opening.attempting && !isNetworkSource(opening.attempting)) {
+      showOsd(t('osd.open_failed_file', { name: baseName(opening.attempting) }), {
+        sub: t('osd.open_failed_file_why'),
+      });
       return;
     }
     showOsd(t('osd.open_failed'));

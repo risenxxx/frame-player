@@ -959,6 +959,25 @@ export function forgetRecent(path: string) {
  * ever watched — along with the per-folder track memory and the paths of every
  * subtitle the player had downloaded.
  */
+/**
+ * Only the "Continue watching" list: the positions it is made of, nothing
+ * else. Track choices, delays, picture settings and the previews stay, which is
+ * the difference from `clearHistory` — a viewer tidying the start screen has
+ * not asked to lose the subtitle track picked for every episode of a show.
+ */
+export function clearRecent() {
+  // The position being played goes too, or the next flush writes it back.
+  lastKnownPos = null;
+  try {
+    localStorage.removeItem(POSITIONS_KEY);
+  } catch (e) {
+    console.warn('clearing the positions failed:', e);
+  }
+  for (const r of history.recent) if (r.poster) URL.revokeObjectURL(r.poster);
+  history.recent = [];
+  showOsd(t('osd.recent_cleared'));
+}
+
 export async function clearHistory() {
   forgetLinks();
   for (const store of IDENTIFIED_STORES) {

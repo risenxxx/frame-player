@@ -19,6 +19,7 @@ import { t } from '$lib/i18n.svelte';
 import { mpvLangValue, parseLangList } from '$lib/languages';
 import { player, readList } from '$lib/player.svelte';
 import { showOsd } from '$lib/osd.svelte';
+import { opacityOf, withOpacity } from '$lib/settings/sub-color';
 
 // Interactive settings editor: descriptions of the options mirrored into
 // mpv.conf. v = null means "player default" (the line is commented out).
@@ -67,6 +68,9 @@ export interface SliderDef extends SettingBase {
   /// dragging back to it is impossible and the mpv.conf line never clears.
   decimals: number;
   suffix?: string;
+  /// The option is a colour and the slider is its alpha, in percent — see
+  /// `sub-color.ts`. `liveDefault` is then mpv's default colour.
+  opacity?: true;
 }
 export type SettingDef = SegmentedDef | DeviceDef | LangsDef | SliderDef;
 
@@ -305,6 +309,39 @@ export class MpvSettings {
       ],
       hint: t('vset.sub_style_hint'),
     },
+    {
+      kind: 'slider',
+      tab: 'subs',
+      key: 'sub-color',
+
+      group: 'look',
+      label: t('vset.sub_text_opacity'),
+      liveDefault: '#FFFFFFFF',
+      opacity: true,
+      // Not to zero: invisible text is "subtitles off", which has its own row.
+      min: 10,
+      max: 100,
+      step: 1,
+      decimals: 0,
+      suffix: '%',
+    },
+    {
+      kind: 'slider',
+      tab: 'subs',
+      key: 'sub-back-color',
+
+      group: 'look',
+      label: t('vset.sub_back_opacity'),
+      // mpv's default, 0xAF of 255.
+      liveDefault: '#AF000000',
+      opacity: true,
+      min: 0,
+      max: 100,
+      step: 1,
+      decimals: 0,
+      suffix: '%',
+      hint: t('vset.sub_back_opacity_hint'),
+    },
   ]);
 
   /// Menu items do nothing on their own — Rust sends the id here and the same
@@ -458,6 +495,7 @@ export class MpvSettings {
   /// Current value of a slider: what mpv.conf says, or mpv's own default.
   sliderValue(def: SliderDef): number {
     const saved = this.settingsValues[def.key];
+    if (def.opacity) return Math.min(def.max, Math.max(def.min, opacityOf(saved, def.liveDefault)));
     const value = Number(saved ?? def.liveDefault);
     return Number.isFinite(value) ? Math.min(def.max, Math.max(def.min, value)) : Number(def.liveDefault);
   }
@@ -469,6 +507,14 @@ export class MpvSettings {
     // Snapped to the declared precision before it is written: a range input
     // can hand back 1.2000000000000002, and that would go into mpv.conf as is.
     const snapped = Number(value.toFixed(def.decimals));
+    if (def.opacity) {
+      // The colour's own default, alpha and all, is no line at all; any other
+      // colour the viewer wrote keeps its RGB and takes the new alpha.
+      const saved = this.settingsValues[def.key];
+      const next = withOpacity(snapped, saved, def.liveDefault);
+      this.setSetting(def, next === withOpacity(opacityOf(null, def.liveDefault), null, def.liveDefault) ? null : next, true);
+      return;
+    }
     const isDefault = Math.abs(snapped - Number(def.liveDefault)) < 1e-9;
     this.setSetting(def, isDefault ? null : String(snapped), true);
   }

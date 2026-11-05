@@ -22,28 +22,42 @@
  * give the key table a path to mpv, cast and the thumbnail service.
  */
 
-import type { WheelMode } from './wheel';
+import type { SpeedWheelMod, WheelMode } from './wheel';
 
 const PREFS_KEY = 'frameplayer.seek';
 
-/// The choices the settings sheet offers. Named values, not a range, so the
-/// sheet shows them as pills (see "two control shapes" in rules/ui-surfaces.md).
+/// The choices the settings sheet offers as pills (see "two control shapes" in
+/// rules/ui-surfaces.md). Any other whole number of seconds in `STEP_MIN..
+/// STEP_MAX` can be typed beside them: the pills are the common answers, and a
+/// lecture at 45 s or a sports replay at 8 s is nobody's mistake.
 export const SHORT_STEPS = [1, 2, 3, 5, 10] as const;
 export const LONG_STEPS = [10, 15, 20, 30, 60] as const;
 export const WHEEL_STEPS = [1, 5, 10, 30] as const;
 export const WHEEL_MODES = ['volume', 'seek'] as const satisfies readonly WheelMode[];
+export const SPEED_MODS = ['off', 'alt', 'ctrlShift'] as const satisfies readonly SpeedWheelMod[];
+export const STEP_MIN = 1;
+export const STEP_MAX = 600;
 
-export type ShortStep = (typeof SHORT_STEPS)[number];
-export type LongStep = (typeof LONG_STEPS)[number];
-export type WheelStep = (typeof WHEEL_STEPS)[number];
+export type StepKind = 'short' | 'long' | 'wheel';
+
+/// A typed step as it will be kept: whole seconds, inside the range; null for
+/// something that is not a number at all.
+export function cleanStep(value: number): number | null {
+  if (!Number.isFinite(value)) return null;
+  return Math.min(STEP_MAX, Math.max(STEP_MIN, Math.round(value)));
+}
 
 class SeekSteps {
-  short = $state<ShortStep>(5);
-  long = $state<LongStep>(10);
+  short = $state(5);
+  long = $state(10);
   wheel = $state<WheelMode>('volume');
   // 5 s is what a notch moved before this was a setting: 20 px a second
   // against a 100 px notch.
-  wheelStep = $state<WheelStep>(5);
+  wheelStep = $state(5);
+  /// The modifier that makes the wheel the playback speed anywhere over the
+  /// video (the speed control on the bar answers to a plain wheel). Alt by
+  /// default: nothing else listens to it, on either platform.
+  speedMod = $state<SpeedWheelMod>('alt');
 }
 
 export const seekSteps = new SeekSteps();
@@ -52,11 +66,19 @@ export function loadSeekSteps() {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return;
-    const saved = JSON.parse(raw) as { short?: number; long?: number; wheel?: string; wheelStep?: number };
-    const short = SHORT_STEPS.find((s) => s === saved.short);
-    const long = LONG_STEPS.find((s) => s === saved.long);
+    const saved = JSON.parse(raw) as {
+      short?: number;
+      long?: number;
+      wheel?: string;
+      wheelStep?: number;
+      speedMod?: string;
+    };
+    const speedMod = SPEED_MODS.find((m) => m === saved.speedMod);
+    if (speedMod) seekSteps.speedMod = speedMod;
+    const short = cleanStep(Number(saved.short));
+    const long = cleanStep(Number(saved.long));
     const wheel = WHEEL_MODES.find((m) => m === saved.wheel);
-    const wheelStep = WHEEL_STEPS.find((s) => s === saved.wheelStep);
+    const wheelStep = cleanStep(Number(saved.wheelStep));
     if (short) seekSteps.short = short;
     if (long) seekSteps.long = long;
     if (wheel) seekSteps.wheel = wheel;
@@ -66,11 +88,12 @@ export function loadSeekSteps() {
   }
 }
 
-export function setSeekStep(which: 'short', value: ShortStep): void;
-export function setSeekStep(which: 'long', value: LongStep): void;
-export function setSeekStep(which: 'short' | 'long', value: number) {
-  if (which === 'short') seekSteps.short = value as ShortStep;
-  else seekSteps.long = value as LongStep;
+export function setSeekStep(which: StepKind, value: number) {
+  const v = cleanStep(value);
+  if (v === null) return;
+  if (which === 'short') seekSteps.short = v;
+  else if (which === 'long') seekSteps.long = v;
+  else seekSteps.wheelStep = v;
   save();
 }
 
@@ -79,15 +102,15 @@ export function setWheelMode(mode: WheelMode) {
   save();
 }
 
-export function setWheelStep(value: WheelStep) {
-  seekSteps.wheelStep = value;
+export function setSpeedMod(mod: SpeedWheelMod) {
+  seekSteps.speedMod = mod;
   save();
 }
 
 function save() {
-  const { short, long, wheel, wheelStep } = seekSteps;
+  const { short, long, wheel, wheelStep, speedMod } = seekSteps;
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ short, long, wheel, wheelStep }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ short, long, wheel, wheelStep, speedMod }));
   } catch {
     // not critical: the choice simply will not survive a restart
   }

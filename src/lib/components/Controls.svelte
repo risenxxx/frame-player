@@ -14,6 +14,7 @@
     VOLUME_SCALE,
     advance,
     playback,
+    setSpeed,
     setVolume,
     toggleMute,
     togglePause,
@@ -235,10 +236,20 @@
     data-tip={t('osd.volume', { value: volume })}
     aria-label={t('osd.volume', { value: volume })}
   />
-  {#if player.speed !== 1 && playback.can.speed}
-    <span class="speed" data-tip={t('osc.speed')} aria-label={t('osc.speed')}>{player.speed}×</span>
+  <!-- Always there now, and a control rather than a readout: the wheel over it
+       steps the speed (`speedWheel` in input.svelte.ts), a click puts it back
+       to 1×. Quiet at 1×, indigo when the film is not at its own pace — the
+       accent's one meaning, "on". -->
+  {#if playback.can.speed && player.hasFile}
+    <button
+      class="speed"
+      class:off-pace={player.speed !== 1}
+      data-tip={t('osc.speed_ctl')}
+      aria-label={t('osc.speed_ctl')}
+      onclick={() => setSpeed(1)}
+    >{player.speed}×</button>
   {/if}
-  <!-- Shown only while leveling is on and heard, like the speed beside it: a
+  <!-- Shown only while leveling is on and heard: a
        state that changes how everything sounds should not be invisible once
        the evening is over. A click turns it off; turning it on is the key and
        the context menu's row. Narrower than the row's 36px buttons because it
@@ -536,12 +547,19 @@
     position: relative;
   }
 
-  .speed {
-    color: #818cf8;
+  .controls button.speed {
+    width: auto;
+    min-width: 36px;
+    padding: 0 6px;
+    color: #b9b9c3;
     font-size: 12px;
     font-weight: 600;
-    padding: 0 6px;
+    font-variant-numeric: tabular-nums;
     text-shadow: var(--ui-shadow);
+  }
+
+  .controls button.speed.off-pace {
+    color: #818cf8;
   }
 
   .controls button.leveling {

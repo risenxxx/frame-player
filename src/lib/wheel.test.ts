@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { WheelGesture, wheelChannel, type WheelInput, type WheelMode } from './wheel';
+import { SpeedWheel, WheelGesture, speedModHeld, wheelChannel, type WheelInput, type WheelMode } from './wheel';
 
 const ev = (deltaX: number, deltaY: number, shiftKey = false, deltaMode = 0): WheelInput => ({
   deltaX,
@@ -149,3 +149,29 @@ describe('WheelGesture', () => {
     expect(g.feed(ev(0, -100), 'volume', 5, false, true)).toEqual({ volume: 5 });
   });
 });
+
+describe('SpeedWheel', () => {
+  it('moves a rung per notch, up is faster, with the macOS sign turned', () => {
+    const w = new SpeedWheel();
+    expect(w.feed(-100, 0, false)).toBe(1);
+    expect(w.feed(100, 0, false)).toBe(-1);
+    expect(w.feed(100, 0, true)).toBe(1);
+  });
+
+  it('collects small trackpad deltas towards a notch', () => {
+    const w = new SpeedWheel();
+    expect(w.feed(-40, 0, false)).toBe(0);
+    expect(w.feed(-40, 0, false)).toBe(0);
+    expect(w.feed(-40, 0, false)).toBe(1);
+  });
+
+  it('reads only the modifier chosen, and nothing more held with it', () => {
+    const k = (alt: boolean, ctrl: boolean, shift: boolean) => ({ altKey: alt, ctrlKey: ctrl, shiftKey: shift, metaKey: false });
+    expect(speedModHeld(k(true, false, false), 'alt')).toBe(true);
+    expect(speedModHeld(k(true, false, true), 'alt')).toBe(false);
+    expect(speedModHeld(k(false, true, true), 'ctrlShift')).toBe(true);
+    expect(speedModHeld(k(false, true, false), 'ctrlShift')).toBe(false);
+    expect(speedModHeld(k(true, false, false), 'off')).toBe(false);
+  });
+});
+

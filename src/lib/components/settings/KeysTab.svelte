@@ -6,6 +6,7 @@
     ACTIONS,
     GROUP_ORDER,
     actionLabel,
+    actionMatches,
     assign,
     chordLabel,
     chordOf,
@@ -30,6 +31,12 @@
   }
 
   let { keyNote = $bindable() }: Props = $props();
+
+  /// The search field over the list: a name, a group or a key. Not kept
+  /// across visits — a filter found still applied next time reads as rows
+  /// having gone missing.
+  let query = $state('');
+  const shown = $derived(ACTIONS.filter((a) => actionMatches(a.id, query)));
 
   // ---- Key bindings editor -------------------------------------------------
 
@@ -94,10 +101,23 @@
   });
 </script>
 
-{#each GROUP_ORDER as group (group)}
+<input
+  class="key-search"
+  type="search"
+  spellcheck="false"
+  autocapitalize="off"
+  autocorrect="off"
+  placeholder={t('keys.search')}
+  aria-label={t('keys.search')}
+  bind:value={query}
+/>
+{#if shown.length === 0}
+  <div class="settings-foot">{t('keys.search_none')}</div>
+{/if}
+{#each GROUP_ORDER.filter((g) => shown.some((a) => a.group === g)) as group (group)}
   <div class="set-group">{t(`kgroup.${group}`)}</div>
   <div class="set-panel">
-  {#each ACTIONS.filter((a) => a.group === group) as def (def.id)}
+  {#each shown.filter((a) => a.group === group) as def (def.id)}
     {@const chords = chordsOf(def.id)}
     <div class="setting keyrow">
       <div class="keyrow-name">{actionLabel(def.id)}</div>
@@ -161,6 +181,24 @@
 </button>
 
 <style>
+  /* The language picker's field, standing on its own above the list. */
+  .key-search {
+    display: block;
+    width: 100%;
+    margin: 4px 0 10px;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    color: #e8e8ec;
+    font-size: 12.5px;
+  }
+
+  .key-search:focus {
+    outline: none;
+    border-color: #818cf8;
+  }
+
   /* ---- Key bindings editor ----
      A row is a flex pair rather than the label-above-control shape the rest of
      the dialog uses: thirty-six actions at two lines each is a page of

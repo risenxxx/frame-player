@@ -78,3 +78,43 @@ export function initThumbAspect() {
     }
   });
 }
+
+// ---- The time readout on the right ------------------------------------------
+
+const REMAINING_KEY = 'frameplayer.timeRemaining';
+
+function loadRemaining(): boolean {
+  try {
+    return localStorage.getItem(REMAINING_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/// Whether the readout at the right end of the bar shows the length of the
+/// file or what is left of it. A click on it switches, and the choice is the
+/// viewer's for good — the same convention as every player that has one.
+class TimeReadout {
+  remaining = $state(loadRemaining());
+}
+
+export const timeReadout = new TimeReadout();
+
+export function toggleRemaining() {
+  timeReadout.remaining = !timeReadout.remaining;
+  try {
+    localStorage.setItem(REMAINING_KEY, timeReadout.remaining ? '1' : '0');
+  } catch {
+    // the choice simply will not survive a restart
+  }
+}
+
+/// What is left in *real* time: at 2× a minute of film takes thirty seconds,
+/// at 0.5× two minutes. That is the number the readout exists for — "how long
+/// until this is over" — and the film's own remainder is one subtraction away
+/// on the bar anyway.
+export function remainingSeconds(duration: number, position: number, speed: number): number {
+  const left = Math.max(0, duration - position);
+  return speed > 0 ? left / speed : left;
+}
+
