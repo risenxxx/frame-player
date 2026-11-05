@@ -351,7 +351,7 @@
   <div class="setting">
     <div class="setting-label">{t('set.clear_recent')}</div>
     <div class="setting-hint">{t('set.clear_recent_hint')}</div>
-    <button class="btn-outline clear-recent" onclick={clearRecent}>{t('set.clear_recent_btn')}</button>
+    <button class="clear-recent" onclick={clearRecent}>{t('set.clear_recent_btn')}</button>
   </div>
 
   <div class="setting">
@@ -596,10 +596,25 @@
   }
 
   /* The About panel: a name and a version, two links, two notes. */
-  /* The danger button below gets its 10px from app.css; this one is the
-     shared outline button, which carries none. */
+  /* `.btn-danger`'s size and shape, beside it, without the red: this one
+     takes a list off the start screen, not the history with it. The shared
+     outline button was the start screen's size, a third larger than
+     anything else in the sheet. */
   .clear-recent {
     margin-top: 10px;
+    padding: 8px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    background: transparent;
+    color: #d6d6de;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+
+  .clear-recent:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.3);
   }
 
   .report-row {

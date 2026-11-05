@@ -195,10 +195,13 @@
     background: rgba(20, 20, 28, 0.75);
   }
 
-  /* End of an entry: previous / replay / next. The cards are a fixed width, so
-     the replay button stays put whichever of them is missing — a queue has a
-     first and a last entry, and the middle control jumping sideways between
-     episodes would be the most visible thing on the screen. */
+  /* End of an entry: previous / replay / next. Three columns of fixed width,
+     each child pinned to its own, so the replay button stays in the middle
+     whichever card is missing — a queue has a first and a last entry, and the
+     middle control jumping sideways between episodes would be the most visible
+     thing on the screen. A flex row with fixed-width cards promised the same
+     and did not keep it: a card that is not rendered takes no room, and the
+     button and the one card left were centred as a pair. */
   .endscreen {
     display: flex;
     flex-direction: column;
@@ -208,14 +211,33 @@
   }
 
   .endrow {
-    display: flex;
+    display: grid;
+    /* `minmax(0, …)` so a narrow window shrinks the two card columns alike,
+       as the flex row's shrinking cards did, and the middle stays the middle. */
+    grid-template-columns: minmax(0, 220px) auto minmax(0, 220px);
+    /* The full set's width, or the window's when that is less: sized from its
+       content, a short title and a poster still loading would leave the card
+       columns nothing to grow into. Two cards, the button, two gaps. */
+    width: min(100%, calc(2 * 220px + 96px + 2 * 32px));
     align-items: center;
-    justify-content: center;
     gap: 32px;
   }
 
+  .endrow > .endcard.prev {
+    grid-column: 1;
+  }
+
+  .endrow > .replay {
+    grid-column: 2;
+  }
+
+  .endrow > .endcard:not(.prev) {
+    grid-column: 3;
+  }
+
   .endcard {
-    width: 220px;
+    width: 100%;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     padding: 0;

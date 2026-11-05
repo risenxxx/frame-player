@@ -21,9 +21,11 @@
  */
 
 import { chrome } from './chrome.svelte';
+import { curtain } from './curtain.svelte';
+import { samePath } from './format';
 import { frameStep } from './frame-step.svelte';
 import { t } from './i18n.svelte';
-import { showOsd } from './osd.svelte';
+import { osd, showOsd } from './osd.svelte';
 import { jumpToChapter, openEntry, playback } from './playback.svelte';
 import { chapterAt, player, skipKind } from './player.svelte';
 import { ADVANCE_MS, ensurePoster, neighbour, playlist } from './playlist.svelte';
@@ -199,12 +201,46 @@ export function onReachedEnd() {
     // frames, and the queue can be edited from the panel while it runs.
     const target = neighbour(1);
     if (!target) return;
+    const from = player.filePath;
     openEntry(target);
-    // Said out loud: the queue moving on by itself was otherwise visible only
-    // as the title sliding — a viewer who did not know the folder was queued
-    // saw the picture change for no reason they could find.
-    showOsd(t('osd.next_file', { title: target.title }));
+    void announceNext(from, target.path, target.title);
   }, ADVANCE_MS);
+}
+
+/// How long the announcement waits for the next file to be on screen.
+const ANNOUNCE_WAIT_MS = 8000;
+const ANNOUNCE_POLL_MS = 100;
+
+/**
+ * Say which file the queue moved on to — once it is actually playing.
+ *
+ * Said out loud because the queue moving on by itself was otherwise visible
+ * only as the title sliding: a viewer who did not know the folder was queued
+ * saw the picture change for no reason they could find. And said *late*,
+ * because at the moment of the switch nothing floating can be seen: the
+ * curtain is down and the window may be reshaping, which hides every
+ * `.afloat` surface (`chrome.unsteady`), the popup included — shown then, it
+ * ran out its 1.2 s in the dark. So it waits for this file to be the one
+ * playing, the curtain to be up and the window to be still, and for any popup
+ * the new file raised itself (the resume note) to have gone. A viewer who
+ * opens something else meanwhile gets no announcement for a file that is no
+ * longer playing.
+ */
+async function announceNext(from: string | null, path: string, title: string) {
+  const until = Date.now() + ANNOUNCE_WAIT_MS;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, ANNOUNCE_POLL_MS));
+    const now = player.filePath;
+    if (!now || !samePath(now, path)) {
+      // Still the file that ended, or nothing yet: keep waiting. Anything
+      // else is somewhere the viewer went instead.
+      if (now && !(from && samePath(now, from))) return;
+      continue;
+    }
+    if (curtain.on || chrome.unsteady || osd() !== null) continue;
+    showOsd(t('osd.next_file', { title }));
+    return;
+  }
 }
 
 /// A new file, or a rewind out of the ending. Both mean the next end has not
