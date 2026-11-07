@@ -23,8 +23,11 @@
  */
 
 import { getCurrent, onOpenUrl, register } from '@tauri-apps/plugin-deep-link';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 import { CODE_LENGTH, normalizeCode } from './protocol';
+import { invalidExternalMagnet, openExternalMagnet } from '../open.svelte';
 
 /// The code a link asked for, waiting to be offered. Read by the page, which
 /// raises the room dialog; cleared when it does.
@@ -66,8 +69,64 @@ export function codeFromLink(raw: string): string {
   return code.length === CODE_LENGTH ? code : '';
 }
 
+/** A magnet URL is a torrent identifier, not a file path or an arbitrary URL. */
+export function magnetFromLink(raw: string): string {
+  const text = raw.trim();
+  if (!/^magnet:\?/i.test(text)) return '';
+  try {
+    const args = new URLSearchParams(text.slice(text.indexOf('?') + 1));
+    const hashes = args.getAll('xt');
+    if (!hashes.some((hash) => /^urn:btih:([a-f0-9]{40}|[a-z2-7]{32})$/i.test(hash) ||
+      /^urn:btmh:1220[a-f0-9]{64}$/i.test(hash))) return '';
+    return text;
+  } catch {
+    return '';
+  }
+}
+
+// macOS delivers the magnet before the webview and torrent engine are ready.
+// Keep it until initPlayer finishes, and avoid double-opening on both
+// onOpenUrl and getCurrent returning the same cold-start link.
+let readyForMagnets = false;
+let queuedMagnet = '';
+let lastMagnet = '';
+let lastDeliveryAt = 0;
+
+function offerMagnet(magnet: string) {
+  if (queuedMagnet === magnet) return;
+  if (lastMagnet === magnet && Date.now() - lastDeliveryAt < 2000) return;
+  lastMagnet = magnet;
+  lastDeliveryAt = Date.now();
+  if (readyForMagnets) openExternalMagnet(magnet);
+  else queuedMagnet = magnet;
+}
+
+async function drainNativeMagnets() {
+  const urls = await invoke<string[]>('take_pending_magnets').catch(() => []);
+  if (urls.length) offer(urls);
+}
+
+export function enableExternalMagnetOpening() {
+  readyForMagnets = true;
+  void drainNativeMagnets();
+  if (queuedMagnet) {
+    const magnet = queuedMagnet;
+    queuedMagnet = '';
+    openExternalMagnet(magnet);
+  }
+}
+
 function offer(urls: readonly string[]) {
   for (const url of urls) {
+    const magnet = magnetFromLink(url);
+    if (magnet) {
+      offerMagnet(magnet);
+      continue;
+    }
+    if (/^magnet:/i.test(url.trim())) {
+      invalidExternalMagnet(url);
+      continue;
+    }
     const code = codeFromLink(url);
     if (code) {
       invite.code = code;
@@ -97,6 +156,10 @@ export async function initDeepLinks() {
   // that reached an already-running instance. Emitting under the plugin's own
   // name rather than a name of ours is what keeps this side to one path.
   await onOpenUrl((urls) => offer(urls)).catch(() => {});
+  // Also subscribe to the native inbox. Unlike the deep-link plugin alone,
+  // this survives an Apple Event that arrives before the webview exists.
+  await listen('frameplayer://open-magnet', () => void drainNativeMagnets()).catch(() => {});
+  void drainNativeMagnets();
 
   const current = await getCurrent().catch(() => null);
   if (current) offer(current);

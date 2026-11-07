@@ -20,7 +20,8 @@
     </array>
 
     <!--
-      `frameplayer://join/<code>` — an invitation to a shared viewing.
+      `frameplayer://join/<code>` — an invitation to a shared viewing,
+      plus `magnet:?xt=urn:btih:...` for opening torrents natively.
 
       Declared here by hand rather than left to the deep-link plugin's own
       build step, which writes `CFBundleURLTypes` only for the *mobile* half of
@@ -44,6 +45,7 @@
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>frameplayer</string>
+                <string>magnet</string>
             </array>
         </dict>
     </array>

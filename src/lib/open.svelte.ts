@@ -325,6 +325,30 @@ let loadFailTimer: ReturnType<typeof setTimeout> | undefined;
 // ---- The link box ---------------------------------------------------------
 
 /**
+ * A macOS magnet: URL arrives without the manual "Open link" dialog being
+ * raised first. Show that same dialog *before* starting the DHT lookup: until
+ * peers provide metadata, there is no video and no loading overlay to draw.
+ * Without this, a legitimate magnet appears to do nothing on the start screen.
+ */
+export function openExternalMagnet(magnet: string) {
+  opening.box.value = magnet;
+  opening.box.failed = false;
+  opening.box.torrentError = null;
+  opening.box.recent = recentLinks();
+  opening.linkOpen = true;
+  submitLink(magnet);
+}
+
+/** An invalid external magnet should not disappear silently. */
+export function invalidExternalMagnet(magnet: string) {
+  opening.box.value = magnet;
+  opening.box.failed = false;
+  opening.box.torrentError = t('link.invalid_magnet');
+  opening.box.recent = recentLinks();
+  opening.linkOpen = true;
+}
+
+/**
  * Raise the link box, empty.
  *
  * **Opening it deliberately is a fresh start, and that is not the same as the
@@ -629,6 +653,7 @@ export async function openTorrent(source: string, origin?: CatalogOrigin) {
     const videos = torrentVideos(info);
     if (videos.length === 0) {
       opening.box.torrentError = t('torrent.no_video');
+      opening.linkOpen = true;
       return;
     }
     if (videos.length === 1) {

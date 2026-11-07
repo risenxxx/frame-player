@@ -167,6 +167,7 @@ export const ru = {
   'link.title': 'Ссылка или торрент',
   'link.placeholder': 'https://…  ·  magnet:?xt=…  ·  RSS-лента',
   'link.open': 'Открыть',
+  'link.invalid_magnet': 'Некорректная magnet-ссылка: нужен полный BTIH-хеш (40 шестнадцатеричных или 32 Base32 символа) либо BTMH-хеш.',
   'link.failed_missing':
     'Не удалось открыть. Для YouTube и подобных сайтов нужен yt-dlp — его можно установить прямо отсюда.',
   'link.failed_stale':

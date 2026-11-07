@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { codeFromLink } from './link.svelte';
+import { codeFromLink, magnetFromLink } from './link.svelte';
 
 // This is the parser that decides what an arbitrary string from outside the
 // application may do to the player: a custom scheme is a surface any page on
@@ -65,5 +65,24 @@ describe('codeFromLink', () => {
     // take down whatever is handling the link rather than ignoring it.
     expect(() => codeFromLink('frameplayer://join/%E0%A4%A')).not.toThrow();
     expect(codeFromLink('frameplayer://join/%E0%A4%A')).toBe('');
+  });
+});
+
+
+describe('magnetFromLink', () => {
+  const hash = '0123456789abcdef0123456789abcdef01234567';
+  it('accepts a real magnet URL and keeps trackers intact', () => {
+    const link = `magnet:?xt=urn:btih:${hash}&dn=Test+Film&tr=udp%3A%2F%2Ftracker.invalid`;
+    expect(magnetFromLink(link)).toBe(link);
+  });
+  it('supports base32 and v2 hashes', () => {
+    expect(magnetFromLink(`magnet:?xt=urn:btih:${'A'.repeat(32)}`)).toContain('magnet:?');
+    expect(magnetFromLink(`magnet:?xt=urn:btmh:1220${'a'.repeat(64)}`)).toContain('magnet:?');
+  });
+  it('rejects arbitrary URLs and invalid or missing hashes', () => {
+    expect(magnetFromLink('https://example.com/')).toBe('');
+    expect(magnetFromLink('magnet:?dn=Test')).toBe('');
+    expect(magnetFromLink('magnet:?xt=urn:btih:2eaa6ba47')).toBe('');
+    expect(magnetFromLink('frameplayer://join/ABC123')).toBe('');
   });
 });

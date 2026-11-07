@@ -162,6 +162,7 @@ export const en = {
   'link.title': 'Link or torrent',
   'link.placeholder': 'https://…  ·  magnet:?xt=…  ·  RSS feed',
   'link.open': 'Open',
+  'link.invalid_magnet': 'Invalid magnet link: a complete BTIH hash (40 hex or 32 Base32 characters) or BTMH hash is required.',
   'link.failed_missing':
     'Could not open it. YouTube and sites like it need yt-dlp, which can be installed from here.',
   'link.failed_stale':

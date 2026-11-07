@@ -148,6 +148,7 @@ export const zh = {
   'link.title': '链接或种子',
   'link.placeholder': 'https://…  ·  magnet:?xt=…  ·  RSS 订阅',
   'link.open': '打开',
+  'link.invalid_magnet': '磁力链接无效：需要完整的 BTIH 哈希（40 位十六进制或 32 位 Base32 字符）或 BTMH 哈希。',
   'link.failed_missing': '无法打开。YouTube 等网站需要 yt-dlp，可以在这里安装。',
   'link.failed_stale': '无法打开。这通常说明 yt-dlp 已过时：网站经常变化，yt-dlp 每隔几周就会更新一次。',
   'link.ytdlp_install': '安装 yt-dlp',
