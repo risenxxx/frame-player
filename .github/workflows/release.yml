@@ -88,6 +88,9 @@ jobs:
           # build made on macos-15 (SDK 15.5) got the old window chrome on
           # macOS 26 — different traffic-light spacing, and our padding offset
           # reset — even though the code in the binary was correct.
+          # The native libraries are the opposite case, and are built elsewhere:
+          # on macos-15, so that they load on every macOS the app supports
+          # (macos-libs.yml). This runner only fetches them.
           - platform: darwin-aarch64
             runner: macos-26
             rust_target: aarch64-apple-darwin

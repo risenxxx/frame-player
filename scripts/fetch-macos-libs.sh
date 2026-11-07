@@ -90,4 +90,6 @@ echo "$name" > "$stamp"
 echo
 "$repo_root/scripts/check-macos-licenses.sh"
 echo
+"$repo_root/scripts/check-macos-minos.sh"
+echo
 echo "Done: $lib_dir ($(ls -1 "$lib_dir"/*.dylib | wc -l | tr -d ' ') libraries, $(du -sh "$lib_dir" | cut -f1))"

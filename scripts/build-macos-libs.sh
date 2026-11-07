@@ -38,6 +38,36 @@ WRAPPER_VERSION="v0.1.1"
 # Bumping any of these changes the artifact key: the macos-libs workflow hashes
 # this file, so a version pin and the name of the published set move together.
 
+# The oldest macOS the libraries load on. Every dylib carries a minimum OS
+# version (LC_BUILD_VERSION `minos`) and dyld refuses one newer than the running
+# system. The wrapper `dlopen`s libmpv only when mpv is created, so a set that
+# is too new does not stop the app from starting: it fails later with the
+# plugin's bare "Failed to create mpv instance". That is how a set built on
+# macos-26 reached macOS 15 users.
+#
+# Two things decide the number, and only one of them is set here. FFmpeg and
+# mpv follow MACOSX_DEPLOYMENT_TARGET. The Homebrew dependencies (libplacebo,
+# libass, luajit, …) are bottles built for the OS the *build machine* runs,
+# whatever this variable says. So the floor is really the build machine's
+# macOS: the workflow runs on macos-15, and the check below refuses a set built
+# anywhere newer. `bundle.macOS.minimumSystemVersion` in tauri.macos.conf.json
+# has to match, and `check-macos-minos.sh` holds the two together.
+MACOS_MIN="15.0"
+export MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN"
+
+host_major="$(sw_vers -productVersion | cut -d. -f1)"
+if [ "$host_major" -gt "${MACOS_MIN%%.*}" ]; then
+  msg="this machine runs macOS $(sw_vers -productVersion), so Homebrew's bottles need at least that; the set would not load below it (floor: $MACOS_MIN)"
+  if [ -n "${CI:-}" ]; then
+    # In CI this is the release job's fallback running on its own macos-26
+    # runner, and what it built would ship. Better to stop here than twenty
+    # minutes from now at the minos check.
+    echo "FATAL: $msg. Run the \"macOS libs\" workflow, which builds on macos-15." >&2
+    exit 1
+  fi
+  echo "WARNING: $msg. Fine for a development machine; do not publish it." >&2
+fi
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 lib_dir="$repo_root/src-tauri/lib"
 # Every patch written for this mpv version, in the order the shell sorts them —
@@ -50,7 +80,9 @@ if [ ! -f "${mpv_patches[0]}" ]; then
   echo "FATAL: no patches/mpv-$MPV_VERSION-*.patch — a version bump has to carry its patches along" >&2
   exit 1
 fi
-work="${TMPDIR:-/tmp}/frameplayer-lgpl-$FFMPEG_VERSION-$MPV_VERSION"
+# The floor is part of the name: a tree configured for another target is kept
+# between runs and would not be rebuilt.
+work="${TMPDIR:-/tmp}/frameplayer-lgpl-$FFMPEG_VERSION-$MPV_VERSION-macos$MACOS_MIN"
 # FFmpeg is installed into a prefix of its own rather than over Homebrew's:
 # leaving the machine's own ffmpeg alone means this script is safe to run on a
 # development box, and it keeps the two builds distinguishable in `otool -L`.
@@ -186,3 +218,12 @@ FFMPEG_PREFIX="$ff_prefix" "$repo_root/scripts/bundle-macos-libs.sh"
 echo
 echo "==> License check"
 "$repo_root/scripts/check-macos-licenses.sh"
+
+echo
+echo "==> Minimum macOS"
+if ! "$repo_root/scripts/check-macos-minos.sh"; then
+  # Already refused up front in CI; on a newer development machine the set is
+  # still good for that machine, so it stays installed.
+  [ -n "${CI:-}" ] && exit 1
+  echo "WARNING: this set is for this machine only" >&2
+fi
