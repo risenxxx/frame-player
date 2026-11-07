@@ -48,7 +48,7 @@ jobs:
     # decides its window chrome); the two runners are deliberately different.
     # Must agree with MACOS_MIN in build-macos-libs.sh and
     # minimumSystemVersion in tauri.macos.conf.json.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
 
     steps:

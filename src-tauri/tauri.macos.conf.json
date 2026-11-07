@@ -6,7 +6,7 @@
   "bundle": {
     "targets": ["app"],
     "macOS": {
-      "minimumSystemVersion": "14.0",
+      "minimumSystemVersion": "15.0",
       "hardenedRuntime": true,
       "entitlements": "entitlements.plist"
     },

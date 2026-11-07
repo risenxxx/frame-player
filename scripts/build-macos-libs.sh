@@ -49,10 +49,10 @@ WRAPPER_VERSION="v0.1.1"
 # mpv follow MACOSX_DEPLOYMENT_TARGET. The Homebrew dependencies (libplacebo,
 # libass, luajit, …) are bottles built for the OS the *build machine* runs,
 # whatever this variable says. So the floor is really the build machine's
-# macOS: the workflow runs on macos-14, and the check below refuses a set built
+# macOS: the workflow runs on macos-15, and the check below refuses a set built
 # anywhere newer. `bundle.macOS.minimumSystemVersion` in tauri.macos.conf.json
 # has to match, and `check-macos-minos.sh` holds the two together.
-MACOS_MIN="14.0"
+MACOS_MIN="15.0"
 export MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN"
 
 host_major="$(sw_vers -productVersion | cut -d. -f1)"
@@ -62,7 +62,7 @@ if [ "$host_major" -gt "${MACOS_MIN%%.*}" ]; then
     # In CI this is the release job's fallback running on its own macos-26
     # runner, and what it built would ship. Better to stop here than twenty
     # minutes from now at the minos check.
-    echo "FATAL: $msg. Run the \"macOS libs\" workflow, which builds on macos-14." >&2
+    echo "FATAL: $msg. Run the \"macOS libs\" workflow, which builds on macos-15." >&2
     exit 1
   fi
   echo "WARNING: $msg. Fine for a development machine; do not publish it." >&2
