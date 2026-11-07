@@ -168,11 +168,15 @@ const { s } = useLocale(Astro)
         {kind !== 'torrent' && (
           <>
             <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-queue"/></svg></span>
-            <span class:list={['b', kind === 'audio' ? 'on' : 'opt']}><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-audio"/></svg></span>
+            <span class:list={['b opt', { on: kind === 'audio' }]}><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-audio"/></svg></span>
           </>
         )}
         <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-subs"/></svg></span>
         <span class="b opt"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-cast"/></svg></span>
+        {/* What the `.opt` buttons fold into once the row has no room for them,
+            as Controls.svelte folds them: one gear, lit while a panel opened
+            from it is up — the audio menu included. */}
+        <span class:list={['b gear', { on: kind === 'audio' }]}><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-gear"/></svg></span>
         <span class="b"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#p-full"/></svg></span>
       </div>
     </div>

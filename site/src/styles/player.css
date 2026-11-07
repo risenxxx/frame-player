@@ -390,6 +390,30 @@
 .b.on { color: #818cf8; }
 
 /*
+  The right-hand cluster folds into one gear, and — as in Controls.svelte — by
+  arithmetic rather than by a page breakpoint: the grid's `1fr` columns stay
+  equal, and play stays centred, only while each side has room for the wider
+  cluster, so the row folds below center + 2 × right. At these sizes the centre
+  is 36 + 46 + 36 + 2 × 14 = 146px and a button 36px with 6px between them: six
+  buttons on the right (loop, queue, audio, subtitles, cast, fullscreen) need
+  246px, so 638px of row; the torrent's four need 162px, so 470px. Below 620px
+  of page everything shrinks and `.b.opt` goes regardless (narrow.css), so the
+  gear comes with it. The other mocks' rows are short enough not to need one.
+*/
+.player.full .controls { container: osc-row / inline-size; }
+.b.gear { display: none; }
+
+@container osc-row (max-width: 640px) {
+  .player.full:not(.torrent) .b.opt { display: none; }
+  .player.full:not(.torrent) .b.gear { display: grid; }
+}
+
+@container osc-row (max-width: 472px) {
+  .player.full.torrent .b.opt { display: none; }
+  .player.full.torrent .b.gear { display: grid; }
+}
+
+/*
   The audio track menu, as TrackMenu.svelte and app.css draw it: the same
   panel, rows and delay stepper, at the same sizes. It hangs from the time row
   because that is what the application anchors it to — `.menu` sits at

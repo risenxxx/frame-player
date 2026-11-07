@@ -80,11 +80,12 @@
 
 @media (max-width: 620px) {
   /*
-    The control row is the first thing that stops fitting. What survives is what
-    the application itself keeps in the mini player: the transport, the cast
-    button and fullscreen — the rest lives behind a menu there too.
+    The control row is the first thing that stops fitting. The optional buttons
+    go, and in the player window they fold into the gear, as the application
+    folds them (player.css, `osc-row`).
   */
   .b.opt { display: none; }
+  .player.full .b.gear { display: grid; }
   .sc-cast .win { height: 334px; }
   .player.subs { height: 334px; }
   /* The controls shrink here and end 15px in; the title bar over a picture
