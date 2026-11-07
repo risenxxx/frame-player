@@ -1,5 +1,5 @@
-//! What an audio file carries besides its sound: the cover and the track
-//! number.
+//! What an audio file carries besides its sound: the cover, the track number
+//! and how long it runs.
 //!
 //! Both are read from the container header alone — `avformat_open_input`
 //! without `avformat_find_stream_info`, the same arrangement as
@@ -58,6 +58,17 @@ pub async fn audio_track_numbers(paths: Vec<String>) -> Vec<Option<(u32, u32)>> 
     })
     .await
     .unwrap_or_default()
+}
+
+/// How long each file runs, in seconds, in the order given; `None` where it
+/// cannot be told. A drop of audio onto a film asks this to tell a dub (as long
+/// as the film) from a song (anything else) — see `looksLikeDub` on the
+/// frontend.
+#[tauri::command]
+pub async fn audio_durations(paths: Vec<String>) -> Vec<Option<f64>> {
+    tauri::async_runtime::spawn_blocking(move || paths.iter().map(|p| duration_of(p)).collect())
+        .await
+        .unwrap_or_default()
 }
 
 /// An open format context that is closed on every way out.
@@ -197,6 +208,42 @@ fn pick_cover(names: &[&str], stem: &str) -> Option<usize> {
     (names.len() == 1).then_some(0)
 }
 
+/// The header first: FLAC's STREAMINFO, Matroska's segment duration and an MP3's
+/// Xing frame are all read by `avformat_open_input`. A raw `.ac3`/`.dts`/`.aac`
+/// has no such field, and only `avformat_find_stream_info` estimates one — from
+/// the bitrate, which is close enough to tell a film from a song.
+fn duration_of(path: &str) -> Option<f64> {
+    let header = Header::open(path)?;
+    header.duration().or_else(|| {
+        // SAFETY: the context is open; probing reads packets into it and
+        // fills in the timings, nothing it hands out outlives `header`.
+        let rc = unsafe { ffmpeg::sys::avformat_find_stream_info(header.0, std::ptr::null_mut()) };
+        if rc < 0 { None } else { header.duration() }
+    })
+}
+
+impl Header {
+    /// The container's duration, or failing that its longest stream's.
+    fn duration(&self) -> Option<f64> {
+        // SAFETY: the context and its streams are valid while `self` is open;
+        // only plain fields are read.
+        let container = unsafe { (*self.0).duration };
+        if container != ffmpeg::sys::AV_NOPTS_VALUE && container > 0 {
+            return Some(container as f64 / f64::from(ffmpeg::sys::AV_TIME_BASE));
+        }
+        self.streams()
+            .iter()
+            .filter_map(|&st| {
+                // SAFETY: a valid stream of the open context; two plain fields
+                // are copied out.
+                let (d, tb) = unsafe { ((*st).duration, (*st).time_base) };
+                (d != ffmpeg::sys::AV_NOPTS_VALUE && d > 0 && tb.den > 0)
+                    .then(|| d as f64 * f64::from(tb.num) / f64::from(tb.den))
+            })
+            .reduce(f64::max)
+    }
+}
+
 fn track_number(path: &str) -> Option<(u32, u32)> {
     let header = Header::open(path)?;
     let track = leading_number(&header.tag("track")?)?;
@@ -264,7 +311,11 @@ mod tests {
         for f in &files {
             let embedded = embedded_cover(f).map(|b| b.len());
             let any = cover_bytes(f).map(|b| b.len());
-            println!("{f}: track {:?}, embedded {embedded:?}, cover {any:?}", track_number(f));
+            println!(
+                "{f}: track {:?}, {:?} s, embedded {embedded:?}, cover {any:?}",
+                track_number(f),
+                duration_of(f)
+            );
         }
     }
 }

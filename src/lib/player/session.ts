@@ -15,6 +15,7 @@ import {
   type MpvConfig,
 } from 'tauri-plugin-libmpv-api';
 
+import { looksLikeDub } from '../dub-match';
 import { extensionOf } from '../format';
 import { t } from '../i18n.svelte';
 import { showOsd } from '../osd.svelte';
@@ -370,6 +371,19 @@ export async function loadFiles(paths: string[]) {
     (isAudioPath(player.filePath) || (player.tracksOf === player.filePath && player.pictureTracks === 0));
   if (!videos.length && (!player.hasFile || playingAudio) && audios.length) {
     videos.push(...audios.splice(0));
+  }
+  // Onto a film, an audio file is a dub only if it runs as long as the film —
+  // a song dropped there is music to play, and attaching it swapped the film's
+  // soundtrack for it (issue 62). One song in the drop makes the whole drop
+  // music: a dub attached to the song that replaces the film is no one's intent.
+  if (!videos.length && audios.length && player.hasFile) {
+    const lengths = await invoke<(number | null)[]>('audio_durations', { paths: audios }).catch(
+      () => [] as (number | null)[],
+    );
+    const dubs = audios.every((path, i) =>
+      looksLikeDub(path, lengths[i] ?? null, player.filePath, player.duration),
+    );
+    if (!dubs) videos.push(...audios.splice(0));
   }
   if (!videos.length) {
     if (!player.hasFile) {

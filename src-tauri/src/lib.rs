@@ -1340,6 +1340,7 @@ pub fn run() {
             thumb_service::container_titles,
             audio_meta::cover_art,
             audio_meta::audio_track_numbers,
+            audio_meta::audio_durations,
             thumb_service::poster_frame,
             thumb_service::crop_detect,
             thumb_service::set_private_paths,
