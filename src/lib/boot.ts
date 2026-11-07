@@ -48,7 +48,7 @@ import {
   step,
   USE_STEP_ENGINE,
 } from './step-engine.svelte';
-import { enableExternalMagnetOpening, initDeepLinks } from './sync/link.svelte';
+import { initDeepLinks } from './sync/link.svelte';
 import { loadThumbPrefs } from './thumbs.svelte';
 import { clearTitleTimer } from './title.svelte';
 import { hideTooltip, initTooltips } from './tooltip.svelte';
@@ -190,8 +190,6 @@ export async function boot() {
     ...(await initPlayer(playerHooks)),
   );
   if (player.initError) return;
-  // Defer external magnets until the torrent engine and the player can accept them.
-  enableExternalMagnetOpening();
   void refreshLeveling();
 
   // Atomic zoom+pan: load-script at runtime (unlike the init option it

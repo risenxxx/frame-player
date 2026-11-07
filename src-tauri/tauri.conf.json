@@ -19,7 +19,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["frameplayer", "magnet"]
+        "schemes": ["frameplayer"]
       }
     },
     "updater": {

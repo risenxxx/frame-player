@@ -1,13 +1,22 @@
 /**
- * `frameplayer://join/<code>` — an invitation somebody clicked.
+ * `frameplayer://join/<code>` — an invitation somebody clicked — and, on
+ * macOS, a `magnet:` link clicked in a browser.
  *
  * The link exists because a room code alone is a thing to be dictated, and
  * because "click this and you are watching with me" is the whole of what a
  * viewer wants to do with it. What it deliberately is *not* is a way to reach
- * anything else: exactly one shape is understood, and everything else is
- * ignored in silence rather than guessed at. A custom scheme is a surface any
- * page on the internet can aim at, so it may only ever do the one harmless
- * thing — open a dialog with a code typed into it.
+ * anything else: exactly two shapes are understood, and everything else is
+ * ignored in silence rather than guessed at. A scheme is a surface any page on
+ * the internet can aim at, so it may only ever do the one harmless thing — open
+ * a dialog with something typed into it.
+ *
+ * A magnet obeys the same bargain. Opening one is not harmless: it stops what
+ * is playing and announces this machine's address to a swarm the *page* chose,
+ * and once a browser has been told to "always allow" the scheme, a page can
+ * fire it without a click. So a magnet raises the link box with the magnet in
+ * the field, and the viewer's "Open" is what starts it. Whether the magnet is a
+ * valid one is left to the same path a pasted one takes — a link that cannot
+ * work fails there, with the same words, rather than at a second parser here.
  *
  * Which is also why joining is **offered and not performed**. A link that
  * silently pulled a viewer out of what they were watching and into a stranger's
@@ -20,19 +29,29 @@
  * of a second process, which single-instance forwards and `deliver_deep_links`
  * re-emits under the same name. The frontend therefore has one subscription
  * rather than two code paths for one link.
+ *
+ * The magnet needs nothing of its own on that path. The plugin re-emits every
+ * URL of the macOS Apple Event, whatever its scheme, and keeps it for
+ * `getCurrent` — so declaring `magnet` in Info.plist is the whole of the native
+ * side. It is deliberately *not* in the plugin's `schemes`: the Windows
+ * installer turns that list into registry keys, which would take `magnet:` from
+ * whichever torrent client the viewer chose, at every update, and delete it on
+ * uninstall.
  */
 
 import { getCurrent, onOpenUrl, register } from '@tauri-apps/plugin-deep-link';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 
 import { CODE_LENGTH, normalizeCode } from './protocol';
-import { invalidExternalMagnet, openExternalMagnet } from '../open.svelte';
 
 /// The code a link asked for, waiting to be offered. Read by the page, which
 /// raises the room dialog; cleared when it does.
 class Invite {
   code = $state('');
+  /// A magnet a link asked to open, waiting for the page to put it in the
+  /// link box; cleared when it does. Assigned rather than queued, so the same
+  /// link arriving twice — the plugin's event and `getCurrent` on a cold
+  /// start — offers it once.
+  magnet = $state('');
 }
 
 export const invite = new Invite();
@@ -69,63 +88,23 @@ export function codeFromLink(raw: string): string {
   return code.length === CODE_LENGTH ? code : '';
 }
 
-/** A magnet URL is a torrent identifier, not a file path or an arbitrary URL. */
+/**
+ * A `magnet:` link, trimmed, or '' for anything else.
+ *
+ * The scheme and nothing more: what is inside is the torrent engine's to judge,
+ * exactly as it is for a magnet pasted into the box. Exported for its test.
+ */
 export function magnetFromLink(raw: string): string {
   const text = raw.trim();
-  if (!/^magnet:\?/i.test(text)) return '';
-  try {
-    const args = new URLSearchParams(text.slice(text.indexOf('?') + 1));
-    const hashes = args.getAll('xt');
-    if (!hashes.some((hash) => /^urn:btih:([a-f0-9]{40}|[a-z2-7]{32})$/i.test(hash) ||
-      /^urn:btmh:1220[a-f0-9]{64}$/i.test(hash))) return '';
-    return text;
-  } catch {
-    return '';
-  }
-}
-
-// macOS delivers the magnet before the webview and torrent engine are ready.
-// Keep it until initPlayer finishes, and avoid double-opening on both
-// onOpenUrl and getCurrent returning the same cold-start link.
-let readyForMagnets = false;
-let queuedMagnet = '';
-let lastMagnet = '';
-let lastDeliveryAt = 0;
-
-function offerMagnet(magnet: string) {
-  if (queuedMagnet === magnet) return;
-  if (lastMagnet === magnet && Date.now() - lastDeliveryAt < 2000) return;
-  lastMagnet = magnet;
-  lastDeliveryAt = Date.now();
-  if (readyForMagnets) openExternalMagnet(magnet);
-  else queuedMagnet = magnet;
-}
-
-async function drainNativeMagnets() {
-  const urls = await invoke<string[]>('take_pending_magnets').catch(() => []);
-  if (urls.length) offer(urls);
-}
-
-export function enableExternalMagnetOpening() {
-  readyForMagnets = true;
-  void drainNativeMagnets();
-  if (queuedMagnet) {
-    const magnet = queuedMagnet;
-    queuedMagnet = '';
-    openExternalMagnet(magnet);
-  }
+  return /^magnet:\?/i.test(text) ? text : '';
 }
 
 function offer(urls: readonly string[]) {
   for (const url of urls) {
     const magnet = magnetFromLink(url);
     if (magnet) {
-      offerMagnet(magnet);
-      continue;
-    }
-    if (/^magnet:/i.test(url.trim())) {
-      invalidExternalMagnet(url);
-      continue;
+      invite.magnet = magnet;
+      return;
     }
     const code = codeFromLink(url);
     if (code) {
@@ -156,10 +135,6 @@ export async function initDeepLinks() {
   // that reached an already-running instance. Emitting under the plugin's own
   // name rather than a name of ours is what keeps this side to one path.
   await onOpenUrl((urls) => offer(urls)).catch(() => {});
-  // Also subscribe to the native inbox. Unlike the deep-link plugin alone,
-  // this survives an Apple Event that arrives before the webview exists.
-  await listen('frameplayer://open-magnet', () => void drainNativeMagnets()).catch(() => {});
-  void drainNativeMagnets();
 
   const current = await getCurrent().catch(() => null);
   if (current) offer(current);

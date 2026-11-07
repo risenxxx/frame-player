@@ -68,21 +68,26 @@ describe('codeFromLink', () => {
   });
 });
 
-
 describe('magnetFromLink', () => {
   const hash = '0123456789abcdef0123456789abcdef01234567';
-  it('accepts a real magnet URL and keeps trackers intact', () => {
+
+  it('passes a magnet through whole, trackers and all', () => {
     const link = `magnet:?xt=urn:btih:${hash}&dn=Test+Film&tr=udp%3A%2F%2Ftracker.invalid`;
     expect(magnetFromLink(link)).toBe(link);
+    expect(magnetFromLink(`  ${link}\n`)).toBe(link);
+    expect(magnetFromLink(`MAGNET:?xt=urn:btih:${hash}`)).toBe(`MAGNET:?xt=urn:btih:${hash}`);
   });
-  it('supports base32 and v2 hashes', () => {
-    expect(magnetFromLink(`magnet:?xt=urn:btih:${'A'.repeat(32)}`)).toContain('magnet:?');
-    expect(magnetFromLink(`magnet:?xt=urn:btmh:1220${'a'.repeat(64)}`)).toContain('magnet:?');
+
+  // What is inside is the torrent engine's to judge, as for a pasted magnet:
+  // a broken hash still reaches the box and fails there, with the same words.
+  it('leaves the contents to the engine', () => {
+    expect(magnetFromLink('magnet:?dn=Test')).toBe('magnet:?dn=Test');
   });
-  it('rejects arbitrary URLs and invalid or missing hashes', () => {
+
+  it('ignores every other shape', () => {
     expect(magnetFromLink('https://example.com/')).toBe('');
-    expect(magnetFromLink('magnet:?dn=Test')).toBe('');
-    expect(magnetFromLink('magnet:?xt=urn:btih:2eaa6ba47')).toBe('');
     expect(magnetFromLink('frameplayer://join/ABC123')).toBe('');
+    expect(magnetFromLink('magnet:')).toBe('');
+    expect(magnetFromLink('file:///tmp/film.mkv')).toBe('');
   });
 });

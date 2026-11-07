@@ -48,34 +48,6 @@ mod window_shape;
 pub const DEEP_LINK_SCHEME: &str = "frameplayer";
 
 const OPEN_FILE_EVENT: &str = "frameplayer://open-file";
-const OPEN_MAGNET_EVENT: &str = "frameplayer://open-magnet";
-
-/// macOS may deliver the URL before the webview subscribes to deep-link events.
-/// Keep a native inbox independent of the deep-link plugin so warm and cold
-/// magnet URL launches use the same reliable drain-on-notification pattern as
-/// Finder's file Open events.
-#[derive(Default)]
-struct PendingMagnet {
-    urls: Mutex<Vec<String>>,
-}
-
-fn deliver_magnets(app: &tauri::AppHandle, urls: Vec<String>) {
-    if urls.is_empty() {
-        return;
-    }
-    let state = app.state::<PendingMagnet>();
-    state
-        .urls
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .extend(urls);
-    let _ = app.emit(OPEN_MAGNET_EVENT, ());
-}
-
-#[tauri::command]
-fn take_pending_magnets(state: tauri::State<'_, PendingMagnet>) -> Vec<String> {
-    std::mem::take(&mut *state.urls.lock().unwrap_or_else(|p| p.into_inner()))
-}
 
 /// CLI arguments that are existing files — video paths from "Open with"
 /// (Windows/Linux; several selected files arrive as several arguments and
@@ -1176,7 +1148,7 @@ fn point_vulkan_at_bundled_driver() {
 fn deliver_deep_links(app: &tauri::AppHandle, args: &[String]) {
     let urls: Vec<String> = args
         .iter()
-        .filter(|a| a.starts_with("frameplayer://") || a.starts_with("magnet:?"))
+        .filter(|a| a.starts_with("frameplayer://"))
         .cloned()
         .collect();
     if !urls.is_empty() {
@@ -1306,7 +1278,6 @@ pub fn run() {
         .manage(step_engine::StepState::default())
         .manage(thumb_service::ThumbState::default())
         .manage(PendingOpen::default())
-        .manage(PendingMagnet::default())
         // An Arc rather than the value: the HTTP server's connection tasks
         // outlive any one command call and need a handle of their own.
         .manage(std::sync::Arc::new(torrent::TorrentService::default()))
@@ -1316,7 +1287,6 @@ pub fn run() {
         .manage(std::sync::Arc::new(dlna::DlnaService::default()))
         .invoke_handler(tauri::generate_handler![
             take_pending_files,
-            take_pending_magnets,
             open_file_ready,
             double_click_time,
             primary_button_down,
@@ -1586,12 +1556,6 @@ pub fn run() {
                 .map(|p| p.to_string_lossy().into_owned())
                 .collect();
             deliver_files(_app, paths);
-            let magnets: Vec<String> = urls
-                .iter()
-                .filter(|u| u.scheme() == "magnet")
-                .map(|u| u.as_str().to_owned())
-                .collect();
-            deliver_magnets(_app, magnets);
         }
     });
 }

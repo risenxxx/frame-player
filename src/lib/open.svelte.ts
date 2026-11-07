@@ -325,27 +325,24 @@ let loadFailTimer: ReturnType<typeof setTimeout> | undefined;
 // ---- The link box ---------------------------------------------------------
 
 /**
- * A macOS magnet: URL arrives without the manual "Open link" dialog being
- * raised first. Show that same dialog *before* starting the DHT lookup: until
- * peers provide metadata, there is no video and no loading overlay to draw.
- * Without this, a legitimate magnet appears to do nothing on the start screen.
+ * Raise the link box with a link somebody else typed into it.
+ *
+ * For a `magnet:` that arrived from outside — a browser, on macOS. **Offered,
+ * not opened**, the bargain an invitation to a room keeps (sync/link.svelte.ts):
+ * starting one stops what is playing and tells a swarm the page picked where
+ * this machine is, and a page can fire the scheme without a click once the
+ * browser has been told to always allow it. "Open" is one press away, focused,
+ * and goes through `submitLink` like a pasted link — the re-upload question and
+ * a broken magnet's failure included.
  */
-export function openExternalMagnet(magnet: string) {
-  opening.box.value = magnet;
+export async function offerLink(url: string) {
+  opening.box.value = url;
   opening.box.failed = false;
   opening.box.torrentError = null;
   opening.box.recent = recentLinks();
   opening.linkOpen = true;
-  submitLink(magnet);
-}
-
-/** An invalid external magnet should not disappear silently. */
-export function invalidExternalMagnet(magnet: string) {
-  opening.box.value = magnet;
-  opening.box.failed = false;
-  opening.box.torrentError = t('link.invalid_magnet');
-  opening.box.recent = recentLinks();
-  opening.linkOpen = true;
+  await tick();
+  opening.box.inputEl?.focus();
 }
 
 /**
@@ -653,6 +650,8 @@ export async function openTorrent(source: string, origin?: CatalogOrigin) {
     const videos = torrentVideos(info);
     if (videos.length === 0) {
       opening.box.torrentError = t('torrent.no_video');
+      // Raised for the same reason the failure below raises it: a torrent
+      // that did not come from the box would otherwise end in silence.
       opening.linkOpen = true;
       return;
     }
@@ -959,6 +958,8 @@ export async function openRememberedTorrent(row: TorrentRow) {
     const videos = torrentVideos(info);
     if (!videos.length) {
       opening.box.torrentError = t('torrent.no_video');
+      // Raised for the same reason the failure below raises it: a torrent
+      // that did not come from the box would otherwise end in silence.
       opening.linkOpen = true;
       return;
     }

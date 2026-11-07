@@ -20,8 +20,15 @@
     </array>
 
     <!--
-      `frameplayer://join/<code>` — an invitation to a shared viewing,
-      plus `magnet:?xt=urn:btih:...` for opening torrents natively.
+      `frameplayer://join/<code>` — an invitation to a shared viewing — and
+      `magnet:`, a torrent link clicked in a browser, which the player offers
+      in its link box rather than opens (sync/link.svelte.ts).
+
+      `magnet` is declared here and only here. In the deep-link plugin's
+      `schemes` the Windows installer would turn it into a registry key, taking
+      `magnet:` from the viewer's torrent client at every install and update
+      and deleting it on uninstall. LaunchServices asks nothing of the kind: a
+      viewer with another client keeps it until they choose otherwise.
 
       Declared here by hand rather than left to the deep-link plugin's own
       build step, which writes `CFBundleURLTypes` only for the *mobile* half of
