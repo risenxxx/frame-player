@@ -40,7 +40,15 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-26
+    # The oldest macOS the set has to load on, NOT the newest available. The
+    # Homebrew bottles the set is built from are marked with the build
+    # machine's macOS as their minimum, and dyld refuses them below it. Built
+    # on macos-26, the set refused to load on macOS 15. The app itself is built
+    # on macos-26 in release.yml for a different reason (the SDK it links
+    # decides its window chrome); the two runners are deliberately different.
+    # Must agree with MACOS_MIN in build-macos-libs.sh and
+    # minimumSystemVersion in tauri.macos.conf.json.
+    runs-on: macos-14
     timeout-minutes: 90
 
     steps:
@@ -77,6 +85,12 @@ jobs:
       # checks job, because that job has no library set to compare against — the
       # coverage check is inert wherever src-tauri/lib does not exist. Needs no
       # `bun install`: rendering reads committed files and nothing else.
+      # Re-run here rather than trusting the build script's own call, for the
+      # same reason as the license gate: this step stands between the bucket
+      # and a set that would fail on a viewer's older macOS.
+      - name: Loads on the oldest supported macOS
+        run: scripts/check-macos-minos.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Notices cover the set
         run: node scripts/gen-notices.mjs --check
 
