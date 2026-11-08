@@ -101,6 +101,8 @@
   .times { font-size: 11px; padding: 0 10px; }
   .seekwrap { margin-inline: 10px; }
   .p-title { padding: 0 50px 0 78px; font-size: 11.5px; }
+  :root[data-os="windows"] .p-title { padding: 0 128px; }
+  :root[data-os="windows"] .p-brand { left: 12px; }
   .lights { left: 14px; }
   .cluster.left { margin-left: 2px; }
   .p-brand { right: 12px; }

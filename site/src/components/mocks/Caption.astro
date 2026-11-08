@@ -1,0 +1,15 @@
+---
+/*
+  The window buttons the player draws on Windows — minimize, fullscreen, close,
+  full-height squares in the corner — with the glyphs `.winbtn` in TopBar.svelte
+  draws. On a Mac the system's traffic lights are on the left instead and the
+  player has no buttons of its own there, so this is only shown to a visitor on
+  Windows (`.os-win`, base.css); the lights next to it are `.os-mac`.
+*/
+---
+
+<span class="caps os-win" aria-hidden="true">
+  <i><svg viewBox="0 0 10 10"><path stroke="currentColor" d="M0 5h10"/></svg></i>
+  <i class="fsx"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></i>
+  <i><svg viewBox="0 0 10 10"><path stroke="currentColor" d="M0 0l10 10M10 0L0 10"/></svg></i>
+</span>

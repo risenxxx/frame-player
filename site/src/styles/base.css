@@ -263,6 +263,14 @@ section[id], #download { scroll-margin-top: 72px; }
 :root[data-os="macos"] .cta .dl-windows { background: transparent; color: var(--fg); border-color: var(--line2); }
 :root[data-os="macos"] .cta .dl-windows:hover { background: var(--ghost); border-color: var(--line3); }
 
+/* The mocks draw one system's window: the Mac's in the markup, Windows' for a
+   visitor on Windows — the lights against the window buttons, the Dock against
+   the taskbar, one arrow against the other. Both are in the HTML and the head
+   script's `data-os` picks before the first paint, so nothing swaps in view;
+   without JS, or on anything else, the Mac drawing stands. */
+:root:not([data-os="windows"]) .os-win,
+:root[data-os="windows"] .os-mac { display: none !important; }
+
 .cta { display: flex; flex-wrap: wrap; gap: 12px; }
 .cta-c { justify-content: center; }
 

@@ -16,6 +16,7 @@
     audio    the audio track menu open over the control bar
 */
 import Frame from '../Frame.astro'
+import Caption from './Caption.astro'
 import T from '../../i18n/T.astro'
 import { useLocale } from '../../i18n/index.ts'
 
@@ -63,11 +64,12 @@ const { s } = useLocale(Astro)
   {kind === 'audio' && <Frame name="lake-trails" slot="guide" class="scene" alt={s.alt.lakeTrails} />}
   <span class="p-scrim"></span>
   <span class="p-bar">
-    <span class="lights"><i></i><i></i><i></i></span>
+    <span class="lights os-mac"><i></i><i></i><i></i></span>
     <span class="p-title">{TITLE[kind]}</span>
     <span class="p-brand"><span>Frame Player</span>
       <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>
     </span>
+    <Caption />
   </span>
 
   {torrent && (

@@ -5,8 +5,9 @@ import Frame from '../Frame.astro'
 <!-- The mini player on a desktop, and where it comes to rest when let go.
 
      A 1728×1080 screen drawn to the column's width: a document window, the
-     Dock, and the mini window in the bottom-right corner, 24 from
-     the work area's edges, where entering the mode puts it. The pointer walks
+     Dock (the taskbar for a visitor on Windows), and the mini window in the
+     bottom-right corner, 24 from the work area's edges, where entering the
+     mode puts it. The pointer walks
      onto it (the controls come up under it), and drags it three times:
 
        near the top-left corner — let go, it glides into the corner;
@@ -15,13 +16,21 @@ import Frame from '../Frame.astro'
        height, because each axis snaps on its own.
 
      The dashed line is where an edge of the window rests (24 inside the work
-     area, which ends above the Dock), and the marks say so after each
-     landing. Every number is the application's — MINI_WIDTH, SCREEN_PADDING,
+     area, which ends above the Dock or the taskbar), and the marks say so
+     after each landing. Every number is the application's — MINI_WIDTH, SCREEN_PADDING,
      SNAP_DIST and GLIDE_MS in window-prefs.svelte.ts — so each release point
      is inside the 56 that snaps, and the middle one is far outside it. -->
 <div class="mn-stage" data-scene data-dur="10000" data-ease="linear" aria-hidden="true">
   <div class="mn-doc">
-    <div class="mn-doc-bar"><span class="dots"><i></i><i></i><i></i></span><span class="mn-doc-name">Notes.rtf</span></div>
+    <div class="mn-doc-bar">
+      <span class="dots os-mac"><i></i><i></i><i></i></span>
+      <span class="mn-doc-name"><span class="os-mac">Notes.rtf</span><span class="os-win">Notes.txt</span></span>
+      <span class="mn-doc-caps os-win">
+        <i><svg viewBox="0 0 10 10"><path stroke="currentColor" d="M0 5h10"/></svg></i>
+        <i><svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" rx="1.5" fill="none" stroke="currentColor"/></svg></i>
+        <i><svg viewBox="0 0 10 10"><path stroke="currentColor" d="M0 0l10 10M10 0L0 10"/></svg></i>
+      </span>
+    </div>
     <div class="mn-doc-body">
       <i style="--w:46%"></i><i style="--w:88%"></i><i style="--w:92%"></i><i style="--w:71%"></i>
       <i class="gap" style="--w:84%"></i><i style="--w:90%"></i><i style="--w:63%"></i>
@@ -29,7 +38,11 @@ import Frame from '../Frame.astro'
     </div>
   </div>
 
-  <div class="mn-dock"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="sep"></i><i></i></div>
+  <div class="mn-dock os-mac"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="sep"></i><i></i></div>
+  <div class="mn-task os-win">
+    <div class="mn-task-apps"><i class="start"></i><i></i><i></i><i class="on"></i><i></i><i></i></div>
+    <div class="mn-task-tray"><b></b><b></b><span>21:40</span></div>
+  </div>
 
   <div class="mn-rest"></div>
   <div class="mn-mark mk-left"><span>24</span></div>
@@ -52,5 +65,5 @@ import Frame from '../Frame.astro'
     </div>
   </div>
 
-  <span class="mn-ptr"><svg viewBox="0 0 11 18"><use href="#i-cursor"/></svg></span>
+  <span class="mn-ptr"><svg viewBox="0 0 11 18"><use class="os-mac" href="#i-cursor"/><use class="os-win" href="#i-cursor-win"/></svg></span>
 </div>

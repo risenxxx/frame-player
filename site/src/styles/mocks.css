@@ -128,6 +128,28 @@
   .win-bar .name { max-width: min(54%, calc(100% - 140px)); }
 }
 
+/*
+  The window buttons the player draws on Windows (Caption.astro), as TopBar's
+  `.winbtn`: full-height squares, 10px glyphs and the fullscreen one at 17,
+  light grey with the interface's shadow when they lie over a picture. The
+  square is the bar's height — 48 in the hero, 40 in a mock window.
+*/
+.caps { display: flex; flex: none; align-self: stretch; }
+.caps i { width: var(--cap, 48px); display: grid; place-items: center; }
+.caps svg { width: 10px; height: 10px; }
+.caps .fsx svg { width: 17px; height: 17px; }
+:is(.win-bar.over, .p-bar) .caps { color: #d6d6de; }
+:is(.win-bar.over, .p-bar) .caps svg { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55)); }
+
+/* The bar on Windows: the mark and then the name on the left, where the
+   application puts them once the lights are gone, and the buttons flush with
+   the right edge. The name's reserve is the buttons' side now, 120px and the
+   12px gap, both ends — the brand on the left is narrower than that. */
+:root[data-os="windows"] .win-bar { padding-right: 0; --cap: 40px; }
+:root[data-os="windows"] .win-bar .wb-brand { order: -1; margin-left: 0; flex-direction: row-reverse; }
+:root[data-os="windows"] .win-bar .caps { margin-left: auto; }
+:root[data-os="windows"] .win-bar .name { max-width: min(54%, calc(100% - 264px)); }
+
 /* ── feature rows ─────────────────────────────────────────────────────────── */
 
 .feat { padding-block: 104px; }
@@ -1439,6 +1461,75 @@
 .mn-dock i:nth-child(3n + 2) { background: #8b8fe0; }
 .mn-dock i:nth-child(4n) { background: #3e3d74; }
 .mn-dock i.sep { width: 1px; height: calc(40 * var(--u)); border-radius: 0; background: rgba(255, 255, 255, 0.2); }
+
+/*
+  The same screen on Windows: the taskbar across the bottom, 48 tall, so the
+  work area runs 1032 down instead of 1010 and the bottom rest line is at 772
+  for the window's top, 22 lower than above the Dock. Only the starting corner
+  and the first drag change — the drag still lets go at (60, 58), and every
+  later point is the same, so the marks stay where they are.
+*/
+:root[data-os="windows"] .mn-stage {
+  --wy: calc(772 - 714 * var(--d1) - 34 * var(--g1) + 356 * var(--d2) - 90 * var(--d3));
+  --py: calc(722 + 140 * var(--a-in) - 714 * var(--d1) + 356 * var(--d2) - 90 * var(--d3) + 226 * var(--a-out));
+}
+:root[data-os="windows"] .mn-rest { height: calc(984 * var(--u)); }
+
+/* A Windows 11 window: square-ish corners and a title bar with the name on the
+   left and the three caption buttons, 46 wide, flush in the corner. */
+:root[data-os="windows"] .mn-doc { border-radius: calc(8 * var(--u)); }
+:root[data-os="windows"] .mn-doc-bar { height: calc(32 * var(--u)); place-items: center start; padding-left: calc(14 * var(--u)); border-bottom: 0; background: #f3f3f3; color: #1f1f1f; }
+.mn-doc-caps { position: absolute; top: 0; right: 0; bottom: 0; display: flex; color: #3a3a3a; }
+.mn-doc-caps i { width: calc(46 * var(--u)); display: grid; place-items: center; }
+.mn-doc-caps svg { width: calc(10 * var(--u)); height: calc(10 * var(--u)); }
+
+.mn-task {
+  position: absolute;
+  inset: auto 0 0;
+  height: calc(48 * var(--u));
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(22, 21, 48, 0.82);
+}
+.mn-task-apps {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: calc(4 * var(--u));
+  transform: translateX(-50%);
+}
+.mn-task-apps i { position: relative; width: calc(40 * var(--u)); height: calc(40 * var(--u)); border-radius: calc(4 * var(--u)); }
+.mn-task-apps i::before { content: ""; position: absolute; inset: calc(8 * var(--u)); border-radius: calc(5 * var(--u)); background: #5b5a96; }
+.mn-task-apps i:nth-child(3n + 2)::before { background: #8b8fe0; }
+.mn-task-apps i:nth-child(4n)::before { background: #3e3d74; }
+/* Start: the four panes, in the accent. */
+.mn-task-apps i.start::before {
+  inset: calc(11 * var(--u));
+  border-radius: 0;
+  background:
+    linear-gradient(#818cf8 0 0) 0 0 / 46% 46% no-repeat,
+    linear-gradient(#818cf8 0 0) 100% 0 / 46% 46% no-repeat,
+    linear-gradient(#818cf8 0 0) 0 100% / 46% 46% no-repeat,
+    linear-gradient(#818cf8 0 0) 100% 100% / 46% 46% no-repeat;
+}
+/* A running app: lit, with the short bar under it. */
+.mn-task-apps i.on { background: rgba(255, 255, 255, 0.08); }
+.mn-task-apps i.on::after { content: ""; position: absolute; left: 50%; bottom: calc(2 * var(--u)); width: calc(16 * var(--u)); height: calc(3 * var(--u)); margin-left: calc(-8 * var(--u)); border-radius: calc(1.5 * var(--u)); background: #818cf8; }
+.mn-task-tray {
+  position: absolute;
+  right: calc(16 * var(--u));
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: calc(14 * var(--u));
+  color: #e8e8ec;
+  font-size: calc(12 * var(--u));
+  font-variant-numeric: tabular-nums;
+}
+.mn-task-tray b { width: calc(16 * var(--u)); height: calc(16 * var(--u)); border-radius: calc(3 * var(--u)); background: rgba(255, 255, 255, 0.35); }
 
 /* Where an edge of the window comes to rest: 24 inside the work area. */
 .mn-rest {

@@ -17,6 +17,7 @@ import Page from '../layouts/Page.astro'
 import Icons from '../components/Icons.astro'
 import Nav from '../components/Nav.astro'
 import Footer from '../components/Footer.astro'
+import Caption from '../components/mocks/Caption.astro'
 import T from '../i18n/T.astro'
 import { useLocale } from '../i18n/index.ts'
 
@@ -58,11 +59,12 @@ const { s, href } = useLocale(Astro)
           </div>
           <span class="p-scrim" aria-hidden="true"></span>
           <span class="p-bar" aria-hidden="true">
-            <span class="lights"><i></i><i></i><i></i></span>
+            <span class="lights os-mac"><i></i><i></i><i></i></span>
             <span class="p-title" data-path>not-found.mkv</span>
             <span class="p-brand"><span>Frame Player</span>
               <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-mark"/></svg>
             </span>
+            <Caption />
           </span>
 
           <div class="nf-osd" aria-hidden="true">

@@ -194,6 +194,13 @@
   text-shadow: var(--ui-shadow);
 }
 
+/* On Windows the mark and the name trade the right corner for the left, as in
+   TopBar.svelte, and the corner is the three window buttons, 144px of it; the
+   title keeps the same clearance from both, so it stays centred. */
+:root[data-os="windows"] .p-brand { right: auto; left: 18px; flex-direction: row-reverse; }
+:root[data-os="windows"] .p-bar .caps { position: absolute; top: 0; right: 0; height: 48px; }
+:root[data-os="windows"] .p-title { padding: 0 156px; }
+
 .p-brand svg {
   width: 18px;
   height: 18px;
@@ -500,4 +507,8 @@
   .lights { left: 16px; }
   .p-brand { right: 14px; }
   .p-brand span { display: none; }
+  /* On Windows the mark is alone on the left and the buttons are 40 square. */
+  :root[data-os="windows"] .p-brand { left: 14px; }
+  :root[data-os="windows"] .p-bar { --cap: 40px; }
+  :root[data-os="windows"] .p-title { padding: 0 128px; }
 }

@@ -41,6 +41,18 @@ does not change, so the late answer moves nothing. Firefox does not answer at
 all, which is why the "Windows on ARM" link always stands in the download
 facts beside the buttons.
 
+## Which system the mocks draw
+
+Every mock is a window, and a window has its system's chrome: the Mac's traffic
+lights with the name and mark on the right, or the player's Windows bar — mark
+and name on the left, its own minimize / fullscreen / close in the corner
+(`mocks/Caption.astro`, after `TopBar.svelte`). The same goes for the pointer
+and, in the mini player's desktop, the Dock against the taskbar. Both drawings
+are in the HTML, marked `.os-mac` and `.os-win`; the head script in `Page.astro`
+sets `data-os` before the first paint and base.css hides the other one, so
+nothing swaps in view. Without JS, or on anything that is neither, the Mac
+drawing stands. The pointing hand is the Mac's in both.
+
 ## The installation count
 
 The hero's "870+ installs" is live: the player reports its first launch once
