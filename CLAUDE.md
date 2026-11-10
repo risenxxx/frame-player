@@ -77,7 +77,7 @@ Node and bun are pinned in `.prototools` and installed by [proto](https://moonre
 
 ```bash
 bun install
-bun run fetch-libs        # one-time: downloads libmpv, FFmpeg SDK, libclang into src-tauri/{lib,ffmpeg,tools}
+bun run fetch-libs        # one-time: downloads libmpv, FFmpeg SDK, libclang into src-tauri/{lib,ffmpeg,tools} (macOS: the published set; Linux: checks system packages)
 bun run tauri dev         # dev run (vite on :1420 + cargo)
 bun run check             # svelte-check — run after ANY frontend change (expect 0 errors; a few known a11y warnings are OK)
 bun run gates             # check + check-runes + check-imports + css-orphans + notices + changelog + readme + test, in one go

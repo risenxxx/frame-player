@@ -9,7 +9,7 @@
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
   import { formatTime } from '$lib/format';
-  import { IS_MAC } from '$lib/platform';
+  import { IS_LINUX, IS_MAC } from '$lib/platform';
   import { t } from '$lib/i18n.svelte';
   import {
     torrentIsPlaying,
@@ -135,8 +135,8 @@
                Rust's to know — and is about to stop being a constant. -->
           <button
             class="card-forget torrow-forget torrow-reveal"
-            data-tip={IS_MAC ? t('start.torrent_reveal_mac') : t('start.torrent_reveal_win')}
-            aria-label={IS_MAC ? t('start.torrent_reveal_mac') : t('start.torrent_reveal_win')}
+            data-tip={t(IS_MAC ? 'start.torrent_reveal_mac' : IS_LINUX ? 'start.torrent_reveal_linux' : 'start.torrent_reveal_win')}
+            aria-label={t(IS_MAC ? 'start.torrent_reveal_mac' : IS_LINUX ? 'start.torrent_reveal_linux' : 'start.torrent_reveal_win')}
             onclick={() => void revealItemInDir(row.path)}
           >
             <!-- Nudged right and up by (0.25, 0.75) of the viewBox against

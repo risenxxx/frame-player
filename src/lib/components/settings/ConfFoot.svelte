@@ -4,7 +4,7 @@
   /// mpv.conf line mpv refused.
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
-  import { IS_MAC } from '$lib/platform';
+  import { IS_LINUX, IS_MAC } from '$lib/platform';
   import { t } from '$lib/i18n.svelte';
   import { player } from '$lib/player.svelte';
 </script>
@@ -25,7 +25,7 @@
     disabled={!player.mpvConfPath}
     onclick={() => { if (player.mpvConfPath) void revealItemInDir(player.mpvConfPath); }}
   >
-    {t(IS_MAC ? 'set.conf_reveal_mac' : 'set.conf_reveal_win')}
+    {t(IS_MAC ? 'set.conf_reveal_mac' : IS_LINUX ? 'set.conf_reveal_linux' : 'set.conf_reveal_win')}
   </button>
 </div>
 

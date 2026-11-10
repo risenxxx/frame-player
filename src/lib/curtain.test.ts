@@ -15,7 +15,7 @@ vi.mock('tauri-plugin-libmpv-api', () => ({
 }));
 // The Mac, where the dark is the video view's to make: the platform under test
 // is otherwise whatever the user agent of the test runner happens to say.
-vi.mock('./platform', () => ({ IS_MAC: true }));
+vi.mock('./platform', () => ({ IS_MAC: true, IS_WINDOWS: false, IS_LINUX: false }));
 
 /// Whether there is a video view to fade, and what was asked of it.
 let viewThere = true;

@@ -224,6 +224,7 @@ export const ru = {
   'start.torrent_delete_all': 'Всё',
   'start.torrent_reveal_win': 'Показать файлы в проводнике',
   'start.torrent_reveal_mac': 'Показать файлы в Finder',
+  'start.torrent_reveal_linux': 'Показать файлы в файловом менеджере',
   'start.torrent_playing': 'Сейчас проигрывается',
   'start.torrent_lost': 'Ссылка на раздачу не сохранена — откройте её заново',
   'torrent.update': 'Обновить раздачу',
@@ -569,6 +570,7 @@ export const ru = {
   'ctx.open_link': 'Открыть ссылку…',
   'ctx.reveal_win': 'Показать в проводнике',
   'ctx.reveal_mac': 'Показать в Finder',
+  'ctx.reveal_linux': 'Показать в файловом менеджере',
   'ctx.shot': 'Сохранить кадр',
   'ctx.shot_subs': 'Сохранить кадр с субтитрами',
   'ctx.shot_copy': 'Копировать кадр',
@@ -798,6 +800,7 @@ export const ru = {
     'Настройки mpv сохраняются в mpv.conf и применяются сразу. Тонкая настройка — в самом файле:',
   'set.conf_reveal_mac': 'показать mpv.conf в Finder',
   'set.conf_reveal_win': 'показать mpv.conf в проводнике',
+  'set.conf_reveal_linux': 'показать mpv.conf в файловом менеджере',
   // The notice LGPL-2.1 section 6 requires: it has to name the libraries and say
   // they are covered by that license. It is a sentence rather than a bare link
   // for that reason — the link alone would satisfy nobody's obligation.
@@ -851,6 +854,7 @@ export const ru = {
     'Не удалось прочитать THIRD-PARTY-NOTICES.md — он должен лежать рядом с приложением.',
   'lic.reveal_mac': 'показать файл в Finder',
   'lic.reveal_win': 'показать файл в проводнике',
+  'lic.reveal_linux': 'показать файл в файловом менеджере',
   'set.amplify': 'Громкость выше 100%',
   'set.amplify_hint':
     'Клавиши и колесо мыши поднимают громкость до 150% — для тихих файлов. Громче, чем записано в файле, звук может искажаться.',
@@ -1018,6 +1022,8 @@ export const ru = {
   'vset.hwdec': 'Декодирование',
   'vset.hwdec_auto': 'Аппаратное',
   'vset.hwdec_vt': 'Только VideoToolbox',
+  'vset.hwdec_vaapi': 'Только VA-API',
+  'vset.hwdec_nvdec': 'Только NVDEC',
   'vset.hwdec_sw': 'Программное',
   'step.waiting_data': 'Ждём данные раздачи…',
   'step.no_data': 'Этот участок ещё не скачан',

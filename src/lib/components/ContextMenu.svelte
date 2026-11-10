@@ -21,7 +21,7 @@
   import { hint } from '$lib/keys.svelte';
   import { leveling, toggleLeveling } from '$lib/leveling.svelte';
   import { playback, setSpeed } from '$lib/playback.svelte';
-  import { IS_MAC } from '$lib/platform';
+  import { IS_LINUX, IS_MAC, IS_WINDOWS } from '$lib/platform';
   import { ASPECT_AUTO, LOOP_LABEL, isNetworkSource, player, type PictureProp } from '$lib/player.svelte';
   import { blockContextMenu, holdSlider } from '$lib/dom';
   import { copyScreenshot, saveScreenshot } from '$lib/screenshot';
@@ -344,8 +344,9 @@
   </button>
   <!-- Windows only: ms-settings: is a Windows scheme, and on macOS this
        item silently did nothing. macOS has no single-link equivalent (the
-       default app is chosen in a specific file's Get Info panel). -->
-  {#if !IS_MAC}
+       default app is chosen in a specific file's Get Info panel), and nor
+       has Linux, where each desktop keeps its own. -->
+  {#if IS_WINDOWS}
     <button
       class="menu-item"
       onclick={() => { close(); void openUrl('ms-settings:defaultapps'); }}
@@ -435,7 +436,7 @@
     disabled={!player.filePath || isNetworkSource(player.filePath)}
     onclick={() => { close(); if (player.filePath) void revealItemInDir(player.filePath); }}
   >
-    {t(IS_MAC ? 'ctx.reveal_mac' : 'ctx.reveal_win')}
+    {t(IS_MAC ? 'ctx.reveal_mac' : IS_LINUX ? 'ctx.reveal_linux' : 'ctx.reveal_win')}
   </button>
   <button class="menu-item" disabled={!hasFile} onclick={() => { close(); actions.toggleInfo(); }}>
     {t('ctx.info')} <span class="hint">{hint('info')}</span>

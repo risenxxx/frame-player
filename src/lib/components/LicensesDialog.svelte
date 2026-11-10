@@ -15,7 +15,7 @@
   import { resolveResource } from '@tauri-apps/api/path';
 
   import Dialog from '$lib/components/Dialog.svelte';
-  import { IS_MAC } from '$lib/platform';
+  import { IS_LINUX, IS_MAC } from '$lib/platform';
   import { t } from '$lib/i18n.svelte';
 
   interface Props {
@@ -62,7 +62,7 @@
   {/if}
   <div class="lic-actions">
     <button class="btn-outline" onclick={reveal}>
-      {t(IS_MAC ? 'lic.reveal_mac' : 'lic.reveal_win')}
+      {t(IS_MAC ? 'lic.reveal_mac' : IS_LINUX ? 'lic.reveal_linux' : 'lic.reveal_win')}
     </button>
   </div>
 </Dialog>

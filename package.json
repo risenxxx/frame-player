@@ -26,7 +26,8 @@
     "tauri:macos": "env FFMPEG_DIR=\"$PWD/src-tauri/ffmpeg-macos\" LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib tauri dev",
     "tauri:macos:build": "scripts/macos-build.sh",
     "tauri:macos:dmg": "scripts/build-dmg.sh",
-    "fetch-libs": "powershell -ExecutionPolicy Bypass -File scripts/fetch-libs.ps1"
+    "fetch-libs": "node scripts/fetch-libs.mjs",
+    "linux:check": "scripts/linux/check.sh"
   },
   "license": "GPL-3.0-or-later",
   "dependencies": {

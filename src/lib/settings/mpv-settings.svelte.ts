@@ -14,7 +14,7 @@ import { command, getProperty } from 'tauri-plugin-libmpv-api';
 
 import { refreshAudioOutput } from '$lib/audio-output.svelte';
 import { refreshLeveling } from '$lib/leveling.svelte';
-import { IS_MAC } from '$lib/platform';
+import { IS_LINUX, IS_MAC } from '$lib/platform';
 import { t } from '$lib/i18n.svelte';
 import { mpvLangValue, parseLangList } from '$lib/languages';
 import { player, readList } from '$lib/player.svelte';
@@ -142,16 +142,27 @@ export class MpvSettings {
       // that caution: mpv still falls back to software if the pairing fails.
       // What was actually chosen is shown at the bottom of this dialog
       // (`hwdec-current`).
+      // On Linux the two APIs a desktop has: VA-API (Intel, AMD, and NVIDIA
+      // through a shim) and NVDEC (NVIDIA's own). Same reasoning as
+      // VideoToolbox: auto-safe is cautious about the pairing with our output,
+      // and naming the API skips that caution, still falling back to software.
       options: IS_MAC
         ? [
             { v: null, label: t('vset.hwdec_auto') },
             { v: 'videotoolbox', label: t('vset.hwdec_vt') },
             { v: 'no', label: t('vset.hwdec_sw') },
           ]
-        : [
-            { v: null, label: t('vset.hwdec_auto') },
-            { v: 'no', label: t('vset.hwdec_sw') },
-          ],
+        : IS_LINUX
+          ? [
+              { v: null, label: t('vset.hwdec_auto') },
+              { v: 'vaapi', label: t('vset.hwdec_vaapi') },
+              { v: 'nvdec', label: t('vset.hwdec_nvdec') },
+              { v: 'no', label: t('vset.hwdec_sw') },
+            ]
+          : [
+              { v: null, label: t('vset.hwdec_auto') },
+              { v: 'no', label: t('vset.hwdec_sw') },
+            ],
     },
     {
       kind: 'segmented',

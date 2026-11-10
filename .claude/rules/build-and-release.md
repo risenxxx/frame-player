@@ -127,3 +127,12 @@ powershell -ExecutionPolicy Bypass -File scripts/update-test.ps1 -WithRegistry
 # and, on its own, the payload's layout against a real installation:
 powershell -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 -CompareWith "$LOCALAPPDATA/Frame Player"
 ```
+
+The Linux half of the crate's checks, from a Mac, in Docker (Ubuntu 24.04, the
+toolchain `rust.yml` pins, cached volumes). Linux bundles and builds are
+described under "Linux" in `docs/distribution.md`:
+
+```bash
+bun run linux:check              # clippy -D warnings + cargo test, as the CI job
+scripts/linux/check.sh shell     # a shell in the same container, tree synced
+```

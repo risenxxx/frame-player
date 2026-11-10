@@ -6,7 +6,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { portable, setHandler } from '$lib/portable.svelte';
 
-  import { IS_MAC } from '$lib/platform';
+  import { IS_MAC, IS_WINDOWS } from '$lib/platform';
   import { REPO_URL, SITE_URL } from '$lib/links';
   import { locale, setLocale, t, type Locale } from '$lib/i18n.svelte';
   import {
@@ -476,7 +476,7 @@
   </div>
   {#if webviewVersion}
     <p class="about-note">
-      {t(IS_MAC ? 'set.webview_foot_mac' : 'set.webview_foot_win', { version: webviewVersion })}
+      {t(IS_WINDOWS ? 'set.webview_foot_win' : 'set.webview_foot_mac', { version: webviewVersion })}
     </p>
   {/if}
   <p class="about-note">

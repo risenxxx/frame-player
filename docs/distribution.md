@@ -507,6 +507,67 @@ player work: the installation is per-user and unpackaged, several components are
 laid out beside the executable at build time, and a packaged application's file
 system is virtualised. It is a project, not a checkbox.
 
+## Linux
+
+Not shipped yet; this is what the port stands on so far. The bundle is
+`tauri.linux.conf.json`, merged over `tauri.conf.json` the way the macOS one is,
+and it is JSON with no room for comments, so its choices are written down here.
+
+**The libraries are the distribution's, not ours.** Windows and macOS carry
+libmpv and FFmpeg inside the application because neither system has them; every
+Linux distribution does, built against the same libass, the same Mesa and the
+same PipeWire as the rest of the desktop. So `lib/**/*`, the FFmpeg DLLs and the
+`ffmpeg.exe` glob are nulled out (the one file `lib/` holds in the repository is
+MoltenVK's driver manifest, which is macOS's), and the `.deb` **depends** on the
+runtime packages instead. The names are Ubuntu 24.04's sonames — `libmpv2`,
+`libavcodec60`, `libavformat60`, `libavutil58`, `libavfilter9`, `libavdevice60`,
+`libswscale7`, `libswresample4` — because the crate links whatever it was
+built against, and a `.deb` built on 24.04 needs exactly those; a release built
+elsewhere changes them with the build machine. `libgtk-3-0t64 | libgtk-3-0`
+covers the 64-bit `time_t` rename (24.04 has the first, Debian 12 the second);
+`libdbus-1-3` is the keyring's Secret Service backend. The bundler adds nothing
+of its own to `Depends`, so WebKitGTK is listed too. The `ffmpeg` command is
+only **recommended**: casting's prepare step spawns it, from `PATH` on Linux
+(`cast/prepare.rs`), and a player without it still plays everything.
+
+The AppImage takes the other road — linuxdeploy copies the build machine's
+libraries in — which is why it exists beside the `.deb`: one file that runs on
+a distribution whose sonames are not 24.04's.
+
+**Opening a file from the desktop is the `.desktop` file's `MimeType=`, and the
+bundler builds it from two places**: each file association's `mimeType`, and
+`plugins.deep-link.desktop.schemes` as `x-scheme-handler/<scheme>` — so
+`frameplayer://` needs nothing beyond the configuration it already has. A file
+association carries one MIME type, so the Linux list is one association per
+type (the Windows/macOS list has one association with every extension; JSON
+merge replaces arrays whole, so the Linux one stands alone). The bundler's own
+template writes `Exec=frameplayer` with no field code, and a file manager then
+starts the player **without the file**; `linux/frameplayer.desktop` is that
+template with `%U`, which hands over files and links alike.
+
+`x-scheme-handler/magnet` is deliberately not declared. Nothing in the player
+takes a magnet link from the command line on any platform — a second launch's
+arguments are kept only when they exist on disk, and the deep-link handler
+understands `frameplayer://join/` and nothing else — so declaring it would make
+the player the system's magnet handler and then do nothing with the link.
+
+**Building on Linux** needs no download: `bun run fetch-libs` there runs
+`scripts/fetch-linux-libs.sh`, which checks the development packages through
+pkg-config and prints the `apt`/`dnf` line for whatever is missing. It also
+links `src-tauri/ffmpeg/{include,lib}` and `src-tauri/tools/libclang.so` to the
+system's, and that is not decoration: `.cargo/config.toml` sets `FFMPEG_DIR`
+and `LIBCLANG_PATH` for the Windows SDKs, Cargo has no per-target `[env]`, and
+both build scripts take a set variable as the whole answer — ffmpeg-sys never
+falls back to pkg-config, clang-sys searches nowhere else. Making the two
+directories exist on Linux keeps plain `cargo` working there with no
+environment of its own.
+
+`bun run linux:check` runs the CI job's clippy and tests in Ubuntu 24.04 under
+Docker (`scripts/linux/`), with the toolchain `rust.yml` pins and the cargo
+registry and target directory in named volumes; `scripts/linux/check.sh shell`
+opens the same container. The image also carries Xvfb, Mesa's software GL,
+xdotool and ImageMagick, for running the application itself headless.
+
 ## Releases
 
 The version lives in **four files** — the package manifest, the

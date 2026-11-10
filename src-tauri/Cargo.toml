@@ -50,9 +50,10 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "c
 quick-xml = { version = "0.41", default-features = false }
 encoding_rs = "0.8"
 # OpenSubtitles credentials in the OS keychain (macOS Keychain, Windows
-# Credential Manager) rather than in a file of ours: a reused password is the
-# most sensitive thing this app will ever hold. Native backends only — the
-# secret-service one would drag in D-Bus for a platform we do not ship.
+# Credential Manager, the Secret Service on Linux) rather than in a file of
+# ours: a reused password is the most sensitive thing this app will ever hold.
+# The Linux backend is added under its own target below, so the D-Bus crates it
+# needs are not compiled on the two platforms that have a native keychain.
 keyring = { version = "3", features = ["apple-native", "windows-native"] }
 # Not a new dependency — it is already in the lock under librqbit — but a named
 # one, because `librqbit::storage::TorrentStorage` is written in terms of
@@ -210,6 +211,16 @@ dunce = "1"
 # the one thing an in-place update has to tell the system about itself. Already
 # in the tree via tauri-plugin-deep-link.
 windows-registry = "0.5"
+
+# Linux: the keyring's Secret Service backend (GNOME Keyring, KWallet) — the
+# same `keyring` as above, with the features a Linux build adds to it. The sync
+# backend rather than the async one because the async one wants a runtime of
+# its own chosen for zbus, and every call site here is synchronous; it links
+# libdbus (`libdbus-1-dev` to build, `libdbus-1-3` at runtime — on every Linux
+# desktop already, and WebKitGTK pulls it in anyway). `crypto-rust` encrypts the
+# session with RustCrypto rather than OpenSSL, so no libssl is linked.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 
 # CI runs `cargo clippy --all-targets -- -D warnings` on both platforms
 # (.github/workflows/rust.yml), so every lint here is either fixed or turned off

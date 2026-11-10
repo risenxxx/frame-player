@@ -58,6 +58,12 @@ pub(crate) fn ffmpeg_bin(app: &tauri::AppHandle) -> Option<PathBuf> {
     let tree = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     candidates.push(tree.join("ffmpeg").join("bin").join(FFMPEG_BIN));
     candidates.push(tree.join("ffmpeg-macos").join("bin").join(FFMPEG_BIN));
+    // Linux bundles no ffmpeg of its own: the libraries are the distribution's,
+    // and so is the command (the package recommends it), found on PATH.
+    #[cfg(target_os = "linux")]
+    if let Some(path) = std::env::var_os("PATH") {
+        candidates.extend(std::env::split_paths(&path).map(|dir| dir.join(FFMPEG_BIN)));
+    }
     candidates.into_iter().find(|p| p.is_file())
 }
 

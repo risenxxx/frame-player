@@ -7,7 +7,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { command } from 'tauri-plugin-libmpv-api';
 
-import { IS_MAC } from '../platform';
+import { IS_WINDOWS } from '../platform';
 
 export const VIDEO_EXTENSIONS = [
   'mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv', 'ts', 'm2ts', 'mts',
@@ -63,7 +63,7 @@ export function isNetworkSource(path: string | null): boolean {
 
 /// The subtitle folders mpv always looks in, whatever is found on disk.
 export const SUB_DIRS = ['Subs', 'subs', 'Subtitles', 'subtitles'];
-export const PATH_LIST_SEP = IS_MAC ? ':' : ';';
+export const PATH_LIST_SEP = IS_WINDOWS ? ';' : ':';
 
 /**
  * Point mpv's own search for external tracks at the folders this release keeps

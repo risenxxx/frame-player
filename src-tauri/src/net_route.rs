@@ -145,7 +145,9 @@ const MAC_SKIP: &[&str] = &["lo", "awdl", "llw", "anpi", "ap"];
 
 /// A usable address: not loopback, not link-local. A tunnel interface that
 /// exists but is not up carries only `fe80::`, which is what hides the four
-/// idle `utun`s every Mac has.
+/// idle `utun`s every Mac has. Linux lists no interfaces yet (see
+/// `interfaces` below), so there only the test reaches it.
+#[cfg(any(target_os = "macos", windows, test))]
 fn usable(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => !v4.is_loopback() && !v4.is_link_local() && !v4.is_unspecified(),
@@ -155,6 +157,7 @@ fn usable(ip: &IpAddr) -> bool {
     }
 }
 
+#[cfg(any(target_os = "macos", windows))]
 fn first_addr(ips: &[IpAddr]) -> Option<String> {
     ips.iter()
         .find(|ip| ip.is_ipv4())

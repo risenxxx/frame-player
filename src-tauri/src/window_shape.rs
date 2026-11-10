@@ -46,6 +46,7 @@ static FRONTEND: std::sync::OnceLock<tauri::WebviewWindow> = std::sync::OnceLock
 #[cfg(any(windows, target_os = "macos"))]
 static RESIZING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+#[cfg(any(windows, target_os = "macos"))]
 pub const RESIZING_EVENT: &str = "frameplayer://window-resizing";
 
 #[cfg(any(windows, target_os = "macos"))]

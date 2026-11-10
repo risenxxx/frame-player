@@ -17,7 +17,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-import { IS_MAC } from './platform';
+import { IS_WINDOWS } from './platform';
 
 const HANDLER_KEY = 'frameplayer.handler';
 
@@ -49,7 +49,9 @@ class Portable {
 export const portable = new Portable();
 
 export async function initPortable() {
-  if (IS_MAC) return;
+  // Windows only: a portable copy, an installation's file set and a shell
+  // registration of the player's own are all Windows things.
+  if (!IS_WINDOWS) return;
   const state = await invoke<NativeState>('portable_state').catch((e) => {
     console.warn('portable state failed:', e);
     return null;

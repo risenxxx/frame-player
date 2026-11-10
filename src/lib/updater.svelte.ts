@@ -32,7 +32,7 @@ import { check, type Update } from '@tauri-apps/plugin-updater';
 import { t } from './i18n.svelte';
 import { dropResumeSnapshot, saveResumeSnapshot } from './history.svelte';
 import { showOsd } from './osd.svelte';
-import { IS_MAC } from './platform';
+import { IS_LINUX, IS_MAC } from './platform';
 import { REPO_URL } from './links';
 
 /** Whole percent of the in-place payload's download, from update.rs. */
@@ -84,6 +84,11 @@ let pluginUpdate: Update | null = null;
 
 /// Ask R2 whether there is a newer signed build.
 export async function checkForUpdate() {
+  // Linux has no update channel yet: a .deb is updated by the package manager
+  // that installed it, and the manifest names no Linux build. Asking anyway
+  // would only log a failure every six hours. (An AppImage could take the
+  // plugin's own path one day; until it is published, nothing is announced.)
+  if (IS_LINUX) return;
   if (IS_MAC) {
     pluginUpdate = await check().catch(() => null);
     updater.available = pluginUpdate;

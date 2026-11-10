@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./platform', () => ({ IS_MAC: false }));
+vi.mock('./platform', () => ({ IS_MAC: false, IS_WINDOWS: true, IS_LINUX: false }));
 vi.mock('tauri-plugin-libmpv-api', () => ({
   command: vi.fn(async () => undefined),
   getProperty: vi.fn(async () => null),
