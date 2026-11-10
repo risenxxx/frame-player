@@ -2,9 +2,10 @@
 # and tests in, from a Mac or anywhere else with Docker. Ubuntu 24.04 because it
 # is what the .deb's `depends` names (libavcodec60, libmpv2, …) and what the CI
 # job's `ubuntu-24.04` runner is. The same packages as that job, plus what a
-# headless run of the app needs (Xvfb, Mesa's software GL, xdotool to drive the
-# window, ImageMagick to grab and compare frames) — one image, so the check and
-# the app run share a target directory.
+# headless run of the app needs (Xvfb and a headless Weston, Mesa's software
+# GL, xdotool to drive the window, ImageMagick to grab and compare frames,
+# ffmpeg to make the test video — see run-app.sh) — one image, so the check
+# and the app run share a target directory.
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -16,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
       libswresample-dev libavfilter-dev libavdevice-dev \
       xvfb xauth dbus-x11 libgl1-mesa-dri libegl1 mesa-utils xdotool imagemagick \
+      x11-utils weston procps fonts-dejavu-core ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # The toolchain `.github/workflows/rust.yml` pins, passed in by check.sh so the

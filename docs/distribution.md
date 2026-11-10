@@ -565,8 +565,14 @@ environment of its own.
 `bun run linux:check` runs the CI job's clippy and tests in Ubuntu 24.04 under
 Docker (`scripts/linux/`), with the toolchain `rust.yml` pins and the cargo
 registry and target directory in named volumes; `scripts/linux/check.sh shell`
-opens the same container. The image also carries Xvfb, Mesa's software GL,
-xdotool and ImageMagick, for running the application itself headless.
+opens the same container. The image also carries Xvfb, a headless Weston,
+Mesa's software GL, xdotool, ImageMagick and ffmpeg, for running the
+application itself: `scripts/linux/check.sh run-x11` (or `run-wayland`) builds
+the player with the frontend embedded (`bun run build` on the host first),
+generates a test video, plays it, drives it — hover, Space, `L`, a click on the
+seekbar, a hover over it, Ctrl+Q — and writes screenshots, frame differences
+and logs to `$FP_LINUX_OUT` (`scripts/linux/run-app.sh`). How the picture gets
+under the interface on Linux is [linux.md](linux.md).
 
 ## Releases
 

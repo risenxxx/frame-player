@@ -1197,6 +1197,28 @@ fn raise_fd_limit() -> String {
     }
 }
 
+/// Linux: the picture is a GL area *under* the web view (the vendored libmpv
+/// plugin, docs/linux.md), so the page's transparent pixels have to stay
+/// transparent — and WebKitGTK keeps them so only in accelerated compositing
+/// mode. Outside it (a bare X11 screen with no compositor, measured under
+/// Xvfb) it paints an opaque black backdrop and the video is invisible behind
+/// a working interface. Forcing the mode costs nothing where it is on anyway.
+/// Set before the builder, because the web process inherits the environment
+/// when it is spawned; a value the user set is left alone. Two variables
+/// people set to work around WebKitGTK driver bugs turn the backdrop opaque
+/// too, so their presence is said out loud rather than undone.
+#[cfg(target_os = "linux")]
+fn linux_webkit_env() {
+    if std::env::var_os("WEBKIT_FORCE_COMPOSITING_MODE").is_none() {
+        std::env::set_var("WEBKIT_FORCE_COMPOSITING_MODE", "1");
+    }
+    for var in ["WEBKIT_DISABLE_COMPOSITING_MODE", "WEBKIT_DISABLE_DMABUF_RENDERER"] {
+        if std::env::var_os(var).is_some_and(|v| v != "0") {
+            eprintln!("[startup] {var} is set: WebKit will paint an opaque page and the video will not show");
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // First, and before any of it: a descriptor spent before this runs is spent
@@ -1228,6 +1250,9 @@ pub fn run() {
     // Before the frontend can ask mpv to start: on Windows, libmpv is loaded
     // here first, so a machine that cannot load it is told why.
     libmpv_load::preload();
+
+    #[cfg(target_os = "linux")]
+    linux_webkit_env();
 
     #[cfg(target_os = "macos")]
     point_vulkan_at_bundled_driver();
@@ -1528,6 +1553,14 @@ pub fn run() {
                 // owns it; macOS needs nothing installed.
                 #[cfg(windows)]
                 window_shape::install(&win);
+                // The video layer under the web view (Linux has no `wid`):
+                // built now, before the page loads, rather than when the
+                // frontend first starts mpv — see docs/linux.md.
+                #[cfg(target_os = "linux")]
+                {
+                    use tauri_plugin_libmpv::MpvExt;
+                    app.mpv().prepare_window(&win);
+                }
                 window_guard::clamp_to_visible_area(&win);
                 // The window is created hidden (visible: false) and shown from
                 // JS once it has a black background. Safety net for a broken

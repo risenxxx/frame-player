@@ -1,0 +1,54 @@
+use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
+use std::ffi::c_char;
+#[cfg(not(target_os = "linux"))]
+use std::ffi::c_void;
+use tauri::{AppHandle, Runtime};
+
+#[cfg(not(target_os = "linux"))]
+use crate::wrapper::MpvHandle;
+
+// Vendored: the Linux backend has an instance type of its own (src/linux/).
+#[cfg(not(target_os = "linux"))]
+#[derive(Debug, Clone, Copy)]
+pub struct MpvInstance {
+    pub handle: *mut MpvHandle,
+    pub event_userdata: *mut c_void,
+}
+
+#[cfg(not(target_os = "linux"))]
+unsafe impl Send for MpvInstance {}
+#[cfg(not(target_os = "linux"))]
+unsafe impl Sync for MpvInstance {}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MpvConfig {
+    #[serde(default)]
+    pub initial_options: IndexMap<String, serde_json::Value>,
+    #[serde(default)]
+    pub observed_properties: IndexMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VideoMarginRatio {
+    pub left: Option<f64>,
+    pub right: Option<f64>,
+    pub top: Option<f64>,
+    pub bottom: Option<f64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EventUserData<R: Runtime> {
+    pub app: AppHandle<R>,
+    pub free_fn: unsafe extern "C" fn(*mut c_char),
+    pub window_label: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FfiResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}

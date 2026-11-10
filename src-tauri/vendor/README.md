@@ -1,15 +1,56 @@
-# Vendored librqbit crates
+# Vendored crates
 
-Copies of three crates from crates.io, carrying changes upstream does not have in
-any release — four of them, since librqbit carries three. Wired in via `[patch.crates-io]` in `../Cargo.toml`, so
+Copies of four crates from crates.io, carrying changes upstream does not have in
+any release — three librqbit crates (librqbit itself carries three changes) and
+the libmpv plugin. Wired in via `[patch.crates-io]` in `../Cargo.toml`, so
 Cargo uses these directories instead of the registry copies — same versions,
 different source.
 
-All three are **Apache-2.0** (`../../licenses/spdx/Apache-2.0.txt`), which is
+The three librqbit crates are **Apache-2.0** (`../../licenses/spdx/Apache-2.0.txt`), which is
 one-way compatible with this application's GPL-3.0-or-later. Their files are
 **modified**, as §4(b) requires to be said out loud; every change is marked with
 a comment explaining itself, and `diff` against the same version on crates.io
-shows the whole of it.
+shows the whole of it. The plugin is **MPL-2.0**, file-level copyleft: the
+files it came with stay MPL-2.0 with their changes, which this public
+repository already publishes; the files added under `src/linux/` are under the
+same license, to keep the crate one license.
+
+## tauri-plugin-libmpv 0.3.2 — a Linux backend
+
+`src/linux/` (new, ~1600 lines) and a handful of `cfg` lines in `lib.rs`,
+`models.rs` and `error.rs`, each marked "Vendored". **The Windows and macOS
+code path is the registry's, byte for byte**: `desktop.rs`, `wrapper.rs`,
+`utils.rs` and `commands.rs` are untouched, and the cfg lines only take them
+out of a Linux build. One new `Error` variant (`CreateInstanceBecause`) is
+compiled everywhere and produced only on Linux.
+
+Why it is here: on Windows and macOS mpv draws into a native child view behind
+the transparent web view (`--wid`). Linux has no such thing to offer — Wayland
+has no foreign-window embedding at all, and on X11 mpv's child window would
+cover the web view rather than sit under it. So on Linux the plugin renders
+through libmpv's OpenGL render API (`vo=libmpv`) into a `GtkGLArea` placed
+*under* the `WebKitWebView` in a `GtkOverlay`, and GTK composites the two
+layers client-side. The reasoning, the measurements and the order rules are in
+`../../docs/linux.md`.
+
+And because the C `libmpv-wrapper` the plugin drives on the other two
+platforms has no part in that, the Linux backend replaces it with Rust that
+calls `libmpv.so.2` directly (`src/linux/client.rs`), reproducing the wrapper's
+behaviour and its event JSON for the frontend (`tauri-plugin-libmpv-api`,
+unchanged) — minus three of its defects: `get_property(…, "node")` reads a real
+`mpv_node`, a client message is read for `num_args` arguments, and a failure
+after `mpv_create` neither hangs nor loses its reason.
+
+Not copied from the registry: the npm half (`guest-js/`, `dist-js/`,
+`package.json`, the lockfiles, rollup and TypeScript configs) — the app takes
+the JS API from npm — and the crate's `Cargo.lock` and CI. `build.rs` and
+`permissions/` stay, because `tauri-plugin`'s build step generates the command
+permissions from them.
+
+This one does not expire with an upstream release: it ends when upstream grows
+a Linux path of its own that draws under the web view. A bump means copying the
+new version, re-adding `src/linux/` and the marked lines, and running
+`scripts/linux/check.sh run-x11` (and `run-wayland`).
 
 ## librqbit 9.0.1 — Message Stream Encryption (MSE/PE)
 
@@ -168,7 +209,7 @@ against peers *live* against bytes.
 ## Maintenance
 
 `[patch.crates-io]` overrides *every* version of these crates in the dependency
-graph, so a librqbit release that wants a different version of either fails
+graph, so a release that wants a different version of one fails
 loudly with a conflict rather than quietly using the registry copy. Re-vendor
 the new version and re-apply the changes, or drop the entry if upstream has
 fixed the thing by then — which is the expected end of both of these, and the

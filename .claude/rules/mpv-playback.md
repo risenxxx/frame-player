@@ -39,6 +39,7 @@ paths:
   - "src-tauri/src/screenshot.rs"
   - "src-tauri/lua/**"
   - "src-tauri/shaders/**"
+  - "src-tauri/vendor/tauri-plugin-libmpv/**"
 ---
 
 # mpv-playback — the short form
@@ -68,6 +69,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 | `src/lib/bridge.svelte.ts`, `seekbar.svelte.ts` | What the page used to call the "bridge between mpv state and the page": `playerHooks` (what `initPlayer` is handed — `beforeLoad`, `property`, `fileLoaded`, `playbackRestart` and the rest), the Windows taskbar's progress, and `initCastFollow` (the seekbar and the taskbar following the television). `seekbar` is what the bar draws besides the playhead: chapter notches, the A–B band, the hover chapter and the preview's last real shape |
 | `src-tauri/src/screenshot.rs` | Frame export: destination dir (created on demand), temp path + clipboard hand-off. mpv writes the PNG; this only supplies what mpv cannot do |
 | `src-tauri/lua/zoompan.lua` | Atomic zoom+pan on mpv's core thread (copied next to the dev exe by build.rs; bundled via resources) |
+| `src-tauri/vendor/tauri-plugin-libmpv/` | The libmpv plugin, vendored for its Linux backend (`src/linux/`): `client.rs` is the C wrapper's five operations and event JSON in Rust against `libmpv.so.2`, `render.rs` the GL area under the web view. Windows and macOS run the registry's code unchanged. See [docs/linux.md](../../docs/linux.md) and the Linux line below |
 
 ## Rules
 
@@ -92,4 +94,4 @@ Each line is the rule; the chapter it links to is the whole of it.
 - **Now Playing on macOS is the player's own, and mpv's is switched off.** mpv's never learns what plays under libmpv (its event helper wants mpv.app), so `input-media-keys=no` and `now_playing.rs` + `now-playing.svelte.ts`: facts down through `now_playing_set`, commands up as `frameplayer://remote` into `playback`'s verbs. → [mpv-playback](../../docs/rules/mpv-playback.md)
 - **Anything mpv keeps across a file change is a leak waiting to be noticed.** `video-rotate`, `video-aspect-override`, `panscan`, the A–B loop points and — measured — **`sub-delay`, `audio-delay` and `sub-speed`** all survive a `loadfile`, so … → [mpv-playback](../../docs/rules/mpv-playback.md)
 - **Speed moves on a fixed ladder, not by a factor.** `SPEED_LADDER` (speed.ts: 0.25 … 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4) is where `[`/`]`, the wheel and every other step land; ×1.25 gave 1.56 and 1.95, which read as a bug. An off-ladder speed (a room's correction, the viewer's mpv.conf) steps to the nearest rung in the direction asked. Every change goes through `playback.setSpeed`, which tells a room — the context menu's speed row used to set mpv directly and a room never heard of it.
-
+- **On Linux the picture is libmpv's render API in a GL area under the web view, and three orders hold it up.** No `wid` there (`vo=libmpv`, enforced by the plugin): `Window > GtkOverlay > [GtkGLArea, WebKitWebView]`, where the web view's **grandparent must stay the window** (tauri-runtime-wry's resize handler unwraps that downcast on every click); the render context exists **before `init` resolves**, because `vo=libmpv` refuses to open without one and the frontend's first `loadfile` follows `init`; and it is freed **on the GTK thread with GL current, before the core** is destroyed. `WEBKIT_FORCE_COMPOSITING_MODE=1` is set before the builder, or a non-composited X11 screen gets an opaque page over the video; mpv gets the X11 display but never the Wayland one (libva-wayland crashed inside `mpv_render_context_create`); a software renderer gets `fbo-format=rgba8` (`rgba16f` rendered black in a third of starts on llvmpipe). → [mpv-playback](../../docs/rules/mpv-playback.md)

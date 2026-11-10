@@ -6,6 +6,12 @@
 #
 #   bun run linux:check            # clippy + tests
 #   scripts/linux/check.sh shell   # a shell in the same container, tree synced
+#   scripts/linux/check.sh app     # build the player (debug, frontend embedded)
+#   scripts/linux/check.sh run-x11       # …and run it headless: Xvfb,
+#   scripts/linux/check.sh run-wayland   # or a headless Weston (run-app.sh)
+#
+# The app modes embed build/, so `bun run build` first. The run modes write
+# their screenshots and logs to $FP_LINUX_OUT (default /tmp/fp-linux-app).
 #
 # The checkout is mounted read-only and copied into the container (see
 # in-container.sh): the build writes into src-tauri (the ffmpeg/tools links,
@@ -40,9 +46,14 @@ docker build -q ${platform_args[@]+"${platform_args[@]}"} \
 tty_args=()
 [ -t 0 ] && [ -t 1 ] && tty_args=(-it)
 
+out_dir="${FP_LINUX_OUT:-/tmp/fp-linux-app}"
+mkdir -p "$out_dir"
+
 docker run --rm ${tty_args[@]+"${tty_args[@]}"} ${platform_args[@]+"${platform_args[@]}"} \
   -v "$repo_root:/src:ro" \
+  -v "$out_dir:/out" \
   -v fp-linux-cargo:/root/.cargo/registry \
   -v fp-linux-target:/cache/target \
   -e CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-always}" \
+  -e FP_RUN_SECONDS -e FP_RUN_MEDIA -e FP_RUN_AO -e FP_RUN_HWDEC -e FP_RUN_SIZE -e FP_RUN_CONF \
   "$image" bash /src/scripts/linux/in-container.sh "${1:-check}"

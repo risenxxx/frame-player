@@ -1,6 +1,6 @@
 # CLAUDE.md — Frame Player
 
-Windows and macOS video player: **Tauri 2 + Svelte 5 (SvelteKit static) + in-process libmpv** via `tauri-plugin-libmpv` (wid embedding: mpv renders into a child HWND / NSView *behind* the transparent webview; the entire UI is HTML on top). On macOS that needs a patched libmpv — stock mpv does not implement `--wid` there at all; see `patches/` and `scripts/build-macos-libs.sh`.
+Windows, macOS and Linux video player: **Tauri 2 + Svelte 5 (SvelteKit static) + in-process libmpv** via `tauri-plugin-libmpv` (wid embedding: mpv renders into a child HWND / NSView *behind* the transparent webview; the entire UI is HTML on top). On macOS that needs a patched libmpv — stock mpv does not implement `--wid` there at all; see `patches/` and `scripts/build-macos-libs.sh`. On Linux there is no `wid`: the vendored plugin renders through libmpv's render API into a GL area under the webview — see `docs/linux.md`.
 
 The UI is **localised (ru/en/zh)** — every user-facing string goes through `t()`, see "Localisation" below. Code comments and docs are **English**.
 
@@ -52,6 +52,7 @@ there is the one without a chapter.
 | `architecture.md` | Stack decisions, the embedding model and the constraint list — mandatory reading before touching mpv interop, seeking, fullscreen or zoom |
 | `ROADMAP.md` | Shipped, planned and considered features; a comment saying "ROADMAP 21" means a numbered item there |
 | `macos.md` | Why stock `--wid` cannot work on macOS, what the patch does, the CoreAudio crash the second patch is a backport for (and the one that was measured and not shipped), and the platform's own traps |
+| `linux.md` | Why Linux draws through libmpv's render API instead of `--wid`, the GTK tree it needs, the WebKit compositing switch, threading and teardown, the wrapper contract the Linux backend keeps, and what a headless container could and could not show |
 | `sdr-color.md` | SDR against QuickTime, measured: the grey-scale and real-frame numbers, why metadata is not the cause, and which option combinations did and did not reproduce it |
 | `casting.md` | Casting to a television: the two transports, what each can carry, the measured limits and the decision rules |
 | `watch-together.md` | A shared timeline over a small relay: why the wire carries state rather than actions, why drift is corrected with speed rather than a seek, and what a room may know about what you are watching |

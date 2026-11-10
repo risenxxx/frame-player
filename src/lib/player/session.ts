@@ -19,7 +19,7 @@ import { looksLikeDub } from '../dub-match';
 import { extensionOf } from '../format';
 import { t } from '../i18n.svelte';
 import { showOsd } from '../osd.svelte';
-import { IS_MAC } from '../platform';
+import { IS_LINUX, IS_MAC } from '../platform';
 import { loadChapters } from './chapters';
 import { applyLoopMode, loadAmplify, loadLoopMode, loopOptions, volumeCeiling } from './commands';
 import { AUDIO_EXTENSIONS, isAudioPath, PATH_LIST_SEP, SUB_DIRS, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS } from './files';
@@ -106,7 +106,11 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
   player.loopMode = loadLoopMode();
 
   const initialOptions: Record<string, string | number | boolean> = {
-    'vo': 'gpu-next',
+    // Linux has no `wid` to draw into: the plugin there renders through
+    // libmpv's render API into a GL area under the page, and `libmpv` is the
+    // one video output that does that (the plugin enforces it either way, so
+    // an mpv.conf `vo=` line cannot take the picture away).
+    'vo': IS_LINUX ? 'libmpv' : 'gpu-next',
     'hwdec': 'auto-safe',
     'force-window': 'yes',
     'input-default-bindings': 'no',
@@ -117,7 +121,11 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
     ...(IS_MAC ? { 'input-media-keys': 'no' } : {}),
     'osc': 'no',
     'hr-seek': 'yes',
-    'media-controls': 'yes',
+    // The system's media controls (SMTC on Windows, Now Playing on macOS).
+    // Not on Linux: mpv has no Linux backend for it, and the mpv 0.37 that
+    // Ubuntu 24.04 ships does not know the option at all — and an unknown
+    // option of ours refuses initialization.
+    ...(IS_LINUX ? {} : { 'media-controls': 'yes' }),
     // Closed captions (eia_608/708) are decoded incrementally — roll-up and
     // paint-on modes build the on-screen text over many packets — so a seek
     // into the middle of a caption leaves residue behind. This player seeks far

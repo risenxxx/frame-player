@@ -242,12 +242,14 @@ undocumented_unsafe_blocks = "deny"
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 
-# librqbit crates vendored with changes upstream has in no release — see
-# vendor/README.md for each one. The DHT survives Windows' routine UDP recv
-# errors, librqbit carries MSE and two accessors, and dualstack-sockets can bind
-# a socket to an interface on Windows (the "past the VPN" route setting).
+# Crates vendored with changes upstream has in no release — see vendor/README.md
+# for each one. The DHT survives Windows' routine UDP recv errors, librqbit
+# carries MSE and two accessors, dualstack-sockets can bind a socket to an
+# interface on Windows (the "past the VPN" route setting), and the libmpv plugin
+# has a Linux backend (libmpv's render API under the web view; no C wrapper).
 [patch.crates-io]
 librqbit = { path = "vendor/librqbit" }
 librqbit-dht = { path = "vendor/librqbit-dht" }
 librqbit-dualstack-sockets = { path = "vendor/librqbit-dualstack-sockets" }
+tauri-plugin-libmpv = { path = "vendor/tauri-plugin-libmpv" }
 
