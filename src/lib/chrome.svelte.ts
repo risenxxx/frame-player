@@ -94,8 +94,10 @@ class Chrome {
 
   /// The start screen is showing. Set by the page, which debounces it — a
   /// playlist transition blanks the filename for a moment and the picker screen
-  /// must not flash — so it is deliberately not `!player.hasFile`. The shutter
-  /// color is the one thing here that depends on it.
+  /// must not flash — so it is deliberately not `!player.hasFile`. The veil's
+  /// and the shutter's color are what depend on it, and they have to agree: a
+  /// shutter painted the start screen's #101016 over a black video was a grey
+  /// flash on every fullscreen change while nothing wrote this field.
   startScreen = $state(true);
 
   /// Room for the centered title, measured from whichever side cluster is wider.

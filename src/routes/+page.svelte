@@ -149,6 +149,13 @@
 
   // The dark fill under the UI until mpv paints — see start-screen.svelte.ts.
   initVideoReady();
+  // The one writer of `chrome.startScreen`: the fullscreen veil and its
+  // shutter window both take their colour from it, and a shutter left on the
+  // start screen's colour over a black video is a grey flash on every
+  // fullscreen change. Not an import in chrome: start-screen → open → chrome.
+  $effect(() => {
+    chrome.startScreen = startScreen.showEmpty;
+  });
   // The hover preview's shape, kept at the last real one — see seekbar.svelte.ts.
   initThumbAspect();
 
@@ -259,7 +266,7 @@
   class:mac={IS_MAC}
   class:no-video={startScreen.showEmpty}
   class:backdrop={!startScreen.videoReady}
-  style:--veil-color={startScreen.showEmpty ? '#101016' : '#000'}
+  style:--veil-color={chrome.startScreen ? '#101016' : '#000'}
   style:--chrome-fade={chrome.unsteady ? '50ms' : null}
   onmousemove={pokeUi}
   onwheel={onWheel}
