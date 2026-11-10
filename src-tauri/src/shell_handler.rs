@@ -30,6 +30,15 @@
 //! registered itself and sixteen extensions silently did not. Reading the file
 //! keeps one list instead of two, so an extension added to the bundle is an
 //! extension this registers.
+//!
+//! **`magnet:` is offered, not taken.** A torrent client the viewer already
+//! has owns `Software\Classes\magnet`, and nothing here touches that key.
+//! The player enters itself as one *candidate* for the scheme instead — a
+//! `RegisteredApplications` entry whose `Capabilities\URLAssociations` name a
+//! ProgId of its own — which puts it in Settings → Default apps and in the
+//! "open with" picker, and changes nothing until the viewer picks it. The
+//! installer writes the same three keys under the same names
+//! (installer-hooks.nsh); a change to one is a change to both.
 
 use tauri::AppHandle;
 
@@ -82,6 +91,16 @@ mod imp {
     /// registration back has to put that command back rather than delete a key
     /// the installed copy still depends on.
     const PREVIOUS_COMMAND: &str = "fp-previous-command";
+
+    /// The ProgId a `magnet:` link is opened through when the viewer has picked
+    /// the player for it. Never `Classes\magnet` itself — see the top of this
+    /// file. Spelled the same in installer-hooks.nsh.
+    const MAGNET_PROG_ID: &str = "FramePlayer.Magnet";
+    /// Where the player's capabilities are described, and the name it is
+    /// listed under in `RegisteredApplications`. Same in installer-hooks.nsh.
+    const CAPABILITIES: &str = "Software\\FramePlayer\\Capabilities";
+    const REGISTERED_NAME: &str = "Frame Player";
+    const REGISTERED_APPLICATIONS: &str = "Software\\RegisteredApplications";
 
     fn classes(path: &str) -> String {
         format!("Software\\Classes\\{path}")
@@ -246,7 +265,72 @@ mod imp {
                     .map_err(|e| format!(".{ext}: {e}"))?;
             }
         }
-        Ok(())
+        take_magnet(&command, &icon, &product)
+    }
+
+    /// Enter the player as a candidate for `magnet:`. The ProgId is shared
+    /// with an ordinary installation, so its command is kept the way a video
+    /// ProgId's is, and given back the same way.
+    fn take_magnet(command: &str, icon: &str, product: &str) -> Result<(), String> {
+        let key = CURRENT_USER
+            .create(classes(MAGNET_PROG_ID))
+            .map_err(|e| format!("{MAGNET_PROG_ID}: {e}"))?;
+        key.set_string("", "Magnet link")
+            .map_err(|e| format!("{MAGNET_PROG_ID}: {e}"))?;
+        write(&format!("{MAGNET_PROG_ID}\\DefaultIcon"), "", icon)?;
+        let command_path = format!("{MAGNET_PROG_ID}\\shell\\open\\command");
+        if let Ok(existing) = CURRENT_USER
+            .open(classes(&command_path))
+            .and_then(|k| k.get_string(""))
+        {
+            if existing != command && key.get_string(PREVIOUS_COMMAND).is_err() {
+                let _ = key.set_string(PREVIOUS_COMMAND, existing);
+            }
+        }
+        write(&command_path, "", command)?;
+
+        let caps = CURRENT_USER
+            .create(CAPABILITIES)
+            .map_err(|e| format!("{CAPABILITIES}: {e}"))?;
+        caps.set_string("ApplicationName", product)
+            .and_then(|()| caps.set_string("ApplicationDescription", product))
+            .map_err(|e| format!("{CAPABILITIES}: {e}"))?;
+        CURRENT_USER
+            .create(format!("{CAPABILITIES}\\URLAssociations"))
+            .and_then(|k| k.set_string("magnet", MAGNET_PROG_ID))
+            .map_err(|e| format!("{CAPABILITIES}: {e}"))?;
+        CURRENT_USER
+            .create(REGISTERED_APPLICATIONS)
+            .and_then(|k| k.set_string(REGISTERED_NAME, CAPABILITIES))
+            .map_err(|e| format!("{REGISTERED_APPLICATIONS}: {e}"))
+    }
+
+    /// Undo `take_magnet`: the command goes back to the copy that had it, and
+    /// only when none did is the candidate withdrawn altogether — an ordinary
+    /// installation beside this copy is listed under the same names.
+    fn give_back_magnet() {
+        let previous = CURRENT_USER
+            .open(classes(MAGNET_PROG_ID))
+            .and_then(|k| k.get_string(PREVIOUS_COMMAND));
+        match previous {
+            Ok(command) => {
+                let _ = write(
+                    &format!("{MAGNET_PROG_ID}\\shell\\open\\command"),
+                    "",
+                    &command,
+                );
+                if let Ok(key) = CURRENT_USER.open(classes(MAGNET_PROG_ID)) {
+                    let _ = key.remove_value(PREVIOUS_COMMAND);
+                }
+            }
+            Err(_) => {
+                let _ = CURRENT_USER.remove_tree(classes(MAGNET_PROG_ID));
+                let _ = CURRENT_USER.remove_tree(CAPABILITIES);
+                if let Ok(key) = CURRENT_USER.create(REGISTERED_APPLICATIONS) {
+                    let _ = key.remove_value(REGISTERED_NAME);
+                }
+            }
+        }
     }
 
     fn give_back(app: &AppHandle) -> Result<(), String> {
@@ -302,6 +386,7 @@ mod imp {
                 }
             }
         }
+        give_back_magnet();
         Ok(())
     }
 

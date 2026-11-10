@@ -1,6 +1,6 @@
 /**
- * `frameplayer://join/<code>` — an invitation somebody clicked — and, on
- * macOS, a `magnet:` link clicked in a browser.
+ * `frameplayer://join/<code>` — an invitation somebody clicked — and a
+ * `magnet:` link clicked in a browser.
  *
  * The link exists because a room code alone is a thing to be dictated, and
  * because "click this and you are watching with me" is the whole of what a
@@ -30,15 +30,19 @@
  * re-emits under the same name. The frontend therefore has one subscription
  * rather than two code paths for one link.
  *
- * The magnet needs nothing of its own on that path. The plugin re-emits every
- * URL of the macOS Apple Event, whatever its scheme, and keeps it for
- * `getCurrent` — so declaring `magnet` in Info.plist is the whole of the native
- * side. It is deliberately *not* in the plugin's `schemes`: the Windows
- * installer turns that list into registry keys, which would take `magnet:` from
- * whichever torrent client the viewer chose, at every update, and delete it on
- * uninstall.
+ * The magnet rides the same event, but is deliberately *not* in the plugin's
+ * `schemes`: the Windows installer turns that list into `Classes\<scheme>`
+ * keys, which would take `magnet:` from whichever torrent client the viewer
+ * chose, at every update, and delete it on uninstall. On macOS it is declared
+ * in Info.plist, and the plugin re-emits every URL of the Apple Event whatever
+ * its scheme and keeps it for `getCurrent`. On Windows the player is entered
+ * as one *candidate* for the scheme (`RegisteredApplications`, by the
+ * installer and by shell_handler.rs), so the plugin's own reading of argv does
+ * not recognise it: a second launch is forwarded by `deliver_deep_links` like
+ * an invitation, and a cold start is asked for with `take_launch_magnet`.
  */
 
+import { invoke } from '@tauri-apps/api/core';
 import { getCurrent, onOpenUrl, register } from '@tauri-apps/plugin-deep-link';
 
 import { CODE_LENGTH, normalizeCode } from './protocol';
@@ -138,4 +142,8 @@ export async function initDeepLinks() {
 
   const current = await getCurrent().catch(() => null);
   if (current) offer(current);
+  // The Windows cold start from a magnet, which `getCurrent` cannot know of —
+  // the scheme is not the plugin's (see the top of this file).
+  const magnet = await invoke<string | null>('take_launch_magnet').catch(() => null);
+  if (magnet) offer([magnet]);
 }

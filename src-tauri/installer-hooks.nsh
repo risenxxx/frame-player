@@ -24,6 +24,11 @@ Var FpPortable          ; 1 when the box is ticked
 Var FpPortableAsked     ; 1 when the page was actually shown
 Var FpPortableCheckbox
 
+; The `magnet:` candidate (see NSIS_HOOK_POSTINSTALL). Spelled the same in
+; src-tauri/src/shell_handler.rs, which writes these keys for a portable copy.
+!define FP_MAGNET_PROGID "FramePlayer.Magnet"
+!define FP_CAPABILITIES "Software\FramePlayer\Capabilities"
+
 !define FP_PORTABLE_LABEL "Keep settings and watch history in the installation folder, not in my user profile"
 
 ; The template defines this too, but at its line 427 — after this file is
@@ -114,6 +119,25 @@ FunctionEnd
       Delete "$INSTDIR\.portable"
     ${EndIf}
   ${EndIf}
+
+  ; `magnet:` - entered as one *candidate* for the scheme, never written over
+  ; `Software\Classes\magnet`, which belongs to whichever torrent client the
+  ; viewer already has. A `RegisteredApplications` entry whose capabilities name
+  ; a ProgId of our own puts the player in Settings > Default apps and in the
+  ; "open with" picker, and changes nothing until the viewer picks it. This is
+  ; why `magnet` is not in the deep-link plugin's `schemes`: the template turns
+  ; that list into `Classes\<scheme>` keys, at every install and every update.
+  ; The same keys, under the same names, are what a portable copy writes for
+  ; itself (src-tauri/src/shell_handler.rs) - a change to one is a change to both.
+  WriteRegStr SHCTX "Software\Classes\${FP_MAGNET_PROGID}" "" "Magnet link"
+  WriteRegStr SHCTX "Software\Classes\${FP_MAGNET_PROGID}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
+  WriteRegStr SHCTX "Software\Classes\${FP_MAGNET_PROGID}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
+  WriteRegStr SHCTX "${FP_CAPABILITIES}" "ApplicationName" "${PRODUCTNAME}"
+  WriteRegStr SHCTX "${FP_CAPABILITIES}" "ApplicationDescription" "${PRODUCTNAME}"
+  WriteRegStr SHCTX "${FP_CAPABILITIES}\URLAssociations" "magnet" "${FP_MAGNET_PROGID}"
+  WriteRegStr SHCTX "Software\RegisteredApplications" "${PRODUCTNAME}" "${FP_CAPABILITIES}"
+  ; SHCNE_ASSOCCHANGED, so Settings lists the player without a sign-out.
+  System::Call "shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)"
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
@@ -127,6 +151,20 @@ FunctionEnd
   ; directories answer to - and is kept for the same reason when the answer is
   ; no.
   Delete "$INSTDIR\.portable"
+
+  ; The `magnet:` candidate - not when this is the old copy being replaced by an
+  ; update, whose installer writes the same keys right after; and only while the
+  ; ProgId still opens *this* installation: a portable copy that took it since
+  ; keeps it, and gives it back by its own switch.
+  ${If} $UpdateMode <> 1
+    ReadRegStr $R7 SHCTX "Software\Classes\${FP_MAGNET_PROGID}\shell\open\command" ""
+    ${If} $R7 == "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
+      DeleteRegKey SHCTX "Software\Classes\${FP_MAGNET_PROGID}"
+      DeleteRegKey SHCTX "${FP_CAPABILITIES}"
+      DeleteRegValue SHCTX "Software\RegisteredApplications" "${PRODUCTNAME}"
+    ${EndIf}
+  ${EndIf}
+
   ${If} $DeleteAppDataCheckboxState = 1
     RMDir /r "$INSTDIR\.data"
   ${EndIf}

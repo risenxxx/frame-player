@@ -28,7 +28,9 @@
       `schemes` the Windows installer would turn it into a registry key, taking
       `magnet:` from the viewer's torrent client at every install and update
       and deleting it on uninstall. LaunchServices asks nothing of the kind: a
-      viewer with another client keeps it until they choose otherwise.
+      viewer with another client keeps it until they choose otherwise. Windows
+      gets the same bargain by other means: the installer enters the player as
+      one candidate for the scheme (installer-hooks.nsh).
 
       Declared here by hand rather than left to the deep-link plugin's own
       build step, which writes `CFBundleURLTypes` only for the *mobile* half of

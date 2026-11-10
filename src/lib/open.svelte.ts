@@ -327,7 +327,7 @@ let loadFailTimer: ReturnType<typeof setTimeout> | undefined;
 /**
  * Raise the link box with a link somebody else typed into it.
  *
- * For a `magnet:` that arrived from outside — a browser, on macOS. **Offered,
+ * For a `magnet:` that arrived from outside — a browser. **Offered,
  * not opened**, the bargain an invitation to a room keeps (sync/link.svelte.ts):
  * starting one stops what is playing and tells a swarm the page picked where
  * this machine is, and a page can fire the scheme without a click once the
