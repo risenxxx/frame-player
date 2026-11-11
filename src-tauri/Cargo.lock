@@ -1699,6 +1699,7 @@ dependencies = [
  "encoding_rs",
  "ffmpeg-the-third",
  "futures-util",
+ "glib",
  "http-body-util",
  "hyper",
  "hyper-util",

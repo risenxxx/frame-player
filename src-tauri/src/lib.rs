@@ -1234,6 +1234,26 @@ fn linux_webkit_env() {
     }
 }
 
+/// SIGTERM, SIGINT and SIGHUP end the app the way Ctrl+Q does.
+///
+/// Without a handler the default action killed the process outright (status
+/// 143): no `RunEvent::Exit`, so mpv was never torn down — its render context
+/// not freed, its threads not stopped, its position not saved by anything that
+/// waits for the exit. A logout, `systemctl` or `kill` sends exactly these.
+/// The handlers run on GTK's main loop (a GLib unix signal source), so `exit`
+/// is called where Tauri expects it, not inside a signal handler.
+#[cfg(target_os = "linux")]
+fn linux_signals(app: &tauri::AppHandle) {
+    for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
+        let app = app.clone();
+        glib::unix_signal_add_local(signal, move || {
+            eprintln!("[shutdown] signal {signal}");
+            app.exit(0);
+            glib::ControlFlow::Break
+        });
+    }
+}
+
 /// Whether every DRM card in the machine is driven by nouveau.
 #[cfg(target_os = "linux")]
 fn only_nouveau() -> bool {
@@ -1506,6 +1526,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(target_os = "linux")]
+            linux_signals(app.handle());
             let _ = ffmpeg_the_third::init();
             // The default output device, for the per-device audio offset.
             audio_output::watch(app.handle().clone());

@@ -276,8 +276,8 @@ fixes above — 16 in a row:
 Wayland (headless Weston, GL renderer on llvmpipe): the picture plays and
 fills the window; the interface is idle-hidden because nothing can move a
 pointer in a headless Weston, so neither the controls nor a quit could be
-exercised there — the run ends with SIGTERM (status 143; the player has no
-signal handler, so mpv is not torn down on that path).
+exercised there — the run ends with SIGTERM (status 143 at the time; the
+player now handles it, below).
 
 `cargo clippy -D warnings` and the tests pass on Linux (the crate, and the
 plugin's own three tests for the JSON conversions and the `mpv_node` layout,
@@ -325,6 +325,12 @@ second, their cost on the GTK thread and the FBO's size every two seconds.
   `vd-lavc-dr=yes` to 60 at 0.3 ms with nothing dropped, which the plugin now
   sets on NVK.
 - **Audio**: `ao=pipewire`.
+- **Signals**: SIGTERM, SIGINT and SIGHUP used to kill the process (143) with
+  mpv never torn down. `linux_signals` (lib.rs) answers them on GTK's main loop
+  with the same exit as Ctrl+Q: status 0 in ~100 ms, render context freed,
+  then mpv destroyed.
+- **Single instance**: a second start with a file hands it to the running
+  player over D-Bus and exits 0; the running one plays it.
 
 ## What only a real desktop can answer
 

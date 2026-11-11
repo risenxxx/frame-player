@@ -221,6 +221,10 @@ windows-registry = "0.5"
 # session with RustCrypto rather than OpenSSL, so no libssl is linked.
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+# The SIGTERM/SIGINT/SIGHUP handlers on GTK's main loop (lib.rs, `linux_signals`).
+# Already in the tree through GTK; the version is the one it uses.
+glib = "0.18"
+libc = "0.2"
 
 # CI runs `cargo clippy --all-targets -- -D warnings` on both platforms
 # (.github/workflows/rust.yml), so every lint here is either fixed or turned off
