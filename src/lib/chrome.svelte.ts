@@ -21,7 +21,7 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { tick } from 'svelte';
 
 import { playback } from './playback.svelte';
-import { IS_MAC } from './platform';
+import { IS_MAC, IS_WINDOWS } from './platform';
 import { curtain } from './curtain.svelte';
 import { flushPosition } from './history.svelte';
 import { player } from './player.svelte';
@@ -451,6 +451,9 @@ async function maskFullscreenTransition() {
     await invoke('window_fullscreen_mask').catch(() => {});
     return;
   }
+  // Linux has neither DWM's artifacts nor a shutter window (`create_veil` is
+  // Windows only), so there is nothing to mask.
+  if (!IS_WINDOWS) return;
   // The viewer turned the dark off (`windowPrefs.fsMask`, Windows only): the
   // transition is instant and shows what the veil was there to hide.
   if (!windowPrefs.fsMask) return;

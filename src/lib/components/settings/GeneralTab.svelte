@@ -238,7 +238,7 @@
   {@render windowSwitch('snapMini', t('ctx.win_snap'))}
   <!-- Windows only: on macOS the dark is AppKit's snapshot animation being
        masked, and without it the title bar shows twice mid-transition. -->
-  {#if !IS_MAC}
+  {#if IS_WINDOWS}
     {@render windowSwitch('fsMask', t('set.fs_mask'), t('set.fs_mask_hint'))}
   {/if}
 </div>

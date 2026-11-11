@@ -964,7 +964,11 @@ fn create_main_window(app: &tauri::App) {
 /// (`window_fullscreen_mask`) and never shows it — and a declared window is
 /// created on every platform. Hidden or not, it is a web view, so on macOS it
 /// cost a WebKit content process of its own (14–19 MB measured) for nothing.
-#[cfg(not(target_os = "macos"))]
+/// Not on Linux either: shown at fullscreen on GNOME Wayland (Mesa's Vulkan
+/// WSI under zink), the window's first software-drawn frame broke the
+/// compositor's explicit-sync rule and Mutter disconnected the whole process —
+/// see docs/linux.md.
+#[cfg(windows)]
 fn create_veil(app: &tauri::App) {
     let built = tauri::WebviewWindowBuilder::new(app, "veil", tauri::WebviewUrl::App("veil".into()))
         .title("")
@@ -1533,7 +1537,7 @@ pub fn run() {
             // install_count.rs for why that order is the whole of it.
             install_count::start(app.handle());
             create_main_window(app);
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(windows)]
             create_veil(app);
             if let Some(win) = app.get_webview_window("main") {
                 #[cfg(target_os = "macos")]
