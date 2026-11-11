@@ -181,7 +181,7 @@ impl Gl {
                 (std::mem::transmute::<*mut c_void, ClearColorFn>(cc), std::mem::transmute::<*mut c_void, ClearFn>(cl))
             }));
         }
-        self.software_fbo_format(&loader);
+        self.driver_options(&loader);
 
         // The X11 display, for hardware-decoding interop (VA-API, VDPAU over
         // GLX). Not the Wayland one: given a `wl_display`, mpv's VA-API
@@ -238,17 +238,25 @@ impl Gl {
         Ok(())
     }
 
-    /// On Mesa's software rasterisers, mpv's intermediate FBOs in 8 bits.
+    /// What two GL drivers need from mpv, set before the render context exists.
     ///
-    /// mpv renders through an `rgba16f` framebuffer by default, and on
-    /// llvmpipe that came out black for a whole run in 9 starts of 26 — every
-    /// render, read back from the area's own FBO, with mpv's state otherwise
-    /// identical to a good run's. With `fbo-format=rgba8`, 0 of 16. A machine
-    /// with no GPU driver (a virtual machine, a broken driver install) gets
-    /// exactly this renderer, and a picture with less precision beats none;
-    /// a real GPU keeps mpv's default. An mpv.conf `fbo-format` loses to this
-    /// only on a software renderer.
-    fn software_fbo_format(&self, loader: &ProcLoader) {
+    /// **A software rasteriser draws mpv's intermediate FBOs in 8 bits.** mpv
+    /// renders through an `rgba16f` framebuffer by default, and on llvmpipe
+    /// that came out black for a whole run in 9 starts of 26 — every render,
+    /// read back from the area's own FBO, with mpv's state otherwise identical
+    /// to a good run's. With `fbo-format=rgba8`, 0 of 16. A machine with no GPU
+    /// driver (a virtual machine, a broken driver install) gets exactly this
+    /// renderer, and a picture with less precision beats none. An mpv.conf
+    /// `fbo-format` loses to this only on a software renderer.
+    ///
+    /// **NVK decodes into mapped buffers** (`vd-lavc-dr=yes`). Its texture
+    /// upload lays every frame out in tiles on the CPU, inside the render on
+    /// the GTK thread: a software-decoded 4K 10-bit frame cost 20 ms there, and
+    /// a 60 fps file ran at 30 with half its frames dropped (RTX 5080, Mesa
+    /// 26.0, zink). With direct rendering the decoder writes where the GPU
+    /// reads: 0.3 ms, 60 renders a second, nothing dropped. Only while the
+    /// option is mpv's `auto`, so an mpv.conf line still wins.
+    fn driver_options(&self, loader: &ProcLoader) {
         const GL_RENDERER: u32 = 0x1F01;
         let f = loader.lookup(c"glGetString");
         if f.is_null() {
@@ -260,12 +268,33 @@ impl Gl {
             let get = std::mem::transmute::<*mut c_void, unsafe extern "C" fn(u32) -> *const c_char>(f);
             ffi::cstr_lossy(get(GL_RENDERER))
         };
-        if !(renderer.contains("llvmpipe") || renderer.contains("softpipe")) {
-            return;
+        if renderer.contains("llvmpipe") || renderer.contains("softpipe") {
+            // SAFETY: live core handle, static C strings.
+            let r = unsafe { (self.lib.set_property_string)(self.mpv.get(), c"fbo-format".as_ptr(), c"rgba8".as_ptr()) };
+            eprintln!("[libmpv] software renderer ({renderer}): fbo-format=rgba8 ({})", if r < 0 { self.lib.error_text(r) } else { "set".into() });
         }
-        // SAFETY: live core handle, static C strings.
-        let r = unsafe { (self.lib.set_property_string)(self.mpv.get(), c"fbo-format".as_ptr(), c"rgba8".as_ptr()) };
-        eprintln!("[libmpv] software renderer ({renderer}): fbo-format=rgba8 ({})", if r < 0 { self.lib.error_text(r) } else { "set".into() });
+        if renderer.contains("NVK") && self.string_property(c"vd-lavc-dr").as_deref() == Some("auto") {
+            // SAFETY: live core handle, static C strings.
+            let r = unsafe { (self.lib.set_property_string)(self.mpv.get(), c"vd-lavc-dr".as_ptr(), c"yes".as_ptr()) };
+            eprintln!("[libmpv] NVK ({renderer}): vd-lavc-dr=yes ({})", if r < 0 { self.lib.error_text(r) } else { "set".into() });
+        }
+    }
+
+    /// A property of the current core as a string, `None` if mpv refused it.
+    fn string_property(&self, name: &CStr) -> Option<String> {
+        let mut out: *mut c_char = std::ptr::null_mut();
+        // SAFETY: live core handle; STRING writes a char* freed with mpv_free.
+        let r = unsafe {
+            (self.lib.get_property)(self.mpv.get(), name.as_ptr(), ffi::MPV_FORMAT_STRING, &mut out as *mut _ as *mut c_void)
+        };
+        if r < 0 || out.is_null() {
+            return None;
+        }
+        // SAFETY: a NUL-terminated string mpv allocated for us.
+        let value = unsafe { ffi::cstr_lossy(out) };
+        // SAFETY: allocated by mpv, freed once.
+        unsafe { (self.lib.free)(out as *mut c_void) };
+        Some(value)
     }
 
     /// Free the render context. GL must be current (or the area unrealized

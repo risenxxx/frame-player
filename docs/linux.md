@@ -317,6 +317,13 @@ second, their cost on the GTK thread and the FBO's size every two seconds.
   FFmpeg; no CUDA), so `hwdec-current` is `no` and decoding is software. With
   the proprietary driver this would be nvdec — not measured: the session ran
   from a live image, where it cannot be installed.
+- **4K, software-decoded, window the size of the screen**: H.264 4K60 plays at
+  60 renders a second (10 ms each). HEVC 10-bit 4K60 rendered at 30 a second,
+  20 ms each, 297 frames dropped in 12 s: 87 % of the GTK thread was NVK's
+  `nil_copy_linear_to_tiled` under `mpv_render_context_render`, the upload of
+  each decoded frame. `opengl-pbo=yes` brought it to 60 at 1.3 ms;
+  `vd-lavc-dr=yes` to 60 at 0.3 ms with nothing dropped, which the plugin now
+  sets on NVK.
 - **Audio**: `ao=pipewire`.
 
 ## What only a real desktop can answer
