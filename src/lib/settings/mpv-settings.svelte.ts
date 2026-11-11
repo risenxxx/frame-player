@@ -392,8 +392,17 @@ export class MpvSettings {
       const description = await getProperty(`${base}/description`, 'string').catch(() => null);
       return { name, description: description?.trim() || name };
     }).catch(() => []);
+    // Linux: only the output mpv is playing through. mpv lists every device
+    // once per output there too, but ALSA's copies carry descriptions of their
+    // own — every `plughw`, `dmix` and `surround51` of every card — and with
+    // PipeWire running a desktop got 52 rows, 43 of them ALSA's. The running
+    // output's devices are the ones the system's own sound settings show.
+    const ao = IS_LINUX ? await getProperty('current-ao', 'string').catch(() => null) : null;
+    const reachable = ao
+      ? all.filter((device) => device.name === 'auto' || device.name.startsWith(`${ao}/`))
+      : all;
     const seen = new Set<string>();
-    this.audioDevices = all.filter((device) => {
+    this.audioDevices = reachable.filter((device) => {
       if (seen.has(device.description)) return false;
       seen.add(device.description);
       return true;
