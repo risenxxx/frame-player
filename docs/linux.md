@@ -346,6 +346,10 @@ second, their cost on the GTK thread and the FBO's size every two seconds.
   Wayland-only. 4K HEVC 10-bit 60 fps tops out at 46–50 renders a second with
   frames dropped, the overlay drawn either way — a limit of the X11 path on
   this driver, not investigated further.
+  By hand there: moving, double click, fullscreen, the mini player and the
+  hotkeys work; the ratio holds once it is a standing hint (Mutter applies it
+  to X11 windows itself); a resize is less smooth than on Wayland and the
+  window flickers while it runs — not investigated on this driver.
 - **Single instance**: a second start with a file hands it to the running
   player over D-Bus and exits 0; the running one plays it.
 

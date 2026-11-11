@@ -355,12 +355,13 @@ fn on_resize_edge(webview: &gtk::Widget, event: &gtk::gdk::Event) -> bool {
 /// to every size the compositor proposes (`gdk_window_constrain_size` in its
 /// configure handler), so an edge drag keeps the shape without anything else.
 ///
-/// The ratio is a hint only while the window is being resized at our edges.
-/// GTK applies it to *every* configure, a maximized, fullscreen or tiled one
-/// included, and before the window's state changes — so dropping it on the
-/// state event came too late: snapped to half the screen, the window took the
-/// video's shape inside the half, and grew to the half for a moment on the way
-/// out. The minimum is a hint always.
+/// On Wayland the ratio is a hint only while the window is being resized at
+/// our edges. GTK applies it to *every* configure, a maximized, fullscreen or
+/// tiled one included, and before the window's state changes — so dropping it
+/// on the state event came too late: snapped to half the screen, the window
+/// took the video's shape inside the half, and grew to the half for a moment
+/// on the way out. On X11 the window manager applies it, and it stands (see
+/// `apply`). The minimum is a hint always.
 #[cfg(target_os = "linux")]
 mod gtk_shape {
     use gtk::gdk;
@@ -371,6 +372,8 @@ mod gtk_shape {
         /// The ratio asked for, the minimum that goes with it, and whether an
         /// edge is being dragged.
         static WANTED: Cell<(Option<f64>, (i32, i32), bool)> = const { Cell::new((None, (0, 0), false)) };
+        /// The hints last given to GTK.
+        static SET: Cell<Option<(Option<f64>, (i32, i32))>> = const { Cell::new(None) };
     }
 
     pub fn lock(window: &tauri::WebviewWindow, ratio: Option<f64>, min: (i32, i32)) {
@@ -378,6 +381,9 @@ mod gtk_shape {
             let (_, _, resizing) = w.get();
             w.set((ratio, min, resizing));
         });
+        // Always given: the frontend has just set the minimum through tao,
+        // which replaced whatever hints were there.
+        SET.with(|set| set.set(None));
         apply(window);
     }
 
@@ -392,7 +398,13 @@ mod gtk_shape {
     fn apply(window: &tauri::WebviewWindow) {
         let Ok(gtk_window) = window.gtk_window() else { return };
         let (ratio, (min_w, min_h), resizing) = WANTED.with(Cell::get);
-        let ratio = ratio.filter(|_| resizing);
+        // X11: the window manager applies the hints, and Mutter leaves the
+        // ratio out for a maximized, fullscreen or tiled window by itself — but
+        // it re-fits the window whenever they change, so a ratio given at the
+        // press shook the window through the drag, and one taken away at the
+        // end sent it back to the pointer's own, unshaped size. There it stands.
+        let x11 = gtk_window.display().type_().name().contains("X11");
+        let ratio = ratio.filter(|_| resizing || x11);
         if std::env::var_os("FP_SHAPE_DEBUG").is_some() {
             let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() % 100_000;
             eprint!("[window_shape] {ms} ");
@@ -404,6 +416,11 @@ mod gtk_shape {
         }
         if ratio.is_some() {
             mask |= gdk::WindowHints::ASPECT;
+        }
+        // The same hints again are not nothing to a window manager: every set
+        // is a property change it answers by re-fitting the window.
+        if SET.with(|set| set.replace(Some((ratio, (min_w, min_h))))) == Some((ratio, (min_w, min_h))) {
+            return;
         }
         let r = ratio.unwrap_or(0.0);
         let geometry = gdk::Geometry::new(min_w, min_h, 0, 0, 0, 0, 0, 0, r, r, gdk::Gravity::Center);
