@@ -193,9 +193,10 @@ jobs:
 
   linux:
     # Not a platform the player ships yet: this keeps the crate compiling and
-    # lint-clean on it while the Linux port is under way. Ubuntu 24.04 is what
-    # the .deb's `depends` are written against (tauri.linux.conf.json), and the
-    # same packages `scripts/linux/Dockerfile` installs, so a red run here is
+    # lint-clean on it while the Linux port is under way. Ubuntu 24.04 is the
+    # oldest release it is built for (a .deb takes its dependencies from the
+    # machine that builds it: scripts/linux/deb-depends.sh), and the same
+    # packages `scripts/linux/Dockerfile` installs, so a red run here is
     # reproducible with `bun run linux:check`.
     runs-on: ubuntu-24.04
     steps:

@@ -1,7 +1,8 @@
 # The Linux build environment `scripts/linux/check.sh` runs the crate's clippy
 # and tests in, from a Mac or anywhere else with Docker. Ubuntu 24.04 because it
-# is what the .deb's `depends` names (libavcodec60, libmpv2, …) and what the CI
-# job's `ubuntu-24.04` runner is. The same packages as that job, plus what a
+# is the oldest release the player is built for and what the CI job's
+# `ubuntu-24.04` runner is (a .deb takes its dependencies from the machine
+# that builds it: scripts/linux/deb-depends.sh). The same packages as that job, plus what a
 # headless run of the app needs (Xvfb and a headless Weston, Mesa's software
 # GL, xdotool to drive the window, ImageMagick to grab and compare frames,
 # ffmpeg to make the test video — see run-app.sh) — one image, so the check

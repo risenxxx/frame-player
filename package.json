@@ -27,7 +27,8 @@
     "tauri:macos:build": "scripts/macos-build.sh",
     "tauri:macos:dmg": "scripts/build-dmg.sh",
     "fetch-libs": "node scripts/fetch-libs.mjs",
-    "linux:check": "scripts/linux/check.sh"
+    "linux:check": "scripts/linux/check.sh",
+    "tauri:linux:build": "scripts/linux/build.sh"
   },
   "license": "GPL-3.0-or-later",
   "dependencies": {

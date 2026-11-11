@@ -519,14 +519,24 @@ Linux distribution does, built against the same libass, the same Mesa and the
 same PipeWire as the rest of the desktop. So `lib/**/*`, the FFmpeg DLLs and the
 `ffmpeg.exe` glob are nulled out (the one file `lib/` holds in the repository is
 MoltenVK's driver manifest, which is macOS's), and the `.deb` **depends** on the
-runtime packages instead. The names are Ubuntu 24.04's sonames — `libmpv2`,
-`libavcodec60`, `libavformat60`, `libavutil58`, `libavfilter9`, `libavdevice60`,
-`libswscale7`, `libswresample4` — because the crate links whatever it was
-built against, and a `.deb` built on 24.04 needs exactly those; a release built
-elsewhere changes them with the build machine. `libgtk-3-0t64 | libgtk-3-0`
-covers the 64-bit `time_t` rename (24.04 has the first, Debian 12 the second);
-`libdbus-1-3` is the keyring's Secret Service backend. The bundler adds nothing
-of its own to `Depends`, so WebKitGTK is listed too. The `ffmpeg` command is
+runtime packages instead — and those are read off the built binary, not written
+down. `bun run tauri:linux:build` (`scripts/linux/build.sh`) builds with
+`--no-bundle`, has `scripts/linux/deb-depends.sh` map every `NEEDED` entry of
+the binary to the package that owns the file the loader resolves (`ldd`, then
+`dpkg -S`), adds `libmpv2` for `libmpv.so.2` (opened at run time by the plugin,
+never linked), and bundles with that list as extra configuration: what
+`dpkg-shlibdeps` does for a package built the Debian way. A fixed list was right
+for one release of one distribution — written for Ubuntu 24.04
+(`libavcodec60`…), a `.deb` built on 26.04, whose FFmpeg 8 is `libavcodec62`,
+could not be installed — and it was not even the right set: with `--as-needed`
+the binary names no `libswresample` or `libavfilter`, which the list required.
+`tauri.linux.conf.json` therefore has no `depends`, and its `beforeBundleCommand`
+refuses to bundle unless the wrapper set `FP_DEB_DEPENDS`, so a plain `tauri
+build` cannot write a `.deb` with no dependencies at all. The bundler appends
+`libwebkit2gtk-4.1-0` and `libgtk-3-0` of its own (on 24.04 and later the
+second is provided by `libgtk-3-0t64`). Without `TAURI_SIGNING_PRIVATE_KEY`
+the wrapper leaves the updater artifacts out, so a local build ends in success
+rather than in the signing error after both bundles were written. The `ffmpeg` command is
 only **recommended**: casting's prepare step spawns it, from `PATH` on Linux
 (`cast/prepare.rs`), and a player without it still plays everything.
 

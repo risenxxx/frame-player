@@ -136,3 +136,11 @@ described under "Linux" in `docs/distribution.md`:
 bun run linux:check              # clippy -D warnings + cargo test, as the CI job
 scripts/linux/check.sh shell     # a shell in the same container, tree synced
 ```
+
+On a Linux machine, the bundles — the `.deb`'s `Depends` are read off the built
+binary (`scripts/linux/deb-depends.sh`), so a plain `tauri build` refuses to
+bundle there:
+
+```bash
+bun run tauri:linux:build              # .deb + AppImage; --bundles deb, --debug
+```

@@ -88,6 +88,7 @@ bun run check-imports     # import cycles: no error, no warning, a module-evalua
 bun run css-orphans       # a CSS rule whose markup moved into another component
 bun run readme:check      # the three READMEs: same headings, every #anchor and file link resolves
 bun run tauri build       # NSIS installer (no updater signature locally unless TAURI_SIGNING_PRIVATE_KEY is set)
+bun run tauri:linux:build # Linux: .deb + AppImage, the .deb's Depends read off the built binary (a plain `tauri build` refuses to bundle)
 bun run set-version       # report the version in all four files; exits 1 if they disagree
 bun run set-version 0.21.0   # …or `patch` / `minor` / `major`. See "Releases" below
 bun run set-version release  # …or the bump the pending changesets call for; writes changelog/<version>.md from them
