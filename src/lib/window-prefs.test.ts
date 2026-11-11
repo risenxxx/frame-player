@@ -139,9 +139,11 @@ import {
   fitWindowToVideo,
   initWindowShape,
   loadWindowPrefs,
+  mini,
   scheduleShape,
   shapeState,
   setWindowFit,
+  toggleMini,
   windowFit,
   windowPrefs,
 } from './window-prefs.svelte';
@@ -518,6 +520,38 @@ describe('modes that own the size', () => {
     show('/a.mkv', 1920, 1080);
     await settle();
     expect(calls.filter((c) => c.startsWith('size'))).toEqual([]);
+  });
+});
+
+describe('a size picked in the mini player', () => {
+  // The mode owns the size, so a fit stood down and the click did nothing (#70).
+  // The mode is module state: one left on would stand down every fit after it.
+  afterEach(async () => {
+    if (mini.on) await toggleMini();
+  });
+
+  it('leaves the mode for one of the sizes in the menu', async () => {
+    show('/a.mkv', 1280, 720);
+    await settle();
+    await toggleMini();
+    expect(mini.on).toBe(true);
+    await fitWindowToVideo(1);
+    expect(mini.on).toBe(false);
+    expect({ w: win.w, h: win.h }).toEqual({ w: 1280, h: 720 });
+  });
+
+  it('leaves the mode for "video size", picked again or for the first time', async () => {
+    show('/a.mkv', 1280, 720);
+    await settle();
+    for (const from of ['size', 'shape'] as const) {
+      setWindowFit(from);
+      await settle();
+      await toggleMini();
+      setWindowFit('size');
+      await settle();
+      expect(mini.on).toBe(false);
+      expect({ w: win.w, h: win.h }).toEqual({ w: 1280, h: 720 });
+    }
   });
 });
 

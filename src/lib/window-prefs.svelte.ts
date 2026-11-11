@@ -1029,6 +1029,14 @@ async function fitToShape(
 export async function fitWindowToVideo(scale: number) {
   const shape = currentShape();
   if (!shape) return;
+  // A size picked in the mini player is a way out of it: the mode owns the
+  // size, so the fit would stand down and the click do nothing (#70). Leaving
+  // restores the window it came from, and this fit then takes it from there —
+  // the look that leaving schedules would only cut it short.
+  if (mini.on) {
+    await exitMini();
+    clearTimeout(shapeTimer);
+  }
   const run = shapeRuns.begin();
   const outcome = await fitToShape(shape, scale, run);
   // The fit left the minimum at the window's own; what the setting adds to it
@@ -1083,6 +1091,12 @@ export function windowFit(): WindowFit {
 }
 
 export function setWindowFit(v: WindowFit) {
+  // "Video size" picked in the mini player — again or for the first time —
+  // asks for a size the mode will not give up, so it leaves the mode (#70).
+  // The fit follows from leaving: the shape effect looks again once `mini.on`
+  // falls, and `fittedFor` is cleared on both paths below. The other two only
+  // change a setting, which the mode already defers to its exit.
+  if (v === 'size' && mini.on) void exitMini();
   if (v === windowFit()) {
     // Choosing "video size" again is the way back to it after the window was
     // resized by hand: the setting has not changed, so nothing that watches it
