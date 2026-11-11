@@ -339,6 +339,13 @@ second, their cost on the GTK thread and the FBO's size every two seconds.
   rounds it, and here the GL layer under the page is opaque), and on entering
   fullscreen the window's old frame is seen moving to the top-left corner for a
   moment at the screen's edges.
+- **X11 through XWayland** (`GDK_BACKEND=x11`; GNOME 50 has no X11 session):
+  the render context over GLX, the picture and the interface right, 1080p at
+  30 renders a second with the controls up, signals clean. The overlay's own
+  drawing of the web view made the interface disappear entirely there, so it is
+  Wayland-only. 4K HEVC 10-bit 60 fps tops out at 46–50 renders a second with
+  frames dropped, the overlay drawn either way — a limit of the X11 path on
+  this driver, not investigated further.
 - **Single instance**: a second start with a file hands it to the running
   player over D-Bus and exits 0; the running one plays it.
 

@@ -449,29 +449,32 @@ fn install(label: &str, webview: &webkit2gtk::WebView, lib: Arc<Lib>) -> Result<
     vbox.remove(webview);
     overlay.add_overlay(webview);
     overlay.set_overlay_pass_through(webview, false);
-    // The overlay draws its two children itself, the web view through
-    // `gtk_widget_draw`. GTK 3 painting with GL marks every widget drawn over
-    // GL content that was already flushed (the area's blit) as needing a blend
-    // (`gdk_window_mark_paint_from_clip`), and a blend region is paid for by
-    // uploading the window's cairo surface into a texture — twice a frame, the
-    // whole window, since the web view covers it. A cairo context marked for
-    // drawing, which is what `gtk_widget_draw` hands down, skips the marking;
-    // WebKit's texture is still blended over the video by GL. Measured on a
-    // 4K screen at 150 % (a 5120×2880 buffer) on NVK, where the upload is a
-    // CPU tiling copy: 13 renders a second with the controls up, against the
-    // video's 30.
-    let (a, w) = (area.clone(), webview.clone());
-    overlay.connect_draw(move |overlay, cr| {
-        overlay.propagate_draw(&a, cr);
-        if w.is_drawable() {
-            let (x, y) = w.translate_coordinates(overlay, 0, 0).unwrap_or((0, 0));
-            cr.save().ok();
-            cr.translate(f64::from(x), f64::from(y));
-            w.draw(cr);
-            cr.restore().ok();
-        }
-        glib::Propagation::Stop
-    });
+    // On Wayland the overlay draws its two children itself, the web view
+    // through `gtk_widget_draw`. GTK 3 painting with GL marks every widget
+    // drawn over GL content that was already flushed (the area's blit) as
+    // needing a blend (`gdk_window_mark_paint_from_clip`), and a blend region
+    // is paid for by uploading the window's cairo surface into a texture —
+    // twice a frame, the whole window, since the web view covers it. A cairo
+    // context marked for drawing, which `gtk_widget_draw` hands down, skips the
+    // marking; WebKit's texture is still blended over the video by GL. Measured
+    // on a 4K screen at 150 % (a 5120×2880 buffer) on NVK, where the upload is
+    // a CPU tiling copy: 13 renders a second with the controls up, against the
+    // video's 30. Not on X11: there the web view drawn this way did not appear
+    // at all (XWayland, the same GPU), and GTK's own drawing already kept 30.
+    if gdk::Display::default().is_some_and(|d| d.type_().name().contains("Wayland")) {
+        let (a, w) = (area.clone(), webview.clone());
+        overlay.connect_draw(move |overlay, cr| {
+            overlay.propagate_draw(&a, cr);
+            if w.is_drawable() {
+                let (x, y) = w.translate_coordinates(overlay, 0, 0).unwrap_or((0, 0));
+                cr.save().ok();
+                cr.translate(f64::from(x), f64::from(y));
+                w.draw(cr);
+                cr.restore().ok();
+            }
+            glib::Propagation::Stop
+        });
+    }
     window.remove(&vbox);
     window.add(&overlay);
     overlay.show_all();
