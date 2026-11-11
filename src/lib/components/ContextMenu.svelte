@@ -696,7 +696,9 @@
   <div class="menu-title">{t('ctx.win_fit')}</div>
   <div class="speedrow">
     {#each WINDOW_FIT_CHOICES as v (v)}
-      <button class="speedopt" class:sel={windowFit() === v} onclick={() => setWindowFit(v)}>
+      <!-- Closes like the size row below: a fit moves the window, and a menu
+           placed for the old frame is cut off by a smaller one. -->
+      <button class="speedopt" class:sel={windowFit() === v} onclick={() => { close(); closeSubmenuNow(); setWindowFit(v); }}>
         {t(`ctx.win_fit_${v}`)}
       </button>
     {/each}

@@ -667,6 +667,17 @@ describe('open at video size', () => {
     expect({ w: win.w, h: win.h }).toEqual({ w: 1280, h: 720 });
   });
 
+  it('goes back to the picture`s size when chosen again after a resize by hand', async () => {
+    setWindowFit('size');
+    show('/a.mkv', 1280, 720);
+    await settle();
+    win.w = 1600;
+    win.h = 900;
+    setWindowFit('size');
+    await settle();
+    expect({ w: win.w, h: win.h }).toEqual({ w: 1280, h: 720 });
+  });
+
   it('is one choice of three, never sized and then let go', () => {
     setWindowFit('free');
     expect(windowPrefs.videoSize).toBe(false);

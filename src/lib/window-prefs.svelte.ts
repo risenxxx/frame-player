@@ -1083,7 +1083,18 @@ export function windowFit(): WindowFit {
 }
 
 export function setWindowFit(v: WindowFit) {
-  if (v === windowFit()) return;
+  if (v === windowFit()) {
+    // Choosing "video size" again is the way back to it after the window was
+    // resized by hand: the setting has not changed, so nothing that watches it
+    // would look again, and the picture's size was already fitted once
+    // (`fittedFor`). Forget that fit and look now. The other two have nothing
+    // to go back to — the shape is held throughout, and "off" is no size.
+    if (v !== 'size') return;
+    fittedFor = '';
+    scheduleShape();
+    showOsd(t(`osd.window_fit_${v}`));
+    return;
+  }
   windowPrefs.fitToVideo = v !== 'free';
   windowPrefs.videoSize = v === 'size';
   saveWindowPrefs();
