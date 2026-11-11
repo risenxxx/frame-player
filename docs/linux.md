@@ -350,6 +350,21 @@ second, their cost on the GTK thread and the FBO's size every two seconds.
   hotkeys work; the ratio holds once it is a standing hint (Mutter applies it
   to X11 windows itself); a resize is less smooth than on Wayland and the
   window flickers while it runs — not investigated on this driver.
+- **Packages** (`bun run tauri build`, on 26.04): both bundles build; the run
+  exits 1 only for the updater signature, without its private key. The
+  AppImage (166 MB) runs as it is — the picture, `zoompan.lua` from the mounted
+  image, a clean exit. The `.deb` (14 MB) does **not install** on 26.04: its
+  `Depends` are 24.04's sonames (`libavcodec60`…), and FFmpeg 8 here is
+  `libavcodec62`, `libavutil60`, `libswscale9`… — the trap
+  [distribution.md](distribution.md) describes, met for real. Rebuilt with
+  this machine's names (`--config` with `libavcodec62`, `libavformat62`,
+  `libavutil60`, `libavfilter11`, `libavdevice62`, `libswscale9`,
+  `libswresample6`) it installs, puts `frameplayer` in `/usr/bin` and the
+  `.desktop` file with every video type, and plays. The `Depends` should come
+  from the build machine rather than from a list.
+- **Also checked by hand**: closing from the dock (clean teardown), a torrent
+  (Sintel by magnet: plays and seeks), casting to a Chromecast-capable TV
+  (found, plays, pause and seek from the player).
 - **Single instance**: a second start with a file hands it to the running
   player over D-Bus and exits 0; the running one plays it.
 
