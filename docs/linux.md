@@ -283,6 +283,42 @@ signal handler, so mpv is not torn down on that path).
 plugin's own three tests for the JSON conversions and the `mpv_node` layout,
 which the crate's run does not reach).
 
+## Measured on a desktop
+
+Ubuntu 26.04 (GNOME 50, Wayland — GNOME no longer has an X11 session; mpv
+0.41, WebKitGTK 2.52.6, GTK 3.24.52, Mesa 26.0), an RTX 5080 on **nouveau**: GL
+is zink over NVK, a 3840×2160 60 Hz screen at **150 %** (Mutter's fractional
+scaling, so GTK 3 draws at 2× into a 5120×2880 buffer in fullscreen and the
+compositor scales it down). `FP_RENDER_STATS=1` prints the area's renders per
+second, their cost on the GTK thread and the FBO's size every two seconds.
+
+- **The picture** plays under the interface from the first start: render
+  context over EGL, `rgba16f` intact (no black frames), no tile grid after
+  resizing — that was llvmpipe's.
+- **Fullscreen crashed the process, every time**, until the shutter window
+  became Windows-only: Mutter disconnected it with
+  `wp_linux_drm_syncobj_surface_v1: Explicit Sync only supported on dmabuf
+  buffers` on the hidden `veil` web view's surface (`WAYLAND_DEBUG=client`).
+- **The picture stuttered whenever the controls were up**: 13 renders a second
+  of a 30 fps video with the interface on screen, 30 without it. mpv's own
+  render cost 5 ms either way; `perf` put 92 % of the GTK thread under
+  `gdk_cairo_draw_from_gl` called by WebKit, ending in NVK's
+  `nil_copy_linear_to_tiled` — GTK uploading the window's whole cairo surface
+  for a blend nothing needed (see the rule in
+  [rules/mpv-playback.md](rules/mpv-playback.md)). After the overlay draws the
+  web view itself: 30 renders a second, 6.4 ms each, controls pinned.
+  `WEBKIT_DMABUF_RENDERER_FORCE_SHM=1` was worse (9.5 a second).
+- **Shadows**: the title bar's `drop-shadow` filters came out as dark wedges
+  and the logo was clipped with WebKit's GPU rasterisation, and were right on
+  the CPU — hence the nouveau switch.
+- **Hardware decoding: none.** On nouveau mpv tries vulkan, nvdec, vaapi and
+  vdpau (and their `-copy` forms) and every one fails (`vainfo`: the nouveau VA
+  driver does not initialise on this GPU; NVK offers no video decode to
+  FFmpeg; no CUDA), so `hwdec-current` is `no` and decoding is software. With
+  the proprietary driver this would be nvdec — not measured: the session ran
+  from a live image, where it cannot be installed.
+- **Audio**: `ao=pipewire`.
+
 ## What only a real desktop can answer
 
 Everything above ran on a software renderer, without a compositor on X11 and

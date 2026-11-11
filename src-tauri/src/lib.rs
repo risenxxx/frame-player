@@ -1221,6 +1221,34 @@ fn linux_webkit_env() {
             eprintln!("[startup] {var} is set: WebKit will paint an opaque page and the video will not show");
         }
     }
+    // On nouveau, GL is Mesa's zink over NVK, and WebKit's GPU rasterisation
+    // drew `filter: drop-shadow` wrong there: dark wedges under the window
+    // buttons and the logo cut off at the bottom (RTX 5080, Mesa 26.0,
+    // WebKitGTK 2.52). Rasterised on the CPU the same page is right, at the
+    // same frame rate. Only when every GPU is on nouveau: a hybrid machine
+    // draws on its other GPU, and the other drivers were not seen to do it.
+    const CPU_RASTER: &str = "WEBKIT_SKIA_ENABLE_CPU_RENDERING";
+    if std::env::var_os(CPU_RASTER).is_none() && only_nouveau() {
+        std::env::set_var(CPU_RASTER, "1");
+        eprintln!("[startup] nouveau: {CPU_RASTER}=1");
+    }
+}
+
+/// Whether every DRM card in the machine is driven by nouveau.
+#[cfg(target_os = "linux")]
+fn only_nouveau() -> bool {
+    let Ok(entries) = std::fs::read_dir("/sys/class/drm") else { return false };
+    let drivers: Vec<String> = entries
+        .flatten()
+        .filter(|e| {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("card") && !name.contains('-')
+        })
+        .filter_map(|e| std::fs::read_link(e.path().join("device/driver")).ok())
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect();
+    !drivers.is_empty() && drivers.iter().all(|d| d == "nouveau")
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
