@@ -108,6 +108,41 @@ struct Gl {
     /// last frame would otherwise stay in the area's buffer).
     clear: Cell<Option<(ClearColorFn, ClearFn)>>,
     error: RefCell<Option<String>>,
+    /// `FP_RENDER_STATS`: renders per second and their cost, on stderr.
+    stats: Option<RefCell<RenderStats>>,
+}
+
+/// What `FP_RENDER_STATS=1` reports every two seconds: how often the area was
+/// drawn, what a render cost on the GTK thread, and the FBO's device size —
+/// the numbers that tell a slow picture from a slow main loop.
+struct RenderStats {
+    since: std::time::Instant,
+    renders: u32,
+    total: std::time::Duration,
+    worst: std::time::Duration,
+}
+
+impl RenderStats {
+    fn new() -> Self {
+        Self { since: std::time::Instant::now(), renders: 0, total: Default::default(), worst: Default::default() }
+    }
+
+    fn record(&mut self, took: std::time::Duration, w: c_int, h: c_int) {
+        self.renders += 1;
+        self.total += took;
+        self.worst = self.worst.max(took);
+        let elapsed = self.since.elapsed();
+        if elapsed.as_secs_f64() < 2.0 {
+            return;
+        }
+        eprintln!(
+            "[libmpv] {:.1} renders/s, {:.2} ms avg, {:.2} ms worst, FBO {w}x{h}",
+            f64::from(self.renders) / elapsed.as_secs_f64(),
+            self.total.as_secs_f64() * 1000.0 / f64::from(self.renders),
+            self.worst.as_secs_f64() * 1000.0,
+        );
+        *self = Self::new();
+    }
 }
 
 impl Gl {
@@ -290,6 +325,7 @@ impl Gl {
             },
             ffi::mpv_render_param { type_: ffi::MPV_RENDER_PARAM_INVALID, data: std::ptr::null_mut() },
         ];
+        let started = self.stats.as_ref().map(|_| std::time::Instant::now());
         // SAFETY: GL current, live context, params alive for the calls.
         unsafe {
             (self.lib.render_context_update)(rctx);
@@ -297,6 +333,9 @@ impl Gl {
             // GTK composites the FBO once this handler returns; the closest
             // honest "swap" there is.
             (self.lib.render_context_report_swap)(rctx);
+        }
+        if let (Some(stats), Some(started)) = (&self.stats, started) {
+            stats.borrow_mut().record(started.elapsed(), target.w, target.h);
         }
     }
 }
@@ -344,6 +383,7 @@ fn install(label: &str, webview: &webkit2gtk::WebView, lib: Arc<Lib>) -> Result<
         get_integerv: Cell::new(None),
         clear: Cell::new(None),
         error: RefCell::new(None),
+        stats: std::env::var_os("FP_RENDER_STATS").map(|_| RefCell::new(RenderStats::new())),
     });
 
     let area = gtk::GLArea::new();
@@ -380,6 +420,29 @@ fn install(label: &str, webview: &webkit2gtk::WebView, lib: Arc<Lib>) -> Result<
     vbox.remove(webview);
     overlay.add_overlay(webview);
     overlay.set_overlay_pass_through(webview, false);
+    // The overlay draws its two children itself, the web view through
+    // `gtk_widget_draw`. GTK 3 painting with GL marks every widget drawn over
+    // GL content that was already flushed (the area's blit) as needing a blend
+    // (`gdk_window_mark_paint_from_clip`), and a blend region is paid for by
+    // uploading the window's cairo surface into a texture — twice a frame, the
+    // whole window, since the web view covers it. A cairo context marked for
+    // drawing, which is what `gtk_widget_draw` hands down, skips the marking;
+    // WebKit's texture is still blended over the video by GL. Measured on a
+    // 4K screen at 150 % (a 5120×2880 buffer) on NVK, where the upload is a
+    // CPU tiling copy: 13 renders a second with the controls up, against the
+    // video's 30.
+    let (a, w) = (area.clone(), webview.clone());
+    overlay.connect_draw(move |overlay, cr| {
+        overlay.propagate_draw(&a, cr);
+        if w.is_drawable() {
+            let (x, y) = w.translate_coordinates(overlay, 0, 0).unwrap_or((0, 0));
+            cr.save().ok();
+            cr.translate(f64::from(x), f64::from(y));
+            w.draw(cr);
+            cr.restore().ok();
+        }
+        glib::Propagation::Stop
+    });
     window.remove(&vbox);
     window.add(&overlay);
     overlay.show_all();
