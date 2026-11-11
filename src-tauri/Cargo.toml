@@ -225,6 +225,8 @@ keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 # Already in the tree through GTK; the version is the one it uses.
 glib = "0.18"
 libc = "0.2"
+# The window's geometry hints for "match video aspect ratio" (window_shape.rs).
+gtk = "0.18"
 
 # CI runs `cargo clippy --all-targets -- -D warnings` on both platforms
 # (.github/workflows/rust.yml), so every lint here is either fixed or turned off

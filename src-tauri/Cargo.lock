@@ -1700,6 +1700,7 @@ dependencies = [
  "ffmpeg-the-third",
  "futures-util",
  "glib",
+ "gtk",
  "http-body-util",
  "hyper",
  "hyper-util",

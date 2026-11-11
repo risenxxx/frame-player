@@ -1393,6 +1393,10 @@ pub fn run() {
             now_playing::now_playing_start,
             now_playing::now_playing_set,
             window_shape::window_shape_lock,
+            #[cfg(target_os = "linux")]
+            window_shape::window_shape_resizing,
+            #[cfg(target_os = "linux")]
+            window_shape::window_drag_start,
             window_shape::window_frame_glide,
             window_shape::window_video_fade,
             zoom_pan,
@@ -1604,8 +1608,9 @@ pub fn run() {
                 }
                 // The resize constraint behind "match video aspect ratio". Here
                 // because a window can only be subclassed from the thread that
-                // owns it; macOS needs nothing installed.
-                #[cfg(windows)]
+                // owns it; macOS needs nothing installed; Linux watches for the
+                // press that begins a resize.
+                #[cfg(any(windows, target_os = "linux"))]
                 window_shape::install(&win);
                 // The video layer under the web view (Linux has no `wid`):
                 // built now, before the page loads, rather than when the

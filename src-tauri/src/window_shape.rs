@@ -39,24 +39,24 @@
 // drag beginning or ending.
 
 /// Where the reports go. Set once, by whichever platform half installs itself.
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 static FRONTEND: std::sync::OnceLock<tauri::WebviewWindow> = std::sync::OnceLock::new();
 
 /// What the frontend was last told.
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 static RESIZING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 pub const RESIZING_EVENT: &str = "frameplayer://window-resizing";
 
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 pub fn report_to(window: &tauri::WebviewWindow) {
     let _ = FRONTEND.set(window.clone());
 }
 
 /// A resize by hand has begun (the button is down on an edge), or has ended. Said once
 /// per change, however many frames the resize sets.
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 pub fn say_resizing(on: bool) {
     use tauri::Emitter;
 
@@ -179,10 +179,29 @@ const SUBCLASS_ID: usize = 0x4650_5348;
 ///
 /// The frontend owns the decision (`syncWindowShape` in window-prefs.svelte.ts)
 /// and the minimum size that goes with it; this only tells the platform.
+///
+/// `min_width`/`min_height` are the minimum the frontend has just set (logical
+/// points), which only Linux reads: GTK keeps one set of geometry hints, so the
+/// ratio has to be handed over together with the minimum or it replaces it.
 #[tauri::command]
 #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-pub fn window_shape_lock(window: tauri::WebviewWindow, width: u32, height: u32) {
+pub fn window_shape_lock(
+    window: tauri::WebviewWindow,
+    width: u32,
+    height: u32,
+    min_width: Option<u32>,
+    min_height: Option<u32>,
+) {
     let shape = (width > 0 && height > 0).then_some((f64::from(width), f64::from(height)));
+    #[cfg(not(target_os = "linux"))]
+    let _ = (min_width, min_height);
+    #[cfg(target_os = "linux")]
+    {
+        let min = (min_width.unwrap_or(0) as i32, min_height.unwrap_or(0) as i32);
+        let ratio = shape.map(|(w, h)| w / h);
+        let win = window.clone();
+        let _ = window.run_on_main_thread(move || gtk_shape::lock(&win, ratio, min));
+    }
     #[cfg(target_os = "macos")]
     {
         // AppKit is main-thread only, and commands arrive on a worker.
@@ -195,6 +214,200 @@ pub fn window_shape_lock(window: tauri::WebviewWindow, width: u32, height: u32) 
     {
         let bits = shape.map_or(0, |(w, h)| (w / h).to_bits());
         RATIO.store(bits, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Linux: a resize by hand at our own edges begins (`on`) or has ended. The
+/// ratio is held only in between — see `gtk_shape`.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn window_shape_resizing(window: tauri::WebviewWindow, on: bool) {
+    let win = window.clone();
+    let _ = window.run_on_main_thread(move || gtk_shape::resizing(&win, on));
+    say_resizing(on);
+}
+
+/// Linux: notice a resize by hand as it begins. With `decorations: false`
+/// tauri-runtime-wry resizes the window itself — a `button-press-event` on the
+/// web view, within `BORDERLESS_RESIZE_INSET` (5) × the scale factor of an
+/// edge, calls `begin_resize_drag` and stops the event, so the page never sees
+/// the press. The generic `event` signal is emitted before the specific one,
+/// so this sees the same press first, with the same test, and lets it through.
+/// The end is the frontend's to find (`linuxResizeBegan` in chrome.svelte.ts):
+/// the compositor holds the pointer until the button comes up.
+#[cfg(target_os = "linux")]
+pub fn install(window: &tauri::WebviewWindow) {
+    use gtk::prelude::*;
+
+    report_to(window);
+    let win = window.clone();
+    let _ = window.with_webview(move |platform| {
+        let webview = platform.inner();
+        let w = win.clone();
+        webview.connect_event(move |webview, event| {
+            if event.event_type() == gtk::gdk::EventType::ButtonPress && event.button() == Some(1) {
+                debug_press("webview", webview.upcast_ref(), event);
+                LAST_PRESS.with(|p| *p.borrow_mut() = Some((event.clone(), webview.clone().upcast())));
+                if on_resize_edge(webview.upcast_ref(), event) {
+                    gtk_shape::resizing(&w, true);
+                    say_resizing(true);
+                }
+            }
+            gtk::glib::Propagation::Proceed
+        });
+        // GTK 3 makes the surface's input region 10 px wider than the window on
+        // every side (`set_input_region(-10, -10, w + 20, h + 20)`, the room a
+        // client-side shadow would take), and a press out there reaches the
+        // window, not the web view — GTK resizes from it itself. Measured as
+        // about one corner drag in ten with no ratio and the bars left up.
+        if let Some(toplevel) = webview.toplevel() {
+            toplevel.connect_event(move |toplevel, event| {
+                if event.event_type() == gtk::gdk::EventType::ButtonPress && event.button() == Some(1) {
+                    debug_press("window", toplevel, event);
+                }
+                if event.event_type() == gtk::gdk::EventType::ButtonPress
+                    && event.button() == Some(1)
+                    && on_resize_edge(toplevel, event)
+                {
+                    gtk_shape::resizing(&win, true);
+                    say_resizing(true);
+                }
+                gtk::glib::Propagation::Proceed
+            });
+        }
+    });
+}
+
+#[cfg(target_os = "linux")]
+thread_local! {
+    /// The web view's last press of the main button, and the web view, for
+    /// `window_drag_start`.
+    static LAST_PRESS: std::cell::RefCell<Option<(gtk::gdk::Event, gtk::Widget)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Linux: move the window from the press the page is handling — the title
+/// bar's, or the picture's once it has moved past its threshold.
+///
+/// Tauri's `startDragging` reaches tao's `begin_move_drag(1, x, y, 0)`, and the
+/// compositor then holds the pointer until the button comes up, so WebKit never
+/// sees the release: it took the button for still pressed and swallowed the
+/// next press as a repeat. Measured as every other drag doing nothing, and the
+/// first click after a drag lost. So the web view is handed the release here,
+/// before the move begins, and the move is started with the press's own time
+/// and position rather than none.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn window_drag_start(window: tauri::WebviewWindow) {
+    use gtk::prelude::*;
+
+    let win = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        let Some((press, webview)) = LAST_PRESS.with(|p| p.borrow_mut().take()) else {
+            let _ = win.start_dragging();
+            return;
+        };
+        let Ok(gtk_window) = win.gtk_window() else { return };
+        let Some(gdk_window) = gtk_window.window() else { return };
+        let mut release = press.clone();
+        // SAFETY: `release` is our own copy of a button event; only its type
+        // and its button mask change, which a release carries.
+        unsafe {
+            let raw: *mut gtk::gdk::ffi::GdkEvent = glib::translate::ToGlibPtrMut::to_glib_none_mut(&mut release).0;
+            (*raw).type_ = gtk::gdk::ffi::GDK_BUTTON_RELEASE;
+            (*raw).button.state |= gtk::gdk::ffi::GDK_BUTTON1_MASK;
+        }
+        webview.event(&release);
+        let (x, y) = press.root_coords().unwrap_or((0.0, 0.0));
+        gdk_window.begin_move_drag(1, x as i32, y as i32, press.time());
+    });
+}
+
+#[cfg(target_os = "linux")]
+fn debug_press(at: &str, widget: &gtk::Widget, event: &gtk::gdk::Event) {
+    if std::env::var_os("FP_SHAPE_DEBUG").is_none() {
+        return;
+    }
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() % 100_000;
+    eprintln!("[window_shape] {ms} press at {at} {:?} root {:?} edge {}", event.coords(), event.root_coords(), on_resize_edge(widget, event));
+}
+
+/// tauri-runtime-wry's own test, repeated: an undecorated, resizable, not
+/// maximized window, and the press within 5 × scale of an edge — or outside
+/// it, in the band GTK adds to the input region.
+#[cfg(target_os = "linux")]
+fn on_resize_edge(webview: &gtk::Widget, event: &gtk::gdk::Event) -> bool {
+    use gtk::prelude::*;
+
+    const BORDERLESS_RESIZE_INSET: i32 = 5;
+    let Some(window) = webview.toplevel().and_then(|w| w.downcast::<gtk::Window>().ok()) else { return false };
+    if window.is_decorated() || !window.is_resizable() || window.is_maximized() {
+        return false;
+    }
+    let (Some(gdk_window), Some((root_x, root_y))) = (window.window(), event.root_coords()) else { return false };
+    let (window_x, window_y) = gdk_window.position();
+    let (x, y) = (root_x - f64::from(window_x), root_y - f64::from(window_y));
+    let border = f64::from(gdk_window.scale_factor() * BORDERLESS_RESIZE_INSET);
+    let (w, h) = (f64::from(gdk_window.width()), f64::from(gdk_window.height()));
+    x < border || x >= w - border || y < border || y >= h - border
+}
+
+/// The Linux half: GTK's geometry hints. On Wayland GTK 3 applies them itself
+/// to every size the compositor proposes (`gdk_window_constrain_size` in its
+/// configure handler), so an edge drag keeps the shape without anything else.
+///
+/// The ratio is a hint only while the window is being resized at our edges.
+/// GTK applies it to *every* configure, a maximized, fullscreen or tiled one
+/// included, and before the window's state changes — so dropping it on the
+/// state event came too late: snapped to half the screen, the window took the
+/// video's shape inside the half, and grew to the half for a moment on the way
+/// out. The minimum is a hint always.
+#[cfg(target_os = "linux")]
+mod gtk_shape {
+    use gtk::gdk;
+    use gtk::prelude::*;
+    use std::cell::Cell;
+
+    thread_local! {
+        /// The ratio asked for, the minimum that goes with it, and whether an
+        /// edge is being dragged.
+        static WANTED: Cell<(Option<f64>, (i32, i32), bool)> = const { Cell::new((None, (0, 0), false)) };
+    }
+
+    pub fn lock(window: &tauri::WebviewWindow, ratio: Option<f64>, min: (i32, i32)) {
+        WANTED.with(|w| {
+            let (_, _, resizing) = w.get();
+            w.set((ratio, min, resizing));
+        });
+        apply(window);
+    }
+
+    pub fn resizing(window: &tauri::WebviewWindow, on: bool) {
+        WANTED.with(|w| {
+            let (ratio, min, _) = w.get();
+            w.set((ratio, min, on));
+        });
+        apply(window);
+    }
+
+    fn apply(window: &tauri::WebviewWindow) {
+        let Ok(gtk_window) = window.gtk_window() else { return };
+        let (ratio, (min_w, min_h), resizing) = WANTED.with(Cell::get);
+        let ratio = ratio.filter(|_| resizing);
+        if std::env::var_os("FP_SHAPE_DEBUG").is_some() {
+            let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() % 100_000;
+            eprint!("[window_shape] {ms} ");
+            eprintln!("hints: ratio {ratio:?}, min {min_w}x{min_h}, resizing {resizing}");
+        }
+        let mut mask = gdk::WindowHints::empty();
+        if min_w > 0 && min_h > 0 {
+            mask |= gdk::WindowHints::MIN_SIZE;
+        }
+        if ratio.is_some() {
+            mask |= gdk::WindowHints::ASPECT;
+        }
+        let r = ratio.unwrap_or(0.0);
+        let geometry = gdk::Geometry::new(min_w, min_h, 0, 0, 0, 0, 0, 0, r, r, gdk::Gravity::Center);
+        gtk_window.set_geometry_hints(None::<&gtk::Window>, Some(&geometry), mask);
     }
 }
 

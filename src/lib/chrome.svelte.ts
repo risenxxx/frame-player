@@ -21,7 +21,7 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { tick } from 'svelte';
 
 import { playback } from './playback.svelte';
-import { IS_MAC, IS_WINDOWS } from './platform';
+import { IS_LINUX, IS_MAC, IS_WINDOWS } from './platform';
 import { curtain } from './curtain.svelte';
 import { flushPosition } from './history.svelte';
 import { player } from './player.svelte';
@@ -592,7 +592,7 @@ export function onTitlebarMouseDown(e: MouseEvent) {
     else if (player.hasFile && !chrome.isMaximized) void toggleFullscreen();
     else void getCurrentWindow().toggleMaximize();
   } else if (!chrome.fullscreen) {
-    void getCurrentWindow().startDragging();
+    startWindowDrag();
   }
 }
 
@@ -607,8 +607,16 @@ export function dragFromTitleStrip(e: MouseEvent): boolean {
   if (e.button !== 0 || e.target !== e.currentTarget || e.clientY > TITLEBAR_STRIP) return false;
   if (chrome.fullscreen || mini.on) return false;
   e.preventDefault();
-  void getCurrentWindow().startDragging();
+  startWindowDrag();
   return true;
+}
+
+/// Move the window from the press being handled. Linux goes through its own
+/// command, which gives WebKit the release the compositor's move takes away —
+/// see `window_drag_start` in window_shape.rs.
+export function startWindowDrag() {
+  if (IS_LINUX) void invoke('window_drag_start').catch(() => {});
+  else void getCurrentWindow().startDragging();
 }
 
 export function minimizeWindow() {
@@ -628,6 +636,78 @@ export function startResize(
   dir: 'East' | 'North' | 'NorthEast' | 'NorthWest' | 'South' | 'SouthEast' | 'SouthWest' | 'West',
 ) {
   void getCurrentWindow().startResizeDragging(dir);
+}
+
+/// How long a Linux resize may go without a new size before the bars come
+/// back — for a pointer that comes to rest with the button still held.
+const LINUX_RESIZE_QUIET_MS = 600;
+
+/// How long the ratio stays a hint without a new size or a sign that the edge
+/// was let go:
+/// the fallback for a release the page never hears of (the pointer left the
+/// window first). Long, because dropping it mid-drag frees the shape.
+const LINUX_RESIZE_HOLD_MS = 5000;
+
+/// How long a buttonless pointer event waits for a new size before it counts
+/// as the letting go.
+const LINUX_RESIZE_LET_GO_MS = 150;
+
+/// Linux: find the end of a resize the native side saw begin.
+///
+/// GTK 3 does not pass on xdg-shell's `resizing` state, so nothing reports a
+/// resize ending. tauri-runtime-wry begins it from a press at the window's
+/// edge, which `window_shape::install` sees too and announces — with the ratio
+/// made a hint for the length of the drag. The compositor holds the pointer
+/// while an edge is dragged and the page never sees the button come up, so
+/// the letting go is the first pointer event with no button held — not just
+/// the first pointer event: WebKit sends moves of its own whenever the layout
+/// changes under a resting pointer, which during a resize is every frame, and
+/// those still carry the button it last saw pressed. Taking them for the
+/// release ended every resize at its first new size.
+export function linuxResizeBegan() {
+  let quiet: ReturnType<typeof setTimeout> | undefined;
+  const steady = () => {
+    clearTimeout(quiet);
+    if (!chrome.resizing) return;
+    chrome.resizing = false;
+    // Letting go of the edge counts as a mouse move, as on the other two.
+    pokeUi();
+  };
+  const end = () => {
+    clearTimeout(hold);
+    clearTimeout(letGo);
+    window.removeEventListener('pointermove', released, true);
+    window.removeEventListener('pointerdown', released, true);
+    window.removeEventListener('resize', resized);
+    // The native side drops the ratio and reports the end like the other two
+    // platforms do, which is what lowers `resizing` for good.
+    void invoke('window_shape_resizing', { on: false }).catch(steady);
+  };
+  // A press, or a pointer event with no button, is the release only if no new
+  // size follows it: crossing the window's edge mid-drag can bring a
+  // buttonless one, and the press that began the resize sometimes reaches the
+  // page as well — after this has started listening — which ended the resize
+  // 3 ms into it (measured: the ratio dropped before the first new size).
+  let letGo: ReturnType<typeof setTimeout> | undefined;
+  const released = (e: PointerEvent) => {
+    if ((e.type === 'pointerdown' || e.buttons === 0) && letGo === undefined) {
+      letGo = setTimeout(end, LINUX_RESIZE_LET_GO_MS);
+    }
+  };
+  const resized = () => {
+    clearTimeout(letGo);
+    letGo = undefined;
+    chrome.resizing = true;
+    clearTimeout(quiet);
+    quiet = setTimeout(steady, LINUX_RESIZE_QUIET_MS);
+    clearTimeout(hold);
+    hold = setTimeout(end, LINUX_RESIZE_HOLD_MS);
+  };
+  let hold = setTimeout(end, LINUX_RESIZE_HOLD_MS);
+  quiet = setTimeout(steady, LINUX_RESIZE_QUIET_MS);
+  window.addEventListener('pointermove', released, true);
+  window.addEventListener('pointerdown', released, true);
+  window.addEventListener('resize', resized);
 }
 
 /// Breathing space between the title and whichever cluster it reaches first.

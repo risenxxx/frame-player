@@ -329,6 +329,16 @@ second, their cost on the GTK thread and the FBO's size every two seconds.
   mpv never torn down. `linux_signals` (lib.rs) answers them on GTK's main loop
   with the same exit as Ctrl+Q: status 0 in ~100 ms, render context freed,
   then mpv destroyed.
+- **The window by hand** (GNOME 50): moving from the title bar and the
+  picture, double click to maximize, the window buttons, hotkeys from the
+  first frame, the mini player, dropping a file from Files, Ctrl+Q — all
+  work. "Match video aspect ratio" did not hold the shape at all, the bars
+  stayed up through a resize, every other drag did nothing and the first click
+  after a drag was lost; fixed as the window rule describes. Not yet done:
+  rounded corners (the window is square; on Windows 11 and macOS the system
+  rounds it, and here the GL layer under the page is opaque), and on entering
+  fullscreen the window's old frame is seen moving to the top-left corner for a
+  moment at the screen's edges.
 - **Single instance**: a second start with a file hands it to the running
   player over D-Bus and exits 0; the running one plays it.
 

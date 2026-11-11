@@ -18,7 +18,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { command, destroy } from 'tauri-plugin-libmpv-api';
 import { runMenuAction } from './app-menu';
 import { playerHooks } from './bridge.svelte';
-import { chrome, pokeUi, scheduleVeilRelease } from './chrome.svelte';
+import { chrome, linuxResizeBegan, pokeUi, scheduleVeilRelease } from './chrome.svelte';
 import { flushPosition, loadHistoryPrefs, loadRecent, maybeRecordPosition } from './history.svelte';
 import { locale } from './i18n.svelte';
 import { refreshLeveling } from './leveling.svelte';
@@ -32,7 +32,7 @@ import {
 } from './input.svelte';
 import { opening, openResumeSnapshot, refreshTorrents } from './open.svelte';
 import { dismissMenus, dismissOnOutsideClick } from './overlays.svelte';
-import { IS_MAC } from './platform';
+import { IS_LINUX, IS_MAC } from './platform';
 import { initPlayer, loadFiles, player, resyncState } from './player.svelte';
 import { loadPlaylistPrefs } from './playlist.svelte';
 import { initPortable } from './portable.svelte';
@@ -357,6 +357,7 @@ export async function boot() {
   unlisteners.push(
     await listen<boolean>('frameplayer://window-resizing', (e) => {
       chrome.resizing = e.payload;
+      if (IS_LINUX && e.payload) linuxResizeBegan();
       // Letting go of the edge counts as a mouse move, which the web view did
       // not see one of for the whole of the drag: the bars come back, and
       // from there the "hide the controls" setting has them again — its

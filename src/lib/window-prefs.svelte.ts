@@ -944,7 +944,12 @@ async function holdShape(shape: Size | null, run: Attempt) {
   holding = '';
   await win.setMinSize(new LogicalSize(floor.w, floor.h));
   if (run.stale) return;
-  await invoke('window_shape_lock', { width: held?.w ?? 0, height: held?.h ?? 0 });
+  await invoke('window_shape_lock', {
+    width: held?.w ?? 0,
+    height: held?.h ?? 0,
+    minWidth: floor.w,
+    minHeight: floor.h,
+  });
   if (!run.stale) holding = key;
 }
 

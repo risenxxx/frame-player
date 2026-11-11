@@ -22,10 +22,16 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { ActivationGate } from './activation';
-import { chrome, closeWindow, exitFullscreen, pokeUi, toggleFullscreen } from './chrome.svelte';
+import {
+  chrome,
+  closeWindow,
+  exitFullscreen,
+  pokeUi,
+  startWindowDrag,
+  toggleFullscreen,
+} from './chrome.svelte';
 import { backToStart } from './start-screen.svelte';
 import { inTextField } from './dom';
 import { cancelAdvance, endOfFile, takeSkip } from './endscreen.svelte';
@@ -216,7 +222,7 @@ export function onVideoPointerMove(e: PointerEvent) {
     // timer: a drag longer than the timer cleared it before the click
     // arrived, and the window toggled pause at the end of the drag.
     suppressNextClick = true;
-    void getCurrentWindow().startDragging();
+    startWindowDrag();
   }
 }
 
