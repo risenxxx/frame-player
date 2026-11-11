@@ -68,6 +68,7 @@
     deleteTorrent,
     deleteWatchedFiles,
     openFileDialog,
+    offerLink,
     openLinkDialog,
     openRecent,
     openRememberedTorrent,
@@ -250,6 +251,14 @@
   // look at.
   $effect(() => {
     if (invite.code) overlays.room = true;
+  });
+  // A magnet clicked in a browser is offered on the same terms: the link box,
+  // with the magnet in it, and "Open" left to the viewer (see `offerLink`).
+  $effect(() => {
+    const magnet = invite.magnet;
+    if (!magnet) return;
+    invite.magnet = '';
+    void offerLink(magnet);
   });
 
   // The seekbar and the taskbar follow the TV while casting — see bridge.svelte.ts.

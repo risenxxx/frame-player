@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { codeFromLink } from './link.svelte';
+import { codeFromLink, magnetFromLink } from './link.svelte';
 
 // This is the parser that decides what an arbitrary string from outside the
 // application may do to the player: a custom scheme is a surface any page on
@@ -65,5 +65,29 @@ describe('codeFromLink', () => {
     // take down whatever is handling the link rather than ignoring it.
     expect(() => codeFromLink('frameplayer://join/%E0%A4%A')).not.toThrow();
     expect(codeFromLink('frameplayer://join/%E0%A4%A')).toBe('');
+  });
+});
+
+describe('magnetFromLink', () => {
+  const hash = '0123456789abcdef0123456789abcdef01234567';
+
+  it('passes a magnet through whole, trackers and all', () => {
+    const link = `magnet:?xt=urn:btih:${hash}&dn=Test+Film&tr=udp%3A%2F%2Ftracker.invalid`;
+    expect(magnetFromLink(link)).toBe(link);
+    expect(magnetFromLink(`  ${link}\n`)).toBe(link);
+    expect(magnetFromLink(`MAGNET:?xt=urn:btih:${hash}`)).toBe(`MAGNET:?xt=urn:btih:${hash}`);
+  });
+
+  // What is inside is the torrent engine's to judge, as for a pasted magnet:
+  // a broken hash still reaches the box and fails there, with the same words.
+  it('leaves the contents to the engine', () => {
+    expect(magnetFromLink('magnet:?dn=Test')).toBe('magnet:?dn=Test');
+  });
+
+  it('ignores every other shape', () => {
+    expect(magnetFromLink('https://example.com/')).toBe('');
+    expect(magnetFromLink('frameplayer://join/ABC123')).toBe('');
+    expect(magnetFromLink('magnet:')).toBe('');
+    expect(magnetFromLink('file:///tmp/film.mkv')).toBe('');
   });
 });

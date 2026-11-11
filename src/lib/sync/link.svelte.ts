@@ -1,13 +1,22 @@
 /**
- * `frameplayer://join/<code>` — an invitation somebody clicked.
+ * `frameplayer://join/<code>` — an invitation somebody clicked — and a
+ * `magnet:` link clicked in a browser.
  *
  * The link exists because a room code alone is a thing to be dictated, and
  * because "click this and you are watching with me" is the whole of what a
  * viewer wants to do with it. What it deliberately is *not* is a way to reach
- * anything else: exactly one shape is understood, and everything else is
- * ignored in silence rather than guessed at. A custom scheme is a surface any
- * page on the internet can aim at, so it may only ever do the one harmless
- * thing — open a dialog with a code typed into it.
+ * anything else: exactly two shapes are understood, and everything else is
+ * ignored in silence rather than guessed at. A scheme is a surface any page on
+ * the internet can aim at, so it may only ever do the one harmless thing — open
+ * a dialog with something typed into it.
+ *
+ * A magnet obeys the same bargain. Opening one is not harmless: it stops what
+ * is playing and announces this machine's address to a swarm the *page* chose,
+ * and once a browser has been told to "always allow" the scheme, a page can
+ * fire it without a click. So a magnet raises the link box with the magnet in
+ * the field, and the viewer's "Open" is what starts it. Whether the magnet is a
+ * valid one is left to the same path a pasted one takes — a link that cannot
+ * work fails there, with the same words, rather than at a second parser here.
  *
  * Which is also why joining is **offered and not performed**. A link that
  * silently pulled a viewer out of what they were watching and into a stranger's
@@ -20,8 +29,20 @@
  * of a second process, which single-instance forwards and `deliver_deep_links`
  * re-emits under the same name. The frontend therefore has one subscription
  * rather than two code paths for one link.
+ *
+ * The magnet rides the same event, but is deliberately *not* in the plugin's
+ * `schemes`: the Windows installer turns that list into `Classes\<scheme>`
+ * keys, which would take `magnet:` from whichever torrent client the viewer
+ * chose, at every update, and delete it on uninstall. On macOS it is declared
+ * in Info.plist, and the plugin re-emits every URL of the Apple Event whatever
+ * its scheme and keeps it for `getCurrent`. On Windows the player is entered
+ * as one *candidate* for the scheme (`RegisteredApplications`, by the
+ * installer and by shell_handler.rs), so the plugin's own reading of argv does
+ * not recognise it: a second launch is forwarded by `deliver_deep_links` like
+ * an invitation, and a cold start is asked for with `take_launch_magnet`.
  */
 
+import { invoke } from '@tauri-apps/api/core';
 import { getCurrent, onOpenUrl, register } from '@tauri-apps/plugin-deep-link';
 
 import { CODE_LENGTH, normalizeCode } from './protocol';
@@ -30,6 +51,11 @@ import { CODE_LENGTH, normalizeCode } from './protocol';
 /// raises the room dialog; cleared when it does.
 class Invite {
   code = $state('');
+  /// A magnet a link asked to open, waiting for the page to put it in the
+  /// link box; cleared when it does. Assigned rather than queued, so the same
+  /// link arriving twice — the plugin's event and `getCurrent` on a cold
+  /// start — offers it once.
+  magnet = $state('');
 }
 
 export const invite = new Invite();
@@ -66,8 +92,24 @@ export function codeFromLink(raw: string): string {
   return code.length === CODE_LENGTH ? code : '';
 }
 
+/**
+ * A `magnet:` link, trimmed, or '' for anything else.
+ *
+ * The scheme and nothing more: what is inside is the torrent engine's to judge,
+ * exactly as it is for a magnet pasted into the box. Exported for its test.
+ */
+export function magnetFromLink(raw: string): string {
+  const text = raw.trim();
+  return /^magnet:\?/i.test(text) ? text : '';
+}
+
 function offer(urls: readonly string[]) {
   for (const url of urls) {
+    const magnet = magnetFromLink(url);
+    if (magnet) {
+      invite.magnet = magnet;
+      return;
+    }
     const code = codeFromLink(url);
     if (code) {
       invite.code = code;
@@ -100,4 +142,8 @@ export async function initDeepLinks() {
 
   const current = await getCurrent().catch(() => null);
   if (current) offer(current);
+  // The Windows cold start from a magnet, which `getCurrent` cannot know of —
+  // the scheme is not the plugin's (see the top of this file).
+  const magnet = await invoke<string | null>('take_launch_magnet').catch(() => null);
+  if (magnet) offer([magnet]);
 }

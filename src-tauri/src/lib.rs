@@ -1145,15 +1145,44 @@ fn point_vulkan_at_bundled_driver() {
 /// is a second process whose argv single-instance forwards. Emitting the same
 /// event keeps the frontend with one subscription rather than two code paths
 /// for one link.
+///
+/// A `magnet:` takes the same road, though the plugin knows nothing of it: the
+/// scheme is deliberately not in its `schemes` (see shell_handler.rs), so its
+/// own check of argv passes over one. What it means is the frontend's to decide
+/// (sync/link.svelte.ts) — this only forwards it.
 fn deliver_deep_links(app: &tauri::AppHandle, args: &[String]) {
     let urls: Vec<String> = args
         .iter()
-        .filter(|a| a.starts_with("frameplayer://"))
+        .skip(1)
+        .filter(|a| a.starts_with("frameplayer://") || is_magnet_arg(a))
         .cloned()
         .collect();
     if !urls.is_empty() {
         let _ = app.emit("deep-link://new-url", urls);
     }
+}
+
+/// Whether an argument is a `magnet:` link — the scheme and nothing more.
+fn is_magnet_arg(arg: &str) -> bool {
+    arg.get(..8)
+        .is_some_and(|head| head.eq_ignore_ascii_case("magnet:?"))
+}
+
+/// A `magnet:` the *first* launch was started with, handed out once.
+///
+/// The second launch is `deliver_deep_links`'s; this is the cold start, where
+/// the plugin would have answered `getCurrent` had the scheme been one of its
+/// own. It is not, so the frontend asks here as well — once, for the same
+/// reason argv files are taken once: a second ask (a remount, say) must not
+/// offer the link again. Always empty on macOS, where a magnet is an Apple
+/// Event and the plugin's.
+#[tauri::command]
+fn take_launch_magnet() -> Option<String> {
+    static TAKEN: AtomicBool = AtomicBool::new(false);
+    if TAKEN.swap(true, Ordering::SeqCst) {
+        return None;
+    }
+    std::env::args().skip(1).find(|a| is_magnet_arg(a))
 }
 
 /// Raise the open-file limit before anything in this process can spend it.
@@ -1287,6 +1316,7 @@ pub fn run() {
         .manage(std::sync::Arc::new(dlna::DlnaService::default()))
         .invoke_handler(tauri::generate_handler![
             take_pending_files,
+            take_launch_magnet,
             open_file_ready,
             double_click_time,
             primary_button_down,
