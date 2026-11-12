@@ -166,6 +166,11 @@ export const en = {
     'Could not open it. YouTube and sites like it need yt-dlp, which can be installed from here.',
   'link.failed_stale':
     'Could not open it. Usually this means yt-dlp is out of date: sites change, and it is updated every couple of weeks.',
+  'link.failed_denied':
+    'The server refused access (HTTP {status}). Links like this often work only from the site’s own page or expire quickly — try the link to the page with the video.',
+  'link.failed_gone': 'The server says there is nothing at this link (HTTP {status}). It may have expired.',
+  'link.failed_http': 'Could not open it: the server answered with HTTP error {status}.',
+  'link.failed_stream': 'Could not open the stream: the server did not answer or sent something that is not a video.',
   'link.ytdlp_install': 'Install yt-dlp',
   'link.ytdlp_update': 'Update yt-dlp',
   'link.ytdlp_working': 'Downloading…',

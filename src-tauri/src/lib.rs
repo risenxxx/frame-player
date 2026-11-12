@@ -1327,6 +1327,8 @@ pub fn run() {
             logs::diag_mpv_log_path,
             logs::diag_collect,
             logs::diag_save,
+            logs::mpv_log_mark,
+            logs::mpv_log_http_status,
             hdr_status,
             window_buttons,
             window_enter_fullscreen,

@@ -726,6 +726,53 @@ fn mpv_tail(app: &tauri::AppHandle, conf_refused: bool) -> Option<MpvLog> {
     Some(MpvLog { source, shown: text.len() as u64, tail: text, total })
 }
 
+// ---- Why a link failed ------------------------------------------------------------
+
+/// How far mpv's log has got: taken before a URL is handed to `loadfile`, so the
+/// verdict on it reads only what that attempt wrote, never a 403 left over from
+/// an earlier one.
+#[tauri::command]
+pub fn mpv_log_mark(app: tauri::AppHandle, conf_refused: bool) -> u64 {
+    mpv_log_in_force(&app, conf_refused)
+        .and_then(|(path, _)| std::fs::metadata(path).ok())
+        .map_or(0, |m| m.len())
+}
+
+/// The HTTP status the server answered the failed open with, if FFmpeg logged
+/// one after `from`. Without it the link dialog could only guess — and guessed
+/// "yt-dlp", for a direct stream that a server had simply refused.
+#[tauri::command]
+pub fn mpv_log_http_status(app: tauri::AppHandle, conf_refused: bool, from: u64) -> Option<u16> {
+    let (path, _) = mpv_log_in_force(&app, conf_refused)?;
+    let mut file = std::fs::File::open(&path).ok()?;
+    let total = file.metadata().ok()?.len();
+    // A shorter file than the mark is a log mpv truncated since (a new session).
+    let from = if from > total { 0 } else { from };
+    // An open that fails writes a few dozen lines; a megabyte is far past that
+    // and keeps a debug log that ran on from costing a read of all of it.
+    let start = from.max(total.saturating_sub(1 << 20));
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    last_http_status(&String::from_utf8_lossy(&bytes))
+}
+
+/// The last HTTP error status in a stretch of mpv's log. FFmpeg says it in two
+/// ways: `[ffmpeg] https: HTTP error 403 Forbidden` from the HTTP protocol, and
+/// `Server returned 403 Forbidden (access denied)` where an error code is
+/// turned into text.
+fn last_http_status(log: &str) -> Option<u16> {
+    log.lines().rev().find_map(|line| {
+        ["HTTP error ", "Server returned "].iter().find_map(|marker| {
+            let rest = &line[line.find(marker)? + marker.len()..];
+            let digits = rest.get(..3)?;
+            let code: u16 = digits.parse().ok()?;
+            let ends = rest[3..].chars().next().is_none_or(|c| !c.is_ascii_digit());
+            ((400..600).contains(&code) && ends).then_some(code)
+        })
+    })
+}
+
 #[tauri::command]
 pub fn diag_collect(app: tauri::AppHandle, conf_refused: bool) -> Collected {
     remember_person();
@@ -853,6 +900,26 @@ fn translated() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn last_http_status_reads_ffmpegs_two_wordings() {
+        // Lines as mpv wrote them for a host refusing `libmpv`, followed by the
+        // ytdl hook's attempt, which must not hide the status.
+        let log = "[   0.060][v][ffmpeg] Opening http://host/index.m3u8\n\
+                   [   0.061][w][ffmpeg] http: HTTP error 403 Forbidden\n\
+                   [   0.061][e][stream] Failed to open http://host/index.m3u8.\n\
+                   [   0.063][e][ytdl_hook] youtube-dl failed: not found or not enough permissions\n";
+        assert_eq!(last_http_status(log), Some(403));
+        assert_eq!(last_http_status("[e][ffmpeg] Server returned 404 Not Found\n"), Some(404));
+        // The latest one wins: a redirect chain or a retry ends on it.
+        assert_eq!(
+            last_http_status("[w][ffmpeg] https: HTTP error 404 Not Found\n[w][ffmpeg] https: HTTP error 410 Gone\n"),
+            Some(410)
+        );
+        // Nothing that merely looks like a status.
+        assert_eq!(last_http_status("[v][ffmpeg] HTTP error 4031\n[v][cplayer] HTTP error 200 OK\n"), None);
+        assert_eq!(last_http_status("[e][stream] Failed to open http://host/a.m3u8.\n"), None);
+    }
 
     #[test]
     fn clock_is_utc_wall_time() {

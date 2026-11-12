@@ -40,6 +40,7 @@ import {
 import { baseName } from './format';
 import { t } from './i18n.svelte';
 import { latest, type Attempt } from './latest';
+import { linkFailure, type LinkFailure } from './link-failure';
 import { showOsd } from './osd.svelte';
 import {
   applyYtdlpPath,
@@ -141,6 +142,9 @@ class Opening {
   box = $state({
     value: '',
     failed: false,
+    /// Why, as far as the server and the link's shape tell — read while
+    /// `failed`, and written together with it.
+    failure: null as LinkFailure | null,
     /// A link failed to open. Kept until the next attempt, because the reason is
     /// worth reading twice — especially the yt-dlp one.
     torrentError: null as string | null,
@@ -468,6 +472,25 @@ export async function fixYtdlp() {
   }
 }
 
+/// Where mpv's log stood when the current network attempt began, so its verdict
+/// reads only what that attempt wrote.
+let logMark = 0;
+
+/// Taken in `beforeLoad`, before `loadfile`: a mark taken after it could land
+/// past the server's answer, which comes back in milliseconds.
+export async function markLinkAttempt(path: string) {
+  if (!isNetworkSource(path)) return;
+  logMark = await invoke<number>('mpv_log_mark', { confRefused: player.confError !== null }).catch(() => 0);
+}
+
+/// The HTTP status FFmpeg logged for the attempt that just failed, if any.
+async function linkStatus(): Promise<number | null> {
+  return invoke<number | null>('mpv_log_http_status', {
+    confRefused: player.confError !== null,
+    from: logMark,
+  }).catch(() => null);
+}
+
 export function reportLoadFailure() {
   clearTimeout(loadFailTimer);
   loadFailTimer = setTimeout(() => {
@@ -493,9 +516,15 @@ export function reportLoadFailure() {
         opening.linkOpen = true;
         return;
       }
-      opening.lastLink = opening.attempting;
-      opening.box.failed = true;
-      opening.linkOpen = true;
+      const url = opening.attempting;
+      opening.lastLink = url;
+      void linkStatus().then((status) => {
+        // Something else was opened while the log was read.
+        if (opening.attempting !== url || player.hasFile) return;
+        opening.box.failure = linkFailure(url, status);
+        opening.box.failed = true;
+        opening.linkOpen = true;
+      });
       return;
     }
     // A file on disk has no yt-dlp to blame, and the line that says so sent

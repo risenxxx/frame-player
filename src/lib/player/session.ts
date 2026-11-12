@@ -22,7 +22,15 @@ import { showOsd } from '../osd.svelte';
 import { IS_MAC } from '../platform';
 import { loadChapters } from './chapters';
 import { applyLoopMode, loadAmplify, loadLoopMode, loopOptions, volumeCeiling } from './commands';
-import { AUDIO_EXTENSIONS, isAudioPath, PATH_LIST_SEP, SUB_DIRS, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS } from './files';
+import {
+  AUDIO_EXTENSIONS,
+  BROWSER_USER_AGENT,
+  isAudioPath,
+  PATH_LIST_SEP,
+  SUB_DIRS,
+  SUBTITLE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
+} from './files';
 import { applyNormalize, applySdrColor, loadNormalize, loadSdrColor, setUserConfKeys } from './filters';
 import { applyProperty, OBSERVED, resyncState, type ObservedName } from './mirrors';
 import { player } from './state.svelte';
@@ -162,6 +170,16 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
     // silently depends on which side of that line libmpv falls is not worth the
     // saved line.
     'ytdl': 'yes',
+    // mpv introduces itself as `libmpv`, and plenty of stream hosts answer that
+    // with a 403 while serving a browser — so a direct `.m3u8` link that plays in
+    // any browser failed here, and the dialog then pointed at yt-dlp, which
+    // "fixed" it only by sending a browser's User-Agent of its own. Measured
+    // against a server refusing non-browser agents: 403 with `libmpv`, the
+    // playlist and every segment 200 with this. The ytdl hook still sets its
+    // own per file (`file-local-options/user-agent`): an initial option is not
+    // `set-from-commandline`, which is all the hook checks. A `user-agent` in
+    // the viewer's mpv.conf wins, as every line of theirs does.
+    'user-agent': BROWSER_USER_AGENT,
     // The path is not known yet (the probe above runs in the background) and is
     // applied by `applyYtdlpPath` when it lands. The hook searches PATH on its
     // own, which a GUI process does not have — so on macOS it would never find

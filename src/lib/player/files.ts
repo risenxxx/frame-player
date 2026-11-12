@@ -24,6 +24,15 @@ export const AUDIO_EXTENSIONS = [
   'mka', 'wma', 'alac', 'aiff',
 ];
 
+/// What mpv calls itself when it fetches a URL (`user-agent`, set in
+/// `initPlayer`). A browser's, because a host that refuses anything else answers
+/// `libmpv` with a 403 — see the option's own comment. The platform matches the
+/// machine so the two halves of the claim agree; the version is a recent one and
+/// needs no upkeep, since hosts that filter on it look for a browser, not a build.
+export const BROWSER_USER_AGENT = IS_MAC
+  ? 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36'
+  : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36';
+
 /// What the extension says: a sound file. The tracks decide in the end —
 /// `audio-screen.svelte.ts` waits for them — but the extension is known before
 /// the file opens, which is when the queue is built and the screen is kept up.

@@ -27,6 +27,7 @@ import { flushPosition, maybeRecordPosition, rememberTitle } from './history.sve
 import { t } from './i18n.svelte';
 import {
   cancelLoadFailure,
+  markLinkAttempt,
   noteOpened,
   openTorrent,
   opening,
@@ -87,7 +88,8 @@ export const playerHooks: PlayerHooks = {
     // rather than in turn.
     // The external-track folders join them: `sub-file-paths` and
     // `audio-file-paths` are read when the file opens, like `start`.
-    await Promise.all([prepareResume(path), raiseCurtain(), pointAtExternalTracks(path)]);
+    // And the mark in mpv's log that a failed link's verdict reads from.
+    await Promise.all([prepareResume(path), raiseCurtain(), pointAtExternalTracks(path), markLinkAttempt(path)]);
   },
   property: onPlayerProperty,
   fileLoaded: onFileLoaded,

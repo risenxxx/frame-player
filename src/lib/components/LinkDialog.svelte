@@ -6,6 +6,7 @@
   import Dialog from '$lib/components/Dialog.svelte';
   import ScrollFade from '$lib/components/ScrollFade.svelte';
   import { isFeedLink } from '$lib/feed';
+  import type { LinkFailure } from '$lib/link-failure';
   import { displayName, readableLink } from '$lib/format';
   import { t } from '$lib/i18n.svelte';
   import { torrent } from '$lib/torrent.svelte';
@@ -17,6 +18,7 @@
     link: {
       value: string;
       failed: boolean;
+      failure: LinkFailure | null;
       torrentError: string | null;
       recent: string[];
       titles: Record<string, string>;
@@ -36,6 +38,24 @@
   }
 
   let { link, ytdlpBusy, ytdlpPct, feedBusy, onclose, onSubmit, onForget, onPickTorrentFile, onFixYtdlp }: Props = $props();
+
+  /// What went wrong, said from what the server answered; yt-dlp comes into it
+  /// only for a page, which is the one kind of link it is the way into.
+  function failureText(failure: LinkFailure | null): string {
+    const status = failure?.status ?? 0;
+    switch (failure?.kind) {
+      case 'denied':
+        return t('link.failed_denied', { status });
+      case 'gone':
+        return t('link.failed_gone', { status });
+      case 'http':
+        return t('link.failed_http', { status });
+      case 'stream':
+        return t('link.failed_stream');
+      default:
+        return t(ytdlp.present ? 'link.failed_stale' : 'link.failed_missing');
+    }
+  }
 </script>
 
 <Dialog title={t('link.title')} variant="link" {onclose}>
@@ -76,7 +96,7 @@
     <div class="link-error">{link.torrentError}</div>
   {:else if link.failed}
     <div class="link-error">
-      {t(ytdlp.present ? 'link.failed_stale' : 'link.failed_missing')}
+      {failureText(link.failure)}
     </div>
   {:else if isFeedLink(link.value)}
     <!-- Said as soon as the link is recognised, so what pressing "Open" will do
