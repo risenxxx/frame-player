@@ -242,6 +242,55 @@ export function selectTrack(kind: 'audio' | 'sub', track: Track | null) {
   if (cast.remote && kind === 'sub') void castSwitchSub(track);
 }
 
+/// The subtitle track last shown, so the toggle has something to come back
+/// to. An id, which is only good inside the file it came from — hence the
+/// path beside it.
+let lastSub: { path: string; id: number } | null = null;
+
+/**
+ * Subtitles on or off, from a key: off remembers what was showing, and on
+ * brings that back — or the first track, in a file where nothing was on yet.
+ * Through `selectTrack`, so it is remembered for the folder and told to a room
+ * exactly as a pick from the menu is.
+ */
+export function toggleSubs() {
+  const list = player.subTracks;
+  const on = list.find((tr) => tr.selected);
+  if (on) {
+    if (player.filePath) lastSub = { path: player.filePath, id: on.id };
+    selectTrack('sub', null);
+    return;
+  }
+  const back = lastSub && lastSub.path === player.filePath ? list.find((tr) => tr.id === lastSub!.id) : undefined;
+  const pick = back ?? list[0];
+  if (pick) selectTrack('sub', pick);
+  else showOsd(t('osd.no_subs'));
+}
+
+/// The next or previous subtitle track, with "off" as one step of the ring —
+/// the way VLC's key goes round.
+export function cycleSubs(dir: 1 | -1) {
+  const list = player.subTracks;
+  if (!list.length) {
+    showOsd(t('osd.no_subs'));
+    return;
+  }
+  const ring: (Track | null)[] = [null, ...list];
+  const at = Math.max(0, ring.findIndex((tr) => (tr ? tr.selected : !list.some((x) => x.selected))));
+  selectTrack('sub', ring[(at + dir + ring.length) % ring.length]);
+}
+
+/// One step of the subtitle size, for this session: the settings sheet's
+/// slider is where a size is kept. The same range as that slider.
+export function nudgeSubScale(delta: number) {
+  void (async () => {
+    const now = (await getProperty('sub-scale', 'double').catch(() => null)) ?? 1;
+    const next = Math.round(Math.min(2, Math.max(0.5, now + delta)) * 100) / 100;
+    await setProperty('sub-scale', next).catch(() => {});
+    showOsd(t('osd.sub_scale', { value: next }), { progress: (next - 0.5) / 1.5 });
+  })();
+}
+
 /**
  * Take a track a shared room has chosen.
  *

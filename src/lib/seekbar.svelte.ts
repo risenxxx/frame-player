@@ -118,3 +118,44 @@ export function remainingSeconds(duration: number, position: number, speed: numb
   return speed > 0 ? left / speed : left;
 }
 
+// ---- How thick the bar is ----------------------------------------------------
+
+const THICKNESS_KEY = 'frameplayer.seekbarThickness';
+
+/// The viewer's choice of bar: the track, the knob and the band around them
+/// that takes the pointer, all three together — a thicker line with the same
+/// hit area would only look easier to grab.
+export const SEEKBAR_THICKNESS = ['normal', 'thick', 'thicker'] as const;
+export type SeekbarThickness = (typeof SEEKBAR_THICKNESS)[number];
+
+/// Pixels: the track, the knob's diameter, and the hit band above and below.
+export const THICKNESS_PX: Record<SeekbarThickness, { track: number; knob: number; pad: number }> = {
+  normal: { track: 4, knob: 12, pad: 6 },
+  thick: { track: 7, knob: 16, pad: 8 },
+  thicker: { track: 10, knob: 20, pad: 10 },
+};
+
+function loadThickness(): SeekbarThickness {
+  try {
+    const v = localStorage.getItem(THICKNESS_KEY);
+    return SEEKBAR_THICKNESS.find((t) => t === v) ?? 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
+class SeekbarLook {
+  thickness = $state<SeekbarThickness>(loadThickness());
+}
+
+export const seekbarLook = new SeekbarLook();
+
+export function setSeekbarThickness(v: SeekbarThickness) {
+  seekbarLook.thickness = v;
+  try {
+    localStorage.setItem(THICKNESS_KEY, v);
+  } catch {
+    // the choice simply will not survive a restart
+  }
+}
+

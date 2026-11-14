@@ -56,7 +56,7 @@ import { ADJUST_KEY_STEP, nudgeAdjust, resetAdjust } from './picture-adjust.svel
 import { cycleUpscale } from './upscale.svelte';
 import { stepBy } from './step-engine.svelte';
 import { trashCurrentFile } from './trash';
-import { nudgeDelayHere } from './tracks.svelte';
+import { cycleSubs, nudgeDelayHere, nudgeSubScale, toggleSubs } from './tracks.svelte';
 import { mini, toggleMini, windowPrefs } from './window-prefs.svelte';
 import { isZoomed, panBy, resetZoom, zoomAt } from './zoom.svelte';
 import { zoomStep } from './zoom-step';
@@ -470,6 +470,9 @@ export function onWheel(e: WheelEvent) {
 /// forces to be complete.
 /// One key step of the volume, on the scale both transports speak.
 const VOLUME_KEY_STEP = 5;
+/// One key step of the subtitle size: the settings slider's 0.05, doubled so a
+/// press is visible.
+const SUB_SCALE_STEP = 0.1;
 
 export function runAction(id: ActionId) {
   if (refusedBySession(id)) return;
@@ -503,6 +506,11 @@ export function runAction(id: ActionId) {
     case 'audio_delay_up': nudgeDelayHere('audio', DELAY_STEP); break;
     case 'sub_delay_down': nudgeDelayHere('sub', -DELAY_STEP); break;
     case 'sub_delay_up': nudgeDelayHere('sub', DELAY_STEP); break;
+    case 'subs_toggle': toggleSubs(); break;
+    case 'subs_next': cycleSubs(1); break;
+    case 'subs_prev': cycleSubs(-1); break;
+    case 'sub_scale_up': nudgeSubScale(SUB_SCALE_STEP); break;
+    case 'sub_scale_down': nudgeSubScale(-SUB_SCALE_STEP); break;
     case 'fullscreen': void toggleFullscreen(); break;
     case 'mini': if (player.hasFile || mini.on) void toggleMini(); break;
     case 'info': toggleInfo(player.hasFile); break;
@@ -588,7 +596,9 @@ export function onKeydown(e: KeyboardEvent) {
     // `quiet` rides on the action rather than on the key, because "already
     // has a popup of its own" is a fact about what happens, not about which
     // button was pressed.
-    if (!action.quiet) pokeUi();
+    // The pause key is the one whose popup is the viewer's to turn off
+    // (`pauseShowsBar`): pausing to look at a frame should not cover it.
+    if (!action.quiet && !(action.id === 'pause' && !windowPrefs.pauseShowsBar)) pokeUi();
     return;
   }
   // The reserved families, which have no row in the editor. Digits and Enter

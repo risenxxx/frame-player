@@ -101,6 +101,12 @@
   /// The press went to moving the window (see `dragFromTitleStrip`); the click
   /// it may still produce is not a request to close.
   let pressMovedWindow = false;
+  /// Where the press began. A click whose press or release was on the sheet is
+  /// not a click on the backdrop, though the browser says it is: it sends the
+  /// `click` to the nearest element the two have in common, which is the
+  /// backdrop. A drag out of a slider, or into the sheet from outside, closed
+  /// the dialog that way.
+  let pressedOnBackdrop = false;
 </script>
 
 <!-- Clicking the backdrop closes the dialog, and its keyboard equivalent is
@@ -111,10 +117,15 @@
   class="settings-backdrop"
   class:peeking={peek}
   role="presentation"
-  onmousedown={(e) => (pressMovedWindow = dragFromTitleStrip(e))}
-  onclick={() => {
-    if (pressMovedWindow) pressMovedWindow = false;
-    else requestClose();
+  onmousedown={(e) => {
+    pressedOnBackdrop = e.target === e.currentTarget;
+    pressMovedWindow = dragFromTitleStrip(e);
+  }}
+  onclick={(e) => {
+    const close = pressedOnBackdrop && !pressMovedWindow && e.target === e.currentTarget;
+    pressedOnBackdrop = false;
+    pressMovedWindow = false;
+    if (close) requestClose();
   }}
   ondblclick={(e) => e.stopPropagation()}
   oncontextmenu={blockContextMenu}

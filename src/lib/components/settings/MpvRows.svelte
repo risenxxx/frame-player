@@ -13,9 +13,14 @@
   interface Props {
     mpv: MpvSettings;
     group: SettingDef['group'];
+    /// A slider's drag turns the sheet see-through (`peek` on Dialog) so its
+    /// effect on the picture can be judged; the tab that wants that passes
+    /// this, and the row being dragged is marked `live`.
+    onpeek?: (key: string, e: PointerEvent) => void;
+    peeking?: string | null;
   }
 
-  let { mpv, group }: Props = $props();
+  let { mpv, group, onpeek, peeking = null }: Props = $props();
 
   let langQueryEl = $state<HTMLInputElement | undefined>();
 
@@ -37,7 +42,7 @@
 {/each}
 
 {#snippet mpvSetting(s: SettingDef)}
-  <div class="setting">
+  <div class="setting" class:live={peeking === s.key}>
     <div class="setting-label">{s.label}</div>
     {#if s.kind === 'devices'}
       <div class="segmented vertical">
@@ -156,6 +161,7 @@
           aria-label={s.label}
           oninput={(e) => mpv.setSlider(s, Number(e.currentTarget.value))}
           onchange={(e) => e.currentTarget.blur()}
+          onpointerdown={(e) => onpeek?.(s.key, e)}
         />
         <span class="slider-value">{value.toFixed(s.decimals)}{s.suffix ?? ''}</span>
       </div>

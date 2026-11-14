@@ -1,7 +1,7 @@
 <script lang="ts">
   /// Settings → Audio: mpv's output rows and the player's own leveling.
   import { t } from '$lib/i18n.svelte';
-  import { applyAmplify, applyNormalize, player } from '$lib/player.svelte';
+  import { VOLUME_MAX, applyAmplify, applyNormalize, player } from '$lib/player.svelte';
   import type { MpvSettings } from '$lib/settings/mpv-settings.svelte';
   import MpvRows from '$lib/components/settings/MpvRows.svelte';
 
@@ -22,7 +22,7 @@
     <div class="row-toggle">
       <div class="row-text">
         <div class="setting-label">{t('set.amplify')}</div>
-        <div class="setting-hint">{t('set.amplify_hint')}</div>
+        <div class="setting-hint">{t('set.amplify_hint', { max: VOLUME_MAX })}</div>
       </div>
       <button
         class="switch"

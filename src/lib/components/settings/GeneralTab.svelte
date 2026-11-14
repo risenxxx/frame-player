@@ -8,6 +8,7 @@
 
   import { IS_MAC } from '$lib/platform';
   import { REPO_URL, SITE_URL } from '$lib/links';
+  import { SEEKBAR_THICKNESS, seekbarLook, setSeekbarThickness } from '$lib/seekbar.svelte';
   import { locale, setLocale, t, type Locale } from '$lib/i18n.svelte';
   import {
     addExcludedFolder,
@@ -173,6 +174,18 @@
       {/each}
     </div>
     <div class="setting-hint">{t('set.cursor_hide_hint')}</div>
+  </div>
+  {@render windowSwitch('pauseShowsBar', t('set.pause_shows_bar'), t('set.pause_shows_bar_hint'))}
+  <div class="setting">
+    <div class="setting-label">{t('set.seekbar_thickness')}</div>
+    <div class="segmented">
+      {#each SEEKBAR_THICKNESS as v (v)}
+        <button class="segopt" class:sel={seekbarLook.thickness === v} onclick={() => setSeekbarThickness(v)}>
+          {t(`set.seekbar_${v}`)}
+        </button>
+      {/each}
+    </div>
+    <div class="setting-hint">{t('set.seekbar_thickness_hint')}</div>
   </div>
 </div>
 

@@ -34,8 +34,8 @@
   import { t } from '$lib/i18n.svelte';
   import type { ActionId } from '$lib/keys.svelte';
   import { player } from '$lib/player.svelte';
-  import type { AdjustParam } from '$lib/picture-adjust.svelte';
   import { chrome } from '$lib/chrome.svelte';
+  import { overlays } from '$lib/overlays.svelte';
   import { torrentPrefs, type Encryption, type Route } from '$lib/torrent.svelte';
   import { showOsd } from '$lib/osd.svelte';
 
@@ -109,6 +109,14 @@
   /// the right-click menu's "About" lands. The section is at the bottom of a
   /// long page, so the sheet is scrolled to it — once the version has arrived,
   /// since the panel is a line shorter until then.
+  // See `settingsOnKeys`: Escape on the shortcuts tab is the recorder's.
+  $effect(() => {
+    overlays.settingsOnKeys = settingsTab === 'keys';
+    return () => {
+      overlays.settingsOnKeys = false;
+    };
+  });
+
   let aboutPending = untrack(() => initialTab) === 'about';
   $effect(() => {
     if (!aboutPending || appVersion === null) return;
@@ -121,7 +129,7 @@
   /// The picture slider being dragged, which turns the sheet see-through (see
   /// `peek` on Dialog). The control bar is kept away from the first touch until
   /// the sheet closes, as in the context menu.
-  let peeking = $state<AdjustParam | null>(null);
+  let peeking = $state<string | null>(null);
 
   $effect(() => () => {
     chrome.tuning = false;
@@ -267,7 +275,7 @@
     {:else if settingsTab === 'audio'}
       <AudioTab {mpv} />
     {:else}
-      <SubsTab {mpv} />
+      <SubsTab {mpv} bind:peeking={peeking} />
     {/if}
     <ConfFoot />
   {/if}

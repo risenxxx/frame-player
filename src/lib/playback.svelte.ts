@@ -90,7 +90,7 @@ import { togglePlayback } from './step-engine.svelte';
 /**
  * The scale the volume bar and the volume keys speak, on both transports.
  *
- * mpv's own ceiling is `VOLUME_MAX` (150) and the bar has always stopped at
+ * mpv's own ceiling is `VOLUME_MAX` (200) and the bar has always stopped at
  * 100; a receiver has no amplification range at all, so for it 100 *is* the
  * ceiling rather than a point on the way to anything. One scale is what lets
  * one slider and one key step serve both.
@@ -506,6 +506,11 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
   audio_delay_up: 'delays',
   sub_delay_down: 'delays',
   sub_delay_up: 'delays',
+  subs_toggle: 'local',
+  subs_next: 'local',
+  subs_prev: 'local',
+  sub_scale_up: 'delays',
+  sub_scale_down: 'delays',
   fullscreen: 'local',
   mini: 'mini',
   info: 'local',
@@ -599,6 +604,11 @@ const SYNC_BEHAVIOR: Record<ActionId, 'shared' | 'personal' | 'solo'> = {
   audio_delay_up: 'personal',
   sub_delay_down: 'personal',
   sub_delay_up: 'personal',
+  subs_toggle: 'personal',
+  subs_next: 'personal',
+  subs_prev: 'personal',
+  sub_scale_up: 'personal',
+  sub_scale_down: 'personal',
   fullscreen: 'personal',
   mini: 'personal',
   info: 'personal',

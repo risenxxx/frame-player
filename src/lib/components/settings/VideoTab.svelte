@@ -27,7 +27,9 @@
     hwdecCurrent: string | null;
     /// The picture slider being dragged. The dialog's, because it is what
     /// turns the whole sheet see-through (`peek` on Dialog).
-    peeking: AdjustParam | null;
+    /// The slider being dragged: a picture parameter here, an mpv key on the
+    /// subtitles tab.
+    peeking: string | null;
   }
 
   let { mpv, hwdecCurrent, peeking = $bindable() }: Props = $props();

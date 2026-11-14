@@ -221,7 +221,7 @@
   <!-- One bar for both transports: `playback` speaks a single 0..VOLUME_SCALE
        scale, so nothing here has to know whose volume it is showing. While
        casting that is the receiver's own 0..1 with no amplification range —
-       100 is the device's ceiling, not a point on the way to 150. -->
+       100 is the device's ceiling, not a point on the way to 200. -->
   <input
     class="volumebar"
     type="range"

@@ -167,6 +167,10 @@ class WindowPrefs {
   /// it hides — a stretched frame and the controls jumping for a moment — for
   /// a viewer to whom a black flash in a dark room is the worse of the two.
   fsMask = $state(true);
+  /// Whether the pause key raises the controls. On by default — the bar is
+  /// where the position is read, and pausing is often for that — but a viewer
+  /// who pauses to look at the frame wants nothing put over it.
+  pauseShowsBar = $state(true);
   geometry = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 }
 
@@ -476,6 +480,7 @@ export function loadWindowPrefs() {
       windowPrefs.videoClick = saved.videoClick;
     }
     if (typeof saved.fsMask === 'boolean') windowPrefs.fsMask = saved.fsMask;
+    if (typeof saved.pauseShowsBar === 'boolean') windowPrefs.pauseShowsBar = saved.pauseShowsBar;
     if (saved.geometry) windowPrefs.geometry = saved.geometry;
   } catch {
     // corrupt entry — the defaults stay
@@ -499,6 +504,7 @@ function saveWindowPrefs() {
         pinch: windowPrefs.pinch,
         videoClick: windowPrefs.videoClick,
         fsMask: windowPrefs.fsMask,
+        pauseShowsBar: windowPrefs.pauseShowsBar,
         geometry: windowPrefs.geometry,
       }),
     );
@@ -1083,7 +1089,7 @@ export function setVideoClick(v: VideoClick) {
   saveWindowPrefs();
 }
 
-export type WindowSwitch = 'remember' | 'alwaysOnTop' | 'snapMini' | 'fsMask';
+export type WindowSwitch = 'remember' | 'alwaysOnTop' | 'snapMini' | 'fsMask' | 'pauseShowsBar';
 
 export function windowFit(): WindowFit {
   if (!windowPrefs.fitToVideo) return 'free';

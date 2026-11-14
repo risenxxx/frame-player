@@ -16,7 +16,7 @@ import { player, type LoopMode } from './state.svelte';
 /// Amplification ceiling, in percent. Above 100 the player is amplifying and
 /// can clip, so this stays well short of mpv's 1000 maximum. mpv's own default
 /// is 130.
-export const VOLUME_MAX = 150;
+export const VOLUME_MAX = 200;
 
 /// Where the volume stops when amplification is turned off: the file's own
 /// level, never louder than it was mixed.
@@ -36,7 +36,7 @@ export function volumeCeiling(): number {
 
 /**
  * Allow or forbid amplification. The slider stops at 100 either way; this is
- * the keys and the wheel, which used to carry on to 150 past the end of the
+ * the keys and the wheel, which used to carry on to the ceiling past the end of the
  * bar. `volume-max` moves with it so a `add volume` from anywhere else (an
  * input.conf line, a script) meets the same ceiling — and the volume comes
  * down first, because lowering `volume-max` does not lower a volume above it.

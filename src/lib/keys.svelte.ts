@@ -70,6 +70,11 @@ export type ActionId =
   | 'audio_delay_up'
   | 'sub_delay_down'
   | 'sub_delay_up'
+  | 'subs_toggle'
+  | 'subs_next'
+  | 'subs_prev'
+  | 'sub_scale_up'
+  | 'sub_scale_down'
   | 'fullscreen'
   | 'mini'
   | 'info'
@@ -184,6 +189,13 @@ export const ACTIONS: ActionDef[] = [
   // Subtitles
   { id: 'sub_delay_down', group: 'subs', def: ['KeyZ'], quiet: true },
   { id: 'sub_delay_up', group: 'subs', def: ['shift+KeyZ'], quiet: true },
+  // V and Shift+V as in VLC: on/off, and round the tracks with "off" as one
+  // step. Previous and the size are unbound — there to be given a key.
+  { id: 'subs_toggle', group: 'subs', def: ['KeyV'], noRepeat: true, quiet: true },
+  { id: 'subs_next', group: 'subs', def: ['shift+KeyV'], quiet: true },
+  { id: 'subs_prev', group: 'subs', def: [], quiet: true },
+  { id: 'sub_scale_up', group: 'subs', def: [], quiet: true },
+  { id: 'sub_scale_down', group: 'subs', def: [], quiet: true },
 
   // View
   { id: 'fullscreen', group: 'view', def: ['KeyF'], noRepeat: true, menuMac: 'ctrl+meta+KeyF' },

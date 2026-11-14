@@ -42,6 +42,11 @@ class Overlays {
   /// The settings section to open on, when a surface sends the viewer to one
   /// setting rather than to the sheet. Cleared when the sheet closes.
   settingsTab = $state<string | null>(null);
+  /// The sheet is showing its shortcuts tab, where Escape belongs to the key
+  /// recorder: it cancels a recording, and a second press — made by somebody
+  /// who could not tell the recording had already ended — closed the whole
+  /// sheet. So there Escape closes nothing. Written by the sheet.
+  settingsOnKeys = $state(false);
   info = $state(false);
   /// Watching together: getting into a room, and the room you are in. A sheet
   /// like the settings rather than an OSC menu, because it is read rather than
@@ -191,7 +196,7 @@ export function closeTopmost() {
     return;
   }
   if (overlays.settings) {
-    closeSettings();
+    if (!overlays.settingsOnKeys) closeSettings();
     return;
   }
   if (overlays.ctxAt) {

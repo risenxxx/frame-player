@@ -9,7 +9,7 @@
   import { formatTime } from '$lib/format';
   import { t } from '$lib/i18n.svelte';
   import { playback } from '$lib/playback.svelte';
-  import { remainingSeconds, timeReadout, toggleRemaining } from '$lib/seekbar.svelte';
+  import { THICKNESS_PX, remainingSeconds, seekbarLook, timeReadout, toggleRemaining } from '$lib/seekbar.svelte';
   import { chapterTitle, player, type Chapter } from '$lib/player.svelte';
   import { onSeekCancel, onSeekDown, onSeekMove, onSeekUp, seek } from '$lib/seek.svelte';
   import { thumbs } from '$lib/thumbs.svelte';
@@ -42,9 +42,12 @@
   const hasFile = $derived(player.hasFile);
   /// Speed is 1× on a television, which plays at its own pace.
   const speed = $derived(playback.remote ? 1 : player.speed || 1);
+  /// The mini player keeps the thin bar: in a 420px window a thick one is a
+  /// stripe across the picture.
+  const size = $derived(THICKNESS_PX[mini ? 'normal' : seekbarLook.thickness]);
 </script>
 
-<div class="seekrow" class:mini>
+<div class="seekrow" class:mini style="--track-h: {size.track}px; --knob: {size.knob}px; --hit-pad: {size.pad}px">
   <span class="time">{formatTime(seek.value)}</span>
   <div
     class="seekwrap"
@@ -186,7 +189,7 @@
     position: relative;
     display: flex;
     align-items: center;
-    padding: 6px 0;
+    padding: var(--hit-pad, 6px) 0;
     cursor: pointer;
     touch-action: none;
   }
@@ -194,8 +197,8 @@
   .seektrack {
     position: relative;
     width: 100%;
-    height: 4px;
-    border-radius: 2px;
+    height: var(--track-h, 4px);
+    border-radius: calc(var(--track-h, 4px) / 2);
     background: rgba(255, 255, 255, 0.28);
   }
 
@@ -260,8 +263,8 @@
   .seekknob {
     position: absolute;
     top: 50%;
-    width: 12px;
-    height: 12px;
+    width: var(--knob, 12px);
+    height: var(--knob, 12px);
     border-radius: 50%;
     background: #fff;
     transform: translate(-50%, -50%);
@@ -277,7 +280,8 @@
      straight over the video */
   .hovertip {
     position: absolute;
-    bottom: 18px;
+    /* Two pixels clear of the bar, whatever its thickness: 18 at the thin one. */
+    bottom: calc(2 * var(--hit-pad, 6px) + var(--track-h, 4px) + 2px);
     transform: translateX(-50%);
     display: flex;
     flex-direction: column;
