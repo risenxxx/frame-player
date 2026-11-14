@@ -71,6 +71,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 
 ## Rules
 
+- **On Windows the `wid` is ours, an HWND's 32 bits as an unsigned number — never the plugin's.** The plugin passes `hwnd as i64`, a handle with bit 31 set arrives sign-extended and negative, and mpv answers a negative `wid` with a window of its own: the picture in "<file> - mpv", the player empty (issue 67). `mpv_wid` in lib.rs → `initialOptions`. → [mpv-playback](../../docs/rules/mpv-playback.md)
 - **The end of a file is a moment the player owns, and that is a deliberate inversion.** `keep-open=always` (not mpv's `yes`, which stops only on the LAST playlist entry and advances silently everywhere else) parks mpv on the final … → [mpv-playback](../../docs/rules/mpv-playback.md)
 - **A file's name in the queue comes from three places, and only the third costs anything.** mpv fills `playlist/N/title` from `media-title`, but **only for entries it has actually opened** — so everything ahead of the playhead was … → [mpv-playback](../../docs/rules/mpv-playback.md)
 - **A queue is built from one opened file, never from several.** Dropping five files is an explicit selection and stays exactly what was given; opening a single episode is the case where the rest of the folder is wanted. → [mpv-playback](../../docs/rules/mpv-playback.md)

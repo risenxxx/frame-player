@@ -197,6 +197,13 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
   const shaderCache = await invoke<string>('mpv_shader_cache_dir').catch(() => null);
   if (shaderCache) initialOptions['gpu-shader-cache-dir'] = shaderCache;
 
+  // The window to draw into, given by us rather than left to the plugin, whose
+  // value for a Windows handle with bit 31 set is negative — and a negative
+  // `wid` makes mpv open a window of its own (issue 67, `mpv_wid` in lib.rs).
+  // The plugin keeps a `wid` it is handed; `null` (macOS) leaves it its own.
+  const wid = await invoke<number | null>('mpv_wid').catch(() => null);
+  if (wid != null) initialOptions['wid'] = wid;
+
   // The user's mpv.conf (%APPDATA%/<app>/mpv.conf) goes on top of the defaults,
   // mpv-style: the last line wins. Kept as a map of its own rather than merged
   // in place, because it is the half that may be wrong — see `start` below.

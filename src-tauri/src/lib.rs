@@ -564,6 +564,31 @@ fn mpv_shader_cache_dir(app: tauri::AppHandle) -> Result<String, String> {
     Ok(dir.to_string_lossy().into_owned())
 }
 
+/// The window mpv draws into, as the `wid` it must be given on Windows: the
+/// HWND's 32 bits as an unsigned number. The plugin passes the handle as a
+/// pointer-sized signed integer, and a 64-bit process holds window handles
+/// sign-extended — so a handle with bit 31 set reached mpv as a negative `wid`,
+/// which mpv reads as "no window" and answers with a top-level window of its
+/// own: the picture in a second window titled "<file> - mpv" and the player's
+/// own window empty (issue 67). Which handle a window gets is the system's
+/// choice, which is why it came and went, and came more often the longer the
+/// machine had been up. Window handles are 32-bit by design, so nothing is
+/// lost; mpv's manual asks for exactly this cast. `None` elsewhere, where the
+/// plugin's own value (an `NSView` pointer) is already right.
+#[tauri::command]
+#[cfg_attr(not(windows), allow(unused_variables))]
+fn mpv_wid(window: tauri::WebviewWindow) -> Option<i64> {
+    #[cfg(windows)]
+    {
+        let hwnd = window.hwnd().ok()?;
+        Some(i64::from(hwnd.0 as usize as u32))
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 /// mpv.conf in the app config directory: created from the template on first
 /// run, parsed as `key=value` (comments and blank lines are skipped).
 #[tauri::command]
@@ -1358,6 +1383,7 @@ pub fn run() {
             ytdlp_update,
             user_mpv_conf,
             mpv_shader_cache_dir,
+            mpv_wid,
             third_party_notices,
             mpv_conf_set,
             frame_step::frame_step_probe,

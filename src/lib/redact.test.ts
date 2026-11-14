@@ -247,6 +247,26 @@ describe('what a real report showed', () => {
     gone(out, 'Secret', 'Film', '2019');
   });
 
+  it("follows a release's folder, however many words it has", () => {
+    const folder = 'Secret Show (2019) Season 1 Complete 1080p WEB DL x265 HEVC 10bit AAC Multi Sub [Group]';
+    const file = `D:\\TV\\${folder}\\Secret.Show.S01E01.mkv`;
+    const text = [
+      `[cplayer] Run command: loadfile, flags=64, args=[url="${file.replace(/\\/g, '\\\\')}", flags=""]`,
+      `[file] Opening ${file}`,
+      `[find_files] Loading external files in D:\\TV\\${folder}\\`,
+    ].join('\n');
+    // Both with the file named, as the report names it, and without: a folder
+    // the player was never told about is held to the same reach.
+    for (const out of [r(text, [{ kind: 'file', value: file }]), r(text)]) {
+      gone(out, 'Secret', 'Season', 'Group', 'Multi');
+      expect(out).toContain('url="<path>.mkv"');
+      expect(out).toContain('[find_files] Loading external files in <path>');
+    }
+    // Past any reach, the file the report names still ends where it ends.
+    const long = `D:\\TV\\${'Secret word '.repeat(40)}x\\Secret.mkv`;
+    expect(r(`[file] Opening ${long}`, [{ kind: 'file', value: long }])).toBe('[file] Opening <path>.mkv');
+  });
+
   it("keeps the GPU's and the driver's names, which follow another word", () => {
     const line = '    Device Name: Apple M3 Max\n    Driver name: MoltenVK';
     expect(r(line)).toBe(line);

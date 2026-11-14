@@ -109,7 +109,7 @@ export function redact(text: string, literals: Literal[] = []): RedactResult {
     const { body, tail } = splitTrailing(m);
     return url(body, ip, count) + tail;
   });
-  out = replacePaths(out, count);
+  out = replacePaths(out, count, knownPaths(literals));
   out = replaceLiterals(out, literals, count);
   out = out.replace(/\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}/g, () => (count('token'), '<token>'));
   out = out.replace(/\bBearer\s+[^\s"',;]+/gi, () => (count('secret'), 'Bearer <secret>'));
@@ -277,6 +277,8 @@ function extensionOf(name: string): string {
 const PATH_START = /(?<=^|[\s"'=(\[{,;>|])(?<!&lt;|&gt;|&quot;)(?:~?\/(?=[^\s/])|[A-Za-z]:(?:\\\\|\\|\/)|\\\\(?:\\\\)?(?=\w))/gm;
 /// Characters a path cannot run through in a log line.
 const PATH_STOP = /["'<>|\n\r\t]/;
+/// How many space-separated tokens one path may run over.
+const PATH_REACH = 32;
 
 /**
  * Paths, by scanning rather than by one expression, because the hard part is
@@ -288,14 +290,19 @@ const PATH_STOP = /["'<>|\n\r\t]/;
  * of every log line, and the reason the caller also passes the home directory
  * and the file as literals.
  */
-function replacePaths(text: string, count: (k: string) => void): string {
+function replacePaths(text: string, count: (k: string) => void, known: RegExp | null): string {
   let out = '';
   let last = 0;
   PATH_START.lastIndex = 0;
   for (let m = PATH_START.exec(text); m; m = PATH_START.exec(text)) {
     const start = m.index;
     if (start < last) continue;
-    const end = pathEnd(text, start);
+    let end = pathEnd(text, start);
+    if (known) {
+      known.lastIndex = start;
+      const hit = known.exec(text);
+      if (hit && start + hit[0].length > end) end = start + hit[0].length;
+    }
     const path = text.slice(start, end);
     if (!/[\\/][^\\/\s]/.test(path.slice(1)) && !path.startsWith('~')) {
       // A lone `/word` is not a path anybody's name is in.
@@ -315,6 +322,32 @@ function replacePaths(text: string, count: (k: string) => void): string {
   return out + text.slice(last);
 }
 
+/**
+ * The paths the caller named — a file and the folder it is in — as one sticky
+ * expression, so that where one of them starts, it ends where it really does
+ * rather than where `pathEnd` guesses. The guess runs out of reach on a
+ * release's folder (`Show (2019) Season 1 Complete 1080p WEB-DL x265 …` is
+ * more tokens than it looks at), and stopping inside it left the rest of the
+ * folder's name in the report: the literal pass that follows cannot match a
+ * name whose first word has already become `<path>` (measured, issue 67).
+ */
+function knownPaths(literals: Literal[]): RegExp | null {
+  const paths = new Set<string>();
+  for (const l of literals) {
+    if (l.kind !== 'file') continue;
+    const value = l.value.trim();
+    if (!/^(?:[A-Za-z]:[\\/]|[\\/~])/.test(value)) continue;
+    paths.add(value);
+    const dir = value.replace(/[\\/]+[^\\/]*$/, '');
+    if (/[\\/]/.test(dir)) paths.add(dir);
+  }
+  if (!paths.size) return null;
+  const alternatives = [...paths]
+    .sort((a, b) => b.length - a.length)
+    .map((p) => p.split(/[\\/]+/).map(escapeRe).join('(?:\\\\{1,2}|/)'));
+  return new RegExp(`(?:${alternatives.join('|')})(?:\\\\{1,2}|/)?`, 'iy');
+}
+
 function pathEnd(text: string, start: number): number {
   let limit = start;
   while (limit < text.length && !PATH_STOP.test(text[limit])) limit++;
@@ -322,9 +355,11 @@ function pathEnd(text: string, start: number): number {
   // Whole tokens, as far as the last one within reach that still holds a
   // separator: a folder called `Secret Film (2019)` is three tokens of one
   // path, and only the third says so (measured: mpv's `find_files` line).
+  // Within reach is `PATH_REACH` tokens, most of which a release's folder name
+  // can take (a dozen was too few: issue 67).
   const parts = span.split(/(\s+)/);
   let end = parts[0].length;
-  for (let i = 1, run = 0; i + 1 < parts.length && i < 24; i += 2) {
+  for (let i = 1, run = 0; i + 1 < parts.length && i < 2 * PATH_REACH; i += 2) {
     run += parts[i].length + parts[i + 1].length;
     if (/[\\/]/.test(parts[i + 1])) {
       end += run;
@@ -332,9 +367,9 @@ function pathEnd(text: string, start: number): number {
     }
   }
   // The last name may have spaces of its own (`Film Name (2020).mkv`): it runs
-  // to the first extension that ends a token, a dozen tokens at most.
+  // to the first extension that ends a token, `PATH_REACH` tokens at most.
   const lastSep = Math.max(span.lastIndexOf('/', end - 1), span.lastIndexOf('\\', end - 1));
-  const tail = span.slice(lastSep + 1).split(/(\s+)/).slice(0, 24).join('');
+  const tail = span.slice(lastSep + 1).split(/(\s+)/).slice(0, 2 * PATH_REACH).join('');
   const ext = /\.[A-Za-z0-9]{1,5}(?=$|[\s,;:)\]}]|\.(?:\s|$))/.exec(tail);
   if (ext) return start + lastSep + 1 + ext.index + ext[0].length;
   return start + end - splitTrailing(span.slice(0, end)).tail.length;
