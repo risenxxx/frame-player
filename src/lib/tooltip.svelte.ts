@@ -21,11 +21,21 @@ export const tips = new Tips();
 
 let tipTimer: ReturnType<typeof setTimeout> | undefined;
 
+/// The anchor a press took the tip down on, which stays quiet until the
+/// pointer is over something else. A button that swaps its icon on click
+/// (mute, play) removes the node under a stationary cursor, and the browser
+/// re-dispatches `pointerover` for the one that replaces it — which used to
+/// read as a fresh hover and bring the tip back 450 ms after the click took
+/// it away.
+let pressed: Element | null = null;
+
 /// Takes a tooltip down at once — for a press anywhere, which comes before
-/// the pointer has moved off the anchor.
-export function hideTooltip() {
+/// the pointer has moved off the anchor. Given the press's target, the
+/// anchor under it stays quiet until the pointer leaves it.
+export function hideTooltip(target?: EventTarget | null) {
   clearTimeout(tipTimer);
   tips.tooltip = null;
+  pressed = target instanceof Element ? target.closest('[data-tip]') : null;
 }
 
 /// Registers the window's listeners and returns their removal.
@@ -42,6 +52,11 @@ export function initTooltips(): () => void {
   const onTipOver = (e: PointerEvent) => {
     const el = (e.target as HTMLElement | null)?.closest('[data-tip]') as HTMLElement | null;
     const text = el?.getAttribute('data-tip');
+    if (el !== pressed) pressed = null;
+    else if (el) {
+      clearTimeout(tipTimer);
+      return;
+    }
     if (!el || !text) {
       // The pointer is over something that has no tooltip, which is the
       // authoritative "nothing to show" — including the pointerover the

@@ -342,7 +342,7 @@ export async function boot() {
   // Menus close on a click anywhere outside them: capture phase, because
   // clicks on OSC/title-bar buttons are swallowed by their stopPropagation.
   const closeMenusOnOutsideClick = (e: PointerEvent) => {
-    hideTooltip();
+    hideTooltip(e.target);
     // The earliest event of a gesture (capture on window), which is why the
     // previous flag is cleared here: a native drag loop may have swallowed
     // the click, and without a reset the suppression would leak into the next
