@@ -421,6 +421,13 @@
     box-shadow: none;
   }
 
+  /* The bar goes with the sheet. Only its thumb, not the bar: `overflow-y`
+     stays `scroll` so the 10px it reserves (see `.settings`) does not move the
+     kept row sideways when the drag starts. */
+  .settings-backdrop.peeking .settings::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+
   .settings > :global(*) {
     transition: opacity 0.15s ease;
   }

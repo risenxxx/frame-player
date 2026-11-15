@@ -74,7 +74,14 @@
     opacity: 0;
   }
 
+  /* The backing gets room inside it, as the context menu's `.adj-row` has, or
+     the label, the value and the hint sit against its edges. The negative
+     margin takes the padding back out, so the row's content does not move
+     when the drag starts; the bottom one is the row's own 14px less the 8px
+     padding, which only the hidden rows below would feel anyway. */
   .set-panel.peek-keep.peeking > :global(.live) {
+    padding: 8px 10px;
+    margin: -8px -10px 6px;
     background: rgba(16, 16, 22, 0.8);
     border-radius: 8px;
   }
