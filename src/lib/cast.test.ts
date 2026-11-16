@@ -114,6 +114,7 @@ describe('airplayAudioSource', () => {
   const tr = (id: number, codec: string, extra: Partial<Track> = {}): Track => ({
     id,
     selected: false,
+    secondary: false,
     label: `t${id}`,
     lang: null,
     title: null,

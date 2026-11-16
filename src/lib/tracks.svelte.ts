@@ -48,9 +48,11 @@ import {
   matchTrack,
   nudgeDelay,
   pickAndAttachTrack,
+  pickSecondSub,
   player,
   resetDelay,
   roundDelay,
+  selectSecondSub,
   selectTrack as mpvSelectTrack,
   type Track,
   type TrackWish,
@@ -72,13 +74,15 @@ type PendingTracks = {
   path: string;
   audio?: TrackWish;
   sub?: TrackWish;
+  /// The second subtitle. Never shared with a room and never legacy-shaped.
+  sub2?: TrackWish;
   /// Legacy ids, exact in the file they were stored for.
   aid?: string;
   sid?: string;
   /// How good the match already acted on was, per kind. A better one can still
   /// turn up: external subtitles arrive a beat after `file-loaded`, and an .srt
   /// named like the episode should win over a generic embedded track.
-  applied: { audio: number; sub: number };
+  applied: { audio: number; sub: number; sub2: number };
   until: number;
 };
 
@@ -97,14 +101,26 @@ export function restoreTrackChoice() {
   const legacy = trackChoiceFor(player.filePath);
   const audio = trackWishFor(player.filePath, 'audio');
   const sub = trackWishFor(player.filePath, 'sub');
-  if (!legacy && !audio && !sub) return;
+  const sub2 = trackWishFor(player.filePath, 'sub2');
+  // `secondary-sid` survives a `loadfile` as an id (measured on 0.41), and an id
+  // means nothing in the next file — its #3 is whatever that file has as #3. So
+  // every file starts with the second slot empty, and only a remembered choice
+  // fills it again, by description, like the first.
+  if (!sub2) void command('set', ['secondary-sid', 'no']).catch(() => {});
+  // mpv never draws the second line itself — the web view does (see
+  // second-line.ts). Per file rather than once, because an `initialOptions`
+  // value is the one a viewer's mpv.conf overrides, and two copies of the line
+  // would be the result.
+  void command('set', ['secondary-sub-visibility', 'no']).catch(() => {});
+  if (!legacy && !audio && !sub && !sub2) return;
   pending = {
     path: player.filePath,
     audio: audio ?? undefined,
     sub: sub ?? undefined,
+    sub2: sub2 ?? undefined,
     aid: legacy?.aid,
     sid: legacy?.sid,
-    applied: { audio: 0, sub: 0 },
+    applied: { audio: 0, sub: 0, sub2: 0 },
     until: Date.now() + RESTORE_WINDOW_MS,
   };
   // Immediately, as well as reactively, and for two reasons. The race: `pending`
@@ -137,10 +153,38 @@ function applyPending(audioList: Track[], subList: Track[]) {
     pending = null;
     return;
   }
-  const audioScore = applySavedTrack('audio', want.audio, want.aid, audioList, want.applied.audio);
-  const subScore = applySavedTrack('sub', want.sub, want.sid, subList, want.applied.sub);
-  if (audioScore === want.applied.audio && subScore === want.applied.sub) return;
-  want.applied = { audio: audioScore ?? want.applied.audio, sub: subScore ?? want.applied.sub };
+  // The lists still describe the previous file until this one's are read, and
+  // a match against them acts on that file's flags: its second subtitle reads
+  // as "already in the slot", so the restore stood down and the next file
+  // opened without it. Only this file's own list is worth acting on.
+  if (player.tracksOf !== want.path) return;
+  const audioScore = applySavedTrack('aid', want.audio, want.aid, audioList, want.applied.audio);
+  const subScore = applySavedTrack('sid', want.sub, want.sid, subList, want.applied.sub);
+  // The second slot may not take the track the first one is getting: mpv would
+  // accept the id and show one subtitle where two were remembered. Which track
+  // that is comes from the same match the first slot just acted on, not from
+  // `selected`, which is stale until the list is read again.
+  const firstWish = want.sub && want.sub !== 'no' ? matchTrack(subList, want.sub)?.track : undefined;
+  const first = firstWish ?? subList.find((track) => track.selected);
+  const sub2Score = applySavedTrack(
+    'secondary-sid',
+    want.sub2,
+    undefined,
+    subList.filter((track) => track !== first),
+    want.applied.sub2,
+  );
+  if (
+    audioScore === want.applied.audio &&
+    subScore === want.applied.sub &&
+    sub2Score === want.applied.sub2
+  ) {
+    return;
+  }
+  want.applied = {
+    audio: audioScore ?? want.applied.audio,
+    sub: subScore ?? want.applied.sub,
+    sub2: sub2Score ?? want.applied.sub2,
+  };
   // The pending entry stays until its deadline: a better match can still arrive,
   // and a manual pick clears it in `selectTrack`.
   setTimeout(() => void loadTracks(), RELIST_MS);
@@ -155,13 +199,12 @@ function applyPending(audioList: Track[], subList: Track[]) {
  * choice stands.
  */
 function applySavedTrack(
-  kind: 'audio' | 'sub',
+  prop: 'aid' | 'sid' | 'secondary-sid',
   wish: TrackWish | undefined,
   legacyId: string | undefined,
   list: Track[],
   already: number,
 ): number | null {
-  const prop = kind === 'audio' ? 'aid' : 'sid';
   if (wish === 'no') {
     if (already > 0) return already;
     void command('set', [prop, 'no']).catch(() => {});
@@ -170,8 +213,17 @@ function applySavedTrack(
   if (wish) {
     const found = matchTrack(list, wish);
     if (!found || found.score <= already) return already || null;
-    if (!found.track.selected) {
-      void command('set', [prop, String(found.track.id)]).catch(() => {});
+    const second = prop === 'secondary-sid';
+    if (second ? !found.track.secondary : !found.track.selected) {
+      void (async () => {
+        // The main slot cannot take the second slot's track (mpv answers
+        // success and changes nothing), so a remembered main choice that the
+        // second slot is holding — a stale id from the previous file — frees it.
+        if (prop === 'sid' && found.track.secondary) {
+          await command('set', ['secondary-sid', 'no']).catch(() => {});
+        }
+        await command('set', [prop, String(found.track.id)]).catch(() => {});
+      })();
     }
     return found.score;
   }
@@ -224,6 +276,9 @@ export function selectTrack(kind: 'audio' | 'sub', track: Track | null) {
       : 'no'
     : null;
   if (player.filePath && wish) rememberTrack(player.filePath, kind, wish);
+  // Moved from the second slot to the first: the second is empty now, and the
+  // next episode should not bring the track back into both.
+  if (kind === 'sub' && track?.secondary && player.filePath) rememberTrack(player.filePath, 'sub2', 'no');
   // Told to the room only for the kinds the *room* shares — a rule the host
   // sets beside "only the host controls playback", not a preference each viewer
   // keeps. `wire.shares` answers in both directions, which is what stops two
@@ -280,6 +335,66 @@ export function cycleSubs(dir: 1 | -1) {
   selectTrack('sub', ring[(at + dir + ring.length) % ring.length]);
 }
 
+// ---- The second subtitle --------------------------------------------------
+//
+// A second track on screen at once — for somebody learning a language, the one
+// they know and the one they are learning. mpv draws it (`secondary-sid`) at the
+// top of the frame as plain text; what is ours is the choice, remembered like
+// the first one, and its delay. It is this window's alone: a television is sent
+// one subtitle, and a room shares the first one at most.
+
+class SecondSub {
+  /// The line is on screen. Ours, not mpv's `secondary-sub-visibility`: mpv is
+  /// kept from drawing the line at all (the web view draws it, see
+  /// second-line.ts), and the hotkey hides it without forgetting the track.
+  shown = $state(true);
+  /// This file's `secondary-sub-delay`. Ours rather than a mirror: nothing but
+  /// this module writes it, and every file gets an explicit value.
+  delay = $state(0);
+}
+
+export const secondSub = new SecondSub();
+
+/// The track in the second slot, if any.
+export function secondTrack(): Track | undefined {
+  return player.subTracks.find((track) => track.secondary);
+}
+
+/**
+ * A deliberate choice of the second subtitle, or of none. Remembered for the
+ * folder like the first, and cancels a restore still waiting — the same reason
+ * `selectTrack` does.
+ */
+export function selectSecondTrack(track: Track | null) {
+  pending = null;
+  void selectSecondSub(track);
+  if (track) secondSub.shown = true;
+  if (player.filePath) {
+    rememberTrack(player.filePath, 'sub2', track ? describeTrack(track, player.subTracks) : 'no');
+  }
+}
+
+/// Remember a second subtitle that arrived by a route other than the menu's
+/// list — a file added or downloaded straight into the slot.
+export function rememberSecondTrack(track: Track) {
+  pending = null;
+  if (player.filePath) rememberTrack(player.filePath, 'sub2', describeTrack(track, player.subTracks));
+}
+
+/**
+ * Show or hide the second line, from a key — the track stays chosen. A plain
+ * flip rather than mpv's `cycle`: the flag is ours, no event of mpv's writes
+ * it, so there is no stale mirror to guard against.
+ */
+export function toggleSecondSubs() {
+  if (!secondTrack()) {
+    showOsd(t('osd.sub2_none'));
+    return;
+  }
+  secondSub.shown = !secondSub.shown;
+  showOsd(secondSub.shown ? t('osd.sub2_shown') : t('osd.sub2_hidden'));
+}
+
 /// One step of the subtitle size, for this session: the settings sheet's
 /// slider is where a size is kept. The same range as that slider.
 export function nudgeSubScale(delta: number) {
@@ -312,15 +427,23 @@ export function followRoomTrack(kind: TrackKind, wish: TrackWish) {
     path: player.filePath,
     audio: kind === 'audio' ? wish : mine?.audio,
     sub: kind === 'sub' ? wish : mine?.sub,
+    sub2: mine?.sub2,
     aid: kind === 'audio' ? undefined : mine?.aid,
     sid: kind === 'sub' ? undefined : mine?.sid,
     applied: {
       audio: kind === 'audio' ? 0 : (mine?.applied.audio ?? 0),
       sub: kind === 'sub' ? 0 : (mine?.applied.sub ?? 0),
+      sub2: mine?.applied.sub2 ?? 0,
     },
     until: Date.now() + RESTORE_WINDOW_MS,
   };
   applyPending(player.audioTracks, player.subTracks);
+}
+
+/// Attach a subtitle file straight into the second slot, and remember it there.
+export async function addSecondSubFile() {
+  const track = await withFileDialog(() => pickSecondSub());
+  if (track) rememberSecondTrack(track);
 }
 
 /// Attach an external subtitle or audio file. The window dimming belongs to the
@@ -394,15 +517,30 @@ export function nudgeDelayHere(kind: 'sub' | 'audio', delta: number) {
   rememberDelaySoon(kind);
 }
 
+/// The second subtitle's delay. Written as a value rather than through `add`:
+/// it is ours alone (see `SecondSub.delay`), so there is no stale mirror to
+/// add to.
+export function nudgeSecondDelay(delta: number) {
+  if (!player.hasFile) return;
+  setSecondDelay(roundDelay(secondSub.delay + delta));
+}
+
+export function setSecondDelay(value: number) {
+  secondSub.delay = value;
+  void setProperty('secondary-sub-delay', value).catch(() => {});
+  showOsd(t('osd.sub2_delay', { value: (value > 0 ? '+' : '') + value.toFixed(2) }));
+  if (player.filePath) rememberDelay(player.filePath, 'sub2', value);
+}
+
 export function resetDelayHere(kind: 'sub' | 'audio') {
   resetDelay(kind, kind === 'audio' ? deviceInForce : 0);
   if (kind === 'audio') fileAudio.value = 0;
   if (player.filePath) rememberDelay(player.filePath, kind, 0);
 }
 
-/// mpv keeps `sub-delay`, `audio-delay` and `sub-speed` across a file change
-/// (all three measured), so a correction dialled in for one episode silently
-/// applies to the next. Every file therefore gets an explicit value for each —
+/// mpv keeps `sub-delay`, `audio-delay`, `sub-speed` and `secondary-sub-delay`
+/// across a file change (all four measured), so a correction dialled in for one
+/// episode silently applies to the next. Every file therefore gets an explicit value for each —
 /// its own, or the default — and the audio one has the device's offset added.
 export function applyTiming() {
   if (!player.filePath) return;
@@ -410,6 +548,8 @@ export function applyTiming() {
   deviceInForce = output.offset;
   fileAudio.value = saved.audio;
   void setProperty('sub-delay', saved.sub).catch(() => {});
+  secondSub.delay = saved.sub2;
+  void setProperty('secondary-sub-delay', saved.sub2).catch(() => {});
   void setProperty('audio-delay', saved.audio + deviceInForce).catch(() => {});
   void setProperty('sub-speed', subSpeedFor(player.filePath)).catch(() => {});
 }

@@ -64,14 +64,17 @@
       onDiagnose={(device) => void runDiagnosis(device)}
     />
   {:else if overlays.trackMenu}
-    <TrackMenu
-      kind={overlays.trackMenu}
-      close={() => (overlays.menu = null)}
-      onSelect={(k, tr) => { overlays.menu = null; selectTrack(k, tr); }}
-      onAddFile={(k) => void addTrackFile(k)}
-      onNudgeDelay={nudgeDelayHere}
-      onResetDelay={resetDelayHere}
-    />
+    <!-- Keyed so a menu opened on the other kind starts on its first page. -->
+    {#key overlays.trackMenu}
+      <TrackMenu
+        kind={overlays.trackMenu}
+        close={() => (overlays.menu = null)}
+        onSelect={(k, tr) => { overlays.menu = null; selectTrack(k, tr); }}
+        onAddFile={(k) => void addTrackFile(k)}
+        onNudgeDelay={nudgeDelayHere}
+        onResetDelay={resetDelayHere}
+      />
+    {/key}
   {/if}
 
   <SeekBar

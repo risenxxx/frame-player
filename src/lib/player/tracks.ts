@@ -92,7 +92,17 @@ export async function loadTracks() {
       }
       if (type !== 'audio' && type !== 'sub') continue;
       const id = (await getProperty(`${base}/id`, 'int64').catch(() => null)) ?? 0;
-      const selected = (await getProperty(`${base}/selected`, 'flag').catch(() => false)) ?? false;
+      const decoded = (await getProperty(`${base}/selected`, 'flag').catch(() => false)) ?? false;
+      // mpv calls the second subtitle `selected` too; which slot a track is in
+      // is `main-selection` — 0 for `sid`, 1 for `secondary-sid` (measured on
+      // 0.41). It is unavailable for a track the `lavfi-complex` graph took,
+      // which is the audio mix, and there every track counts as the main one.
+      const slot =
+        decoded && type === 'sub'
+          ? await getProperty(`${base}/main-selection`, 'int64').catch(() => null)
+          : null;
+      const secondary = slot === 1;
+      const selected = decoded && !secondary;
       const rawTitle = await getProperty(`${base}/title`, 'string').catch(() => null);
       const rawLang = await getProperty(`${base}/lang`, 'string').catch(() => null);
       // Closed captions carry no title and no language, so they used to show up
@@ -123,6 +133,7 @@ export async function loadTracks() {
       (type === 'audio' ? audio : subs).push({
         id,
         selected,
+        secondary,
         label,
         lang,
         title,
@@ -211,6 +222,11 @@ export function matchTrack(list: Track[], want: TrackDesc): { track: Track; scor
 
 export async function selectTrack(kind: 'audio' | 'sub', track: Track | null) {
   try {
+    // A track cannot be in both slots, and mpv answers a `sid` naming the
+    // second subtitle with success and no change (measured on 0.41). Picking
+    // it as the main one means the viewer wants it there, so the second slot
+    // gives it up first.
+    if (kind === 'sub' && track?.secondary) await command('set', ['secondary-sid', 'no']);
     // Through command('set', ...): mpv's string parser is guaranteed to
     // understand choice properties (aid/sid = number | "no" | "auto").
     await command('set', [kind === 'audio' ? 'aid' : 'sid', track ? String(track.id) : 'no']);
@@ -219,6 +235,48 @@ export async function selectTrack(kind: 'audio' | 'sub', track: Track | null) {
   } catch (e) {
     showOsd(t('osd.track_failed'));
     console.warn('selectTrack failed:', e);
+  }
+}
+
+/**
+ * The second subtitle: another track drawn at the same time, at the top of the
+ * frame (`secondary-sub-pos` 0, mpv's default) and as plain text
+ * (`secondary-sub-ass-override=strip`, mpv's default too, so it cannot fight
+ * the main track's styling).
+ *
+ * The main track is never offered for it — mpv would accept the id and draw
+ * nothing new — so the menu leaves it out rather than this refusing it.
+ */
+export async function selectSecondSub(track: Track | null) {
+  try {
+    await command('set', ['secondary-sid', track ? String(track.id) : 'no']);
+    showOsd(track ? t('osd.sub2_on', { track: track.label }) : t('osd.sub2_off'));
+    setTimeout(() => void loadTracks(), 200);
+  } catch (e) {
+    showOsd(t('osd.track_failed'));
+    console.warn('selectSecondSub failed:', e);
+  }
+}
+
+/**
+ * Add a subtitle file straight into the second slot. `sub-add … auto` adds it
+ * without taking the main slot, and its id is found again by its path: the
+ * command's result does not reach us (no node format, see `readList`).
+ */
+export async function attachSecondSub(path: string): Promise<boolean> {
+  try {
+    await command('sub-add', [path, 'auto']);
+    await loadTracks();
+    const added = [...player.subTracks].reverse().find((track) => track.path === path);
+    if (!added) return false;
+    await command('set', ['secondary-sid', String(added.id)]);
+    showOsd(t('osd.sub2_on', { track: added.label }));
+    setTimeout(() => void loadTracks(), 200);
+    return true;
+  } catch (e) {
+    showOsd(t('osd.track_failed'));
+    console.warn('attachSecondSub failed:', e);
+    return false;
   }
 }
 
@@ -271,4 +329,19 @@ export async function pickAndAttachTrack(kind: 'sub' | 'audio') {
   });
   const paths = Array.isArray(sel) ? sel : sel ? [sel] : [];
   for (const path of paths) await attachTrack(kind, path);
+}
+
+/** File picker for a subtitle to show in the second slot. One file: one slot. */
+export async function pickSecondSub(): Promise<Track | null> {
+  if (!player.hasFile) return null;
+  const sel = await open({
+    multiple: false,
+    filters: [
+      { name: t('dialog.subtitles'), extensions: SUBTITLE_EXTENSIONS },
+      { name: t('dialog.all_files'), extensions: ['*'] },
+    ],
+  });
+  const path = Array.isArray(sel) ? sel[0] : sel;
+  if (!path || !(await attachSecondSub(path))) return null;
+  return [...player.subTracks].reverse().find((track) => track.path === path) ?? null;
 }

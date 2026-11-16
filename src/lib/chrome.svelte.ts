@@ -102,6 +102,9 @@ class Chrome {
 
   /// Room for the centered title, measured from whichever side cluster is wider.
   barSide = $state(0);
+  /// The title bar's height in CSS pixels, as laid out (the mini player's is
+  /// shorter). The second subtitle is drawn under it while it is up.
+  topBarPx = $state(0);
   brandEl = $state<HTMLElement | null>(null);
   chromeEl = $state<HTMLElement | null>(null);
 

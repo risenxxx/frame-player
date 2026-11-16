@@ -23,9 +23,9 @@ import { forgetDownloadedSub, isDownloadedSub, rememberDownloadedSub } from '$li
 import { locale, t } from '$lib/i18n.svelte';
 import { languageName, openSubtitlesLanguages, parseLangList } from '$lib/languages';
 import { showOsd } from '$lib/osd.svelte';
-import { attachTrack, player, removeSubTrack, type Track } from '$lib/player.svelte';
+import { attachSecondSub, attachTrack, player, removeSubTrack, type Track } from '$lib/player.svelte';
 import { subSpeedFactor } from '$lib/sub-speed';
-import { setSubSpeedHere } from '$lib/tracks.svelte';
+import { rememberSecondTrack, setSubSpeedHere } from '$lib/tracks.svelte';
 
 export type SubHit = {
   file_id: number;
@@ -84,6 +84,11 @@ class Subs {
   /// The subtitle languages this viewer has asked for, read from mpv when the
   /// panel opens (see `openSubsDialog`).
   langPrefs = $state<string[]>([]);
+
+  /// Which slot a download goes into: the main one, or straight into the
+  /// second subtitle — opened from that page of the track menu, where "find"
+  /// means "find the other language".
+  slot = $state<'main' | 'second'>('main');
 
   /// The video's own frame rate, read once when the panel opens.
   ///
@@ -259,7 +264,8 @@ export async function removeSubtitle(track: Track) {
   showOsd(t('osd.sub_removed'));
 }
 
-export async function openSubsDialog() {
+export async function openSubsDialog(slot: 'main' | 'second' = 'main') {
+  subs.slot = slot;
   subs.fpsOffer = null;
   subs.error = null;
   subs.hits = null;
@@ -351,8 +357,17 @@ export async function downloadSub(hit: SubHit) {
     rememberDownloadedSub(result.path);
     // Straight through the same path a dropped .srt takes, so it is selected and
     // the track list refreshes without a second mechanism.
-    await attachTrack('sub', result.path);
-    subs.fpsOffer = fpsOfferFor(hit.fps);
+    if (subs.slot === 'second') {
+      if (await attachSecondSub(result.path)) {
+        const added = [...player.subTracks].reverse().find((track) => track.path === result.path);
+        if (added) rememberSecondTrack(added);
+      }
+    } else {
+      await attachTrack('sub', result.path);
+    }
+    // Not offered for the second slot: `sub-speed` is one option for both
+    // subtitles, and fitting the second would stretch the first out of sync.
+    subs.fpsOffer = subs.slot === 'second' ? null : fpsOfferFor(hit.fps);
     if (!subs.fpsOffer) subs.open = false;
   } catch (e) {
     console.warn('subtitle download failed:', e);

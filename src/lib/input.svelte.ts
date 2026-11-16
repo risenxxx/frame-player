@@ -56,7 +56,7 @@ import { ADJUST_KEY_STEP, nudgeAdjust, resetAdjust } from './picture-adjust.svel
 import { cycleUpscale } from './upscale.svelte';
 import { stepBy } from './step-engine.svelte';
 import { trashCurrentFile } from './trash';
-import { cycleSubs, nudgeDelayHere, nudgeSubScale, toggleSubs } from './tracks.svelte';
+import { cycleSubs, nudgeDelayHere, nudgeSubScale, toggleSecondSubs, toggleSubs } from './tracks.svelte';
 import { mini, toggleMini, windowPrefs } from './window-prefs.svelte';
 import { isZoomed, panBy, resetZoom, zoomAt } from './zoom.svelte';
 import { zoomStep } from './zoom-step';
@@ -509,6 +509,7 @@ export function runAction(id: ActionId) {
     case 'subs_toggle': toggleSubs(); break;
     case 'subs_next': cycleSubs(1); break;
     case 'subs_prev': cycleSubs(-1); break;
+    case 'subs2_toggle': toggleSecondSubs(); break;
     case 'sub_scale_up': nudgeSubScale(SUB_SCALE_STEP); break;
     case 'sub_scale_down': nudgeSubScale(-SUB_SCALE_STEP); break;
     case 'fullscreen': void toggleFullscreen(); break;

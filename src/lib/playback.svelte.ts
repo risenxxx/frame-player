@@ -121,7 +121,8 @@ export type Feature =
   | 'trash'
   | 'picture'
   | 'audioMix'
-  | 'leveling';
+  | 'leveling'
+  | 'secondSub';
 
 class Playback {
   /// The television owns playback and this window is a remote. False while
@@ -211,6 +212,8 @@ class Playback {
       audioMix: !cast.active,
       // A filter on the local decoder's output; the television decodes its own.
       leveling: !remote,
+      // Drawn by the local decoder: a television is sent one subtitle track.
+      secondSub: !remote,
     };
   }
 }
@@ -509,6 +512,7 @@ const CAST_BEHAVIOR: Record<ActionId, 'local' | Feature> = {
   subs_toggle: 'local',
   subs_next: 'local',
   subs_prev: 'local',
+  subs2_toggle: 'secondSub',
   sub_scale_up: 'delays',
   sub_scale_down: 'delays',
   fullscreen: 'local',
@@ -607,6 +611,7 @@ const SYNC_BEHAVIOR: Record<ActionId, 'shared' | 'personal' | 'solo'> = {
   subs_toggle: 'personal',
   subs_next: 'personal',
   subs_prev: 'personal',
+  subs2_toggle: 'personal',
   sub_scale_up: 'personal',
   sub_scale_down: 'personal',
   fullscreen: 'personal',

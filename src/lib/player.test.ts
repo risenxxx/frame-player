@@ -18,6 +18,7 @@ import { delayIsZero, matchTrack, roundDelay, skipKind, type Track } from './pla
 function track(p: Partial<Track> & { id: number }): Track {
   return {
     selected: false,
+    secondary: false,
     label: `track ${p.id}`,
     lang: null,
     title: null,

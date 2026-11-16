@@ -94,6 +94,7 @@ Frame Player, mpv, mpv.conf, FFmpeg, yt-dlp, OpenSubtitles, BitTorrent, DHT, MSE
 |---|---|---|
 | audio track | 音轨 | |
 | subtitles / subtitle track | 字幕 / 字幕轨 | |
+| second subtitles (a second track shown at once) | 第二字幕 | not 次字幕, which reads as "lesser" |
 | dub | 配音 | |
 | delay / later / earlier | 延迟 / 延后 / 提前 | |
 | hearing impaired (badge) | 听障字幕 | a bare adjective has no noun |

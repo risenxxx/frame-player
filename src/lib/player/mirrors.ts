@@ -66,6 +66,25 @@ export const OBSERVED = [
   // beside it. With no picture mpv's own drawing of it is under the web view's
   // audio screen, which therefore draws the line itself.
   ['sub-text', 'string', 'none'],
+  // The second subtitle as text. mpv is told not to draw it
+  // (`secondary-sub-visibility=no`, see initPlayer): it can only pin the line
+  // to the top edge of the frame, so the web view draws it instead
+  // (SecondSubLine.svelte). The text keeps coming while mpv's own drawing is
+  // off, and it follows `secondary-sub-delay` (both measured on 0.41).
+  ['secondary-sub-text', 'string', 'none'],
+  // The look of the subtitles, which that line copies so the two read as one
+  // pair: the settings sheet's sliders write these live, and the line follows
+  // while the sheet is see-through.
+  ['sub-font', 'string', 'none'],
+  ['sub-font-size', 'double', 'none'],
+  ['sub-bold', 'flag', 'none'],
+  ['sub-scale', 'double', 'none'],
+  ['sub-border-size', 'double', 'none'],
+  ['sub-border-style', 'string', 'none'],
+  ['sub-shadow-offset', 'double', 'none'],
+  ['sub-color', 'string', 'none'],
+  ['sub-border-color', 'string', 'none'],
+  ['sub-back-color', 'string', 'none'],
   // Picture geometry. Observed rather than read when the menu opens, so the
   // menu can tick the value that is actually in force — including one that came
   // from the user's own mpv.conf.
@@ -223,6 +242,21 @@ const RESYNC: Record<ObservedName, boolean> = {
   // Re-reported at the next line; a lost one leaves a line up a few seconds
   // too long.
   'sub-text': false,
+  // Swept: unlike the main line, nothing of mpv's is drawn under this one, so a
+  // lost change would leave a line of dialogue on screen until the next cue.
+  'secondary-sub-text': true,
+  // Rarely changed, and the next change of any of them is re-reported; a lost
+  // one leaves the second line a little unlike the first until then.
+  'sub-font': false,
+  'sub-font-size': false,
+  'sub-bold': false,
+  'sub-scale': false,
+  'sub-border-size': false,
+  'sub-border-style': false,
+  'sub-shadow-offset': false,
+  'sub-color': false,
+  'sub-border-color': false,
+  'sub-back-color': false,
   'dwidth': false,
   'dheight': false,
   // Set once per file and then stands, and what hangs off it is the shape the
@@ -381,6 +415,17 @@ export function applyProperty(ev: PropertyChange) {
     case 'chapter-list/count': void loadChapters(); break;
     case 'chapter': player.chapterIndex = ev.data ?? -1; break;
     case 'sub-text': player.subText = ev.data ?? ''; break;
+    case 'secondary-sub-text': player.secondSubText = ev.data ?? ''; break;
+    case 'sub-font': if (ev.data) player.subStyle.font = ev.data; break;
+    case 'sub-font-size': if (ev.data != null) player.subStyle.fontSize = ev.data; break;
+    case 'sub-bold': player.subStyle.bold = ev.data ?? false; break;
+    case 'sub-scale': if (ev.data != null) player.subStyle.scale = ev.data; break;
+    case 'sub-border-size': if (ev.data != null) player.subStyle.borderSize = ev.data; break;
+    case 'sub-border-style': if (ev.data) player.subStyle.borderStyle = ev.data; break;
+    case 'sub-shadow-offset': if (ev.data != null) player.subStyle.shadowOffset = ev.data; break;
+    case 'sub-color': if (ev.data) player.subStyle.color = ev.data; break;
+    case 'sub-border-color': if (ev.data) player.subStyle.borderColor = ev.data; break;
+    case 'sub-back-color': if (ev.data) player.subStyle.backColor = ev.data; break;
     case 'cache-buffering-state': player.cacheBuffering = ev.data; break;
     case 'paused-for-cache': player.stalled = ev.data ?? false; break;
     case 'ab-loop-a': player.loopA = parseAbPoint(ev.data); break;

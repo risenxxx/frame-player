@@ -132,6 +132,12 @@ export const ru = {
   'osd.audio_delay': 'Задержка звука: {value} с',
   'osd.device_offset': 'Сдвиг звука для «{device}»: {value} с',
   'osd.sub_added': 'Субтитры добавлены',
+  'osd.sub2_on': 'Вторые субтитры: {track}',
+  'osd.sub2_off': 'Вторые субтитры выключены',
+  'osd.sub2_none': 'Вторые субтитры не выбраны',
+  'osd.sub2_shown': 'Вторые субтитры показаны',
+  'osd.sub2_hidden': 'Вторые субтитры скрыты',
+  'osd.sub2_delay': 'Задержка вторых субтитров: {value} с',
   'osd.sub_removed': 'Субтитры убраны',
   'osd.sub_deleted': 'Субтитры убраны и файл удалён',
   'osd.audio_added': 'Аудиодорожка добавлена',
@@ -340,6 +346,7 @@ export const ru = {
   'torrent.delete_stuck': 'плеер не дождался ответа, перезапустите его',
 
   'subs.title': 'Поиск субтитров',
+  'subs.title_second': 'Поиск вторых субтитров',
   'subs.placeholder': 'Название фильма или сериала',
   'subs.episode_from_name': 'Из имени файла: сезон {season}, серия {episode} — учитывается в поиске.',
   'subs.search': 'Найти',
@@ -960,6 +967,7 @@ export const ru = {
   'keys.subs_prev': 'Предыдущие субтитры',
   'keys.subs_next': 'Следующие субтитры',
   'keys.subs_toggle': 'Субтитры вкл./выкл.',
+  'keys.subs2_toggle': 'Вторые субтитры: показать/скрыть',
   'keys.fullscreen': 'Полный экран',
   'keys.mini': 'Мини-плеер',
   'keys.info': 'Сведения о файле',
@@ -1100,6 +1108,8 @@ export const ru = {
   'osc.audio': 'Аудиодорожка',
   'osc.subs': 'Субтитры',
   'osc.subs_off': 'Выключены',
+  'osc.sub2': 'Вторые субтитры',
+  'osc.sub2_where': 'Показываются вверху кадра',
   /** The audio and subtitle buttons' tooltips once they carry a tag: what is
       playing, and where it sits among the file's tracks. */
   'osc.track_tip': '{label}: {track} ({n} из {total})',

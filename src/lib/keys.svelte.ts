@@ -73,6 +73,7 @@ export type ActionId =
   | 'subs_toggle'
   | 'subs_next'
   | 'subs_prev'
+  | 'subs2_toggle'
   | 'sub_scale_up'
   | 'sub_scale_down'
   | 'fullscreen'
@@ -194,6 +195,9 @@ export const ACTIONS: ActionDef[] = [
   { id: 'subs_toggle', group: 'subs', def: ['KeyV'], noRepeat: true, quiet: true },
   { id: 'subs_next', group: 'subs', def: ['shift+KeyV'], quiet: true },
   { id: 'subs_prev', group: 'subs', def: [], quiet: true },
+  // The second line hidden without forgetting its track — for a stretch of
+  // listening without the crib. Alt+V beside V, because it is V's companion.
+  { id: 'subs2_toggle', group: 'subs', def: ['alt+KeyV'], noRepeat: true, quiet: true },
   { id: 'sub_scale_up', group: 'subs', def: [], quiet: true },
   { id: 'sub_scale_down', group: 'subs', def: [], quiet: true },
 

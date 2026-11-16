@@ -21,7 +21,7 @@
   import { formatFps } from '$lib/tracks.svelte';
 </script>
 
-<Dialog title={t('subs.title')} variant="subs" onclose={() => (subs.open = false)}>
+<Dialog title={t(subs.slot === 'second' ? 'subs.title_second' : 'subs.title')} variant="subs" onclose={() => (subs.open = false)}>
   <div class="subs-query">
     <input
       class="link-input"

@@ -9,11 +9,17 @@
   import { SUB_SPEED_PRESETS, isPreset, isUnitSpeed, presetFactor } from '$lib/sub-speed';
   import { openSubsDialog, removeSubtitle } from '$lib/subs.svelte';
   import {
+    addSecondSubFile,
     audioMix,
     fileDelay,
     formatFps,
+    nudgeSecondDelay,
     presetLabel,
+    secondSub,
+    secondTrack,
+    selectSecondTrack,
     setAudioMulti,
+    setSecondDelay,
     setSubSpeedHere,
     subSpeedLabel,
     toggleMixTrack,
@@ -53,10 +59,86 @@
   /// selected (see tracks.svelte.ts).
   const multi = $derived(kind === 'audio' && audioMix.multi);
   const mixCount = $derived(multi ? audioMix.ticked.length : 0);
+
+  /// The second subtitle has a page of its own inside this menu rather than a
+  /// second list under the first: the subtitle menu already runs on into the
+  /// delay and the frame-rate stretch, and a second copy of every track would
+  /// push all of it past the panel's height. One row on the first page says
+  /// what is in the slot; the page holds the choice, its own delay and the two
+  /// ways of bringing a file into it.
+  let page = $state<'main' | 'second'>('main');
+  const second = $derived(kind === 'sub' && page === 'second');
+  const secondOn = $derived(kind === 'sub' ? secondTrack() : undefined);
+  /// The main track is not offered for the second slot: mpv would take the id
+  /// and draw the same line once.
+  const secondChoices = $derived(player.subTracks.filter((track) => !track.selected));
 </script>
 
 <div class="menu">
   <MenuBody>
+    {#if second}
+    <!-- Back to the first page, not to the overflow panel: this page is a
+         level inside the subtitle menu. The row is MenuBack's own markup. -->
+    <button class="menu-item back" onclick={() => (page = 'main')}>
+      <svg class="caret" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M10 3.5 5.5 8 10 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>{t('osc.subs')}</span>
+    </button>
+    <div class="menu-sep"></div>
+    <div class="menu-title">{t('osc.sub2')}</div>
+    {#each secondChoices as track (track.id)}
+      <button
+        class="menu-item"
+        class:sel={track.secondary}
+        onclick={() => { close(); selectSecondTrack(track); }}
+      >
+        {track.label}
+      </button>
+    {/each}
+    <button
+      class="menu-item"
+      class:sel={!secondOn}
+      onclick={() => { close(); selectSecondTrack(null); }}
+    >
+      {t('osc.subs_off')}
+    </button>
+    <!-- Where the line goes, said once: mpv draws it at the top of the frame,
+         and a viewer who picked it while looking at the bottom one would
+         otherwise think nothing happened. -->
+    <div class="cast-hint">{t('osc.sub2_where')}</div>
+    <div class="menu-sep"></div>
+    <button class="menu-item track-action" onclick={() => { close(); void addSecondSubFile(); }}>
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M8 3.5v9M3.5 8h9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      </svg>
+      <span>{t('osc.add_file')}</span>
+    </button>
+    <button class="menu-item track-action" onclick={() => { close(); void openSubsDialog('second'); }}>
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.6" />
+        <path d="M10.2 10.2 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      </svg>
+      <span>{t('subs.find')}</span>
+    </button>
+    <div class="menu-sep"></div>
+    <div class="menu-title">{t('osc.delay')}</div>
+    <!-- The first page's stepper, on `secondary-sub-delay`: the second
+         subtitle is usually another release's file, off by its own amount. -->
+    <div class="delayrow">
+      <button class="speedopt" aria-label="-0.1" onclick={() => nudgeSecondDelay(-DELAY_STEP)}>−</button>
+      <span class="delayval">{formatDelay(secondSub.delay)}</span>
+      <button class="speedopt" aria-label="+0.1" onclick={() => nudgeSecondDelay(DELAY_STEP)}>+</button>
+      <span class="delaysep"></span>
+      <button
+        class="speedopt delayreset"
+        disabled={delayIsZero(secondSub.delay)}
+        onclick={() => setSecondDelay(0)}
+      >
+        {t('osc.delay_reset')}
+      </button>
+    </div>
+    {:else}
     <MenuBack />
     <div class="menu-title" class:counted={mixCount > 1}>
       <span>{t(kind === 'audio' ? 'osc.audio' : 'osc.subs')}</span>
@@ -137,6 +219,18 @@
       >
         {t('osc.subs_off')}
       </button>
+      {#if playback.can.secondSub && player.subTracks.length}
+        <div class="menu-sep"></div>
+        <!-- A way in, not a choice: it opens the second page and stays a row
+             of this list, with what the slot holds as its value. -->
+        <button class="menu-item second-row" onclick={() => (page = 'second')}>
+          <span class="second-name">{t('osc.sub2')}</span>
+          <span class="second-value">{secondOn?.label ?? t('osc.subs_off')}</span>
+          <svg class="second-caret" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      {/if}
     {/if}
     <!-- The choices end here and the actions begin. They used to run on as one
          list of identical rows — "eng", "SDH • eng", "Off", "Add file…",
@@ -261,10 +355,53 @@
         <div class="menu-item sel">{subSpeedLabel(player.subSpeed)}</div>
       {/if}
     {/if}
+    {/if}
   </MenuBody>
 </div>
 
 <style>
+  /* MenuBack's row, which is scoped there: the same markup, the same rule. */
+  .menu-item.back {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #a8a8b3;
+  }
+
+  .menu-item.back .caret {
+    flex: none;
+  }
+
+  /* Name, the slot's value, a caret: the shape of the context menu's submenu
+     rows. Two classes against `.menu-item`'s `display: block`. The value is the
+     part that gives way when a long track name meets a narrow panel. */
+  .menu-item.second-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .second-name {
+    flex: none;
+  }
+
+  .second-value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+    color: #8f8f9c;
+  }
+
+  .second-caret {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    color: #8f8f9c;
+  }
+
   /* A speaker's name is the system's and can be long ("Колонка JBL Flip 5
      (Hands-Free)"); it is cut rather than allowed to widen the panel. */
   .device-title {

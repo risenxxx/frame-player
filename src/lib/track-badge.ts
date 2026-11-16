@@ -64,9 +64,16 @@ export function audioBadge(tracks: Track[], heard: number[] | null): TrackBadge 
 /// A subtitle that is on but names no language still has to read as on, so it
 /// falls back to its place in the list — in the accent, which keeps it apart
 /// from the count an "off" tag shows.
+///
+/// A second subtitle joins the first with a plus, `RU+EN`: the pair is the
+/// state worth seeing from the bar. Shown on its own while the first is off,
+/// because it is still on screen.
 export function subBadge(tracks: Track[]): TrackBadge | null {
   if (!tracks.length) return null;
-  const shown = tracks.find((t) => t.selected);
-  if (!shown) return { text: String(tracks.length), on: false };
-  return { text: trackTag(shown) ?? String(tracks.indexOf(shown) + 1), on: true };
+  const tag = (track: Track) => trackTag(track) ?? String(tracks.indexOf(track) + 1);
+  const shown = [tracks.find((t) => t.selected), tracks.find((t) => t.secondary)].filter(
+    (track): track is Track => !!track,
+  );
+  if (!shown.length) return { text: String(tracks.length), on: false };
+  return { text: shown.map(tag).join('+'), on: true };
 }

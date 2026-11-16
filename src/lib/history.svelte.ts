@@ -80,12 +80,19 @@ type TrackChoice = { aid?: string; sid?: string; ts: number };
 type TrackEntry = {
   audio?: TrackWish;
   sub?: TrackWish;
+  /// The second subtitle (`secondary-sid`). Remembered exactly like the first —
+  /// a description, per source and per folder — because a viewer learning a
+  /// language wants the pair back in the next episode, not one of them.
+  sub2?: TrackWish;
   /// Subtitle and audio delay, in seconds. Same store as the track choice
   /// because it answers the same question — "how does this file need to be
   /// played" — and has the same lifetime: a badly muxed rip needs its half
   /// second every time it is opened, long after the position is forgotten.
   subDelay?: number;
   audioDelay?: number;
+  /// `secondary-sub-delay`: the second subtitle is usually another release's
+  /// file and off by its own amount.
+  sub2Delay?: number;
   /// mpv's `sub-speed`: subtitle fps / video fps, for a subtitle made for a
   /// different frame rate. Here for the same reason as the delays, and per
   /// source for the same reason too.
@@ -397,7 +404,7 @@ function entriesSave(key: string, map: Record<string, TrackEntry>, limit: number
  * explicit picks get here — mirroring back whatever mpv auto-selected would
  * freeze it against later `alang`/`slang` changes for no benefit.
  */
-export function rememberTrack(path: string, kind: 'audio' | 'sub', wish: TrackWish) {
+export function rememberTrack(path: string, kind: 'audio' | 'sub' | 'sub2', wish: TrackWish) {
   if (isPrivatePath(path)) return;
   const scopes: [string, string, number][] = [[TRACKS_KEY, sourceId(path), 300]];
   const folder = folderScopeKey(path);
@@ -414,11 +421,11 @@ export function rememberTrack(path: string, kind: 'audio' | 'sub', wish: TrackWi
  * a mux error belongs to one file, and applying one episode's correction to
  * the next would be inventing a fault the next one may not have.
  */
-export function rememberDelay(path: string, kind: 'sub' | 'audio', seconds: number) {
+export function rememberDelay(path: string, kind: 'sub' | 'audio' | 'sub2', seconds: number) {
   if (isPrivatePath(path)) return;
   const map = entriesLoad(TRACKS_KEY);
   const id = sourceId(path);
-  const field = kind === 'sub' ? 'subDelay' : 'audioDelay';
+  const field = kind === 'sub' ? 'subDelay' : kind === 'sub2' ? 'sub2Delay' : 'audioDelay';
   const entry: TrackEntry = { ...map[id], ts: Date.now() };
   // Zero is the default, so it is stored as "nothing to say" rather than as a
   // value — otherwise resetting a delay would leave a record behind for ever.
@@ -431,10 +438,10 @@ export function rememberDelay(path: string, kind: 'sub' | 'audio', seconds: numb
 /// Delays recorded for this source, zero meaning none. Zero is also what must
 /// be applied when there is no record: mpv keeps `sub-delay` across a file
 /// change (measured), so an unset one is the previous file's still in force.
-export function delaysFor(path: string): { sub: number; audio: number } {
-  if (isPrivatePath(path)) return { sub: 0, audio: 0 };
+export function delaysFor(path: string): { sub: number; audio: number; sub2: number } {
+  if (isPrivatePath(path)) return { sub: 0, audio: 0, sub2: 0 };
   const entry = entriesLoad(TRACKS_KEY)[sourceId(path)];
-  return { sub: entry?.subDelay ?? 0, audio: entry?.audioDelay ?? 0 };
+  return { sub: entry?.subDelay ?? 0, audio: entry?.audioDelay ?? 0, sub2: entry?.sub2Delay ?? 0 };
 }
 
 /// Record the subtitle stretch chosen for this source. 1 deletes the record,
@@ -604,7 +611,7 @@ export function writeUpscale(path: string, scope: UpscaleScope, value: UpscaleMo
 
 /// What to look for in this file: what was picked here before, or failing that
 /// what was picked in this folder.
-export function trackWishFor(path: string, kind: 'audio' | 'sub'): TrackWish | null {
+export function trackWishFor(path: string, kind: 'audio' | 'sub' | 'sub2'): TrackWish | null {
   if (isPrivatePath(path)) return null;
   const own = entriesLoad(TRACKS_KEY)[sourceId(path)]?.[kind];
   if (own) return own;

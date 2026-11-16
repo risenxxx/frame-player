@@ -5,12 +5,19 @@
  */
 
 import { displayName } from '../format';
+import { SUB_STYLE_DEFAULTS, type SubStyle } from '../second-line';
 import type { OsdBox } from '../upscale-plan';
 import type { DecodedPicture } from '../window-fit';
 
 export interface Track {
   id: number;
+  /// The track in the main slot — `sid` for subtitles. **Not** mpv's own
+  /// `selected`, which is also true of the track in `secondary-sid`: two
+  /// subtitles on screen read as two selected tracks, and every tick and tag
+  /// keyed on the flag would have shown both as "the" subtitle.
   selected: boolean;
+  /// Subtitles only: the track shown in the second slot (`secondary-sid`).
+  secondary: boolean;
   label: string;
   /// Raw fields, kept alongside the label because they are what identifies
   /// "the same track" in a DIFFERENT file — see TrackDesc.
@@ -140,6 +147,12 @@ class Player {
   /// screen reads it — over a picture mpv draws subtitles itself, but with no
   /// picture its drawing is under the web view's own screen.
   subText = $state('');
+  /// The second subtitle's current line (`secondary-sub-text`), drawn by the
+  /// web view rather than by mpv — see SecondSubLine.svelte.
+  secondSubText = $state('');
+  /// mpv's subtitle look, mirrored for that line. mpv's defaults (0.41) until
+  /// the first report.
+  subStyle = $state<SubStyle>({ ...SUB_STYLE_DEFAULTS });
 
   /// Fill of the network cache, 0..100, or null when there is no cache — which
   /// is the normal state for a local file.

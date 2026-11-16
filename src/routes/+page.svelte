@@ -25,6 +25,7 @@
   import QueueMenu from '$lib/components/QueueMenu.svelte';
   import ChapterMenu from '$lib/components/ChapterMenu.svelte';
   import CastMenu from '$lib/components/CastMenu.svelte';
+  import SecondSubLine from '$lib/components/SecondSubLine.svelte';
   import TrackMenu from '$lib/components/TrackMenu.svelte';
   import SeekBar from '$lib/components/SeekBar.svelte';
   import Controls from '$lib/components/Controls.svelte';
@@ -378,6 +379,10 @@
   {/if}
 
   <StepOverlay visible={step.on} pts={step.pts} bind:canvas={step.canvas} />
+
+  {#if player.hasFile && !audioScreen.on && !endOfFile.shown}
+    <SecondSubLine />
+  {/if}
 
   <TopBar
     idle={chrome.idle}

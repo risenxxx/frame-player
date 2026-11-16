@@ -8,6 +8,7 @@
   /// have reached this element from there; they arrive as props and are written
   /// on the bar itself.
   import type { Snippet } from 'svelte';
+  import { chrome } from '$lib/chrome.svelte';
   import { t } from '$lib/i18n.svelte';
   import { withKey } from '$lib/keys.svelte';
   import { faded } from '$lib/faded.svelte';
@@ -144,6 +145,7 @@
 
 <div
   class="topbar"
+  bind:offsetHeight={chrome.topBarPx}
   class:hidden={idle}
   class:gone={barGone.on}
   class:mini

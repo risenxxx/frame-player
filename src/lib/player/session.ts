@@ -131,6 +131,10 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
     // the video. Releases that keep subtitles in a `Subs/` subfolder, or name
     // them `<movie>.rus.srt`, therefore showed none at all.
     'sub-auto': 'fuzzy',
+    // The second subtitle is drawn by the web view, not by mpv, which can only
+    // pin it to the frame's top edge (second-line.ts). mpv still selects it and
+    // times it, and reports the text as `secondary-sub-text`.
+    'secondary-sub-visibility': 'no',
     // A path list, so the separator is the platform's own. Only the floor:
     // `pointAtExternalTracks` widens it per folder before each file opens.
     'sub-file-paths': SUB_DIRS.join(PATH_LIST_SEP),

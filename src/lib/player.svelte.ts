@@ -80,13 +80,16 @@ export {
   type PictureProp,
 } from './player/commands';
 export {
+  attachSecondSub,
   attachTrack,
   describeTrack,
   loadTracks,
   matchTrack,
   pickAndAttachTrack,
+  pickSecondSub,
   readList,
   removeSubTrack,
+  selectSecondSub,
   selectTrack,
   type TrackDesc,
   type TrackWish,
