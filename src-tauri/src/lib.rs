@@ -49,15 +49,29 @@ pub const DEEP_LINK_SCHEME: &str = "frameplayer";
 
 const OPEN_FILE_EVENT: &str = "frameplayer://open-file";
 
-/// CLI arguments that are existing files — video paths from "Open with"
-/// (Windows/Linux; several selected files arrive as several arguments and
-/// become a playlist).
+/// CLI arguments to open — video paths from "Open with" (Windows/Linux;
+/// several selected files arrive as several arguments and become a playlist),
+/// and `http(s)` stream links from a program that starts the player as its
+/// external one (a media centre handing over a TorrServer stream, say). A link
+/// is opened rather than offered, unlike a `magnet:`: no scheme of ours routes
+/// `http` here, so only a local program can have put it in argv.
 fn pick_file_args(args: &[String]) -> Vec<String> {
     args.iter()
         .skip(1)
-        .filter(|a| !a.starts_with('-') && std::path::Path::new(a.as_str()).exists())
+        .filter(|a| {
+            is_stream_arg(a)
+                || (!a.starts_with('-') && std::path::Path::new(a.as_str()).exists())
+        })
         .cloned()
         .collect()
+}
+
+/// Whether an argument is an `http://` or `https://` link.
+fn is_stream_arg(arg: &str) -> bool {
+    ["http://", "https://"].iter().any(|scheme| {
+        arg.get(..scheme.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
+    })
 }
 
 /// Buffer for files that arrive before the frontend subscribes to
@@ -1314,7 +1328,7 @@ pub fn run() {
             // macOS the same link is an Apple Event and the deep-link plugin
             // picks it up itself, so this half is Windows-shaped by nature —
             // `pick_file_args` above already ignores it, since it keeps only
-            // arguments that exist on disk.
+            // arguments that exist on disk and `http(s)` links.
             deliver_deep_links(app, &args);
         }));
     }
@@ -1614,4 +1628,44 @@ pub fn run() {
             deliver_files(_app, paths);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn argv(rest: &[&str]) -> Vec<String> {
+        std::iter::once("frame-player.exe")
+            .chain(rest.iter().copied())
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn stream_links_are_picked_beside_files() {
+        let picked = pick_file_args(&argv(&[
+            "HTTP://127.0.0.1:8090/stream/video.mkv?link=abc&play",
+            "https://example.com/a.m3u8",
+            "--after-update=1",
+            "magnet:?xt=urn:btih:abc",
+            "frameplayer://join/abc",
+            "ftp://example.com/a.mkv",
+            "no-such-file.mkv",
+        ]));
+        assert_eq!(
+            picked,
+            [
+                "HTTP://127.0.0.1:8090/stream/video.mkv?link=abc&play",
+                "https://example.com/a.m3u8",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_scheme_alone_is_not_a_link() {
+        assert!(!is_stream_arg("http"));
+        assert!(!is_stream_arg("http:/x"));
+        assert!(!is_stream_arg("путь"));
+        assert!(is_stream_arg("http://x"));
+    }
 }
