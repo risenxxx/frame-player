@@ -1,7 +1,7 @@
 # Subtitles drawn by the interface
 
 In 1.47 the second subtitle was drawn by the web view rather than by mpv; it
-has since moved to mpv's OSD (`secondsub.lua`, see "The second line on mpv's
+has since moved to mpv's OSD (`sublines.lua`, see "The second line on mpv's
 OSD" below). This note answers the question that followed the first move: should the main subtitles move there too, how would a saved frame
 keep them, what would it cost, and does it make dragging subtitles — as on
 YouTube, with a grab cursor over the line — easier. Nothing here is built; it
@@ -135,9 +135,9 @@ was asked for), and the browser's bidi and fallback handling.
 Built after this note, and the answer to the second line's memory and resize
 costs without giving up its margin. mpv's subtitle renderer still selects and
 times the track (`secondary-sub-visibility=no`, `secondary-sub-text`), and
-`src-tauri/lua/secondsub.lua` draws the text as an `ass-events` OSD overlay,
+`src-tauri/lua/sublines.lua` draws the text as an `ass-events` OSD overlay,
 `{\an8\pos(x,y)}` — anchored at its top, so the margin is ours. The player
-sends only where (`script-message-to secondsub place <shown> <top> <x>`).
+sends only where (`script-message-to sublines place <shown> <top> <x>`).
 
 **The look is mpv's OSD style, copied from the subtitle style.** An external
 overlay's events use the "OSD" style built from the `osd-*` options
@@ -190,15 +190,27 @@ What else changed: the line moves with the picture during a live resize (it is
 mpv's drawing), and it jumps rather than glides when the bars come and go —
 mpv has no animation for an overlay, the main line's lift jumps for the same
 reason. Frame export still carries only the main line: an overlay is not in
-`screenshot-to-file … subtitles`. Dragging becomes two-dimensional without the
-web view drawing anything, since `\pos` takes an x as well.
+`screenshot-to-file … subtitles`.
+
+**Dragging it was built next**, two-dimensional without the web view drawing
+the line, since `\pos` takes an x as well. The script measures what it drew
+(the overlay's `compute_bounds`) and publishes it as `user-data/sublines/second`;
+the page lays an invisible handle over that box only while the bars are up.
+Driven in the app with pointer events on the handle (dev build, 1137×640 CSS
+px): a move of (−200, +150) px moved the centre by exactly −200/1137 and the
+box by 150 px; a drag ending 8 px off the middle landed on x = 0.5 with the
+guide up; a drag into the lower half switched the line to its bottom edge, and
+with the bars up it stood on the control bar. The rules it keeps are in the
+second-subtitle line of `docs/rules/tracks-and-subtitles.md`.
 
 ## Recommendation
 
 1. Vertical drag over mpv's own drawing — small, none of the costs above, and it
-   covers the usual reason to move subtitles (burnt-in text, a face). The
-   second line, now on mpv's OSD, can be dragged in both directions the same
-   way: a hit box in the web view, the position sent to `secondsub.lua`.
+   covers the usual reason to move subtitles (burnt-in text, a face). **Built**
+   for plain-text tracks: `sublines.lua` measures where libass put the line, a
+   handle is laid over it, and the drag writes `sub-pos`; the lift became a
+   ceiling on the way (see the lift line in `docs/rules/tracks-and-subtitles.md`).
+   The second line, on mpv's OSD, is dragged in both directions the same way.
 2. Canvas composition for frame export, so the second line is in saved frames.
 3. Plain-text tracks in the web view only if free 2D dragging or click-to-look-up
    is wanted, and only after measuring WebKit's memory on a real film.

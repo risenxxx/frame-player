@@ -206,10 +206,10 @@ export async function boot() {
   // drawing of the line could only pin it to the frame's edge, and a build
   // without Lua has already lost the zoom above.
   try {
-    await command('load-script', [await join(await resourceDir(), 'lua', 'secondsub.lua')]);
+    await command('load-script', [await join(await resourceDir(), 'lua', 'sublines.lua')]);
     secondSub.drawer = true;
   } catch (e) {
-    console.warn('secondsub.lua not loaded, no second subtitle:', e);
+    console.warn('sublines.lua not loaded, no second subtitle:', e);
   }
   initUpscale(await join(await resourceDir(), 'shaders'));
 

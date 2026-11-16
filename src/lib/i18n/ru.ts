@@ -1109,7 +1109,9 @@ export const ru = {
   'osc.subs': 'Субтитры',
   'osc.subs_off': 'Выключены',
   'osc.sub2': 'Вторые субтитры',
-  'osc.sub2_where': 'Показываются вверху кадра',
+  'osc.sub2_where': 'Вверху кадра — их можно перетащить мышью',
+  'osc.sub2_moved': 'Там, куда вы их перетащили',
+  'osc.sub2_place_reset': 'Вернуть наверх',
   /** The audio and subtitle buttons' tooltips once they carry a tag: what is
       playing, and where it sits among the file's tracks. */
   'osc.track_tip': '{label}: {track} ({n} из {total})',

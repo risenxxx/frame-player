@@ -66,6 +66,14 @@ export const OBSERVED = [
   // beside it. With no picture mpv's own drawing of it is under the web view's
   // audio screen, which therefore draws the line itself.
   ['sub-text', 'string', 'none'],
+  // Where sublines.lua drew the second subtitle, as fractions of the window
+  // ("x0 y0 x1 y1", "" while nothing is drawn): the grab handle is put over
+  // it. One report per cue, and none while the line does not change.
+  ['user-data/sublines/second', 'string', 'none'],
+  // Where the main line is, measured by the same script for a plain-text track
+  // ("x0 y0 x1 y1 pos range", see sublines.lua): mpv draws it, the handle
+  // that moves it is ours.
+  ['user-data/sublines/main', 'string', 'none'],
   // Picture geometry. Observed rather than read when the menu opens, so the
   // menu can tick the value that is actually in force — including one that came
   // from the user's own mpv.conf.
@@ -223,6 +231,9 @@ const RESYNC: Record<ObservedName, boolean> = {
   // Re-reported at the next line; a lost one leaves a line up a few seconds
   // too long.
   'sub-text': false,
+  // The next cue reports it again; until then the handle is over the old box.
+  'user-data/sublines/second': false,
+  'user-data/sublines/main': false,
   'dwidth': false,
   'dheight': false,
   // Set once per file and then stands, and what hangs off it is the shape the
@@ -381,6 +392,8 @@ export function applyProperty(ev: PropertyChange) {
     case 'chapter-list/count': void loadChapters(); break;
     case 'chapter': player.chapterIndex = ev.data ?? -1; break;
     case 'sub-text': player.subText = ev.data ?? ''; break;
+    case 'user-data/sublines/second': player.secondBox = ev.data ?? ''; break;
+    case 'user-data/sublines/main': player.mainBox = ev.data ?? ''; break;
     case 'cache-buffering-state': player.cacheBuffering = ev.data; break;
     case 'paused-for-cache': player.stalled = ev.data ?? false; break;
     case 'ab-loop-a': player.loopA = parseAbPoint(ev.data); break;

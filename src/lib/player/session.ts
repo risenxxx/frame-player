@@ -131,7 +131,7 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
     // the video. Releases that keep subtitles in a `Subs/` subfolder, or name
     // them `<movie>.rus.srt`, therefore showed none at all.
     'sub-auto': 'fuzzy',
-    // The second subtitle is drawn by secondsub.lua on mpv's OSD, not by the
+    // The second subtitle is drawn by sublines.lua on mpv's OSD, not by the
     // subtitle renderer, which can only pin it to the frame's top edge
     // (second-line.ts). mpv still selects it and times it, and reports the
     // text as `secondary-sub-text`, which the script draws.

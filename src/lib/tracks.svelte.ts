@@ -41,6 +41,7 @@ import {
 import { onDeviceOffset, output } from './audio-output.svelte';
 import { locale, t } from './i18n.svelte';
 import { showOsd } from './osd.svelte';
+import { validPlace, type LinePlace } from './second-line';
 import { SUB_SPEED_PRESETS, isPreset, isUnitSpeed, type SubSpeedPreset } from './sub-speed';
 import {
   describeTrack,
@@ -107,7 +108,7 @@ export function restoreTrackChoice() {
   // every file starts with the second slot empty, and only a remembered choice
   // fills it again, by description, like the first.
   if (!sub2) void command('set', ['secondary-sid', 'no']).catch(() => {});
-  // mpv's subtitle renderer never draws the second line — secondsub.lua
+  // mpv's subtitle renderer never draws the second line — sublines.lua
   // does, on mpv's OSD (see second-line.ts). Per file rather than once, because an `initialOptions`
   // value is the one a viewer's mpv.conf overrides, and two copies of the line
   // would be the result.
@@ -339,25 +340,51 @@ export function cycleSubs(dir: 1 | -1) {
 //
 // A second track on screen at once — for somebody learning a language, the one
 // they know and the one they are learning. mpv selects and times it
-// (`secondary-sid`) and secondsub.lua draws it at the top of the frame as plain
+// (`secondary-sid`) and sublines.lua draws it at the top of the frame as plain
 // text; what is ours is the choice, remembered like the first one, its delay
 // and where the line sits. It is this window's alone: a television is sent
 // one subtitle, and a room shares the first one at most.
 
 class SecondSub {
   /// The line is on screen. Ours, not mpv's `secondary-sub-visibility`: mpv's
-  /// own drawing of the line is off for good (secondsub.lua draws it, see
+  /// own drawing of the line is off for good (sublines.lua draws it, see
   /// second-line.ts), and the hotkey hides it without forgetting the track.
   shown = $state(true);
-  /// secondsub.lua is loaded into mpv, so a message to it lands. Until then
+  /// sublines.lua is loaded into mpv, so a message to it lands. Until then
   /// (and for good if the build cannot load it) nothing draws the line.
   drawer = $state(false);
   /// This file's `secondary-sub-delay`. Ours rather than a mirror: nothing but
   /// this module writes it, and every file gets an explicit value.
   delay = $state(0);
+  /// Where the viewer dragged the line, or null for the default place (the top,
+  /// at mpv's subtitle margin). One for every file: where a second subtitle
+  /// reads well is about the viewer and the screen, not the film.
+  place = $state<LinePlace | null>(loadPlace());
+}
+
+const PLACE_KEY = 'frameplayer.sub2Place';
+
+function loadPlace(): LinePlace | null {
+  try {
+    const raw = localStorage.getItem(PLACE_KEY);
+    return raw ? validPlace(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
 }
 
 export const secondSub = new SecondSub();
+
+/// Keep the line where the viewer put it, or (null) send it back to the top.
+export function setSecondPlace(place: LinePlace | null) {
+  secondSub.place = place;
+  try {
+    if (place) localStorage.setItem(PLACE_KEY, JSON.stringify(place));
+    else localStorage.removeItem(PLACE_KEY);
+  } catch {
+    // the place simply will not survive a restart
+  }
+}
 
 /// The track in the second slot, if any.
 export function secondTrack(): Track | undefined {

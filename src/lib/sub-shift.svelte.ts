@@ -13,11 +13,15 @@
  * base at all, but nothing here has established that it survives ASS override,
  * and being wrong about it is silent — the subtitles simply do not move.
  *
- * What the lift has to be is the bar's height *minus where the subtitle already
- * sits*: mpv holds it `sub-margin-y` above the bottom edge, which is 33 px in a
- * 1080p window and scales with it. Adding a clearance to a clearance is what
- * left a whole scrim's height of empty picture between the text and the
- * controls, so that margin is read from mpv and subtracted (see the constant).
+ * The lift is a **ceiling**, not a distance: while the bar is up the subtitles
+ * may sit no lower than where their line box ends `SUB_GAP` above it, and
+ * anywhere higher they stay put (`liftCeiling` in main-line.ts, from libass's
+ * own placement — measured exact to 2 px). It used to be a fixed shift worked
+ * out for a line at the bottom, which also lifted a line the viewer had put in
+ * the middle of the picture, where no bar was covering it. The margin mpv
+ * already keeps (`sub-margin-y`, 34 on 0.41, scaled with the window) is read
+ * from mpv rather than assumed: adding a clearance to a clearance is what once
+ * left a whole scrim's height of empty picture between the text and the bar.
  *
  * Two things follow from `sub-pos` being the viewer's own setting as well as
  * ours. The base is **re-read from mpv on every apply** rather than remembered
@@ -36,7 +40,10 @@
 
 import { command, getProperty } from 'tauri-plugin-libmpv-api';
 
+import { invoke } from '@tauri-apps/api/core';
+
 import { chrome } from './chrome.svelte';
+import { DEFAULT_SUB_MARGIN_Y, liftCeiling } from './main-line';
 import { player } from './player.svelte';
 
 /// mpv's own default, and the value assumed when it declines to answer.
@@ -52,24 +59,6 @@ const DEFAULT_SUB_POS = 100;
 /// scrim as well would mean giving up 44 px more, and that is the gap this
 /// number was corrected down from.
 const SUB_GAP = 8;
-
-/// mpv's own bottom margin for subtitles, and the height it is expressed
-/// against. `sub-margin-y` is in "scaled pixels" — 1/720 of the window — so the
-/// subtitle already rests 33 px above the bottom edge of a 1080p window and
-/// 66 px of a 4K one.
-///
-/// Subtracting it is what makes the lift land where it says it does: without it
-/// the two clearances add, which put the subtitles a whole scrim's height above
-/// the bar. It has to be read rather than assumed to be 22, because it is an
-/// option the viewer's own mpv.conf may set — and it cannot be a constant in
-/// pixels at all, since it scales with the window.
-///
-/// One thing it is only an estimate of: an ASS subtitle takes its margin from
-/// its own style rather than from this option, and a script that sets one far
-/// from mpv's default will sit correspondingly off. Both are in the same 10–30
-/// range at the same 720 reference, which is why the estimate is worth making.
-const DEFAULT_SUB_MARGIN_Y = 22;
-const MARGIN_REFERENCE_H = 720;
 
 /// Smallest change worth a property write. A window resize drags the measured
 /// percentage around continuously, and each write re-renders the subtitle on
@@ -102,26 +91,29 @@ class SubShift {
   barPx = $state(0);
   windowPx = $state(0);
 
-  /// mpv's `sub-margin-y`, read once the player is up. Until then its default,
-  /// which is also what a refusal leaves in place.
+  /// mpv's `sub-margin-y`, in 720-high units, read once the player is up.
+  /// Until then its default, which is also what a refusal leaves in place.
   marginY = $state(DEFAULT_SUB_MARGIN_Y);
 
-  /// How far the subtitles are lifted, in percent of window height. Zero means
-  /// mpv holds the viewer's own value and nothing of ours is in force.
-  lift = $derived.by(() => {
-    if (!this.enabled) return 0;
-    if (!this.oscEl || !this.barPx || !this.windowPx) return 0;
+  /// While the pointer is over the main line or drags it (MainSubLine.svelte):
+  /// the ceiling in force when it arrived. The pointer raises the bar, the bar
+  /// would move the line out from under the pointer, and the line would then
+  /// flicker between the two places.
+  held = $state<{ ceiling: number | null } | null>(null);
+
+  /// The lowest the subtitles may sit, as a `sub-pos`, or null when nothing of
+  /// ours is in force and mpv holds the viewer's own value.
+  ceiling = $derived.by((): number | null => {
+    if (this.held) return this.held.ceiling;
+    if (!this.enabled) return null;
+    if (!this.oscEl || !this.barPx || !this.windowPx) return null;
     // The bar is faded out and no longer covers anything.
-    if (chrome.idle) return 0;
+    if (chrome.idle) return null;
     // A dialog dims the window and owns the screen; the bar behind it is not
     // covering anything the viewer is reading, and standing down here is what
     // keeps the settings slider writing against an unshifted `sub-pos`.
-    if (chrome.sheetOpen || chrome.fileDialogOpen) return 0;
-    // What the subtitle has to clear is the bar *beyond* where it already sits.
-    const margin = (this.marginY * this.windowPx) / MARGIN_REFERENCE_H;
-    const cover = this.barPx + SUB_GAP - margin;
-    if (cover <= 0) return 0;
-    return (cover / this.windowPx) * 100;
+    if (chrome.sheetOpen || chrome.fileDialogOpen) return null;
+    return liftCeiling(this.windowPx, this.barPx, this.marginY, SUB_GAP);
   });
 }
 
@@ -139,21 +131,23 @@ export function setSubLift(on: boolean) {
 /// The viewer's own `sub-pos` while ours is in force, and null the rest of the
 /// time — which is also the flag for "nothing to restore".
 let base: number | null = null;
-/// The lift last handed to `setLift`, whether or not its write has landed yet.
-let applied = 0;
+/// The ceiling last handed to `setCeiling`, whether or not its write has landed
+/// yet; `undefined` forces the next one through.
+let applied: number | null | undefined = null;
 /// Writes are serialized: restoring the base and reading it back are the same
 /// property, so a restore still in flight would otherwise be read as the base
 /// by the apply that follows it, and the shift would compound.
 let chain: Promise<unknown> = Promise.resolve();
 
-function setLift(lift: number) {
-  if (Math.abs(lift - applied) < MIN_STEP) return;
-  applied = lift;
-  chain = chain.then(() => write(lift)).catch(() => {});
+function setCeiling(ceiling: number | null) {
+  if (ceiling === applied) return;
+  if (ceiling !== null && typeof applied === 'number' && Math.abs(ceiling - applied) < MIN_STEP) return;
+  applied = ceiling;
+  chain = chain.then(() => write(ceiling)).catch(() => {});
 }
 
-async function write(lift: number) {
-  if (lift === 0) {
+async function write(ceiling: number | null) {
+  if (ceiling === null) {
     const previous = base;
     base = null;
     if (previous !== null) await command('set', ['sub-pos', String(previous)]);
@@ -163,10 +157,43 @@ async function write(lift: number) {
     const value = await getProperty('sub-pos', 'double').catch(() => null);
     base = typeof value === 'number' ? value : DEFAULT_SUB_POS;
   }
-  // mpv's own range. A viewer who has pushed the subtitles down past the frame
-  // still gets them lifted, and a small window cannot drive the value negative.
-  const pos = Math.min(150, Math.max(0, base - lift));
-  await command('set', ['sub-pos', String(pos)]);
+  // A line the viewer put higher than the bar reaches stays where it is; one
+  // pushed down past the frame comes up like any other.
+  await command('set', ['sub-pos', String(Math.min(base, ceiling))]);
+}
+
+/// Hold the subtitles where they are while the pointer is over the main line,
+/// and let the bar have its say again when it leaves.
+export function holdSubtitles(on: boolean) {
+  if (on) {
+    subShift.held = { ceiling: subShift.ceiling };
+    return;
+  }
+  subShift.held = null;
+  // The ceiling may come back as the same number it was held at, which no
+  // effect would see as a change — but the line may have been dragged under it.
+  applied = undefined;
+  setCeiling(subShift.ceiling);
+}
+
+/// The viewer moved the subtitles: `pos` is where they are now, and where they
+/// stay once the bar is gone — the base the ceiling is applied to.
+export function moveSubtitles(pos: number) {
+  chain = chain
+    .then(async () => {
+      if (base !== null) base = pos;
+      await command('set', ['sub-pos', String(pos)]);
+    })
+    .catch(() => {});
+}
+
+/// …and, once a drag is over, kept: in mpv.conf, where the settings slider
+/// keeps the same value, so the slider shows it next time and it outlives the
+/// session.
+export function keepSubtitlesPos(pos: number) {
+  void invoke('mpv_conf_set', { key: 'sub-pos', value: String(pos) }).catch((e) => {
+    console.warn('mpv_conf_set failed:', e);
+  });
 }
 
 function measureEffect() {
@@ -194,7 +221,7 @@ function measureEffect() {
 
 function marginEffect() {
   // Read as soon as mpv is up rather than lazily beside the base: the margin
-  // decides the *size* of the lift, so discovering it on the first apply would
+  // decides the ceiling, so discovering it on the first apply would
   // make the very first appearance of the bar a two-step move — a jump to the
   // uncorrected height and a settle a round trip later.
   $effect(() => {
@@ -211,7 +238,7 @@ function applyEffect() {
   // A block body: an arrow returning a value hands `$effect` something it would
   // treat as a cleanup function.
   $effect(() => {
-    setLift(subShift.lift);
+    setCeiling(subShift.ceiling);
   });
 }
 

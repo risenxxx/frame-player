@@ -20,6 +20,7 @@
     selectSecondTrack,
     setAudioMulti,
     setSecondDelay,
+    setSecondPlace,
     setSubSpeedHere,
     subSpeedLabel,
     toggleMixTrack,
@@ -103,10 +104,10 @@
     >
       {t('osc.subs_off')}
     </button>
-    <!-- Where the line goes, said once: mpv draws it at the top of the frame,
-         and a viewer who picked it while looking at the bottom one would
-         otherwise think nothing happened. -->
-    <div class="cast-hint">{t('osc.sub2_where')}</div>
+    <!-- Where the line goes, said once: at the top of the frame unless the
+         viewer has dragged it, and a viewer who picked it while looking at
+         the bottom one would otherwise think nothing happened. -->
+    <div class="cast-hint">{t(secondSub.place ? 'osc.sub2_moved' : 'osc.sub2_where')}</div>
     <div class="menu-sep"></div>
     <button class="menu-item track-action" onclick={() => { close(); void addSecondSubFile(); }}>
       <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -121,6 +122,14 @@
       </svg>
       <span>{t('subs.find')}</span>
     </button>
+    {#if secondSub.place}
+      <button class="menu-item track-action" onclick={() => setSecondPlace(null)}>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 12.5v-9M4.5 7 8 3.5 11.5 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>{t('osc.sub2_place_reset')}</span>
+      </button>
+    {/if}
     <div class="menu-sep"></div>
     <div class="menu-title">{t('osc.delay')}</div>
     <!-- The first page's stepper, on `secondary-sub-delay`: the second

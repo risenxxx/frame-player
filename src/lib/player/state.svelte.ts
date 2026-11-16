@@ -146,6 +146,12 @@ class Player {
   /// screen reads it — over a picture mpv draws subtitles itself, but with no
   /// picture its drawing is under the web view's own screen.
   subText = $state('');
+  /// Where the second subtitle is drawn (`user-data/sublines/second`, written by
+  /// sublines.lua): "x0 y0 x1 y1" in fractions of the window, "" for none.
+  secondBox = $state('');
+  /// Where the main line is (`user-data/sublines/main`): "x0 y0 x1 y1 pos
+  /// range" for a plain-text track, "" otherwise.
+  mainBox = $state('');
   /// Fill of the network cache, 0..100, or null when there is no cache — which
   /// is the normal state for a local file.
   cacheBuffering = $state<number | null>(null);

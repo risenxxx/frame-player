@@ -26,6 +26,7 @@
   import ChapterMenu from '$lib/components/ChapterMenu.svelte';
   import CastMenu from '$lib/components/CastMenu.svelte';
   import SecondSubLine from '$lib/components/SecondSubLine.svelte';
+  import MainSubLine from '$lib/components/MainSubLine.svelte';
   import TrackMenu from '$lib/components/TrackMenu.svelte';
   import SeekBar from '$lib/components/SeekBar.svelte';
   import Controls from '$lib/components/Controls.svelte';
@@ -382,6 +383,7 @@
 
   {#if player.hasFile && !audioScreen.on && !endOfFile.shown}
     <SecondSubLine />
+    <MainSubLine />
   {/if}
 
   <TopBar
