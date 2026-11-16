@@ -1,46 +1,11 @@
 /**
- * The second subtitle's look and place: it copies mpv's subtitle options, so
- * the arithmetic from mpv's 720-high units to CSS pixels is what has to hold.
+ * The second subtitle's place: from mpv's 720-high units and the bars' CSS
+ * pixels to the fractions secondsub.lua lays the line out with.
  */
 
 import { describe, expect, it } from 'vitest';
 
-import { EM_PER_LIBASS_SIZE, SUB_STYLE_DEFAULTS, lineStyle, lineTop } from './second-line';
-
-describe('lineStyle', () => {
-  it('scales mpv sizes with the window and with sub-scale', () => {
-    const at720 = lineStyle(SUB_STYLE_DEFAULTS, 720);
-    expect(at720.lineHeight).toBe(38);
-    expect(at720.fontSize).toBeCloseTo(38 * EM_PER_LIBASS_SIZE, 2);
-    const bigger = lineStyle({ ...SUB_STYLE_DEFAULTS, scale: 1.5 }, 1440);
-    expect(bigger.lineHeight).toBe(114);
-    expect(bigger.stroke).toBeCloseTo(1.65 * 3, 2);
-  });
-
-  it('draws the outline style with a stroke and no box', () => {
-    const look = lineStyle(SUB_STYLE_DEFAULTS, 720);
-    expect(look.box).toBeNull();
-    expect(look.strokeColor).toBe('rgba(0, 0, 0, 1)');
-    expect(look.shadow).toBe('none');
-  });
-
-  it('draws the box style with the back colour and no stroke', () => {
-    const look = lineStyle({ ...SUB_STYLE_DEFAULTS, borderStyle: 'background-box' }, 720);
-    expect(look.stroke).toBe(0);
-    expect(look.box).toBe('rgba(0, 0, 0, 0.686)');
-  });
-
-  it('keeps the text opacity the settings slider wrote', () => {
-    expect(lineStyle({ ...SUB_STYLE_DEFAULTS, color: '#80FFFF00' }, 720).color).toBe(
-      'rgba(255, 255, 0, 0.502)',
-    );
-  });
-
-  it('quotes a named font and passes a generic one through', () => {
-    expect(lineStyle({ ...SUB_STYLE_DEFAULTS, font: 'Arial' }, 720).fontFamily).toBe('"Arial", sans-serif');
-    expect(lineStyle(SUB_STYLE_DEFAULTS, 720).fontFamily).toBe('sans-serif');
-  });
-});
+import { lineTop, placeArgs } from './second-line';
 
 describe('lineTop', () => {
   it("sits at mpv's own subtitle margin with nothing over the picture", () => {
@@ -54,5 +19,25 @@ describe('lineTop', () => {
 
   it('never goes above its own margin for a short bar', () => {
     expect(lineTop(22, 1440, 28, true)).toBe(44);
+  });
+});
+
+describe('placeArgs', () => {
+  it('sends the top edge as a fraction of the window', () => {
+    expect(placeArgs(true, 36, 720)).toEqual(['secondsub', 'place', '1', '0.0500', '0.5000']);
+  });
+
+  it('says hidden without losing the place', () => {
+    expect(placeArgs(false, 36, 720)).toEqual(['secondsub', 'place', '0', '0.0500', '0.5000']);
+  });
+
+  it('is the same message when a resize keeps the line where it was', () => {
+    expect(placeArgs(true, lineTop(22, 720, 48, false), 720)).toEqual(
+      placeArgs(true, lineTop(22, 1080, 48, false), 1080),
+    );
+  });
+
+  it('survives a window not measured yet', () => {
+    expect(placeArgs(true, 22, 0)[3]).toBe('0.0000');
   });
 });

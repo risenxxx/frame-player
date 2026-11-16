@@ -1,17 +1,18 @@
 # Subtitles drawn by the interface
 
-Since 1.47 the second subtitle is drawn by the web view rather than by mpv
-(`SecondSubLine.svelte`, `second-line.ts`). This note answers the question that
-followed: should the main subtitles move there too, how would a saved frame
+In 1.47 the second subtitle was drawn by the web view rather than by mpv; it
+has since moved to mpv's OSD (`secondsub.lua`, see "The second line on mpv's
+OSD" below). This note answers the question that followed the first move: should the main subtitles move there too, how would a saved frame
 keep them, what would it cost, and does it make dragging subtitles — as on
 YouTube, with a grab cursor over the line — easier. Nothing here is built; it
 is the investigation, so the next one does not have to measure it again.
 
 **Short answer.** Not all of them, and not now. ASS and image subtitles cannot
 leave mpv, so "all" is not on the table; moving plain-text tracks buys free 2D
-dragging and selectable text, and costs a WebKit memory overhead for most of a
-film, frame export by composition, and subtitles that lag a live resize. A
-vertical drag can be had with mpv still drawing the line.
+dragging and selectable text, and costs WebKit's ~200 MB repaint overhead for
+part of the film, frame export by composition, and subtitles that lag a live
+resize. A vertical drag can be had with mpv still drawing the line — and for the
+second line, drawn on mpv's OSD since, a free one.
 
 ## What was measured
 
@@ -40,7 +41,8 @@ remaining risk is an event-queue overflow, after which a line stays up until the
 macOS only, mpv's default `sans-serif`, which both resolve to Helvetica; a
 Windows font stack has not been compared.
 
-**mpv cannot give the second line a margin.** At `secondary-sub-pos` 0 libass
+**mpv's subtitle renderer cannot give the second line a margin** (its OSD
+can — see below). At `secondary-sub-pos` 0 libass
 pins the block 7 px under the frame's top edge; any other value hangs it from a
 fixed bottom (`sd_ass.c`: line position = `100 − pos`), so at 12 one, two and
 three lines sat 51, 14 and 8 px from the top, and `sub-margin-y` moved nothing.
@@ -70,10 +72,11 @@ In order of weight:
 
 1. **WebKit's GPU process holds ~200 MB while anything on the page repaints**
    (measured 2026-10-02, independent of window size, gone ~4 s after repaints
-   stop). A cue changes every few seconds, so this would be held for most of a
-   film with subtitles. The second line already pays it while it is on. Measure
-   on a real film before deciding; a canvas instead of DOM text would not help,
-   it is still a repaint.
+   stop). The guess here was that a cue every few seconds would hold it for most
+   of a film; measured for the second line (below), a line changing every 2.5 s
+   held it about a quarter of the time, in stretches, not throughout. Still a
+   cost, and a canvas instead of DOM text would not help — it is still a
+   repaint.
 2. **Frame export has to compose** — see below.
 3. **Live resize**: the web content is a frame behind the window and pinned to
    its top-left corner, and everything drawn over the picture is hidden while
@@ -127,10 +130,75 @@ was asked for), and the browser's bidi and fallback handling.
   and during a drag, and the dragged position has to become the viewer's own
   `sub-pos` base rather than something the lift adds to.
 
+## The second line on mpv's OSD
+
+Built after this note, and the answer to the second line's memory and resize
+costs without giving up its margin. mpv's subtitle renderer still selects and
+times the track (`secondary-sub-visibility=no`, `secondary-sub-text`), and
+`src-tauri/lua/secondsub.lua` draws the text as an `ass-events` OSD overlay,
+`{\an8\pos(x,y)}` — anchored at its top, so the margin is ours. The player
+sends only where (`script-message-to secondsub place <shown> <top> <x>`).
+
+**The look is mpv's OSD style, copied from the subtitle style.** An external
+overlay's events use the "OSD" style built from the `osd-*` options
+(`osd_libass.c`), and the box style has no override tag, so the script mirrors
+`sub-*` onto `osd-*` — free, since the player draws its own OSD. Two things do
+not carry over by copying: `osd-scale` reaches only mpv's own OSD text, never an
+overlay, so `sub-scale` is multiplied into the font size, outline, shadow and
+spacing; and `sub-scale-with-window=no` / `sub-scale-by-window=no` change a text
+subtitle's scale (`sd_ass.c`, `configure_ass`), which the script repeats from
+`osd-dimensions`.
+
+Measured on Homebrew mpv 0.41 with the same cue on both slots, main line at
+the bottom and the overlay at the top, glyph bounding boxes in mpv's window
+screenshot:
+
+| Options | Main line | Second line |
+|---|---|---|
+| defaults, 1280×720 | 339 × 28 | 339 × 28 |
+| `sub-scale` 1.4, size 44, bold, `opaque-box`, 1600×700 (pillarboxed) | 564 × 37 | 564 × 38 |
+| `sub-scale-with-window=no`, outline 4, shadow 3, 1000×900 (letterboxed) | 261 × 18 | 261 × 18 |
+| `sub-scale-by-window=no`, `sub-scale` 1.2, 1000×900 | 402 × 29 | 402 × 28 |
+
+A red outline 4 px wide with a shadow came out identical by eye as well. The
+top edge: one, two and three lines all started at the same row (41, 42, 42 px
+at a requested 36 px box top; the difference is the font's own ascent gap),
+where `secondary-sub-pos` had given 51, 14 and 8. `{…}` in an SRT is removed by
+mpv before `secondary-sub-text` (the main line loses it too), and a backslash is
+escaped by the script and drawn as itself.
+
+**In the app** (dev build, macOS 26, a 640-point-high window, `sub-margin-y` 34
+from the viewer's mpv.conf): the glyphs' top at 73 device pixels with the bars
+hidden and 117 with them up — 13 px under the requested 60 and 104 in both
+cases, i.e. `sub-margin-y` and the title bar's 48 px + 4, as `lineTop` says.
+
+**Memory**, WebKit's GPU process (`footprint`, every 5 s), a 4-minute clip with
+a cue every 2.5 s on both slots, the bars hidden, the same driver for both
+builds, two runs each; 18 samples over 90 s with the second line on:
+
+| Build | Run 1 | Run 2 |
+|---|---|---|
+| line in the web view (1.47) | 17 MB, ~220 MB in 5 of 18 | ~218 MB for the first 18 s (4 of 18), then 17 MB |
+| line on mpv's OSD | 16 MB in 18 of 18 | 16 MB in 18 of 18 |
+
+So the web view's line did not hold the ~200 MB throughout, as this note had
+guessed — what makes WebKit keep it some of the time and not the rest was not
+found — but the OSD line never costs it. With the second line hidden both
+builds sat at 16–17 MB.
+
+What else changed: the line moves with the picture during a live resize (it is
+mpv's drawing), and it jumps rather than glides when the bars come and go —
+mpv has no animation for an overlay, the main line's lift jumps for the same
+reason. Frame export still carries only the main line: an overlay is not in
+`screenshot-to-file … subtitles`. Dragging becomes two-dimensional without the
+web view drawing anything, since `\pos` takes an x as well.
+
 ## Recommendation
 
 1. Vertical drag over mpv's own drawing — small, none of the costs above, and it
-   covers the usual reason to move subtitles (burnt-in text, a face).
+   covers the usual reason to move subtitles (burnt-in text, a face). The
+   second line, now on mpv's OSD, can be dragged in both directions the same
+   way: a hit box in the web view, the position sent to `secondsub.lua`.
 2. Canvas composition for frame export, so the second line is in saved frames.
 3. Plain-text tracks in the web view only if free 2D dragging or click-to-look-up
    is wanted, and only after measuring WebKit's memory on a real film.

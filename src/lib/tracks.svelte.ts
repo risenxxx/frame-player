@@ -107,8 +107,8 @@ export function restoreTrackChoice() {
   // every file starts with the second slot empty, and only a remembered choice
   // fills it again, by description, like the first.
   if (!sub2) void command('set', ['secondary-sid', 'no']).catch(() => {});
-  // mpv never draws the second line itself — the web view does (see
-  // second-line.ts). Per file rather than once, because an `initialOptions`
+  // mpv's subtitle renderer never draws the second line — secondsub.lua
+  // does, on mpv's OSD (see second-line.ts). Per file rather than once, because an `initialOptions`
   // value is the one a viewer's mpv.conf overrides, and two copies of the line
   // would be the result.
   void command('set', ['secondary-sub-visibility', 'no']).catch(() => {});
@@ -338,16 +338,20 @@ export function cycleSubs(dir: 1 | -1) {
 // ---- The second subtitle --------------------------------------------------
 //
 // A second track on screen at once — for somebody learning a language, the one
-// they know and the one they are learning. mpv draws it (`secondary-sid`) at the
-// top of the frame as plain text; what is ours is the choice, remembered like
-// the first one, and its delay. It is this window's alone: a television is sent
+// they know and the one they are learning. mpv selects and times it
+// (`secondary-sid`) and secondsub.lua draws it at the top of the frame as plain
+// text; what is ours is the choice, remembered like the first one, its delay
+// and where the line sits. It is this window's alone: a television is sent
 // one subtitle, and a room shares the first one at most.
 
 class SecondSub {
-  /// The line is on screen. Ours, not mpv's `secondary-sub-visibility`: mpv is
-  /// kept from drawing the line at all (the web view draws it, see
+  /// The line is on screen. Ours, not mpv's `secondary-sub-visibility`: mpv's
+  /// own drawing of the line is off for good (secondsub.lua draws it, see
   /// second-line.ts), and the hotkey hides it without forgetting the track.
   shown = $state(true);
+  /// secondsub.lua is loaded into mpv, so a message to it lands. Until then
+  /// (and for good if the build cannot load it) nothing draws the line.
+  drawer = $state(false);
   /// This file's `secondary-sub-delay`. Ours rather than a mirror: nothing but
   /// this module writes it, and every file gets an explicit value.
   delay = $state(0);

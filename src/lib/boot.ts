@@ -53,6 +53,7 @@ import { loadThumbPrefs } from './thumbs.svelte';
 import { clearTitleTimer } from './title.svelte';
 import { hideTooltip, initTooltips } from './tooltip.svelte';
 import { loadTorrentPrefs } from './torrent.svelte';
+import { secondSub } from './tracks.svelte';
 import { checkForUpdate } from './updater.svelte';
 import { initUpscale } from './upscale.svelte';
 import {
@@ -200,6 +201,15 @@ export async function boot() {
     markZoomLuaLoaded();
   } catch (e) {
     console.warn('zoompan.lua not loaded, zoom falls back:', e);
+  }
+  // The second subtitle's drawer (second-line.ts). No fallback: mpv's own
+  // drawing of the line could only pin it to the frame's edge, and a build
+  // without Lua has already lost the zoom above.
+  try {
+    await command('load-script', [await join(await resourceDir(), 'lua', 'secondsub.lua')]);
+    secondSub.drawer = true;
+  } catch (e) {
+    console.warn('secondsub.lua not loaded, no second subtitle:', e);
   }
   initUpscale(await join(await resourceDir(), 'shaders'));
 

@@ -5,7 +5,6 @@
  */
 
 import { displayName } from '../format';
-import { SUB_STYLE_DEFAULTS, type SubStyle } from '../second-line';
 import type { OsdBox } from '../upscale-plan';
 import type { DecodedPicture } from '../window-fit';
 
@@ -147,13 +146,6 @@ class Player {
   /// screen reads it — over a picture mpv draws subtitles itself, but with no
   /// picture its drawing is under the web view's own screen.
   subText = $state('');
-  /// The second subtitle's current line (`secondary-sub-text`), drawn by the
-  /// web view rather than by mpv — see SecondSubLine.svelte.
-  secondSubText = $state('');
-  /// mpv's subtitle look, mirrored for that line. mpv's defaults (0.41) until
-  /// the first report.
-  subStyle = $state<SubStyle>({ ...SUB_STYLE_DEFAULTS });
-
   /// Fill of the network cache, 0..100, or null when there is no cache — which
   /// is the normal state for a local file.
   cacheBuffering = $state<number | null>(null);
