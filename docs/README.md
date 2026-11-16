@@ -19,6 +19,7 @@ stays here when its value is saving the next investigation.
 | [casting.md](casting.md) | Playing on a television: Google Cast and DLNA, what each transport can carry, and how the player decides between them. |
 | [torrents.md](torrents.md) | Streaming from a swarm: piece priority driven by playback, what a partially downloaded file can and cannot be used for, and casting one to a TV. |
 | [watch-together.md](watch-together.md) | Two or more players holding one timeline: why the wire carries state rather than actions, why drift is corrected with speed rather than a seek, and what a room may know about what you are watching. |
+| [subtitles-in-the-interface.md](subtitles-in-the-interface.md) | Whether subtitles should be drawn by the web view rather than mpv: what was measured (screenshots, text latency, matching the look), why ASS and image subtitles cannot move, what plain-text ones would cost, how a saved frame keeps them, and what it means for dragging them. |
 | [distribution.md](distribution.md) | Shipping: code signing, Gatekeeper, SmartScreen, updates, and what a store listing would cost. |
 | [rules/](rules/README.md) | The rule book itself: fifteen chapters covering playback, thumbnails, tracks, torrents, casting, watching together, the catalog, sources and privacy, the window, the UI, CSS, the frontend's structure, and shipping. |
 | [ROADMAP.md](ROADMAP.md) | What shipped, what is planned, and what is only being considered. |

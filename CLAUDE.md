@@ -57,6 +57,7 @@ there is the one without a chapter.
 | `watch-together.md` | A shared timeline over a small relay: why the wire carries state rather than actions, why drift is corrected with speed rather than a seek, and what a room may know about what you are watching |
 | `catalog.md` | The catalog: why the TMDB key is in a service and not in the player, what the poster traffic costs and who decides where it comes from, how the indexer's fuzzy search is filtered, and the measurements that say a translation-type filter cannot be built |
 | `torrents.md` | Torrent streaming: piece priority from playback, what a partial file can be used for, casting one |
+| `subtitles-in-the-interface.md` | Drawing subtitles in the web view instead of mpv: the measurements (screenshots, latency, look), why ASS and image tracks stay with mpv, the costs, frame export and dragging |
 | `distribution.md` | Shipping: signing, Gatekeeper, SmartScreen, updates, stores |
 
 A finding earns a line in `docs/rules/` when breaking it would break the player;
