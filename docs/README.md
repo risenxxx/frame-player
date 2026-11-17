@@ -21,6 +21,7 @@ stays here when its value is saving the next investigation.
 | [watch-together.md](watch-together.md) | Two or more players holding one timeline: why the wire carries state rather than actions, why drift is corrected with speed rather than a seek, and what a room may know about what you are watching. |
 | [subtitles-in-the-interface.md](subtitles-in-the-interface.md) | Whether subtitles should be drawn by the web view rather than mpv: what was measured (screenshots, text latency, matching the look), why ASS and image subtitles cannot move, what plain-text ones would cost, how a saved frame keeps them, and what it means for dragging them. |
 | [distribution.md](distribution.md) | Shipping: code signing, Gatekeeper, SmartScreen, updates, and what a store listing would cost. |
+| [native-frames.md](native-frames.md) | Moving video into a native UI framework that takes GPU frames: why mpv stays and renders through Vulkan into a shared texture, the synchronisation rules (and the single-fence trap that delivers wrong frames), mpv's colour targets and HDR on both platforms today, frame pacing and the per-frame events agreed with the framework, the cost of its copies. Every figure measured; nothing built yet. |
 | [rules/](rules/README.md) | The rule book itself: fifteen chapters covering playback, thumbnails, tracks, torrents, casting, watching together, the catalog, sources and privacy, the window, the UI, CSS, the frontend's structure, and shipping. |
 | [ROADMAP.md](ROADMAP.md) | What shipped, what is planned, and what is only being considered. |
 
