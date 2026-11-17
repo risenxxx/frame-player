@@ -19,9 +19,11 @@ peak 1000 nits).
 ## The shape of the design
 
 ```
-FFmpeg decode → mpv (gpu-next = libplacebo, on Vulkan)
-             → VkImage that is really a shared texture (IOSurface / D3D12 resource)
+FFmpeg decode → mpv render API → a texture we own, shared with Skathi
              → Skathi surface: GPU wait, copy, map, draw into its window
+
+Windows, now:   mpv's D3D11 render API (old vo_gpu renderer) → shared D3D11 texture → Skathi (D3D12)
+Both, later:    mpv gpu-next (libplacebo) on Vulkan → IOSurface / D3D12 resource → Skathi
 ```
 
 - **mpv stays.** libplacebo only turns a decoded frame into pixels; mpv is the
@@ -32,13 +34,23 @@ FFmpeg decode → mpv (gpu-next = libplacebo, on Vulkan)
   point people quote) would have to rewrite all of that. gpu-next already *is*
   libplacebo, so if Skathi uses libplacebo for its own HDR output later, the
   colour maths on both sides of the hand-off is the same library.
-- **Vulkan on both platforms.** libplacebo has D3D11, Vulkan and OpenGL
-  backends and no D3D12. Skathi's default Windows renderer is D3D12, and its
-  documented Vulkan route is "create on D3D12, import into Vulkan". On macOS mpv
-  already renders through Vulkan (MoltenVK, context `macvk`). One render-API
-  backend for Vulkan therefore covers both platforms; a D3D11 producer works as
-  a fallback but blocks its thread (see "Synchronisation").
-- **Windows moves from D3D11 to Vulkan for video.** Measured on the RTX 5080
+- **Windows can start today, with no mpv patch.** mpv v0.42.0 (released
+  2026-11-05) ships a D3D11 render API backend (PR #17764, merged 2026-10-15,
+  client API 2.6), and our bundled build (commit `a39482e7a`, 124 commits after
+  the merge) already has it. It drives the **old `vo_gpu` renderer**, not
+  gpu-next, but it renders into an `R16G16B16A16_FLOAT` texture we own, keeps
+  `d3d11va` zero-copy decoding, can put HDR highlights above 1.0, and its
+  texture can be shared with Skathi's D3D12 renderer bit-exact. Details in
+  "Windows today: the D3D11 render API" below.
+- **gpu-next through the render API is the later step, and it needs a patch.**
+  For HDR quality (the old renderer tone-maps worse and has no
+  `hdr-reference-white`) and for macOS, where the render API offers only OpenGL
+  and our libmpv refuses OpenGL. libplacebo has D3D11, Vulkan and OpenGL
+  backends and no D3D12; Skathi's default Windows renderer is D3D12 and its
+  documented Vulkan route is "create on D3D12, import into Vulkan"; on macOS mpv
+  already renders through Vulkan (MoltenVK, context `macvk`). One Vulkan render
+  backend therefore covers both platforms.
+- **If Windows video moves from D3D11 to Vulkan,** measured on the RTX 5080
   with today's libmpv in its own window: identical pictures (window screenshot
   SSIM 1.000000 for SDR, 0.999989 for HDR10; FP16 desktop captures differ by a
   mean of 0.00001), no dropped or delayed frames either way. What changes is the
@@ -52,33 +64,85 @@ FFmpeg decode → mpv (gpu-next = libplacebo, on Vulkan)
 | Frame step | 33–44 ms | same | same | same |
 | Frame back-step | 11–13 ms | 20 ms | ~78 ms | ~78 ms |
 
-### What has to change in libmpv
+### Windows today: the D3D11 render API
 
-Today's bundled libmpv cannot do any of this. Its render API runs the old
-`vo=gpu` renderer, not gpu-next, and accepts only `MPV_RENDER_API_TYPE_OPENGL`
-and `"sw"`; `"d3d11"` is refused with -4 (Windows, mpv v0.41.0-1303,
-libplacebo v7.387). We need a patch, on top of the stack `docs/mpv-patches.md`
-describes:
+Measured with the bundled `libmpv-2.dll` (mpv v0.41.0-1303-ga39482e7a), a
+standalone probe, RTX 5080.
+
+- **Constants:** `MPV_RENDER_API_TYPE_D3D11 = "d3d11"`,
+  `MPV_RENDER_PARAM_D3D11_INIT_PARAMS = 21` (`mpv_d3d11_init_params { void
+  *device }`, at create), `MPV_RENDER_PARAM_D3D11_FBO = 22` (`mpv_d3d11_fbo {
+  void *tex }`, per render). Header `include/mpv/render_d3d11.h`. Leaving out
+  the init params gives -4 (`MPV_ERROR_INVALID_PARAMETER`) — which an earlier
+  probe misread as "backend missing".
+- **The device:** create it without `D3D11_CREATE_DEVICE_SINGLETHREADED`; mpv
+  turns multithread protection on itself (it was off before
+  `mpv_render_context_create`, on after) because `d3d11va` decodes on that
+  device from mpv's decoder thread. A single-threaded device logs `Failed to get
+  Multithread interface (0x80004002)` and falls back to `d3d11va-copy`. mpv
+  renders on the immediate context and does not restore state; nothing else may
+  use the immediate context during an `mpv_render_*` call.
+- **What it runs:** `current-vo = libmpv`, `hwdec-current = d3d11va` for H.264
+  and HEVC Main10 (`nv12` / `p010`, zero-copy), log `[libmpv_render] Using
+  Direct3D 11.1 runtime`, `Using FBO format rgba16hf`. No libplacebo renderer;
+  `current-gpu-context` and `video-target-params` are unavailable on this path.
+  `mpv_render_context_create` took 59.6 ms; the first frame 83–128 ms (shader
+  compilation).
+- **Target formats:** rgba16f, rgb10a2, bgra8, rgba8 render. **An sRGB format
+  is refused on every call** (-18, `Could not find a suitable RA format for
+  wrapped resource`) and, since the frame stays pending, a naive update loop
+  spins (9692 failed calls in the probe). Check the format once and stop.
+- **`MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME` (12) defaults to 1:** the render
+  call then sleeps until the frame is due (~41.3 ms per call at 24 fps). Pass 0
+  and do the pacing ourselves when the render thread does anything else.
+- **Cost per frame** (`block=0`; CPU time of the render call / GPU timestamps;
+  0 drops over 15 s):
+
+| Run | CPU µs mean / p95 | GPU µs p50 / p95 / p99 |
+|---|---|---|
+| SDR 1080p | 283 / 395 | 403 / 526 / 961 |
+| SDR, 4K target | 301 / 422 | 586 / 749 / 1086 |
+| HDR 1080p, default options | 336 / 463 | 670 / 1081 / 1237 |
+| HDR 1080p, linear, peak 846 | 318 / 454 | 646 / 1043 / 1172 |
+| HDR 4K, linear, peak 846 | 344 / 499 | 1438 / 1835 / 1982 (1 drop at start-up) |
+
+  Under sustained load the same SDR frame takes 101 µs of GPU; at 24 fps the GPU
+  drops into low-power states between frames, which inflates the numbers above.
+  GPU timestamp queries need their own `Flush` after the end query, or they read
+  one frame period.
+- **Not tested on this path:** OSD and subtitles (they go through the same
+  renderer and should appear in the texture), Windows HDR off.
+
+### What has to change in libmpv (for gpu-next, and for macOS)
+
+The render API has no gpu-next backend upstream yet. Signs that it is coming:
+on 2026-11-15 about forty commits split `vo_gpu_next` so the renderer
+(`gpu_next/video.c`) no longer owns the window and swapchain. The patch we would
+need, on top of the stack `docs/mpv-patches.md` describes:
 
 1. **A gpu-next render backend for Vulkan.** The client supplies a `VkImage`
    (plus its device, queue family and a timeline semaphore); libplacebo renders
-   into it. Upstream state as of November 2026: PR #16818 (gpu-next render
+   into it. The D3D11 backend's API (device at create, target per render) is the
+   model to copy. Upstream state as of November 2026: PR #16818 (gpu-next render
    backend) is a draft limited to OpenGL with an sRGB-only target, an empty
    end-of-frame hook (no `report_swap`), and no `set_parameter`/`get_image`;
    maintainers called it a mess and asked for it to be done "like vo_gpu". The
    follow-up RFC #18607 is open, and the maintainer response to the IINA
    developer's proposal — a separate `MPV_RENDER_PARAM_API_TYPE` per backend
    rather than one switch — was "looks sane". A Vulkan API type written that way
-   is something upstream may take. The OpenGL route is closed for us anyway:
-   our macOS libmpv refuses `gpu-api=opengl` and `gpu-context=cocoa` (-7).
-2. **`report_swap` with a timestamp.** `mpv_render_context_report_swap()` takes
-   no time: mpv assumes the frame was shown at the moment of the call. Skathi
-   reports presentation after the fact (below), so the patch must accept
-   `shown_at` and the refresh interval, and know about dropped frames, or
-   display-resample timing will be wrong.
-3. **A Windows build of libmpv of our own.** Today Windows uses a prebuilt
-   libmpv and only macOS applies patches. This is the same prerequisite every
-   patch in `docs/mpv-patches.md` has.
+   is something upstream may take; check upstream first, the refactor above may
+   make it arrive on its own. The OpenGL route is closed for us: our macOS
+   libmpv refuses `gpu-api=opengl` and `gpu-context=cocoa` (-7).
+2. **`report_swap` with a timestamp** (needed by every backend, D3D11
+   included). `mpv_render_context_report_swap()` takes no time: mpv assumes the
+   frame was shown at the moment of the call. Skathi reports presentation after
+   the fact (below), so the patch must accept `shown_at` and the refresh
+   interval, and know about dropped frames, or display-resample timing will be
+   wrong.
+3. **A Windows build of libmpv of our own** for anything patched. Today Windows
+   uses a prebuilt libmpv and only macOS applies patches. mpv now publishes
+   official libmpv builds for Windows (x86_64 and arm64, LGPL and GPL) from its
+   CI; that workflow is the starting point for ours.
 
 Size estimate for (1)+(2): on the order of PR #16818 itself, 1–2 thousand lines.
 
@@ -238,11 +302,37 @@ Two fixes, both verified bit-exact over 1000 frames:
   20" while the driver's counter read correctly — probably the layer's
   bookkeeping, not proven. The D3D12 and D3D11 debug layers failed to load
   (`0x887A002D`) without the optional "Graphics Tools" feature.
-- **The D3D11 fallback** (`ID3D11Device5::OpenSharedResource1` +
-  `OpenSharedFence`, `ID3D11DeviceContext4::Wait/Signal`) is also bit-exact
-  (203 µs per frame, round trip 358 µs), but `Signal` **blocks the CPU thread
-  for about 4.2 ms** while a queued GPU wait is unsatisfied. A D3D11 producer
-  runs at the consumer's pace.
+- **A D3D11 producer** (`ID3D11Device5::OpenSharedResource1` + `OpenSharedFence`,
+  `ID3D11DeviceContext4::Wait/Signal`) is bit-exact too. Two set-ups were
+  measured and they behave differently:
+  - *Textures and one shared fence created in D3D12, opened in D3D11*
+    (synthetic producer): 203 µs per frame, round trip 358 µs, but `Signal`
+    **blocked the CPU thread for about 4.2 ms** while a queued GPU wait was
+    unsatisfied.
+  - *Textures (`D3D11_RESOURCE_MISC_SHARED_NTHANDLE`, no keyed mutex) and one
+    fence per texture created in D3D11, opened in D3D12* — with **real mpv**
+    rendering into them through the D3D11 render API, ring of 3: mpv accepts the
+    shared texture as its target, D3D12 opens it (format 10, flags render target
+    + simultaneous access), every sampled frame bit-exact, and `Signal` **never
+    blocked** (≤ 0.25 ms, even with 718 GPU waits queued). Why the two differ was
+    not isolated. **This is the set-up to use.**
+- **With a D3D11 producer, wait for the slot on the CPU, not the GPU.** A GPU
+  wait never blocks the thread, so back-pressure turns into latency: work piles
+  up on the device and mpv's delivery stalls in ~70 ms bursts. A CPU wait blocks
+  the render thread for exactly the consumer's period and keeps latency at about
+  three frames:
+
+| mpv → emulated D3D12 consumer, 1080p | Slot wait | Wait µs mean / max | Delivery latency p50 / max | Frames, drops |
+|---|---|---|---|---|
+| 24 fps | GPU | 25 / 234 | 0.29 / 1.7 ms | 364, 0 |
+| 24 fps | CPU | 0.6 / 44 | 0.28 / 1.7 ms | 364, 0 |
+| 4K, 24 fps | GPU | 15 / 208 | 0.33 / 1.5 ms | 364, 0 |
+| Untimed, consumer at 240 Hz | GPU | 3.7 / 157 | 45 / 80 ms (bursty) | 721, 0 |
+| Untimed, consumer at 240 Hz | CPU | 3948 / 4843 | 12.4 / 13.5 ms (even) | 722, 0 |
+| `speed=10`, consumer at 240 Hz | GPU | 3.6 / 128 | 23 / 28 ms | 680, 42 |
+| Consumer at 20 fps | GPU | 21 / 183 | 262 / 394 ms | 308, 32 |
+| Consumer at 20 fps | CPU | 49 581 / 50 838 | 150 / 151 ms | 303, 60 |
+
 - A D3D11 ↔ D3D11 keyed-mutex share also works (values above 1.0 survive, 200
   hand-offs at ≤ 400 µs each including a 16 MB readback), but keyed mutexes do
   not fit D3D12; it is not the path.
@@ -284,7 +374,7 @@ Two fixes, both verified bit-exact over 1000 frames:
 
 ## Colour and HDR
 
-### What mpv does with the target options (Windows, measured)
+### gpu-next in its own window (Windows, measured)
 
 Pixel values from an FP16 capture of what Windows composes (scRGB, 1.0 = 80
 nits). mpv's own 16-bit window screenshots cannot measure this: they stop at
@@ -304,25 +394,67 @@ nits). mpv's own 16-bit window screenshots cannot measure this: they stop at
 - With mpv's own FP16 swapchain and the colour-space hint on, mpv overrides
   `linear` to scRGB.
 
-What to configure:
+### The D3D11 render API (old renderer) into an FP16 texture (Windows, measured)
 
-- **While Skathi's window is SDR (output headroom 1):**
-  `target-trc=linear target-prim=bt.709 hdr-reference-white=203`. Skathi's
-  documentation suggests `target-peak = 203 × output_headroom` with `linear`;
-  that does nothing, and without `hdr-reference-white` white lands at 1.18.
-- **Once Skathi outputs HDR (headroom > 1):** `target-trc=scrgb target-prim=bt.709
+Values read back from the texture mpv rendered into; flat-patch test clips;
+checked against the renderer's source at `a39482e7a`. The old renderer's rules
+differ from gpu-next's:
+
+- **Without `target-trc=linear` the texture holds gamma-encoded values**
+  (SDR white 1.000, 50 % signal 0.5015). With `target-trc=linear
+  target-prim=bt.709`: white 1.000, black 0.000, 50 % → 0.1912 (BT.1886).
+- **In a linear target 1.0 is fixed at 203 nits, and `hdr-reference-white` is
+  ignored.** That suits Skathi's contract: Skathi maps 1.0 to the system's SDR
+  white itself, so HDR reference white (203 nits) lands on SDR white, which is
+  the standard mapping.
+- **`target-peak` above 203 lets highlights through above 1.0**, unchanged up to
+  target-peak / 203; the tone-mapping curve (bt.2390 by default; clip and mobius
+  work) applies only above that.
+- **`hdr-compute-peak` must be `no`.** The default `auto` is a scene-adaptive
+  exposure, slope = min(1, 0.25 / frame average), applied to the whole frame: it
+  only darkens and depends on content (it scaled the patch frame by 0.603 and
+  pulled a real HDR10 clip's maximum down to 0.426).
+- `scrgb` in this renderer means 1.0 = 10 000 nits (1000 nits → 0.100), not the
+  Windows 80-nit convention. `pq` gives correct HDR10 code values (1000 nits →
+  0.7520, 203 → 0.5806).
+
+| HDR clip, `hdr-compute-peak=no` | 1000 nit | 500 | 203 | 100 | 10 |
+|---|---|---|---|---|---|
+| default options | 1.000 | 0.990 | 0.896 | 0.722 | 0.255 |
+| linear, peak auto or 203 | 1.000 | 0.980 | 0.785 | 0.488 | 0.050 |
+| **linear, peak 846** | **4.164** | **2.467** | **1.004** | 0.491 | 0.050 |
+| linear, peak 203, `tone-mapping=clip` | 1.000 | 1.000 | 1.000 | 0.491 | 0.050 |
+
+  With linear + peak 10000 a 1000-nit patch reads 4.930 and a real HDR10 clip
+  (PQ up to 10 000 nits) peaks at 49.25. Software decoding gives the same values
+  as `d3d11va`. For SDR content `hdr-reference-white` and `target-peak` change
+  nothing.
+
+### What to configure
+
+- **D3D11 render API (old renderer):** `target-trc=linear target-prim=bt.709
+  hdr-compute-peak=no target-peak=<203 × headroom>`. With Skathi's window SDR
+  today (`output_headroom` 1) that is `target-peak=203`; once it outputs HDR,
+  `203 × output_headroom` (846 on this display: 1000 / 240 × 203). This is the
+  recipe Skathi's documentation gives, plus `hdr-compute-peak=no`.
+- **gpu-next (own window today, render API later), output headroom 1:**
+  `target-trc=linear target-prim=bt.709 hdr-reference-white=203`. Here
+  `target-peak` does nothing with `linear`, and without `hdr-reference-white`
+  white lands at 1.18.
+- **gpu-next, headroom > 1:** `target-trc=scrgb target-prim=bt.709
   target-peak=<display peak nits> hdr-reference-white=<sdr_white_nits>`, then
   scale by 80 / `sdr_white_nits` (÷3 at 240 nits) to get Skathi's 1.0 = SDR
   white: SDR white → 0.999, 1000 nits → 4.05. mpv cannot apply that scale
   itself (a user shader was not tried), so either the producer does it, our
   mpv patch makes `linear` honour the peak, or Skathi accepts absolute scRGB as
   a second colour space.
-- **Always set `hdr-reference-white` explicitly.** `auto` depends on mpv having
-  a window on the display, which it will not.
+- **With gpu-next, always set `hdr-reference-white` explicitly.** `auto` depends
+  on mpv having a window on the display, which it will not.
 - `DISPLAYCONFIG_SDR_WHITE_LEVEL` (via `DisplayConfigGetDeviceInfo`) read 3000 →
   240 nits; `MaxLuminance` 1000 → headroom 4.17.
-- These numbers come from mpv rendering into its own window. The texture path
-  needs re-measuring once the patch exists, and on macOS they were not taken.
+- The gpu-next numbers come from mpv rendering into its own window; through a
+  render-API texture they need re-measuring once that backend exists. Nothing
+  was measured on macOS.
 
 ### HDR in today's player
 
@@ -464,20 +596,25 @@ later; it does not remove it. Options, cheapest first:
   and Intel GPUs; anything across processes.
 - The real Skathi — every synchronisation number above is against an emulated
   consumer that follows its code.
-- Colour numbers on macOS, and through the texture path on either platform.
+- Colour numbers on macOS, and through a gpu-next render-API texture (none
+  exists yet); OSD and subtitles through the D3D11 render API.
 - Whether VRR is enabled on a given Windows setup (the monitor's EDID range was
   48–240 Hz with what looks like a FreeSync block; NVIDIA's setting is not
   readable without its API).
 
 ## Next steps
 
-1. **A prototype without mpv:** a Skathi window with an `<sk-surface>` and the
-   Vulkan producer from the probes, on both platforms. It checks the protocol,
-   the ring size against lazy slot reuse, and the frame events against the real
-   framework.
-2. The mpv patch: the Vulkan render API type, then the timestamped
-   `report_swap`; the Windows libmpv build.
-3. Compare with today's player through the e2e harness (on the `host-boundary`
+1. **A Windows prototype with real mpv:** a Skathi window with an `<sk-surface>`
+   fed by the D3D11 render API (shared textures created in D3D11, one fence per
+   texture, CPU wait for the slot). It needs no mpv patch and checks the
+   protocol, the ring size against lazy slot reuse, and the frame events
+   against the real framework.
+2. **A macOS prototype without mpv:** the same with the Vulkan → IOSurface
+   producer from the probes.
+3. The mpv patch: the Vulkan render API type for gpu-next (after checking what
+   upstream's renderer split has delivered by then), the timestamped
+   `report_swap`, a Windows libmpv build of our own.
+4. Compare with today's player through the e2e harness (on the `host-boundary`
    branch: `bun run e2e --mpv-conf <file>`, per-step frame metrics,
    `bun run e2e compare`).
 
@@ -509,6 +646,13 @@ Throwaway programs, not kept. Enough to rebuild each:
   composed desktop in FP16 (Desktop Duplication's `DuplicateOutput1` with
   `DXGI_FORMAT_R16G16B16A16_FLOAT` is one way) and read flat regions of `testsrc2` and of
   a PQ clip made with libx265 (`master-display`, `max-cll=1000,400`).
+- **D3D11 render API (Windows, Rust):** load `libmpv-2.dll`, create a D3D11
+  device (not single-threaded), `mpv_render_context_create` with
+  `MPV_RENDER_PARAM_API_TYPE` = `"d3d11"` and param 21 → `{device}`, then per
+  frame param 22 → `{tex}` and param 12 (block) = 0; read the
+  `R16G16B16A16_FLOAT` target back through a staging texture. For sharing,
+  create it with `D3D11_RESOURCE_MISC_SHARED_NTHANDLE` plus one shared
+  `ID3D11Fence` per ring texture, open both on a D3D12 device.
 - **mpv backend lists and logs:** libmpv with `terminal=yes`, `msg-level=all=v`;
   `option-info/*/choices` for compiled choices; the swapchain lines come from
   `vo/gpu-next/libplacebo` and `vo/gpu-next/d3d11` (or `/mac`).
