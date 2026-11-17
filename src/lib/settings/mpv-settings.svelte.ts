@@ -32,7 +32,7 @@ interface SettingBase {
   /// Which section it appears in. Only the three that hold mpv settings.
   tab: 'video' | 'audio' | 'subs';
   /// The section inside the tab — see the `set-group` headings.
-  group: 'picture' | 'decode' | 'online' | 'audio' | 'choice' | 'look';
+  group: 'picture' | 'decode' | 'online' | 'audio' | 'choice' | 'look' | 'fonts';
   key: string;
   label: string;
   hint?: string;
@@ -274,7 +274,7 @@ export class MpvSettings {
       kind: 'text',
       tab: 'subs',
       key: 'sub-font',
-      group: 'look',
+      group: 'fonts',
       label: t('vset.sub_font'),
       liveDefault: 'sans-serif',
       placeholder: t('vset.sub_font_default'),

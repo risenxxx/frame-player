@@ -166,8 +166,11 @@
         <span class="slider-value">{value.toFixed(s.decimals)}{s.suffix ?? ''}</span>
       </div>
     {:else if s.kind === 'text'}
+      <!-- The shared field of the sheet. No `stopPropagation`: a key typed
+           here already belongs to the field (`onKeydown` in input.svelte.ts),
+           and Escape must still reach the player to close the sheet. -->
       <input
-        class="setting-input"
+        class="link-input"
         type="text"
         spellcheck="false"
         autocapitalize="off"
@@ -180,7 +183,6 @@
           mpv.setSetting(s, value || null);
         }}
         onkeydown={(e) => {
-          e.stopPropagation();
           if (e.key === 'Enter') e.currentTarget.blur();
         }}
       />
@@ -224,18 +226,6 @@
     align-items: center;
     gap: 6px;
     margin-top: 8px;
-  }
-
-  .setting-input {
-    box-sizing: border-box;
-    width: 100%;
-    margin-top: 8px;
-    padding: 8px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.18);
-    color: #e0e0e6;
-    font: inherit;
   }
 
   .langs-auto {
