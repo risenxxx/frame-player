@@ -18,6 +18,11 @@ paths:
   - "src/lib/components/TrackTag.svelte"
   - "src-tauri/src/opensubtitles.rs"
   - "src-tauri/src/external_dirs.rs"
+  - "src-tauri/src/subtitle_fonts.rs"
+  - "src/lib/player/session.ts"
+  - "src/lib/settings/mpv-settings.svelte.ts"
+  - "src/lib/components/settings/MpvRows.svelte"
+  - "src/lib/components/settings/SubsTab.svelte"
 ---
 
 # tracks-and-subtitles — the short form
@@ -37,6 +42,7 @@ Each line is the rule; the chapter it links to is the whole of it.
 | `src/lib/languages.ts` | The **content** languages (ROADMAP 25) — one table of 639-1 code + endonym + the 639-2 spellings, from which `LANG_ALIASES`, the `alang`/`slang` picker and the subtitle-search filter are all derived. Nothing to do with `i18n.svelte.ts`, which is the *interface* language |
 | `src-tauri/src/opensubtitles.rs` | Subtitle search and download: the API key's lookup order, the OpenSubtitles file hash, `subs_search` (hash and/or title, privacy-gated) and `subs_download` (ticket → file → saved beside the video) |
 | `src-tauri/src/external_dirs.rs` + `src/lib/external-title.ts` | External dubs and subtitles in a release's subfolders: which folders under the video hold them (handed to mpv's own search as `sub-file-paths`/`audio-file-paths` before the load, by `pointAtExternalTracks`), and what to call a track found there instead of mpv's "mka". See the line in [rules/tracks-and-subtitles](../../docs/rules/tracks-and-subtitles.md) |
+| `src-tauri/src/subtitle_fonts.rs`, `src/lib/components/settings/SubsTab.svelte` | User-imported font files, stored with app data and managed from Settings → Subtitles; `session.ts` supplies the directory to mpv at startup, and `mpv-settings.svelte.ts` / `MpvRows.svelte` manage the subtitle family setting |
 
 ## Rules
 
@@ -51,3 +57,4 @@ Each line is the rule; the chapter it links to is the whole of it.
 - **A subtitle made for another frame rate is stretched, never delayed, and the stretch is offered, never applied.** `sub-speed` = subtitle fps / video fps (`sub-speed.ts`); a search result that knows its fps asks, the track menu covers the rest by hand. → [tracks-and-subtitles](../../docs/rules/tracks-and-subtitles.md)
 - **The language of the interface and the language of the film are different questions, and conflating them was a bug with a name.** Every language choice in the player used to offer exactly two — `alang`/`slang` in the settings, … → [tracks-and-subtitles](../../docs/rules/tracks-and-subtitles.md)
 - **"No subtitles in a language I am already hearing" is mpv's option, not ours, and its rule is not the obvious one.** `subs-with-matching-audio` — choices `no`/`forced`/`yes`, default **`yes`** on mpv 0.41 (read out of … → [tracks-and-subtitles](../../docs/rules/tracks-and-subtitles.md)
+- **Custom subtitle fonts live in app data and refresh without restarting.** The import accepts TTF/OTF/TTC/OTC files without overwriting an existing file; the viewer can set `sub-font` by family name. After a change, `sub-fonts-dir` is toggled so mpv's `UPDATE_SUB_HARD` option callback reloads the subtitle renderer and its fonts. → [tracks-and-subtitles](../../docs/rules/tracks-and-subtitles.md)

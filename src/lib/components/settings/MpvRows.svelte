@@ -165,6 +165,25 @@
         />
         <span class="slider-value">{value.toFixed(s.decimals)}{s.suffix ?? ''}</span>
       </div>
+    {:else if s.kind === 'text'}
+      <input
+        class="setting-input"
+        type="text"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        placeholder={s.placeholder}
+        value={mpv.settingsValues[s.key] ?? ''}
+        aria-label={s.label}
+        onchange={(e) => {
+          const value = e.currentTarget.value.trim();
+          mpv.setSetting(s, value || null);
+        }}
+        onkeydown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+      />
     {:else}
       <div class="segmented">
         {#each s.options as o (o.label)}
@@ -205,6 +224,18 @@
     align-items: center;
     gap: 6px;
     margin-top: 8px;
+  }
+
+  .setting-input {
+    box-sizing: border-box;
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.18);
+    color: #e0e0e6;
+    font: inherit;
   }
 
   .langs-auto {
