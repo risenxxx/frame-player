@@ -15,6 +15,7 @@
   import { IS_MAC } from '$lib/platform';
   import { notesTip, parseReleaseNotes } from '$lib/release-notes';
   import { player } from '$lib/player.svelte';
+  import { backToStart } from '$lib/start-screen.svelte';
   import { sync } from '$lib/sync/apply.svelte';
   import { formatCode } from '$lib/sync/protocol';
   import { wire, type RoomEvent } from '$lib/sync/wire.svelte';
@@ -139,6 +140,22 @@
 </script>
 
 {#snippet brandMark()}
+  <!-- With a file open the mark is the way home: the start screen was reachable
+       only from the context menu and the File menu. Without one it stays inert,
+       so pressing it keeps dragging the window as the rest of the bar does. -->
+  {#if player.hasFile}
+    <button
+      class="home"
+      data-tip={withKey(t('ctx.back_to_start'), 'back_to_start')}
+      aria-label={t('ctx.back_to_start')}
+      onclick={() => void backToStart()}
+    >{@render brandGlyphs()}</button>
+  {:else}
+    {@render brandGlyphs()}
+  {/if}
+{/snippet}
+
+{#snippet brandGlyphs()}
   <svg class="logo" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M3.2 7.6V5.9c0-1.5 1.2-2.7 2.7-2.7h1.7M16.4 3.2h1.7c1.5 0 2.7 1.2 2.7 2.7v1.7M20.8 16.4v1.7c0 1.5-1.2 2.7-2.7 2.7h-1.7M7.6 20.8H5.9c-1.5 0-2.7-1.2-2.7-2.7v-1.7"/><path fill="#e8e8ec" stroke="#e8e8ec" stroke-width="1.6" stroke-linejoin="round" d="M10 9v6l5.4-3z"/></svg>
   <span class="appname">Frame Player</span>
 {/snippet}
@@ -390,6 +407,24 @@
     height: auto;
     flex-direction: row-reverse;
     padding-right: 18px;
+  }
+
+  /* Only the mark and the name take the pointer; the rest of `.brand` lets a
+     press through to the bar, which drags the window. */
+  .brand .home {
+    display: flex;
+    flex-direction: inherit;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    pointer-events: auto;
+  }
+
+  .brand .home:hover .appname {
+    color: #fff;
   }
 
   .brand .logo {
