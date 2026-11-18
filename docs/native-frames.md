@@ -16,6 +16,41 @@ and a Windows desktop (build 28000) with an RTX 5080 (driver 610.62) and a Gigab
 monitor (3840×2160, 240 Hz, Windows HDR on, SDR white level 240 nits, reported
 peak 1000 nits).
 
+## Decided for version 2
+
+Settled in November 2026, after the Skathi 0.4 prototypes on both platforms
+and the Skathi fixes that followed them. The sections below still describe the
+state before this decision where they say otherwise; they are revised in the
+next pass over this document.
+
+- **The renderer is gpu-next on both platforms, through the render API.**
+  The way there is mpv PR #18845 ("libmpv: use the gpu-next renderer by
+  default in the render API", opened 2026-11-17 by an mpv maintainer, not
+  merged at the time of writing). It adds `MPV_RENDER_PARAM_RENDERER` and a
+  gpu-next render backend that builds libplacebo on the same API contexts the
+  old renderer uses (`libmpv_gpu_context_create` → `gpu_ctx_create`). Until it
+  is merged we carry it as a patch; a change to its API before the merge means
+  updating the patch.
+- **Windows: gpu-next on D3D11.** mpv renders with its D3D11 render API on our
+  own device into shared `R16G16B16A16_FLOAT` textures (one fence per texture,
+  CPU wait for the slot), now with the gpu-next renderer selected. Skathi stays
+  on its D3D12 renderer and opens the textures there. This needs a Windows
+  libmpv build of our own (the prebuilt one cannot carry the PR); the PR's CI
+  artifacts are for testing only.
+- **macOS: a Vulkan render API, by a patch of ours.** On top of PR #18845, a
+  `vulkan` backend for the render API: the client supplies a `VkImage`
+  imported from an IOSurface (`VkImportMetalIOSurfaceInfoEXT`, proven in the
+  probes below) and a timeline semaphore exported as the `MTLSharedEvent`
+  Skathi waits on; libplacebo renders through MoltenVK, i.e. Metal underneath.
+  gpu-next on the OpenGL render API (route A, which works with today's libmpv)
+  is the interim step only: OpenGL 4.1 has no compute shaders, so part of
+  gpu-next is unavailable there.
+- **Not now:** libplacebo backends of our own for Metal or D3D12. They would
+  not change latency, copies or memory (those sit in Skathi's pipeline), and
+  would be tested on far less hardware than libplacebo's Vulkan and D3D11
+  backends; their real gain would be platform features (MetalFX, DirectSR).
+  To be reconsidered after version 2 is stable.
+
 ## The shape of the design
 
 ```
