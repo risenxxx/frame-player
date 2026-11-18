@@ -382,6 +382,16 @@ mod imp {
                         } else {
                             previous
                         };
+                        // And never one of the player's own names. Tauri's
+                        // template backs up whatever the extension held, so an
+                        // install over an install left `Video_backup = Video`;
+                        // carried over, it restored the extension to a ProgId
+                        // `drop_legacy` deletes a moment later.
+                        let original = if is_players_prog_id(&original) {
+                            String::new()
+                        } else {
+                            original
+                        };
                         let _ = key.set_string(&backup, original);
                     }
                     key.set_string("", &id)
@@ -440,11 +450,17 @@ mod imp {
                 // is a broken entry.
                 if key.get_string("").ok().as_deref() == Some(id.as_str()) {
                     if let Ok(previous) = key.get_string(backup_name(&id)) {
-                        let _ = key.set_string("", previous);
+                        // Nothing before us, or a name of ours that no longer
+                        // exists: the extension goes back to having no default.
+                        if previous.is_empty() || is_players_prog_id(&previous) {
+                            let _ = key.remove_value("");
+                        } else {
+                            let _ = key.set_string("", previous);
+                        }
                     }
                 }
                 let _ = key.remove_value(backup_name(&id));
-                if let Ok(open_with) = CURRENT_USER.open(format!("{ext_path}\\OpenWithProgids")) {
+                if let Ok(open_with) = open_rw(&format!("{ext_path}\\OpenWithProgids")) {
                     let _ = open_with.remove_value(&id);
                 }
             }
@@ -461,7 +477,7 @@ mod imp {
                 let _ = key.remove_value(REGISTERED_NAME);
             }
         }
-        if let Ok(key) = CURRENT_USER.open(MARKERS) {
+        if let Ok(key) = open_rw(MARKERS) {
             let _ = key.remove_value(exe);
         }
     }
@@ -489,7 +505,7 @@ mod imp {
         {
             Ok(previous) => {
                 let _ = write(&path, "", &previous);
-                if let Ok(key) = CURRENT_USER.open(classes(id)) {
+                if let Ok(key) = open_rw(&classes(id)) {
                     let _ = key.remove_value(PREVIOUS_COMMAND);
                 }
                 GiveBack::Restored
@@ -548,7 +564,7 @@ mod imp {
         {
             Ok(previous) => {
                 let _ = write(&path, "", &previous);
-                if let Ok(key) = CURRENT_USER.open(classes(LEGACY_PROG_ID)) {
+                if let Ok(key) = open_rw(&classes(LEGACY_PROG_ID)) {
                     let _ = key.remove_value(PREVIOUS_COMMAND);
                 }
             }
@@ -556,6 +572,22 @@ mod imp {
                 let _ = CURRENT_USER.remove_tree(classes(LEGACY_PROG_ID));
             }
         }
+    }
+
+    /// An existing key, opened so that a value can be removed from it.
+    /// `CURRENT_USER.open` is read-only, and a `remove_value` through it fails
+    /// with access denied — which `let _ =` used to swallow, leaving every
+    /// "Open with" entry and the marker behind on uninstall. `create` would
+    /// work too, but would also make the key when it is not there.
+    fn open_rw(path: &str) -> windows_registry::Result<windows_registry::Key> {
+        CURRENT_USER.options().read().write().open(path)
+    }
+
+    /// The legacy shared ProgId, or one of the `FramePlayer.*` names: never a
+    /// value worth restoring an extension to.
+    fn is_players_prog_id(value: &str) -> bool {
+        value.eq_ignore_ascii_case(LEGACY_PROG_ID)
+            || value.to_ascii_lowercase().starts_with("frameplayer.")
     }
 
     /// The command a `Classes\<path>` key holds; `path` ends in `\command`.
