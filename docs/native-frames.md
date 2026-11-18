@@ -111,7 +111,11 @@ standalone probe, RTX 5080.
   GPU timestamp queries need their own `Flush` after the end query, or they read
   one frame period.
 - **Not tested on this path:** OSD and subtitles (they go through the same
-  renderer and should appear in the texture), Windows HDR off.
+  renderer and should appear in the texture), Windows HDR off. Imported
+  subtitle fonts are mpv options, not window state — `sub-fonts-dir` set before
+  init (`session.ts`) and copied to `osd-fonts-dir` by `sublines.lua` for the
+  second line — so they should carry over unchanged; the prototype checks a
+  family from that folder on both lines.
 
 ### What has to change in libmpv (for gpu-next, and for macOS)
 
@@ -597,7 +601,8 @@ later; it does not remove it. Options, cheapest first:
 - The real Skathi — every synchronisation number above is against an emulated
   consumer that follows its code.
 - Colour numbers on macOS, and through a gpu-next render-API texture (none
-  exists yet); OSD and subtitles through the D3D11 render API.
+  exists yet); OSD and subtitles (imported fonts included) through the D3D11
+  render API.
 - Whether VRR is enabled on a given Windows setup (the monitor's EDID range was
   48–240 Hz with what looks like a FreeSync block; NVIDIA's setting is not
   readable without its API).
