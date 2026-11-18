@@ -152,27 +152,44 @@ Size estimate for (1)+(2): on the order of PR #16818 itself, 1–2 thousand line
 
 ## Skathi's frame contract
 
-From Skathi's documentation (`/embedding/native-frames/`, `/embedding/gpu-frames/`,
-`/embedding/gpu-frames-macos/`) and its source at commit `8ab3a3d` with the
-`vendor/gpui` submodule at `6b741ca`. MIT OR Apache-2.0. Paths below are in
-those repositories.
+From Skathi 0.4.0 (released 2026-11-18: `skathi`, `sk-tree`, `sk-app` 0.4.0 on
+crates.io, `skathi-gpui` 0.4.1; npm `@skathi-native/runtime` `^0.4.0`), its
+documentation (`/embedding/native-frames/`, `/embedding/gpu-frames/`,
+`/embedding/gpu-frames-macos/`, `/web-platform/sk-surface/`) and its source at
+commit `aa232d0`. The first measurements were against `8ab3a3d`; what 0.4
+changed is marked. MIT OR Apache-2.0. Paths below are in that repository.
+`crates/sk-app/examples/surface.rs` is the complete producer example.
 
 - **API.** `skathi::surface(name)` → `SurfaceHandle` (`Send + Sync`).
   `surface.set_format(SurfaceFormat::Rgba16Float)` once, before presenting.
   `SharedTexture::open(handle)` / `from_iosurface(IOSurfaceRef)`, then
   `.with_fence(handle)` (Windows) or `.with_shared_event(event)` (macOS), and
   `present_shared_fenced(&shared, wait, release)`. `info()` gives the element's
-  size in physical pixels, `visible` and `display`; `on_change` reports
-  `Changed`, `DeviceLost` and `DisplayChanged`.
+  size in physical pixels, `visible`, `display` and `dynamic_range_limit`, and
+  `info.content_headroom()` is the peak to tone-map to; `on_change` returns a
+  `SurfaceWatch` and reports `SurfaceEvent::Changed(info)`, `DeviceLost` and
+  `DisplayChanged(display)`. Every present returns the frame id (`u64`);
+  `present_d3d12` and `present_metal_texture` return `FramePresent { frame,
+  release }`. `skathi::monotonic_ns()` is the clock of every timestamp.
+- **Skathi's own D3D11 device (0.4 docs) — not usable for us.**
+  `d3d11_device()` + `present_d3d11_texture(tex)` is the docs' "fewest moving
+  parts" path and their mpv example uses it: render on Skathi's device, the copy
+  is queued before the call returns, no shared texture, no fence. Under the
+  D3D12 renderer that device is a **D3D11On12** device created with only
+  `D3D11_CREATE_DEVICE_BGRA_SUPPORT` (`crates/sk-app/src/shared_gpu/legacy.rs`).
+  mpv's D3D11 render API decodes with `d3d11va` on the device it is given, and
+  D3D11On12 does not provide the video interfaces, so that path would cost the
+  zero-copy hardware decode (not measured — check once in the prototype, it
+  decides nothing else). We keep our own device and the shared textures.
 - **Formats.** Windows: `R16G16B16A16_FLOAT` (or `_TYPELESS`) on every GPU path.
   macOS: `RGBA16Float` textures, IOSurface `'RGhA'`, CVPixelBuffer
   `64RGBAHalf`. Alpha is straight, not premultiplied.
 - **Colour.** Linear, BT.709 primaries, **1.0 = SDR white** on every platform;
   values may exceed 1.0 or go below 0. Skathi converts to scRGB itself
   (scRGB = value × `sdr_white_nits` / 80).
-- **What happens on present** (`crates/sk-tree/src/surface/d3d12.rs` `copy_in`
-  754–850, `metal.rs` 528–639): on Skathi's copy queue, GPU-wait the producer's
-  fence for `wait`, copy into one of up to 4 surface textures (`MAX_SLOTS`),
+- **What happens on present** (`crates/sk-tree/src/surface/d3d12.rs`,
+  `metal.rs`): on a command queue of the surface's own (0.4; before it was one
+  copy queue shared by all surfaces), GPU-wait the producer's fence for `wait`, copy into one of up to 4 surface textures (`MAX_SLOTS`),
   signal Skathi's own fence, signal the producer's fence with `release`. So
   `release` means "my copy finished". The D3D11 renderer instead waits for
   `wait` **on the CPU** of the presenting thread (100 ms timeout → `Timeout`),
@@ -183,18 +200,41 @@ those repositories.
   anything is queued: neither the wait nor the release is ever submitted for
   that frame. Every present that returned `Ok` gets its release, in order, even
   if a newer frame replaced it before it was shown.
-- **A `wait` value that never arrives stalls Skathi's shared copy queue for
-  every surface** on D3D12 and Metal. The producer must signal `wait` even when
-  mpv failed to render the frame.
+- **A `wait` value that never arrives stalls that surface's queue** on D3D12
+  and Metal (0.4: the queue is per surface, so other surfaces and the UI keep
+  going; at `8ab3a3d` it stalled every surface). The surface is still dead until
+  it arrives, so the producer must signal `wait` even when mpv failed to render
+  the frame. Under the D3D11 renderer the wait is on the presenting thread's
+  CPU, up to `.with_timeout` (100 ms) → `Timeout`.
 - **Slot reuse is lazy on D3D12:** a finished slot is reclaimed inside
   `commands()`, which runs after `free_slot`, so it frees one present late.
   Whether a ring of three is enough against the real thing has to be checked on
   the prototype.
-- **Today's window is SDR.** Swapchains are `B8G8R8A8_UNORM` (Windows, 3
-  buffers, `FLIP_SEQUENTIAL`, `Present(0)`, paced by `DwmFlush`) and
-  `BGRA8Unorm` (`CAMetalLayer`, 3 drawables, `CAMetalDisplayLink` on macOS 14+).
-  No `SetColorSpace1`, no EDR. RGBA16F frames are clamped to 0…1 and
-  sRGB-encoded (`surface/color.rs`); `output_headroom` is always 1.0.
+- **HDR output, on demand (0.4, commit `32baf69`).** A window stays on the
+  8-bit path (`B8G8R8A8_UNORM` swap chain on Windows, `BGRA8Unorm`
+  `CAMetalLayer` on macOS), bit for bit as before, until its display is in HDR
+  **and** a visible element shows a half-float surface whose CSS
+  `dynamic-range-limit` allows more than 1.0 there. Then it switches: Windows
+  (D3D12 and D3D11 renderers) to `R16G16B16A16_FLOAT` +
+  `DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709`, macOS to `RGBA16Float` extended
+  in the screen's colour space (via gpui). The element then draws the frame's
+  own half floats from a half-float atlas tile, clamped to its limit and the
+  display's headroom; the rest of the page within one 8-bit code of the SDR
+  look. Two seconds after the last such element goes, the window switches back.
+  About 3× the swap-chain memory; at 4K with 96 translucent layers on an RTX
+  5070 a D3D12 frame was 23.4 ms against 23.2 ms. No HDR on Linux.
+  - `dynamic-range-limit: standard` keeps highlights at SDR white,
+    `constrained` at 2×, `no-limit` at the display's headroom,
+    `dynamic-range-limit-mix()` in between. The video element needs
+    `no-limit`.
+  - `display.output_headroom` is the headroom where the window can draw HDR,
+    else 1.0; `content_headroom()` is that limited by the element's
+    `dynamic-range-limit` — the number to give mpv.
+  - The SDR path is unchanged: values clamped to 0…1, exact sRGB curve
+    (`surface/color.rs`).
+  - Skathi's macOS page (`gpu-frames-macos`) still says "the window does not
+    ask for EDR yet"; the commit and the native-frames page say it does. Trust
+    the prototype, not either page.
 - **Display info** (`surface/display.rs`): Windows reads SDR white and HDR state
   from `QueryDisplayConfig` once a second and `IDXGIOutput6::GetDesc1`; macOS
   reads `NSScreen` EDR values and `maximumFramesPerSecond`. `headroom` =
@@ -202,38 +242,49 @@ those repositories.
 - **Linux:** surfaces take CPU frames only (no dmabuf). Moving to Skathi would
   cost the `feature/linux` branch its zero-copy render-API path.
 
-### Frame events (agreed with Skathi's maintainers, November 2026)
+### Frame events (shipped in 0.4)
 
-Not in commit `8ab3a3d`; announced as the design to implement. Check the shipped
-version against this list.
+Agreed with Skathi's maintainers in November 2026 and shipped in 0.4 as agreed;
+the names differ from the draft (`crates/sk-tree/src/surface.rs`,
+`surface/feedback.rs`).
 
-- Every `present_*` returns the frame number (`u64`).
-- Every present that returned `Ok` ends in **exactly one** event:
-  - `SurfaceEvent::FramePresented { frame, shown_at, refresh_interval, precision }`.
-    Sent once, at the frame's first refresh; how many refreshes it stayed is
-    the next frame's `shown_at` minus this one's.
-  - `SurfaceEvent::FrameDropped { frame, reason }` with `Superseded` (a newer
-    frame arrived before it was shown — sent immediately), `Hidden` (window
-    minimised or `info().visible` false — pending frame dropped then, and every
-    present while hidden is dropped at once), `DeviceLost` (before
-    `surfacelost`), `Closed`.
-- `shown_at` is in mpv's own clock: QPC on Windows, `mach_absolute_time` on
-  macOS. `refresh_interval` is the measured interval from the previous vblank to
-  the one the frame was shown on, so it is real under VRR; the nominal period
-  stays in `info().display`.
-- `precision: Exact | Estimated`. A normal window (`CreateSwapChainForHwnd`)
-  reads `SyncQPCTime` from `GetFrameStatistics`: exact. A transparent window
-  (`CreateSwapChainForComposition`) has no frame statistics; Skathi falls back
-  to the first compositor vblank after the GPU finished the present (±1
-  refresh), unless `IPresentationManager` works out. macOS uses
-  `addPresentedHandler`; `presentedTime == 0` becomes a drop.
-- The callback is a `Send` closure on the surface handle, called from Skathi's
-  vsync thread, in frame order, at most one vblank after the show. A hung UI
-  thread is the only thing that delays it.
-- One thing to confirm: gpui presents with `Present(0)`, and with the flip model
-  DWM discards a present that a newer one overtakes before the vblank. A
-  surface frame inside a discarded window present must come out as
-  `Superseded`, which holds if `Presented` is derived from `PresentCount`.
+- `surface.on_frame(|e: FrameEvent| …)` returns a `FrameWatch`; reporting stops
+  when it is dropped. Rust only — **no frame event reaches JavaScript** (the
+  element's JS events are `surfaceresize`, `surfaceready`, `surfacelost`,
+  `surfacedisplaychange`). Our frontend never needed it: mpv is fed in Rust.
+- While a watch is held, every present that returned `Ok` ends in **exactly
+  one** event, in frame-id order (an early-settled frame waits for its elders),
+  with no timeout:
+  - `FrameEvent::Presented { frame, shown_at, refresh_interval, precision }`,
+    once, on the frame's first refresh; how many refreshes it stayed is the next
+    frame's `shown_at` minus this one's. `refresh_interval` is that refresh's
+    real distance from the previous one (real under VRR); the nominal period is
+    `info().display.refresh_period`.
+  - `FrameEvent::Dropped { frame, reason: FrameDropReason }`: `Superseded` (a
+    newer frame replaced it first — reported as soon as known), `Hidden`
+    (nothing showing the surface can be on screen), `DeviceLost` (before
+    `surfacelost`), `Closed` (window closed or app quit; at quit delivered on
+    the quitting thread).
+- `FramePrecision::Exact | Estimated`. Windows: `Exact` when the swap chain's
+  frame statistics name the window present that showed it; `Estimated` (one
+  refresh after the first vblank following its GPU work, ±1, with the nominal
+  period as `refresh_interval`) when statistics lag, a poll is missed, or the
+  swap chain's statistics stay empty — which is what a composition (transparent)
+  window gets. macOS: `Exact` from the drawable's `presentedTime`. Linux:
+  always `Estimated`.
+- How it is derived: the tick records which surface frame each window present
+  carries; gpui reports each present's outcome (`gpui::present_feedback`); a
+  frame is presented by the first shown present that carried it, superseded
+  once nothing holds it. A window present that DWM discarded therefore makes its
+  frames `Superseded` — the case the draft asked to confirm.
+- The callback runs on Skathi's vsync thread on Windows and on a thread of its
+  own on macOS and Linux, never the UI thread. Keep it short; it may present or
+  drop its own watch. Only a stalled UI thread delays an event.
+- `shown_at` and `display.last_vblank` are in `skathi::monotonic_ns()`: QPC on
+  Windows, `mach_absolute_time` on macOS, `CLOCK_MONOTONIC` on Linux, in ns —
+  the clock mpv's `mp_raw_time_ns` reads. `mpv_get_time_ns` counts from an
+  arbitrary start: take the offset once.
+- `stats()` counts frames presented and shown.
 
 ## Synchronisation, measured
 
@@ -274,7 +325,7 @@ Two fixes, both verified bit-exact over 1000 frames:
    the frame must reach the screen (paused, a frame step), present it again.
 4. Always signal `wait`, even when rendering failed (see the copy-queue stall
    above).
-5. A step or a pause is complete when `FramePresented` arrives for that frame
+5. A step or a pause is complete when `FrameEvent::Presented` arrives for that frame
    number. `Superseded` means present it again.
 6. On `Hidden`, stop calling mpv's render; audio continues. Render the current
    frame once when visible again.
@@ -437,10 +488,13 @@ differ from gpu-next's:
 ### What to configure
 
 - **D3D11 render API (old renderer):** `target-trc=linear target-prim=bt.709
-  hdr-compute-peak=no target-peak=<203 × headroom>`. With Skathi's window SDR
-  today (`output_headroom` 1) that is `target-peak=203`; once it outputs HDR,
-  `203 × output_headroom` (846 on this display: 1000 / 240 × 203). This is the
-  recipe Skathi's documentation gives, plus `hdr-compute-peak=no`.
+  hdr-compute-peak=no target-peak=<203 × info.content_headroom()>`, re-set on
+  every `Changed`/`DisplayChanged`. On an SDR display or with the window not in
+  HDR that is `target-peak=203`; on this display with `dynamic-range-limit:
+  no-limit`, 846 (1000 / 240 × 203). This is the recipe Skathi's documentation
+  gives, plus `hdr-compute-peak=no`. The `<sk-surface>` needs
+  `dynamic-range-limit: no-limit` in CSS, or Skathi clamps highlights to 1× or
+  2× SDR white.
 - **gpu-next (own window today, render API later), output headroom 1:**
   `target-trc=linear target-prim=bt.709 hdr-reference-white=203`. Here
   `target-peak` does nothing with `linear`, and without `hdr-reference-white`
@@ -481,6 +535,10 @@ differ from gpu-next's:
 
 ### EDR on macOS (for Skathi's HDR output, measured with a CALayer showing the IOSurface)
 
+Measured before Skathi 0.4 had an HDR window, to know what macOS does with
+values above 1.0. Skathi 0.4 now switches the layer itself; these numbers say
+what to expect from it, not how to configure it.
+
 - Values above 1.0 reach the compositor unclipped: an HDR ScreenCaptureKit
   capture of the window (extended Display P3, half-float) matched every sample
   to ~4 decimals after conversion (grey 2.0/3.0/4.0 → 1.3535/1.6123/1.8252 in
@@ -515,10 +573,23 @@ boundary unevenly — 24 fps on 60 Hz drifts from 3:2:3:2 to occasional 3:3 or
   `CVDisplayLink`/`CADisplayLink` for the window's screen (`info().display`
   says which).
 - **Which of our frames landed on which refresh** only Skathi knows — that is
-  the frame events above. With `precision: Exact`, mpv can run
-  `video-sync=display-resample` via the timestamped `report_swap`. With
-  `Estimated`, stay on `video-sync=audio` and use the events only to confirm
-  steps and pauses.
+  the frame events above.
+- **Skathi's documented recipe (0.4, no mpv patch):**
+  `video-sync=display-resample`, `display-fps-override` = `display.refresh_hz`
+  (updated on `DisplayChanged`), one `mpv_render_context_report_swap()` per
+  frame rendered — shown or dropped — called from `on_frame`, and a render
+  thread that waits for `MPV_RENDER_UPDATE_FRAME`, sleeps to the middle of the
+  refresh (`last_vblank` + `refresh_period`), renders and presents. Without
+  `report_swap` libmpv takes the end of the render call as the flip.
+  `report_swap` carries no timestamp, so mpv reads the time when the callback
+  runs — at most a vblank after the real flip, not the flip itself.
+  `surface.rs` (`feedbackStart`/`feedbackStop`) holds 24 fps on 165 Hz as
+  7,7,7,7,7,7,7,6 refreshes this way.
+- **Our plan:** try that recipe first and measure it against `video-sync=audio`
+  with the e2e metrics below; the timestamped `report_swap` patch (feed
+  `shown_at` instead of "now") is the fix if the callback delay shows up as
+  jitter. With `Estimated` precision, stay on `video-sync=audio` and use the
+  events only to confirm steps and pauses.
 - **Today's numbers to compare against** (macOS, e2e, 120 Hz): with the default
   `video-sync=audio`, 0 dropped and 0 delayed frames; gpu-next with
   `display-resample`: vsync-jitter 0.112–0.120, estimated display fps
@@ -526,8 +597,8 @@ boundary unevenly — 24 fps on 60 Hz drifts from 3:2:3:2 to occasional 3:3 or
   with `display-resample`: jitter 0.150–0.174, 117.4–118.4 fps, 9 mistimed, 15
   delayed. Windows, D3D11, `display-resample`: jitter 0.266, estimated 224.09
   against 240, 235 delayed (not investigated).
-- `stats().shown` in today's Skathi counts a frame when its atlas copy is
-  queued, before draw and present; it is not a "shown" signal.
+- At `8ab3a3d`, `stats().shown` counted a frame when its atlas copy was
+  queued, before draw and present — not a "shown" signal. Use `on_frame`.
 
 ### The window has to be opaque on Windows
 
@@ -540,10 +611,12 @@ and the "nothing painted means desktop visible" rule in
 
 ## Copies and the zero-copy question
 
-Today a GPU frame takes three passes inside Skathi: copy into the surface
+At `8ab3a3d` a GPU frame took three passes inside Skathi: copy into the surface
 texture (`copy_in`), half-float → 8-bit mapping (`Ready::for_atlas` →
 `draw_mapped`, lazy: only when first shown), copy into the window's atlas
-(`node.rs` → `live.rs` → gpui atlas). For a 3840×2160 FP16 frame that is about
+(`node.rs` → `live.rs` → gpui atlas). In 0.4 a window in HDR mode skips the
+mapping and puts the frame's own half floats into a half-float atlas tile (two
+passes); an SDR window still maps. Neither was measured in 0.4. For a 3840×2160 FP16 frame that is about
 300 MB of memory traffic, ~18 GB/s at 60 fps — roughly 2 % of an RTX 5080's
 bandwidth, 5 % of an M3 Max's, and an estimated 20–30 % of an integrated GPU's
 shared 60–100 GB/s (estimate from bandwidth figures, not measured).
@@ -589,7 +662,7 @@ later; it does not remove it. Options, cheapest first:
   `d3d11-output-format` accepts rgba16f, `d3d11-output-csp` linear and pq.
 - **e2e screenshots after a seek can lag mpv's state by more than 400 ms**
   (macOS): two identical builds differ at SSIM 0.94–0.96 on the seek steps.
-  `FramePresented` for the frame number is the proper wait.
+  `FrameEvent::Presented` for the frame id is the proper wait.
 - **SDR, gpu-next against `vo=gpu` on macOS:** flat colours match within 1/255,
   but window screenshots differ at SSIM ~0.92 across the whole video area
   (dithering or scaling; not investigated).
@@ -598,8 +671,13 @@ later; it does not remove it. Options, cheapest first:
 
 - Windows with HDR off; the composition-window (`Estimated`) timestamps; AMD
   and Intel GPUs; anything across processes.
-- The real Skathi — every synchronisation number above is against an emulated
-  consumer that follows its code.
+- The real Skathi 0.4 — every synchronisation number above is against an
+  emulated consumer that followed `8ab3a3d`'s code; 0.4 moved the copy to a
+  queue per surface and added the HDR path, neither measured.
+- Whether the window switches to HDR as described on both platforms (the macOS
+  documentation contradicts itself), and the latency of the switch and of
+  switching back while a video plays.
+- Skathi's `report_swap`-from-`on_frame` recipe against `video-sync=audio`.
 - Colour numbers on macOS, and through a gpu-next render-API texture (none
   exists yet); OSD and subtitles (imported fonts included) through the D3D11
   render API.
@@ -609,11 +687,14 @@ later; it does not remove it. Options, cheapest first:
 
 ## Next steps
 
-1. **A Windows prototype with real mpv:** a Skathi window with an `<sk-surface>`
-   fed by the D3D11 render API (shared textures created in D3D11, one fence per
-   texture, CPU wait for the slot). It needs no mpv patch and checks the
-   protocol, the ring size against lazy slot reuse, and the frame events
-   against the real framework.
+1. **A Windows prototype with real mpv on Skathi 0.4** (`cargo add skathi@0.4`,
+   start from `crates/sk-app/examples/surface.rs`): an `<sk-surface>` with
+   `dynamic-range-limit: no-limit`, `set_format(Rgba16Float)`, fed by the D3D11
+   render API on our own device (shared textures created in D3D11, one fence
+   per texture, CPU wait for the slot), `target-peak` from
+   `content_headroom()`. It needs no mpv patch and checks the protocol, the
+   ring size against lazy slot reuse, the HDR switch, the frame events and
+   Skathi's display-resample recipe against the real framework.
 2. **A macOS prototype without mpv:** the same with the Vulkan → IOSurface
    producer from the probes.
 3. The mpv patch: the Vulkan render API type for gpu-next (after checking what
