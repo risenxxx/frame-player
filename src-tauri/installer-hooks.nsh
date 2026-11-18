@@ -24,11 +24,6 @@ Var FpPortable          ; 1 when the box is ticked
 Var FpPortableAsked     ; 1 when the page was actually shown
 Var FpPortableCheckbox
 
-; The `magnet:` candidate (see NSIS_HOOK_POSTINSTALL). Spelled the same in
-; src-tauri/src/shell_handler.rs, which writes these keys for a portable copy.
-!define FP_MAGNET_PROGID "FramePlayer.Magnet"
-!define FP_CAPABILITIES "Software\FramePlayer\Capabilities"
-
 !define FP_PORTABLE_LABEL "Keep settings and watch history in the installation folder, not in my user profile"
 
 ; The template defines this too, but at its line 427 — after this file is
@@ -120,24 +115,15 @@ FunctionEnd
     ${EndIf}
   ${EndIf}
 
-  ; `magnet:` - entered as one *candidate* for the scheme, never written over
-  ; `Software\Classes\magnet`, which belongs to whichever torrent client the
-  ; viewer already has. A `RegisteredApplications` entry whose capabilities name
-  ; a ProgId of our own puts the player in Settings > Default apps and in the
-  ; "open with" picker, and changes nothing until the viewer picks it. This is
-  ; why `magnet` is not in the deep-link plugin's `schemes`: the template turns
-  ; that list into `Classes\<scheme>` keys, at every install and every update.
-  ; The same keys, under the same names, are what a portable copy writes for
-  ; itself (src-tauri/src/shell_handler.rs) - a change to one is a change to both.
-  WriteRegStr SHCTX "Software\Classes\${FP_MAGNET_PROGID}" "" "Magnet link"
-  WriteRegStr SHCTX "Software\Classes\${FP_MAGNET_PROGID}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
-  WriteRegStr SHCTX "Software\Classes\${FP_MAGNET_PROGID}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
-  WriteRegStr SHCTX "${FP_CAPABILITIES}" "ApplicationName" "${PRODUCTNAME}"
-  WriteRegStr SHCTX "${FP_CAPABILITIES}" "ApplicationDescription" "${PRODUCTNAME}"
-  WriteRegStr SHCTX "${FP_CAPABILITIES}\URLAssociations" "magnet" "${FP_MAGNET_PROGID}"
-  WriteRegStr SHCTX "Software\RegisteredApplications" "${PRODUCTNAME}" "${FP_CAPABILITIES}"
-  ; SHCNE_ASSOCCHANGED, so Settings lists the player without a sign-out.
-  System::Call "shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)"
+  ; The shell registration - a ProgId per file type, the player in Settings >
+  ; Default apps, audio offered rather than taken, and the `magnet:` candidate -
+  ; is written by the player itself (src-tauri/src/shell_handler.rs), so an
+  ; installation, a portable copy and an installation updated in place all get
+  ; the same keys from one implementation. That is also why
+  ; tauri.windows.conf.json empties `fileAssociations`: the template's own
+  ; macro gives every extension one ProgId, which is issue #76. If this run
+  ; fails, the player writes the same keys at its next start.
+  ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --register-shell'
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
@@ -152,17 +138,12 @@ FunctionEnd
   ; no.
   Delete "$INSTDIR\.portable"
 
-  ; The `magnet:` candidate - not when this is the old copy being replaced by an
-  ; update, whose installer writes the same keys right after; and only while the
-  ; ProgId still opens *this* installation: a portable copy that took it since
-  ; keeps it, and gives it back by its own switch.
+  ; The shell registration - not when this is the old copy being replaced by
+  ; an update, whose installer writes the same keys right after. The player
+  ; gives back only what still opens *this* installation: a portable copy that
+  ; took a type since keeps it.
   ${If} $UpdateMode <> 1
-    ReadRegStr $R7 SHCTX "Software\Classes\${FP_MAGNET_PROGID}\shell\open\command" ""
-    ${If} $R7 == "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
-      DeleteRegKey SHCTX "Software\Classes\${FP_MAGNET_PROGID}"
-      DeleteRegKey SHCTX "${FP_CAPABILITIES}"
-      DeleteRegValue SHCTX "Software\RegisteredApplications" "${PRODUCTNAME}"
-    ${EndIf}
+    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --unregister-shell'
   ${EndIf}
 
   ${If} $DeleteAppDataCheckboxState = 1

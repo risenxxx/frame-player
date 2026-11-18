@@ -77,6 +77,22 @@
           "org.xiph.ogv",
           "public.3gpp"
         ]
+      },
+      {
+        "ext": ["mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma", "aif", "aiff", "mka", "ac3", "eac3", "dts", "wv", "ape"],
+        "name": "Audio",
+        "description": "Audio file",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "contentTypes": [
+          "public.audio",
+          "public.mp3",
+          "public.mpeg-4-audio",
+          "public.aac-audio",
+          "org.xiph.flac",
+          "com.microsoft.waveform-audio",
+          "public.aiff-audio"
+        ]
       }
     ],
     "icon": [

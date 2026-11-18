@@ -1268,6 +1268,12 @@ fn raise_fd_limit() -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before everything: the installer and the uninstaller start the executable
+    // only to write or remove its shell registration (shell_handler.rs), and
+    // that run must not raise a window or meet the single-instance guard.
+    if shell_handler::handle_install_flag() {
+        return;
+    }
     // First, and before any of it: a descriptor spent before this runs is spent
     // against 256.
     let fd_limit = raise_fd_limit();
@@ -1551,6 +1557,9 @@ pub fn run() {
             if let Ok(path) = std::env::var("FP_AIRPLAY_PLAY") {
                 tauri::async_runtime::spawn(airplay::selftest(app.handle().clone(), path));
             }
+            // A registration an older version wrote — an installation updated
+            // in place, which no installer ran for — is brought up to date.
+            shell_handler::refresh(app.handle());
             // `FP_SHELL_HANDLER=on|off` takes or gives back the shell
             // registration a portable copy would normally decide from its own
             // settings switch — the undo path is the safety valve on an
