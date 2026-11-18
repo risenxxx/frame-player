@@ -110,7 +110,7 @@ registry trees up first** — a portable copy repoints them at itself:
 
 ```bash
 reg export "HKCU\Software\Classes\frameplayer" protocol.reg
-reg export "HKCU\Software\Classes\Video" progid.reg
+reg export "HKCU\Software\Classes" classes.reg   # the ProgIds are FramePlayer.<ext>, one per type
 bun run tauri build --debug --no-bundle
 powershell -ExecutionPolicy Bypass -File scripts/pack-windows-update.ps1 -Portable -OutDir /tmp/p
 ```

@@ -229,6 +229,20 @@ for _, name in ipairs(COPIED) do
         end
     end)
 end
+-- The fonts the viewer imported (subtitle_fonts.rs) are a folder of the
+-- subtitles' renderer, and the OSD has its own: without the copy a family
+-- picked from that folder draws the main line and not the second, and the
+-- probe measures the main line in a fallback font. An overlay reads the folder
+-- once, when its renderer is made (osd_libass.c), so a change removes both —
+-- the next update makes them again with the folder as it is now.
+mp.observe_property("sub-fonts-dir", "string", function(_, value)
+    if value == nil then return end
+    mp.set_property("osd-fonts-dir", value)
+    overlay:remove()
+    probe:remove()
+    render()
+end)
+
 for _, list in ipairs({ SCALED, FACTOR }) do
     for _, name in ipairs(list) do
         mp.observe_property("sub-" .. name, "native", function(_, value)

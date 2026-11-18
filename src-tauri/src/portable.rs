@@ -23,7 +23,7 @@
 //! ├── .portable            the marker, and all it has to be is present
 //! ├── .data/
 //! │   ├── config/          app_config_dir  — mpv.conf
-//! │   ├── data/            app_data_dir    — bin/yt-dlp, opensubtitles.key
+//! │   ├── data/            app_data_dir    — bin/yt-dlp, opensubtitles.key, subtitle-fonts/
 //! │   ├── cache/           app_cache_dir   — thumbs, posters, cast, torrents
 //! │   └── webview/         localStorage: positions, tracks, hotkeys, geometry
 //! ├── frameplayer.exe
@@ -129,8 +129,8 @@ pub fn config_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     dir(app, "config", PlatformDir::Config)
 }
 
-/// What the player installed for itself and must not lose: the yt-dlp binary,
-/// the replaceable OpenSubtitles key.
+/// What the player installed or imported and must not lose: the yt-dlp binary,
+/// the replaceable OpenSubtitles key and custom subtitle fonts.
 pub fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     dir(app, "data", PlatformDir::Data)
 }

@@ -21,7 +21,7 @@ export const SUBTITLE_EXTENSIONS = [
 ];
 export const AUDIO_EXTENSIONS = [
   'mp3', 'aac', 'flac', 'wav', 'ogg', 'opus', 'm4a', 'ac3', 'eac3', 'dts',
-  'mka', 'wma', 'alac', 'aiff',
+  'mka', 'wma', 'alac', 'aiff', 'aif', 'oga', 'wv', 'ape',
 ];
 
 /// What the extension says: a sound file. The tracks decide in the end —

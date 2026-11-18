@@ -369,6 +369,12 @@ ProgId goes back to the installation, and half a second later the preference
 re-asserts itself and the portable copy takes it again — which is the switch
 being authoritative rather than a one-shot.
 
+The shared `Video` ProgId itself is gone since issue #76: one ProgId for every
+extension made Explorer treat them as one type, and nothing listed the player
+under Settings → Default apps. Every copy now writes `FramePlayer.<ext>` through
+`shell_handler.rs`, the installer included (`--register-shell`) — see the file
+types rule in [rules/sources-and-privacy](rules/sources-and-privacy.md).
+
 **It can also be installed rather than unpacked, and that took one finding about the generated installer.** The four `NSIS_HOOK_*` macros Tauri offers are inserted *inside* sections — far too late to add anything to a page — so a checkbox looks impossible until you notice *where* the hook file is included: line 35 of the template, before its own `Var` declarations and before it defines its pages, with `MUI2.nsh` already included at line 22. An include at the top of a script can define `MUI_PAGE_CUSTOMFUNCTION_SHOW` for a page inserted afterwards, and the template leaves `_SHOW` and `_LEAVE` free (it defines only `_PRE` for its pages). So `installer-hooks.nsh` adds the control that way, following the template's own pattern for the uninstaller's "delete app data" box down to the DPI arithmetic, so the two look alike.
 
 **Which page it lands on is not a choice.** `MUI_PAGE_CUSTOMFUNCTION_SHOW` is generic: the first page inserted after the define consumes it and undefines it again, and the template's first page is the welcome page. The directory page — where "where does this go" would sit more naturally, and where the first version of this aimed — is nine pages later and unreachable from the top of the script. The finish page, the other candidate, already spends both of its checkbox slots on the desktop shortcut and running the player. So the welcome page it is, which is at least where installers conventionally put an option.

@@ -165,6 +165,27 @@
         />
         <span class="slider-value">{value.toFixed(s.decimals)}{s.suffix ?? ''}</span>
       </div>
+    {:else if s.kind === 'text'}
+      <!-- The shared field of the sheet. No `stopPropagation`: a key typed
+           here already belongs to the field (`onKeydown` in input.svelte.ts),
+           and Escape must still reach the player to close the sheet. -->
+      <input
+        class="link-input"
+        type="text"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        placeholder={s.placeholder}
+        value={mpv.settingsValues[s.key] ?? ''}
+        aria-label={s.label}
+        onchange={(e) => {
+          const value = e.currentTarget.value.trim();
+          mpv.setSetting(s, value || null);
+        }}
+        onkeydown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+      />
     {:else}
       <div class="segmented">
         {#each s.options as o (o.label)}
