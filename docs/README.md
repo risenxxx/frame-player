@@ -24,6 +24,7 @@ stays here when its value is saving the next investigation.
 | [native-frames.md](native-frames.md) | Moving video into a native UI framework that takes GPU frames: why mpv stays, rendering through its D3D11 render API on Windows now and gpu-next on Vulkan later into a shared texture, the synchronisation rules (and the single-fence trap that delivers wrong frames), mpv's colour targets and HDR on both platforms, the framework's HDR window and per-frame events as shipped in its 0.4, frame pacing, the cost of its copies. Every figure measured; nothing built yet. |
 | [rules/](rules/README.md) | The rule book itself: fifteen chapters covering playback, thumbnails, tracks, torrents, casting, watching together, the catalog, sources and privacy, the window, the UI, CSS, the frontend's structure, and shipping. |
 | [ROADMAP.md](ROADMAP.md) | What shipped, what is planned, and what is only being considered. |
+| [ROADMAP-v2.md](ROADMAP-v2.md) | Version 2: the move to a native interface and what it carries — settings in layers, design tokens, the Classic and Glass themes (and what glass over video has to prove first), presets close to other players, the welcome screen. |
 
 ## Conventions
 

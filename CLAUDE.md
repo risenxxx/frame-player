@@ -51,6 +51,7 @@ there is the one without a chapter.
 |---|---|
 | `architecture.md` | Stack decisions, the embedding model and the constraint list — mandatory reading before touching mpv interop, seeking, fullscreen or zoom |
 | `ROADMAP.md` | Shipped, planned and considered features; a comment saying "ROADMAP 21" means a numbered item there |
+| `ROADMAP-v2.md` | Version 2 on Skathi: what is decided, the foundation (settings in layers, design tokens), the Classic and Glass themes and what glass costs over video, presets close to other players, the first-run screen |
 | `macos.md` | Why stock `--wid` cannot work on macOS, what the patch does, the CoreAudio crash the second patch is a backport for (and the one that was measured and not shipped), and the platform's own traps |
 | `sdr-color.md` | SDR against QuickTime, measured: the grey-scale and real-frame numbers, why metadata is not the cause, and which option combinations did and did not reproduce it |
 | `native-frames.md` | Handing mpv's frames to a native UI framework (Skathi) instead of a window behind a web view: mpv's D3D11 render API now and gpu-next on Vulkan later into a shared texture, the synchronisation rules and the single-fence trap, mpv's colour targets, Skathi 0.4's HDR window and frame events, frame pacing, the copies — all measured |
