@@ -30,6 +30,7 @@ mod portable;
 mod power;
 mod screenshot;
 mod shell_handler;
+mod subtitle_fonts;
 mod step_engine;
 mod thumb_service;
 mod torrent;
@@ -1366,6 +1367,10 @@ pub fn run() {
             logs::diag_mpv_log_path,
             logs::diag_collect,
             logs::diag_save,
+            subtitle_fonts::subtitle_fonts_dir,
+            subtitle_fonts::subtitle_fonts_list,
+            subtitle_fonts::subtitle_font_add,
+            subtitle_fonts::subtitle_font_remove,
             hdr_status,
             window_buttons,
             window_enter_fullscreen,

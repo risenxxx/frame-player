@@ -202,6 +202,14 @@ export async function initPlayer(config: PlayerHooks): Promise<Array<() => void>
   const shaderCache = await invoke<string>('mpv_shader_cache_dir').catch(() => null);
   if (shaderCache) initialOptions['gpu-shader-cache-dir'] = shaderCache;
 
+  // The font directory is configured before init; changing the option later
+  // triggers mpv's subtitle-renderer refresh after the viewer imports a font.
+  const subtitleFontsDir = await invoke<string>('subtitle_fonts_dir').catch((e) => {
+    console.warn('subtitle_fonts_dir failed:', e);
+    return null;
+  });
+  if (subtitleFontsDir) initialOptions['sub-fonts-dir'] = subtitleFontsDir;
+
   // The window to draw into, given by us rather than left to the plugin, whose
   // value for a Windows handle with bit 31 set is negative — and a negative
   // `wid` makes mpv open a window of its own (issue 67, `mpv_wid` in lib.rs).

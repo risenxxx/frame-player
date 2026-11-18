@@ -32,7 +32,7 @@ interface SettingBase {
   /// Which section it appears in. Only the three that hold mpv settings.
   tab: 'video' | 'audio' | 'subs';
   /// The section inside the tab — see the `set-group` headings.
-  group: 'picture' | 'decode' | 'online' | 'audio' | 'choice' | 'look';
+  group: 'picture' | 'decode' | 'online' | 'audio' | 'choice' | 'look' | 'fonts';
   key: string;
   label: string;
   hint?: string;
@@ -58,6 +58,10 @@ interface DeviceDef extends SettingBase {
 interface LangsDef extends SettingBase {
   kind: 'langs';
 }
+interface TextDef extends SettingBase {
+  kind: 'text';
+  placeholder: string;
+}
 export interface SliderDef extends SettingBase {
   kind: 'slider';
   min: number;
@@ -72,7 +76,7 @@ export interface SliderDef extends SettingBase {
   /// `sub-color.ts`. `liveDefault` is then mpv's default colour.
   opacity?: true;
 }
-export type SettingDef = SegmentedDef | DeviceDef | LangsDef | SliderDef;
+export type SettingDef = SegmentedDef | DeviceDef | LangsDef | TextDef | SliderDef;
 
 const CONF_WRITE_MS = 400;
 
@@ -265,6 +269,16 @@ export class MpvSettings {
       step: 0.05,
       decimals: 2,
       suffix: '×',
+    },
+    {
+      kind: 'text',
+      tab: 'subs',
+      key: 'sub-font',
+      group: 'fonts',
+      label: t('vset.sub_font'),
+      liveDefault: 'sans-serif',
+      placeholder: t('vset.sub_font_default'),
+      hint: t('vset.sub_font_hint'),
     },
     {
       kind: 'slider',
