@@ -94,7 +94,7 @@ cadence differently (see its section).
 |---|---|---|
 | Cadence | first shown on the intended refresh: old 51–86 %; new 96–97.5 % in a window, 99.3–100 % screen-sized | held the ideal number of refreshes, per clip: 23.976 fps old 74.5–77.6 %, new 96.7–99.2 %; 60 fps old 47.8–99.6 % by run, new 98.8–99.9 %; 24 fps SDR old 98.4–99.7 %, new 97.4–99.3 %; HDR10 24 fps old 92.6–100 %, new 96.1–98.6 % |
 | Exact seek, paused | overlapping cell medians (41–56 vs 43–66 ms) | run medians 95–98 vs 138–158 ms (+43…+61 ms by run order) |
-| Frame step, paused | lower medians on the new path (96–99 vs 46–49 ms), cause untested | run medians 99–101 vs 83–95 ms; single commands overlap (86–106 vs 50–117 ms) |
+| Frame step, paused | the same once both use `display-resample` (44–46 vs 46–49 ms); the old path's 96–99 ms is `video-sync=audio` | run medians 99–101 vs 83–95 ms; single commands overlap (86–106 vs 50–117 ms) |
 | Back step, paused | overlapping cell medians (83–94 vs 88–95 ms) | run medians 161–198 vs 216–243 ms (+19…+83 ms by run order) |
 | CPU, 24 fps SDR | 2.5 → 4.5 % of a core | 7.9–10.0 → 15.1–29.2 % (old `gpu` renderer, capture running) |
 | GPU, 24 fps SDR | 0.4 → 1.0 % | 3.8–4.4 → 9.1–10.6 % (capture running; not comparable across OSes) |
@@ -106,15 +106,19 @@ cadence differently (see its section).
 On Windows the new path put more frames on their intended refresh in every
 cell. On macOS the clear difference is 23.976 fps, and the old path's
 run-to-run spread at 60 fps; at 24 fps SDR and HDR10 the ranges overlap. Paused
-latency: on Windows the seek and back-step medians overlap and the forward
-step's medians are lower on the new path, for an untested reason; on macOS the
+latency: on Windows the seek and back-step medians overlap, and the forward
+step is the same once the old path also uses `display-resample`. On macOS the
 new path's run medians are higher for seeks and back steps. Stage MM reported
-44.9–48.0 ms median from present to `shown_at`; it may explain part of that.
+44.9–48.0 ms median from present to `shown_at`, and most of that is not
+Skathi's: a native app paced by `CAMetalDisplayLink`, as gpui paces windows on
+macOS 14+, takes as long (see "Latency" under macOS).
 The new path costs more CPU and GPU. Memory depends on the window size: on
 Windows the prototype's private bytes rise by about 320–370 MB and its GPU
-memory by 580–610 MB from the 1280×720 window to screen-sized, whatever plays.
-Which allocations make that step is the largest open question about cost.
-None of these comparisons supports a production memory saving.
+memory by 580–610 MB from the 1280×720 window to screen-sized. An empty Skathi
+window has no such step; it comes with presented frames, and the GPU half of
+it is taken apart under "Memory" for Windows. The private-bytes half is the
+driver charging each unshared texture to the process; the working set stays
+flat. None of these comparisons supports a production memory saving.
 
 ### Windows: the prototype, measured
 
@@ -272,11 +276,11 @@ produced a wrong frame.
 | Back step | 82.8–93.9 ms | 77.2–99.2 ms | 87.7–95.1 ms | 82.3–101.5 ms |
 
 - Seek and back-step medians overlap between the paths, within the spread.
-- **The frame-step difference is unexplained.** It is close to two frame
-  durations against one. A guess, not measured: the step follows mpv's sync
-  mode (`audio` on the old path, `display-resample` on the new). It must not
-  be read as a gain of the Skathi path; a matched sync-mode comparison is
-  listed under "Not measured".
+- **The frame-step difference is the old path's sync mode.** In a control on
+  Skathi 0.5.0, the old path with `video-sync=display-resample` steps in
+  44–46 ms, and the new path in 46–49 ms with either sync mode (3 runs per
+  cell, no wrong frames). The old path's 96–99 ms comes from
+  `video-sync=audio`. It is not a gain of the Skathi path.
 - With the option off, a presented frame was reported 1.43 refreshes after the
   `report_swap` call: 5.97 ms at the median, p95 10.2 ms (n = 3). That matches
   the `shown_at` column of the feedback table below (1.43–1.45), not its
@@ -352,9 +356,47 @@ dedicated GPU memory.
     324–326 → 583–584 MB private (+257–260), 229 → 746 MB GPU (+517) (n = 3).
   - The old path changes by −50 to +100 MB private and +20 to +170 MB GPU;
     the runs behind that figure are not tabled here.
-  - Which allocations make this step, Skathi's or others, is not measured.
-    Most of the screen-sized difference against the shipping player is this
+  - Most of the screen-sized difference against the shipping player is this
     step.
+- **What makes the step** (Skathi 0.5.0):
+  - **An empty Skathi window does not make it.** A minimal app, with or
+    without an `<sk-surface>` nobody presents to, holds 177–178 MB private
+    in both sizes (12 runs). Its GPU memory goes 49 → 120 MB: three 8-bit
+    swap-chain buffers.
+  - **With frames presented**, the test pattern and a ring of 3, the step is
+    +260 MB private and +517 MB GPU (3 runs per size). The GPU step splits
+    as follows. The total is measured. The split uses sizes from the source
+    and counts from a build that logs texture creation, because no
+    per-allocation tool was available. The rows sum to the total within
+    1–2 MB in both sizes.
+
+    | Allocation | GPU step |
+    |---|---|
+    | The swap chain going half-float (3 buffers) | +141 MB |
+    | Our producer ring (3 textures) | +141 MB |
+    | Skathi's two copy slots, each a half-float texture with an 8-bit twin | +141 MB |
+    | Skathi's HDR scene target | +47 MB |
+    | Skathi's atlas copy of the frame | +47 MB |
+
+  - **The private-bytes step is a charge, not used memory.** A control
+    program with no Skathi shows that this driver charges every unshared
+    D3D11/D3D12 texture 1:1 to private bytes as untouched commit, and does
+    not charge shared textures or swap-chain buffers (one run per kind).
+    Skathi's 234 MB of ordinary textures plus a 24 MB zeroed CPU image give
+    +258 MB, against +255–260 MB measured. The working set stays at 155 MB.
+  - **With mpv playing**, the step is about 95 MB larger on both counters.
+    That this is mpv's output-sized render targets is inferred.
+  - **Possibly avoidable**, from the source and not tried, at 3840×2160:
+    - the 8-bit twin of each half-float slot in an HDR window, 64 MB;
+    - the CPU placeholder image, 32 MB;
+    - one of the two copies of the frame, 64–128 MB;
+    - a third swap-chain buffer, 64 MB;
+    - on our side, a ring of 2 (below).
+  - **Seen once each:**
+    - a third copy slot sometimes appears, +96 MB;
+    - a slot of the old size is kept after the window shrinks back.
+  - The prototype's own `VRAM` log lines count the shared ring twice. The
+    figures in this section come from an external probe.
 - A ring of 2 instead of 3 saves one texture: 16 MB of GPU memory in the
   window and 64 MB screen-sized, nothing in private bytes (n = 3).
 
@@ -458,6 +500,37 @@ loaded into the prototype on `c7a524d5`, n = 3 per cell.
 - A reading, not established: libplacebo models an SDR display's black level
   and maps HDR10 with its own curve.
 
+#### On Skathi 0.5.0
+
+The prototype was rebuilt on `39ba435f` (0.5.0, `skathi-gpui` 0.5.2), with
+the payload rebuilt by the same version:
+
+- **Memory:** unchanged from `c7a524d5`. For lean 1080p SDR: 552–554 MB
+  private in the window and 909–910 MB screen-sized; 384 and 996 MB GPU.
+- **Cadence:** 99.2–99.9 % of frames on their intended refresh with
+  `exact_frame_feedback` off, and 99.9–100 % with it on (12 runs each: 24
+  and 60 fps, both window sizes).
+- **One present per refresh still loses frames** (6 runs):
+  - 6.8–7.2 % of frames are `Superseded`;
+  - the desktop gets a new picture on 93.3–93.5 % of refreshes;
+  - the loss is periodic, one frame in fifteen, every 62.5 ms;
+  - `SK_OCCLUSION=0`, the option, and disabling DirectComposition did not
+    change it (one run each);
+  - Skathi logs nothing about these frames.
+
+  The cause is not established. Filed as Skathi #26. The recipe repeats
+  frames, so mpv's cadence above is not affected.
+- **Closing** (#20, #24):
+
+  | Close path | Error lines per run | Accepted presents with no event |
+  |---|---|---|
+  | `Handle::close()` while presenting (10 runs) | 0 | 1–3 in 9 of 10 runs |
+  | Producer stopped, then `Handle::close()` (5 runs) | 0 | none |
+  | Posted `WM_CLOSE` while presenting (10 runs) | 1 | 1–2 in 8 of 10 runs |
+
+  The remaining line is `Invalid window handle. (0x80070578)` from
+  `gpui_windows::window`.
+
 #### Not measured
 
 - The shipping player:
@@ -467,8 +540,6 @@ loaded into the prototype on `c7a524d5`, n = 3 per cell.
   cost is known.
 - `exact_frame_feedback`: its CPU, GPU and power cost; the option at other
   refresh rates; the option with a ring of 2.
-- The frame-step control: the old path with `video-sync=display-resample`, or
-  the new path with audio sync.
 - Sound against picture with instruments, and runs with a non-zero
   `audio-delay`.
 - Other displays and modes:
@@ -484,7 +555,8 @@ loaded into the prototype on `c7a524d5`, n = 3 per cell.
   healthy adapter.
 - `gpu-next`: its cost at 60 fps, tone-mapping options matched to `gpu`, a
   second driver or GPU.
-- Which allocations make Skathi's window-size memory step.
+- The memory split per allocation with a tool (VMMap, PIX, the debug layer).
+  The split above comes from sizes and creation counts.
 - What the compositor does with a late frame (a present trace needs
   elevation).
 - Long sessions.
@@ -550,8 +622,17 @@ mpv's GL render API (`4.1 Metal`) → `CGLTexImageIOSurface2D` → IOSurface `'R
   the ramp start (the first `NSScreen` value above 1.0), 11–15 captured frames
   stay at 1.000, then a 17–18 % jump. The first brighter frame came
   157–172 ms after the command (6 runs). From 2.0 there was no jump (3 runs).
-  The cause is a hypothesis: Skathi's maintainers think macOS "most likely"
-  (#18); the capture cannot separate it from Skathi's switch.
+  **The hold is macOS's.** A native `CAMetalLayer` app without Skathi shows
+  the same (M53, 8 runs): the 8.0 band first rises above 1.0 at 161–168 ms,
+  with 12–17 captured frames at 1.000 before it. Frames keep reaching the
+  screen during the hold: a marker band changes at +39–40 ms. Requesting EDR
+  alone gives the same 161.5 ms. Skathi's 17–18 % first jump is its own
+  clamp: the HDR capture records the layer's values, even above the current
+  headroom, not the panel's light.
+- **"From 1.0" means the app's own reading.** `NSScreen`'s headroom differs
+  between processes: a windowless process read 8.79 for minutes while the app
+  read 1.0. Every "from 1.0" in this section is the app's value, not the
+  panel's state.
 
 #### Cadence against the shipping video path
 
@@ -593,6 +674,23 @@ By run order, the prototype's medians differ by −6.5, −18.7, −8.9 ms for s
 the runs are in order, not paired replicates. Stage MM reported 44.9–48.0 ms
 median from present to `shown_at`; it may explain part of the seek and back-step
 difference.
+
+**Most of the present-to-screen time is the display link, not Skathi** (M53,
+27 runs × 10 commands):
+- A native `CAMetalLayer` app paced the way gpui paces windows on macOS 14+
+  (`CAMetalDisplayLink`) takes 37.0 ms p50 (31.9–47.3) from command to
+  captured frame. Skathi's comparable figure is 36.8–43.1 ms.
+- The link targets each frame 41.6 ms (5 refreshes) after its callback, in 12
+  of 12 runs. `preferredFrameLatency = 1` did not change that.
+- Without the link (`nextDrawable` and `presentDrawable`) it is 13.6 ms. With
+  `displaySyncEnabled` off it is 6.9 ms; tearing was not checked.
+- The drawable count (2 or 3), `presentsWithTransaction` and
+  `present(atTime:)` changed nothing beyond the spread.
+- Inferred: Skathi's own share is 0–6 ms. The rest is gpui's choice of
+  `CAMetalDisplayLink`, served by macOS.
+- Sparse presents on the link get no `presentedTime` in the native app either
+  (131 of 132 were 0). That likely explains the frames without a time that
+  Skathi reported at low frame rates.
 
 #### CPU and GPU
 
@@ -638,6 +736,20 @@ difference to the bare path is made of:
 - 83 MB against 7 of IOAccelerator objects, mostly the old renderer's video-sized
   intermediates (inferred from sizes); gpu-next is 30–40 MB lower;
 - 7–8 extra 8 MB chunks of an unidentified graphics pool (56–64 MB).
+
+**The window-size step on macOS is the window's drawables** (M53, minimal
+Skathi app, 18 runs):
+- `phys_footprint` is about 50, 62–70 and 95 MB at 480×270, 960×540 and
+  1600×960 pt.
+- IOSurface memory goes 4.2 → 16 → 48 MB: two 8-bit drawables of the
+  window's size. They account for 44 of the 45 MB difference.
+- An `<sk-surface>` with no frames costs nothing measurable.
+- The peak is 331–397 MB at start-up in every run. Runtime shader compilation
+  is the guess, not isolated.
+- One run reached 374 MB at the large size (264 MB of unmapped graphics
+  memory). It was not reproduced.
+
+Memory with frames playing, and in an EDR window, was not measured this way.
 
 #### Audio through CoreAudio
 
@@ -742,8 +854,17 @@ app-owned device, RGBA16F IOSurface pool, one timeline semaphore/event per slot.
   the compositor, VideoToolbox NV12/P010, footprint (a 2160p slot is ~63 MiB).
 - Queue-family ownership and image layouts are provisional until the ring
   runs under validation.
-- **Skathi caveat** (source, `aa232d0e`): the atlas path clamps RGBA16F to BGRA8;
-  an HDR branch keeps extended values. Confirm which runs in the target build.
+- **Which Skathi branch shows the frame** (M53, source with 3 lldb runs and 3
+  pixel runs per mode, 0.5.2). The window's output mode decides it on every
+  tick:
+  - **In an 8-bit window**, every shown frame goes through the 8-bit mapping
+    (`Ready::for_atlas`, which saturates), and bands of 2, 4 and 8 read 1.0.
+  - **In an EDR window**, the mapping never runs. The frame's half floats go
+    into a half-float atlas tile, and the capture reads 1.998, 3.998 and
+    7.993.
+
+  An HDR producer therefore needs the window in EDR. One 8-bit run under
+  lldb never presented a frame; it was left out and not investigated.
 
 #### Not measured
 
@@ -754,7 +875,7 @@ second surface; device loss; acoustic output; 4K and 60 fps HDR cadence; steps o
 ### Skathi defects found, and their state
 
 Filed in github.com/argon-chat/skathi while building the prototypes. #1–#20
-are closed, most of them within hours; #21 and #22 are open. "Re-measured"
+are closed, most of them within hours; #21–#27 are open. "Re-measured"
 means our own runs confirmed the fix, on the build named; "landed" names the
 upstream commit, which is not always the build we tested.
 
@@ -766,21 +887,23 @@ upstream commit, which is not always the build we tested.
 - **#6** Nothing said whether a window draws HDR. `output_hdr` was added; on macOS it equalled "the layer is `RGBA16Float`" in 102 063 of 102 063 probes over 48 runs (MM).
 - **#7** A host built with devtools opened the devtools port although the payload was published with `publishDevtools: false`. Fixed (`bc43e91e`): such a host now starts with devtools off; a build with the `no-devtools` feature contains none. Re-measured on macOS (MM).
 - **#8** The macOS EDR layer was tagged with the display's colour space. Fixed (`8a1f1728`), re-measured 3 of 3 (MM): the layer is now tagged extended sRGB.
-- **#9** A surface showed nothing while the newest frame was in flight. Fixed (`c68618ad`). Before the fix, at exactly one present per refresh, the loss on Windows depended on the phase (61 % of frames just after the vblank, 8 % at 0.3–0.9 of the refresh). A post-fix figure of 6–10 % lost at one present per refresh was noted on Windows without its build, phase or run count; treat it as unverified. The recipe's at most one present per refresh, started by the formula above, comes from the pacing work of #15.
+- **#9** A surface showed nothing while the newest frame was in flight. Fixed (`c68618ad`). Before the fix, at exactly one present per refresh, the loss on Windows depended on the phase (61 % of frames just after the vblank, 8 % at 0.3–0.9 of the refresh). After the fix, on 0.5.0, one frame in fifteen is still lost at one present per refresh: see #26. The recipe's at most one present per refresh, started by the formula above, comes from the pacing work of #15.
 - **#10** The documented mpv recipe (`report_swap` from `on_frame`) could not work. The page was rewritten along the recipe above.
 - **#11** The macOS EDR switch produced a glitch frame and a flood of `DisplayChanged`. Fixed, re-measured (MM): no glitch frame captured in 21 switches, 10 of them with full capture coverage near the switch.
 - **#12** A ring of 4 or more gave permanent `Busy` in an HDR window on D3D12. Fixed, re-measured on `1eacd896`.
 - **#13** `last_vblank` was the coming vblank and went stale. Fixed (`0a158b12`, then `9f24eb0c`), re-measured on `74e63fad`: p95 14.5–19.0 µs off the grid over 5 runs. `9f24eb0c` also carries the last known vblank forward after a refresh-rate change; we did not re-test a rate change on the current build. Before any vblank is known the value can be `None`; the producer then waits one `refresh_period`.
-- **#14** Covered, minimised or display-off windows reported frames as shown. Fixed (`2706f963`, `e373486f`). Still open, not filed: `Hidden` starts 30–169 ms late under a cover that does not take the foreground.
+- **#14** Covered, minimised or display-off windows reported frames as shown. Fixed (`2706f963`, `e373486f`). `Hidden` starting 30–169 ms late under a cover that does not take the foreground is #25.
 - **#15** At 24 fps frames came a refresh late and were labelled `Estimated`. The vblank clock (`9f24eb0c`) and the recipe changes (docs `74e63fad`) fixed the drift. Our patch landed upstream as the opt-in `exact_frame_feedback(true)` (`810843bd`, documented in `02dfa33d`) and was re-measured on `c7a524d5` above, on one display. It is off by default because it costs about one refresh of latency.
 - **#16** A removed D3D12 device was never replaced or reported. Fixed (`3f948c3e`), re-measured on `6cd67304` with 24 injected `RemoveDevice` removals and the producer's own D3D11 device intact: `SurfaceEvent::DeviceLost` came 16.6–33.6 ms after the removal and again 471–506 ms after it, when the replacement device was ready; video was back 690–708 ms after the removal. On this machine the old shared fences read `UINT64_MAX` for good and gave `Busy` when reused, so the producer makes new fences after a device loss; the maintainer's machine kept the last value, and Skathi's documentation (`02dfa33d`) now says the fence breaks "on some systems". During the ~0.7 s the window shows the desktop behind it. A real driver reset was not tested.
 - **#17** A refused GPU frame's reason was promised in the log but not printed. Fixed (`71f66833`): each surface logs a warning once per reason. Verified in source only: in our device-loss runs presents were refused before paint, so the line never appeared.
-- **#18** On macOS the HDR clamp climbed the EDR ramp in 200 ms steps. Fixed (`12f7f88e`) for the clamp Skathi paints with, re-measured on `c602b5a4`. `content_headroom()` and `DisplayChanged` still move in coalesced steps, so a producer that tone-maps to it still steps. The ~110 ms hold when EDR starts from 1.0 is "most likely" macOS by the maintainer's reading; our capture cannot tell the two apart.
+- **#18** On macOS the HDR clamp climbed the EDR ramp in 200 ms steps. Fixed (`12f7f88e`) for the clamp Skathi paints with, re-measured on `c602b5a4`. `content_headroom()` and `DisplayChanged` still move in coalesced steps, so a producer that tone-maps to it still steps. The ~110 ms hold when EDR starts from 1.0 is macOS's: a native app without Skathi shows it too (M53).
 - **#19** On macOS, frames shown at sparse presents or during a resize were reported `Superseded` or late. Fixed through `skathi-gpui` 0.5.2 (`c602b5a4`, `810843bd`, `77030d59`, `f2a79987`), re-measured on each in the scripted cases, with the residues listed above.
-- **#20** Closing a window logged `[ERROR]` lines. The maintainer reports them gone for both `close()` and a posted `WM_CLOSE` (`skathi-gpui` `186ed842`). Our last run predates that and still logged one line at every `Handle::close()`; posting `WM_CLOSE` then logged 5–6 `Invalid window handle` lines. Not re-measured, and a click on the close button was never measured.
-- **#21, #22** (open) `sk check` misses CSS that the runtime drops or flags. Filed from the check of moving the real interface to Skathi, which is a separate piece of work.
-
-Also not filed: 1–2 frames still in flight at close get no event (10 of 13 closes on Windows); the git dependency on Skathi needs the devtools bundle built from a clone.
+- **#20** Closing a window logged `[ERROR]` lines. Fixed (`skathi-gpui` `186ed842`). Re-measured on 0.5.0: no line after `Handle::close()` in 10 of 10 runs. A posted `WM_CLOSE` still logs one `Invalid window handle` line, down from 5–6; we reported it in the issue. A click on the close button was never measured.
+- **#21–#23** (open) `sk check` misses CSS that the runtime drops or flags, and inline `<svg>` loses CSS shape geometry. Filed from the check of moving the real interface to Skathi, which is a separate piece of work.
+- **#24** (open) A present accepted after the app's quit hook gets no event and still returns `Ok`. Measured on both systems: 2 frames in each of 6 closes on macOS, and 1–3 frames in 17 of 20 closes on Windows. The source shows nothing resolves them. A producer that stops before `close()` avoids it.
+- **#25** (open) On Windows, `Hidden` is late when a window that does not take the foreground covers ours. The occlusion answer is cached for 200 ms, and such a window changes none of the cache's keys (source). On macOS visibility comes from AppKit's notification.
+- **#26** (open) On Windows, at one present per refresh, one frame in fifteen is `Superseded` and never shown, every 62.5 ms at 240 Hz, with nothing logged.
+- **#27** (open) A git dependency on Skathi does not build without the devtools bundle, even with bun installed. `no-devtools` or `SK_DEVTOOLS_BUNDLE` avoids it.
 
 ## The shape of the design
 
@@ -1622,17 +1745,21 @@ remain substantive open points below. What is left:
   Svelte interface runs unchanged. A separate check has started; `sk check`
   already misses CSS the runtime drops or renders differently (Skathi #21,
   #22).
-- **The prototype's memory step with the window size** (about 320–370 MB
-  private and 580–610 MB GPU from 1280×720 to screen-sized on Windows): which
-  allocations, whose they are, and whether they can shrink.
+- **What of the window-size memory step can shrink.** On Windows the GPU
+  step is taken apart: swap chain, our ring, Skathi's copy slots with their
+  8-bit twins, its scene target and atlas copy. The private-bytes step is a
+  driver charge. Open: whether Skathi can drop the twins, the second copy of
+  the frame, the CPU placeholder and a third buffer, and whether a ring of 2
+  holds. Not confirmed with a per-allocation tool.
+- **Present-to-screen on macOS.** About 40 ms of it is `CAMetalDisplayLink`
+  targeting 5 refreshes ahead. Whether Skathi could present video without the
+  link (13.6 ms in a native app) is a question for upstream, not yet asked.
 - **gpu-next colour against `gpu`** with our options (the table above): which
   options give the intended values, on both platforms.
 - **The Vulkan render API on macOS**: researched and proven offscreen for one
   frame, not built. See "The Vulkan render API" above for its risks.
 - **Sound against picture** measured with instruments, and whether a fixed
   macOS `audio-delay` (+50 ms in the tested configuration) becomes a default.
-- **The frame-step difference on Windows** (46–49 against 96–99 ms), which is
-  unexplained; a matched sync-mode and renderer comparison would tell.
 - **A Windows switch between SDR and HDR output while playing.**
 - **Feedback accuracy**: `Estimated` events on Windows without the opt-in, the
   macOS residues after 0.5.2, a real-mouse resize, multi-display setups.
@@ -1667,8 +1794,10 @@ Skathi, measured").
      compositor readbacks, HDR patches and an SDR control, so that the HDR
      branch is known to be the one tested;
    - the bundle and licensing.
-4. **Skathi's window-size memory step**: find the allocations, and report it
-   upstream if it is theirs.
+4. **Skathi's memory and latency, upstream**:
+   - ask about the allocations that look avoidable in an HDR window;
+   - ask about presenting video without `CAMetalDisplayLink` on macOS;
+   - try a ring of 2 on our side.
 5. Compare with today's player through the e2e harness (on the `host-boundary`
    branch: `bun run e2e --mpv-conf <file>`, per-step frame metrics,
    `bun run e2e compare`).
