@@ -118,7 +118,11 @@ memory by 580–610 MB from the 1280×720 window to screen-sized. An empty Skath
 window has no such step; it comes with presented frames, and the GPU half of
 it is taken apart under "Memory" for Windows. The private-bytes half is the
 driver charging each unshared texture to the process; the working set stays
-flat. None of these comparisons supports a production memory saving.
+flat. A ring of 2 and a render at the video's size, both on our side, bring
+a 1080p clip at screen size 100–146 MB below the shipping player in private
+bytes and to 58–76 MB above it in GPU memory. The cost is picture sharpness
+while subtitles show (see "Memory" for Windows). Whether a production player
+keeps that saving with its real interface is not measured.
 
 ### Windows: the prototype, measured
 
@@ -138,6 +142,15 @@ were handled is not recorded in this document; treat that part as unverified.
 
 - Hardware: RTX 5080, one 3840×2160 display at 240 Hz, HDR on (SDR white 240
   nits, peak 1000 nits), 150 % scale, Windows 11.
+- **The driver caps every swap chain at 224 presents a second.** The
+  NVIDIA global profile on this machine has `Frame Rate Limiter` = 224.
+  This was read from the profile, and the setting was left as it is.
+  - **Bare control:** a D3D12 swap chain without Skathi, built like gpui's,
+    presents 224.01 times a second (10 runs).
+  - **What it affects:** anything that presents near 240 a second is capped,
+    and one-present-per-refresh tests lose one frame in fifteen to it.
+  - **What it does not affect:** 24 and 60 fps playback presents far below
+    the cap.
 - mpv: libmpv `v0.41.0-1303-ga39482e7a` with the `gpu` renderer, and `d3d11va`
   zero-copy decoding on all five test clips (24, 23.976 and 60 fps SDR, HDR10
   at 24 fps, and a 2160p HDR10 clip). The gpu-next subsection uses the
@@ -400,6 +413,68 @@ dedicated GPU memory.
 - A ring of 2 instead of 3 saves one texture: 16 MB of GPU memory in the
   window and 64 MB screen-sized, nothing in private bytes (n = 3).
 
+**How much our side can remove** (Skathi 0.5.0, 3 runs a cell, MB, read 30 s
+after the load). Each cell gives private bytes / working set / GPU dedicated.
+"Video-sized" means mpv renders at the video's display size, and Skathi scales
+the frame to the element. The shipping player's column is the 1.49.0 run
+above, not repeated.
+
+| Clip | Size | Shipping player | Baseline (ring 3, output-sized) | Ring 2 | Video-sized | Both |
+|---|---|---|---|---|---|---|
+| 1080p SDR | window | 629–631 / 837–849 / 287–290 | 554–562 / 284–289 / 384 | 530–555 / 274–283 / 367 | 546–555 / 280–285 / 384 | 550–554 / 279–280 / 367 |
+| | screen-sized | 704–734 / 861–904 / 479–480 | 910–912 / 273–277 / 996 | 911–920 / 274–281 / 932 | 594–602 / 281–283 / 571 | 593–604 / 280–284 / 555 |
+| 1080p HDR10 | window | 650–735 / 846–937 / 397–400 | 555–561 / 280–281 / 481 | 557–563 / 280–284 / 464 | 558–561 / 280–281 / 481 | 557–561 / 281–284 / 464 |
+| | screen-sized | 719–751 / 866–896 / 588–593 | 919–922 / 275–278 / 1093 | 918–922 / 273–275 / 1029 | 602–611 / 277–284 / 668 | 605–610 / 281–284 / 651 |
+| 2160p HDR10 | window | 865–1135 / 945–1234 / 956–968 | 903–910 / 420–421 / 1128 | 906–909 / 419–420 / 1112 | 902–910 / 419–421 / 1128 | 907–912 / 420 / 1112 |
+| | screen-sized | 1010–1285 / 975–1246 / 1225–1227 | 1214–1230 / 408–421 / 1709 | 1229–1232 / 420–421 / 1645 | 1228–1231 / 420–421 / 1709 | 1229–1233 / 420–421 / 1645 |
+
+- **The video-sized render** saves 308–320 MB private and 425 MB GPU for a
+  1080p clip at screen size. It changes nothing in the 1280×720 window, which
+  is already 1920×1080 pixels, or for the 2160p clip.
+- **Skathi's buffers follow the frame size.** Its copy slots, their 8-bit
+  twins and its atlas copy all follow the frame, not the element. This is
+  confirmed from the source and by a build that logs texture creation
+  (9 runs).
+- **Where the 425 MB goes** (inferred from sizes): ring 142, slots 142,
+  atlas 47, mpv's own targets about 94.
+- **Both changes, 1080p at screen size, against the shipping player:**
+  - private bytes 100–146 MB lower;
+  - working set about a third of the player's;
+  - GPU memory 58–76 MB higher.
+
+  Before the changes the prototype was 164–213 MB higher in private bytes
+  and 500–517 MB higher in GPU memory.
+- **What remains at screen size:** about 188 MB of GPU memory over the
+  window's reading. That is Skathi's half-float swap chain and HDR scene
+  target (inferred), which nothing on our side reaches.
+- **CPU** stays at 4.3–4.6 % of a core in every cell. GPU 3D time at screen
+  size falls from 2.48 % to 1.69 % with the video-sized render (24 runs).
+- **`Busy`:** 0 in 178 runs, 42 of them with a ring of 2 at screen size in an
+  HDR window.
+- **Cadence:** 99.2–100 % in 71 of 72 runs, with no difference between the
+  configurations. The one outlier ran while another program was redrawing the
+  desktop.
+- **The price is the picture.** Skathi scales with one bilinear tap and has no
+  better scaler; mpv's scaler in these runs is `lanczos`.
+  - **Fine detail at 2×:** PSNR 27.8 dB and SSIM 0.972 against the
+    output-sized render. mpv itself forced to bilinear gives 29.5 dB.
+  - **Subtitles drawn by mpv:** rasterised at the video size and stretched,
+    so they are visibly blurred (17.0 dB, SSIM 0.850 over the text). mpv's
+    OSD is affected the same way.
+  - **Upscaler shaders:** an optional upscaler shader would never engage
+    (from the source).
+  - **When nothing changes:** where frame and element are the same size, the
+    two paths are bit-identical.
+  - **Limits:** one paused frame per clip, generated content, 8-bit captures
+    and one ratio.
+- **Verdict:**
+  - **A ring of 2 is free.**
+  - **The video-sized render is acceptable only while nothing sharp is drawn
+    into the frame.** A product has three ways forward:
+    - render at the element size while subtitles or the OSD show;
+    - draw the subtitles outside the frame;
+    - wait for a better scaler in Skathi.
+
 #### Audio through WASAPI
 
 60 s per run, `ao=wasapi` at 48 000 Hz with mpv's `volume=0`, n = 3 per row,
@@ -510,16 +585,21 @@ the payload rebuilt by the same version:
 - **Cadence:** 99.2–99.9 % of frames on their intended refresh with
   `exact_frame_feedback` off, and 99.9–100 % with it on (12 runs each: 24
   and 60 fps, both window sizes).
-- **One present per refresh still loses frames** (6 runs):
-  - 6.8–7.2 % of frames are `Superseded`;
-  - the desktop gets a new picture on 93.3–93.5 % of refreshes;
-  - the loss is periodic, one frame in fifteen, every 62.5 ms;
-  - `SK_OCCLUSION=0`, the option, and disabling DirectComposition did not
-    change it (one run each);
-  - Skathi logs nothing about these frames.
-
-  The cause is not established. Filed as Skathi #26. The recipe repeats
-  frames, so mpv's cadence above is not affected.
+- **One present per refresh loses one frame in fifteen. The driver's
+  224 cap causes it, not Skathi** (#26):
+  - **The loss:** 6.7–7.2 % `Superseded`, and a new desktop picture on
+    93.3–93.5 % of refreshes, which is 224 a second. The loss repeats every
+    62.5 ms, the beat of 240 against 224. Measured on 0.5.0 and on master
+    `c29ab351`, 6 runs each.
+  - **Not our app:** the window's paints run back to back, 4.42 ms median
+    against a 4.167 ms refresh, and the time is inside the window's own
+    `Present`. Our page and harness do nothing periodic (one traced run).
+  - **Below the cap:** at about 190 presents a second nothing is lost on
+    either build (3 runs each).
+  - **Logging:** master logs each such frame as
+    `Superseded: newer frame N ready`.
+  - **Not tested:** Skathi's latch fix for the case it reproduced
+    (`20733eea`), because that needs the cap off.
 - **Closing** (#20, #24):
 
   | Close path | Error lines per run | Accepted presents with no event |
@@ -530,6 +610,17 @@ the payload rebuilt by the same version:
 
   The remaining line is `Invalid window handle. (0x80070578)` from
   `gpui_windows::window`.
+
+  On master `c29ab351` both close paths, 10 runs each, give no error line
+  and no accepted present without an event. A present after quit returns
+  `SurfaceError::Closed` whenever the producer still had one to make (#24).
+- **Regression check on master `c29ab351`:**
+  - **Memory** is unchanged.
+  - **Cadence** at 24 and 60 fps was 96.7–99.6 % with 0 `Busy` (12 runs).
+    The batch ran while another program redrew the desktop, and 0.5.0
+    interleaved under the same disturbance gave the same range. On a quiet
+    desktop master read 99.4 and 99.6 %.
+  - **Not obtained:** a full repeat on a quiet desktop.
 
 #### Not measured
 
@@ -875,7 +966,7 @@ second surface; device loss; acoustic output; 4K and 60 fps HDR cadence; steps o
 ### Skathi defects found, and their state
 
 Filed in github.com/argon-chat/skathi while building the prototypes. #1–#20
-are closed, most of them within hours; #21–#27 are open. "Re-measured"
+are closed, most of them within hours. Of #21–#30, only #29 is still open. "Re-measured"
 means our own runs confirmed the fix, on the build named; "landed" names the
 upstream commit, which is not always the build we tested.
 
@@ -887,7 +978,7 @@ upstream commit, which is not always the build we tested.
 - **#6** Nothing said whether a window draws HDR. `output_hdr` was added; on macOS it equalled "the layer is `RGBA16Float`" in 102 063 of 102 063 probes over 48 runs (MM).
 - **#7** A host built with devtools opened the devtools port although the payload was published with `publishDevtools: false`. Fixed (`bc43e91e`): such a host now starts with devtools off; a build with the `no-devtools` feature contains none. Re-measured on macOS (MM).
 - **#8** The macOS EDR layer was tagged with the display's colour space. Fixed (`8a1f1728`), re-measured 3 of 3 (MM): the layer is now tagged extended sRGB.
-- **#9** A surface showed nothing while the newest frame was in flight. Fixed (`c68618ad`). Before the fix, at exactly one present per refresh, the loss on Windows depended on the phase (61 % of frames just after the vblank, 8 % at 0.3–0.9 of the refresh). After the fix, on 0.5.0, one frame in fifteen is still lost at one present per refresh: see #26. The recipe's at most one present per refresh, started by the formula above, comes from the pacing work of #15.
+- **#9** A surface showed nothing while the newest frame was in flight. Fixed (`c68618ad`). Before the fix, at exactly one present per refresh, the loss on Windows depended on the phase (61 % of frames just after the vblank, 8 % at 0.3–0.9 of the refresh). The later "one frame in fifteen" at one present per refresh on Windows is the driver's 224 cap (#26), not Skathi. The recipe's at most one present per refresh, started by the formula above, comes from the pacing work of #15.
 - **#10** The documented mpv recipe (`report_swap` from `on_frame`) could not work. The page was rewritten along the recipe above.
 - **#11** The macOS EDR switch produced a glitch frame and a flood of `DisplayChanged`. Fixed, re-measured (MM): no glitch frame captured in 21 switches, 10 of them with full capture coverage near the switch.
 - **#12** A ring of 4 or more gave permanent `Busy` in an HDR window on D3D12. Fixed, re-measured on `1eacd896`.
@@ -898,12 +989,16 @@ upstream commit, which is not always the build we tested.
 - **#17** A refused GPU frame's reason was promised in the log but not printed. Fixed (`71f66833`): each surface logs a warning once per reason. Verified in source only: in our device-loss runs presents were refused before paint, so the line never appeared.
 - **#18** On macOS the HDR clamp climbed the EDR ramp in 200 ms steps. Fixed (`12f7f88e`) for the clamp Skathi paints with, re-measured on `c602b5a4`. `content_headroom()` and `DisplayChanged` still move in coalesced steps, so a producer that tone-maps to it still steps. The ~110 ms hold when EDR starts from 1.0 is macOS's: a native app without Skathi shows it too (M53).
 - **#19** On macOS, frames shown at sparse presents or during a resize were reported `Superseded` or late. Fixed through `skathi-gpui` 0.5.2 (`c602b5a4`, `810843bd`, `77030d59`, `f2a79987`), re-measured on each in the scripted cases, with the residues listed above.
-- **#20** Closing a window logged `[ERROR]` lines. Fixed (`skathi-gpui` `186ed842`). Re-measured on 0.5.0: no line after `Handle::close()` in 10 of 10 runs. A posted `WM_CLOSE` still logs one `Invalid window handle` line, down from 5–6; we reported it in the issue. A click on the close button was never measured.
-- **#21–#23** (open) `sk check` misses CSS that the runtime drops or flags, and inline `<svg>` loses CSS shape geometry. Filed from the check of moving the real interface to Skathi, which is a separate piece of work.
-- **#24** (open) A present accepted after the app's quit hook gets no event and still returns `Ok`. Measured on both systems: 2 frames in each of 6 closes on macOS, and 1–3 frames in 17 of 20 closes on Windows. The source shows nothing resolves them. A producer that stops before `close()` avoids it.
-- **#25** (open) On Windows, `Hidden` is late when a window that does not take the foreground covers ours. The occlusion answer is cached for 200 ms, and such a window changes none of the cache's keys (source). On macOS visibility comes from AppKit's notification.
-- **#26** (open) On Windows, at one present per refresh, one frame in fifteen is `Superseded` and never shown, every 62.5 ms at 240 Hz, with nothing logged.
-- **#27** (open) A git dependency on Skathi does not build without the devtools bundle, even with bun installed. `no-devtools` or `SK_DEVTOOLS_BUNDLE` avoids it.
+- **#20** Closing a window logged `[ERROR]` lines. Fixed (`skathi-gpui` `186ed842`). Re-measured: no line after `Handle::close()` on 0.5.0. A posted `WM_CLOSE` there still logged one `Invalid window handle` line, down from 5–6. On master `c29ab351` neither path logs anything (10 runs each). A click on the close button was never measured.
+- **#21, #22** `sk check` missed CSS the runtime drops or flags. Fixed for 0.6. In `6db5fc22` the runtime learnt `transition` with `var()`, state-made `::before`/`::after`, `min()`/`max()`/`clamp()` over percentages, stops from CSS, and `position: relative` paint order. In `cdde8ac6` `sk check` began running the host's own CSS code compiled to WebAssembly, so it reports what the runtime reports. What the renderer still lacks is a warning (`SK4006`), and what needs a 0.6 host is marked `SK4007`.
+- **#23** Inline `<svg>` lost CSS shape geometry and `var()` in stops. Fixed (`6db5fc22`), confirmed on macOS: 0 of 23 808 pixels differ from the attribute control.
+- **#24** A present accepted after the app's quit hook got no event and still returned `Ok`. Before the fix: 2 frames in each of 6 closes on macOS, and 1–3 frames in 17 of 20 on Windows. Fixed (`040bfb3c`): a present after quit now returns `SurfaceError::Closed`. Re-measured on master `c29ab351`, Windows: 0 frames without an event in 20 of 20 closes.
+- **#25** (not planned) On Windows, `Hidden` is up to 200 ms late when a window that does not take the foreground covers ours. Occlusion is cached for 200 ms, and closing the gap would need system-wide window hooks; the maintainer keeps the bound by design. Every other way of being covered is detected at once.
+- **#26** (closed, ours) One frame in fifteen lost at one present per refresh on Windows. It is the driver's 224 cap on our machine; see "On Skathi 0.5.0". The maintainer found and fixed a separate cause, a frame latched after the UI callbacks (`20733eea`), and added `Superseded` logging.
+- **#27** A git dependency did not build without the devtools bundle. Fixed (`39ed898d`): a Cargo git checkout without the bundle now builds without devtools and prints a `cargo:warning`.
+- **#28** `sk check` missed `-webkit-mask-*` and `vertical-align` with a length. Fixed by `cdde8ac6`, confirmed on `c29ab351`.
+- **#29** (open) A custom property changed by `:hover` does not reach `var()` in other rules, and nothing is logged.
+- **#30** (not planned) `sk check` does not see a refused value that arrives through `var()`. This is by design: it checks declarations as written, and such values show up only in the runtime log.
 
 ## The shape of the design
 
@@ -1742,15 +1837,25 @@ Allocation behaviour, accurate feedback across setups and the colour settings
 remain substantive open points below. What is left:
 
 - **The real interface on Skathi.** Its memory, its cost, and what of today's
-  Svelte interface runs unchanged. A separate check has started; `sk check`
-  already misses CSS the runtime drops or renders differently (Skathi #21,
-  #22).
-- **What of the window-size memory step can shrink.** On Windows the GPU
-  step is taken apart: swap chain, our ring, Skathi's copy slots with their
-  8-bit twins, its scene target and atlas copy. The private-bytes step is a
-  driver charge. Open: whether Skathi can drop the twins, the second copy of
-  the frame, the CPU placeholder and a third buffer, and whether a ring of 2
-  holds. Not confirmed with a per-allocation tool.
+  Svelte interface runs unchanged. A separate check is under way.
+  - **`sk check` on master** now runs the runtime's own CSS code. On today's
+    frontend it reports 0 errors and 67 warnings.
+  - **Not covered by `sk check`:** values that arrive through `var()` are
+    visible only in the runtime log (#30).
+  - **Still open upstream:** state rules that change custom properties
+    (#29).
+- **Rendering at the video's size, and the subtitles.** On Windows, a ring
+  of 2 and a video-sized render bring a 1080p clip at screen size to 100–146 MB
+  of private bytes below the shipping player and 58–76 MB of GPU memory above
+  it. The cost is Skathi's bilinear scaling and blurred mpv subtitles and OSD.
+  Open:
+  - when to switch to the element size;
+  - whether subtitles move out of the frame;
+  - what Skathi could drop on its side: the 8-bit twins, a second copy of the
+    frame, the CPU placeholder and a third swap-chain buffer, plus about
+    188 MB of half-float swap chain and scene target.
+
+  The split is not confirmed with a per-allocation tool.
 - **Present-to-screen on macOS.** About 40 ms of it is `CAMetalDisplayLink`
   targeting 5 refreshes ahead. Whether Skathi could present video without the
   link (13.6 ms in a native app) is a question for upstream, not yet asked.
@@ -1771,6 +1876,10 @@ remain substantive open points below. What is left:
 - **Whether VRR is enabled on a given Windows setup.** The monitor's EDID range
   was 48–240 Hz, with what looks like a FreeSync block; NVIDIA's setting is not
   readable without its API.
+- **Driver frame-rate caps.** Our Windows machine caps presents at 224 a
+  second. How the recipe behaves under such a cap at high frame rates, and
+  Skathi's latch fix (`20733eea`), would need the cap off. Not tested by
+  choice.
 
 ## Next steps
 
@@ -1794,10 +1903,13 @@ Skathi, measured").
      compositor readbacks, HDR patches and an SDR control, so that the HDR
      branch is known to be the one tested;
    - the bundle and licensing.
-4. **Skathi's memory and latency, upstream**:
-   - ask about the allocations that look avoidable in an HDR window;
-   - ask about presenting video without `CAMetalDisplayLink` on macOS;
-   - try a ring of 2 on our side.
+4. **Memory and latency**:
+   - use a ring of 2;
+   - render at the video's size while nothing sharp is drawn into the frame,
+     and decide how subtitles and the OSD are drawn;
+   - ask upstream about the allocations that look avoidable in an HDR window,
+     about a better scaler than bilinear, and about presenting video without
+     `CAMetalDisplayLink` on macOS.
 5. Compare with today's player through the e2e harness (on the `host-boundary`
    branch: `bun run e2e --mpv-conf <file>`, per-step frame metrics,
    `bun run e2e compare`).
