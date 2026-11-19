@@ -43,10 +43,104 @@ not repeat them.
 
 ### V2-2. Installing and updating through Velopack (decided)
 
-Velopack replaces the Tauri updater and the NSIS installer. V2-9 depends on it
-only for a first-run signal, and does not rely even on that (see there). Still
-open: what Velopack changes for the signing chain on both platforms, and for
-the update key. Today's chain is in [distribution.md](distribution.md).
+Velopack replaces the Tauri updater and the NSIS installer. Skathi leaves this
+part to the application ("your exe is yours to package, sign and update", its
+embedding guide), so leaving Tauri means rebuilding it in any case. V2-9
+depends on Velopack only for a first-run signal, and does not rely even on that
+(see there). Today's chain is in [distribution.md](distribution.md). What
+follows was read in Velopack's source (November 2026) unless it says measured.
+
+**What it retires.** `update.rs`, `pack-windows-update.ps1` and
+`installer-hooks.nsh`, about 1 900 lines. With them go the rules that exist only
+because of the in-place swap: the `*.fp-old` rename, "an update may not add a
+path", and the NSIS fallback whose code never returns. Velopack replaces the
+installation's `current/` directory as a whole and deals with locked files
+itself. `webview2.rs` goes with Tauri, since Skathi draws with its own
+renderer.
+
+**What it gives.** Delta packages (up to 10 deltas by default before it falls
+back to a full package), channels, an update downloaded in the background and
+applied on exit or on "Restart", and a portable zip, built by the same
+`vpk pack`, that updates itself. The Rust SDK (the `velopack` crate) is called
+from our own `main`, which is where Skathi's embedding puts us anyway.
+
+**What the installer looks like (Windows).** There is no wizard. `Setup.exe`
+shows a borderless, topmost, DPI-aware window with our image, then starts the
+player. The image is a PNG or an animated GIF; alpha is honoured, so the window
+can take the logo's shape. A 12 px progress bar in a colour we choose runs
+along its bottom edge. Without an image Setup falls back to a plain system
+progress dialog, so the image is not optional. Whatever a wizard would ask
+belongs to V2-9.
+
+**No folder choice.** Setup installs to `%LocalAppData%\<id>` and has no
+directory page. `--installto <dir>` (with `--silent`) exists only on the
+command line, for scripted deployment. That is deliberate: a folder the user
+can write is what lets updates apply without elevation. Version 1's NSIS wizard
+has a directory page, so this is a loss for whoever used it. **The answer is
+the portable zip as a second, equal download**, which is what "my own folder"
+usually means (`.portable` and `.data/` keep working). A bootstrapper of our
+own with a folder picker was rejected:
+
+- it is a second executable to sign and maintain;
+- its progress could only be faked, because a silent Setup reports none;
+- a folder outside the user's reach (`Program Files`) would break silent
+  updates.
+
+**macOS.** `vpk pack` puts `UpdateMac` inside `Contents/MacOS`, and Velopack
+treats every `.app` as portable. A bundle dragged out of the disk image
+therefore updates itself. The `dmgbuild` disk image stays the first download,
+and Velopack's `.pkg` (skipped with `--noInst`) is not needed. A `.pkg` would
+also need a Developer ID **Installer** certificate on top of the Application
+one. For signing:
+
+- `--signDisableDeep` signs only `UpdateMac` and the bundle. That fits today's
+  chain, where `macos-sign.sh` signs the libraries first.
+- Notarisation goes through a `notarytool` keychain profile
+  (`--notaryProfile`), so CI has to store the existing API key in a profile
+  first.
+
+Still to run: an update of a bundle in `/Applications` from a standard
+(non-admin) account.
+
+**The update key.** Velopack checks each package against the SHA-1 and SHA-256
+in the release feed, which it fetches over HTTPS. It verifies no signature.
+Today's Tauri updater checks a minisign signature, so moving as-is is a step
+down: whoever controls the bucket or the CDN would control every installed
+player. Version 2 signs the feed with an ed25519 key and verifies it before
+Velopack reads it. Like today's key, it exists only as a CI secret.
+
+**Windows signing** is unchanged and still missing. Setup is unsigned, so
+SmartScreen says "Unknown publisher" however good the splash looks. The
+candidates:
+
+- SignPath Foundation: free for open-source projects, signs from CI;
+- Azure Artifact Signing: not available to individuals in every country.
+
+`vpk pack` signs Setup, `Update.exe` and our binaries through a signing
+command we give it.
+
+**Moving version 1 installations.** The last Tauri release is a bridge:
+
+- it downloads Velopack's Setup, runs it silently, and removes the NSIS
+  installation through its own uninstaller;
+- a copy installed into a folder the viewer chose is reinstalled into that same
+  folder with `--installto`, not moved to `%LocalAppData%`;
+- a portable copy is replaced by the version 2 portable zip in place, keeping
+  `.portable` and `.data/`;
+- settings move through V2-3's migration, run from Skathi's `prepare_data_dir`.
+
+**Distribution.** A winget manifest from CI (`wingetcreate`). The Homebrew tap
+stays as it is.
+
+**Not done:**
+
+- **A second update channel for the interface alone.** Skathi allows replacing
+  `app.skpk` beside the executable, but Velopack's deltas already make an
+  interface-only release small, and two channels would mean two version
+  numbers.
+- **MSIX and the Store**, for the reason in
+  [distribution.md](distribution.md): a packaged application's file system is
+  virtualised.
 
 ## Foundation
 
@@ -268,8 +362,8 @@ setup again.
   room's brightness?
 - Should a preset ever change layout (where the controls sit), or only
   behaviour? The answer so far is behaviour only.
-- What does Velopack's macOS package mean for notarisation and the existing
-  signing secrets?
+- Does a Velopack update of a bundle in `/Applications` work from a standard
+  (non-admin) account, where that folder is not writable? (V2-2)
 
 ## Considered
 
