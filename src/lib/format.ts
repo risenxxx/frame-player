@@ -41,7 +41,27 @@ export function baseName(path: string): string {
  * pinned to one another by `shared/path-under.txt`, which both test suites read.
  */
 export function normalizePath(path: string): string {
-  return path.toLowerCase().replace(/\\/g, '/');
+  let p = path;
+  // A `file:` URL names a file as surely as its path does, and some programs
+  // hand one over instead of the path. Decoded rather than compared as a URL,
+  // or `file:///E:/Films/a.mkv` is under no folder at all.
+  const url = /^file:\/\/([^/]*)(.*)$/i.exec(p);
+  if (url) {
+    const [, host, rest] = url;
+    const local = decodeMaybe(rest.replace(/[?#].*$/, ''));
+    p = host && host.toLowerCase() !== 'localhost'
+      ? `//${host}${local}`
+      : local.replace(/^\/([A-Za-z]:)/, '$1');
+  }
+  p = p.toLowerCase().replace(/\\/g, '/');
+  // Windows' own long forms of the same path: `\\?\E:\…` (what a resolved
+  // path comes back as) and `\\.\E:\…` are `E:\…`, and `\\?\UNC\host\share`
+  // is `\\host\share`. Without this a drive excluded as `E:\` did not cover
+  // a file a program handed over in the long form.
+  p = p.replace(/^\/\/[?.]\/unc\//, '//').replace(/^\/\/[?.]\/(?=[a-z]:)/, '');
+  // A doubled separator inside a path is one separator to the file system; the
+  // two leading ones of a network path are not, so they are kept.
+  return p.slice(0, 2) + p.slice(2).replace(/\/{2,}/g, '/');
 }
 
 /**

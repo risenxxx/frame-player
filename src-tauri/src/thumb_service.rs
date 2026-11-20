@@ -623,14 +623,85 @@ fn path_under(path: &str, root: &str) -> bool {
     // spelled `E:\Films` failing to match `E:/Films/a.mkv`: a privacy root that
     // does not match is a leak, so this is the one comparison that must not be
     // laxer than the queue's `samePath`, which has normalized all along.
-    let norm = |s: &str| s.to_lowercase().replace('\\', "/");
-    let root = norm(root);
+    let root = normalize_path(root);
     let root = root.trim_end_matches('/');
     if root.is_empty() {
         return false;
     }
-    let p = norm(path);
+    let p = normalize_path(path);
     p == root || p.starts_with(&format!("{root}/"))
+}
+
+/// One spelling of a path, for comparing two of them — `normalizePath` in
+/// src/lib/format.ts, case by case (`shared/path-under.txt` holds both to it):
+/// a `file:` URL decoded to its path, case folded, the separators turned one
+/// way, Windows' long forms (`\\?\E:\`, `\\.\E:\`, `\\?\UNC\host\share`)
+/// taken back to the short ones, and a doubled separator inside the path
+/// collapsed — never the two that open a network path.
+fn normalize_path(path: &str) -> String {
+    let mut p = path.to_string();
+    if p.len() >= 7 && p[..7].eq_ignore_ascii_case("file://") {
+        let after = &p[7..];
+        let (host, rest) = after.split_at(after.find('/').unwrap_or(after.len()));
+        let rest = rest.split(['?', '#']).next().unwrap_or("");
+        let local = percent_decode(rest);
+        p = if !host.is_empty() && !host.eq_ignore_ascii_case("localhost") {
+            format!("//{host}{local}")
+        } else {
+            let b = local.as_bytes();
+            if b.len() >= 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' {
+                local[1..].to_string()
+            } else {
+                local
+            }
+        };
+    }
+    let mut p = p.to_lowercase().replace('\\', "/");
+    if let Some(rest) = p.strip_prefix("//?/unc/").or_else(|| p.strip_prefix("//./unc/")) {
+        p = format!("//{rest}");
+    } else if let Some(rest) = p.strip_prefix("//?/").or_else(|| p.strip_prefix("//./")) {
+        let b = rest.as_bytes();
+        if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+            p = rest.to_string();
+        }
+    }
+    let split = p.char_indices().nth(2).map_or(p.len(), |(i, _)| i);
+    let (head, tail) = p.split_at(split);
+    let mut out = String::with_capacity(p.len());
+    out.push_str(head);
+    for c in tail.chars() {
+        if c == '/' && out.ends_with('/') && out.len() > head.len() {
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// `%XX` decoded, and the string as it came when that fails — a stray `%` or
+/// an escape that is not UTF-8 — exactly like `decodeMaybe` on the JS side,
+/// whose `decodeURIComponent` refuses the whole string in both cases.
+fn percent_decode(s: &str) -> String {
+    let hex = |b: u8| (b as char).to_digit(16);
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let (Some(hi), Some(lo)) = (
+                bytes.get(i + 1).copied().and_then(hex),
+                bytes.get(i + 2).copied().and_then(hex),
+            ) else {
+                return s.to_string();
+            };
+            out.push((hi * 16 + lo) as u8);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
 }
 
 /// Delete every cached storyboard for files inside a folder.

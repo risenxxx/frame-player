@@ -63,3 +63,35 @@ E:\Films\a.mkv	E:\Films\	yes
 # here is that a folder root never claims one by accident.
 https://example.test/v	/Movies	no
 http://127.0.0.1:9000/t/abc/0/ep.mkv	/Movies	no
+
+# A whole drive excluded. `E:\` is what the folder picker returns for one, and
+# trimmed it is `e:` — which must cover the drive and only the drive.
+E:\Films\a.mkv	E:\	yes
+e:/a.mkv	E:\	yes
+E:\a.mkv	E:	yes
+EE:\a.mkv	E:\	no
+F:\a.mkv	E:\	no
+
+# Windows' long forms of a path are the same path (issue #66). `\\?\` is what
+# a resolved path comes back as, and a program that hands a file over in that
+# form must not walk it past an excluded drive.
+\\?\E:\Films\a.mkv	E:\	yes
+\\.\E:\Films\a.mkv	E:\Films	yes
+E:\Films\a.mkv	\\?\E:\Films	yes
+\\?\UNC\server\share\a.mkv	\\server\share	yes
+\\server\share\a.mkv	\\?\UNC\server\share\	yes
+\\server\share2\a.mkv	\\server\share	no
+\\?\F:\a.mkv	E:\	no
+
+# A `file:` URL names the file too, percent-encoding and all.
+file:///E:/Films/a%20b.mkv	E:\Films	yes
+file:///Movies/a.mkv	/Movies	yes
+file://localhost/Movies/a.mkv	/Movies	yes
+file://server/share/a.mkv	\\server\share	yes
+file:///Movies2/a.mkv	/Movies	no
+
+# A doubled separator inside the path is one separator; the two that open a
+# network path are not, so a network share is never mistaken for a local root.
+E:\Films\\a.mkv	E:\Films	yes
+/Movies//a.mkv	/Movies	yes
+//Movies/a.mkv	/Movies	no

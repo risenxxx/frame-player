@@ -22,6 +22,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => undefined) })
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => '/Private') }));
 
 import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 
 const invoked = invoke as unknown as ReturnType<typeof vi.fn>;
 
@@ -84,6 +85,52 @@ describe('isPrivatePath', () => {
     history.prefs = { enabled: false, excluded: [] };
     expect(isPrivatePath('/anywhere/a.mkv')).toBe(true);
     expect(isPrivatePath('https://x.test/v')).toBe(true);
+  });
+});
+
+/**
+ * Issue #66: a whole drive excluded (`X:\\`, as the folder picker returns it)
+ * and files from it still turning up. Every spelling of a file on that drive
+ * the player can be handed has to be refused, and whatever was recorded before
+ * the drive was excluded has to go and stay gone.
+ */
+describe('a drive excluded whole', () => {
+  it('covers every spelling of a file on it, and nothing on another drive', () => {
+    history.prefs = { enabled: true, excluded: ['X:\\'] };
+    for (const path of [
+      'X:\\Shows\\ep 1.mkv',
+      'x:/Shows/ep 1.mkv',
+      'X:\\Shows/ep 1.mkv',
+      '\\\\?\\X:\\Shows\\ep 1.mkv',
+      'file:///X:/Shows/ep%201.mkv',
+    ]) {
+      expect(isPrivatePath(path), path).toBe(true);
+      persistPosition(path, 600, 3600);
+    }
+    expect(positionsLoad()).toEqual({});
+    expect(isPrivatePath('C:\\Shows\\ep 1.mkv')).toBe(false);
+  });
+
+  it('takes what was recorded before it was excluded, and keeps it out', async () => {
+    persistPosition('X:\\Shows\\ep 1.mkv', 600, 3600);
+    persistPosition('C:\\Films\\a.mkv', 600, 3600);
+    rememberTitle('X:\\Shows\\ep 1.mkv', 'Episode One');
+    (open as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce('X:\\');
+    // The purge ends by reloading the start screen, which asks Rust which of
+    // the remaining files still exist.
+    invoked.mockImplementation(async (cmd: string, args?: { paths?: string[] }) =>
+      cmd === 'paths_exist' ? (args?.paths ?? []).map(() => true) : undefined,
+    );
+    try {
+      await addExcludedFolder();
+      await new Promise((r) => setTimeout(r, 0));
+    } finally {
+      invoked.mockImplementation(async () => undefined);
+    }
+    expect(Object.keys(positionsLoad())).toEqual(['C:\\Films\\a.mkv']);
+    expect(titleFor('X:\\Shows\\ep 1.mkv')).toBeNull();
+    persistPosition('X:\\Shows\\ep 1.mkv', 900, 3600);
+    expect(Object.keys(positionsLoad())).toEqual(['C:\\Films\\a.mkv']);
   });
 });
 

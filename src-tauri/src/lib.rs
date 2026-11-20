@@ -56,15 +56,43 @@ const OPEN_FILE_EVENT: &str = "frameplayer://open-file";
 /// external one (a media centre handing over a TorrServer stream, say). A link
 /// is opened rather than offered, unlike a `magnet:`: no scheme of ours routes
 /// `http` here, so only a local program can have put it in argv.
-fn pick_file_args(args: &[String]) -> Vec<String> {
+///
+/// A file comes back **absolute and in its short form**, whatever the launcher
+/// wrote. Explorer always passes a full path, but a program starting the player
+/// itself may pass one relative to *its* working directory, or Windows' long
+/// `\\?\` form. Kept as given, a relative name was looked up against the wrong
+/// directory when a second launch handed it to the running copy (whose working
+/// directory is its own), and either spelling went into the watch history as a
+/// path no excluded folder could match (issue #66). `cwd` is the launching
+/// process's: this one's for its own argv, the second instance's as
+/// single-instance reports it; without one a relative name is dropped.
+fn pick_file_args(args: &[String], cwd: Option<&std::path::Path>) -> Vec<String> {
     args.iter()
         .skip(1)
-        .filter(|a| {
-            is_stream_arg(a)
-                || (!a.starts_with('-') && std::path::Path::new(a.as_str()).exists())
+        .filter_map(|a| {
+            if is_stream_arg(a) {
+                return Some(a.clone());
+            }
+            if a.starts_with('-') {
+                return None;
+            }
+            let path = std::path::Path::new(a.as_str());
+            let full = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                cwd?.join(path)
+            };
+            full.exists().then(|| short_form(&full))
         })
-        .cloned()
         .collect()
+}
+
+/// A path as the rest of the player spells it: on Windows without the `\\?\`
+/// prefix (`dunce` drops it only where the short form means the same file).
+fn short_form(path: &std::path::Path) -> String {
+    #[cfg(windows)]
+    let path = dunce::simplified(path);
+    path.to_string_lossy().into_owned()
 }
 
 /// Whether an argument is an `http://` or `https://` link.
@@ -126,7 +154,10 @@ fn take_pending_files(state: tauri::State<'_, PendingOpen>) -> Vec<String> {
     let mut out = if state.argv_taken.swap(true, Ordering::SeqCst) {
         Vec::new()
     } else {
-        pick_file_args(&std::env::args().collect::<Vec<_>>())
+        pick_file_args(
+            &std::env::args().collect::<Vec<_>>(),
+            std::env::current_dir().ok().as_deref(),
+        )
     };
     out.extend(state.take());
     out
@@ -1322,14 +1353,17 @@ pub fn run() {
     if skip_guard {
         eprintln!("[startup] single-instance guard skipped (FP_NO_SINGLE_INSTANCE)");
     } else {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             // A second launch ("Open with" again, say): focus the existing
             // window and hand the file to it.
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.unminimize();
                 let _ = win.set_focus();
             }
-            deliver_files(app, pick_file_args(&args));
+            deliver_files(
+                app,
+                pick_file_args(&args, Some(std::path::Path::new(&cwd))),
+            );
             // A `frameplayer://join/<code>` link on Windows arrives as the argv
             // of a *second* launch, which single-instance forwards here. On
             // macOS the same link is an Apple Event and the deep-link plugin
@@ -1665,7 +1699,7 @@ mod tests {
             "frameplayer://join/abc",
             "ftp://example.com/a.mkv",
             "no-such-file.mkv",
-        ]));
+        ]), None);
         assert_eq!(
             picked,
             [
@@ -1673,6 +1707,24 @@ mod tests {
                 "https://example.com/a.m3u8",
             ]
         );
+    }
+
+    /// Issue #66: a name relative to the launcher's directory is resolved
+    /// against that directory, not this process's, and comes back absolute —
+    /// a relative path in the watch history is under no excluded folder.
+    #[test]
+    fn a_relative_file_is_resolved_against_the_launchers_directory() {
+        let dir = std::env::temp_dir().join(format!("fp-argv-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("ep 1.mkv"), b"").unwrap();
+        let picked = pick_file_args(&argv(&["ep 1.mkv"]), Some(&dir));
+        let elsewhere = pick_file_args(&argv(&["ep 1.mkv"]), None);
+        let absolute = pick_file_args(&argv(&[dir.join("ep 1.mkv").to_str().unwrap()]), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+        let want = short_form(&dir.join("ep 1.mkv"));
+        assert_eq!(picked, std::slice::from_ref(&want));
+        assert!(elsewhere.is_empty());
+        assert_eq!(absolute, [want]);
     }
 
     #[test]
