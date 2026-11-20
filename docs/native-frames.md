@@ -9,7 +9,9 @@ throwaway prototypes are, one per platform (see "The prototypes on Skathi,
 measured"). The point of this document is that the implementation starts from
 these findings instead of re-measuring them.
 
-Every number below comes from a probe that was run. The prototypes' sections
+Every number below comes from a probe that was run, unless it is marked as
+something else: a re-read of an earlier run's logs, a figure from source, a
+diff count, a simulation, or a measurement by Skathi's maintainer. The prototypes' sections
 give the conditions per stage or batch; where a summary pools runs, the
 section it summarises has the per-run values. The probes themselves were
 throwaway programs and are not in the repository; "Reproducing the probes" at
@@ -47,9 +49,10 @@ to disagree are marked superseded.
   `vulkan` backend for the render API: the client supplies a `VkImage`
   imported from an IOSurface (`VkImportMetalIOSurfaceInfoEXT`) and a timeline
   semaphore exported as the `MTLSharedEvent` Skathi waits on; libplacebo
-  renders through MoltenVK, i.e. Metal underneath. Offscreen direct-IOSurface
-  image and timeline-event interop passed on MoltenVK 1.4.2 for one frame
-  (below); the libmpv backend itself is future work.
+  renders through MoltenVK, i.e. Metal underneath. The backend is our patch
+  on a PR #18845 checkout (`aade20e8c`): 7 files, +578 −1. It runs offscreen,
+  VideoToolbox input and a PQ readback included (below); its connection to
+  Skathi is future work.
   Route A, the OpenGL render API, works with today's 0.41 libmpv, which renders
   it with the old `gpu` renderer (0.41 ignores the renderer parameter);
   gpu-next on it needs PR #18845. That is the interim step only: OpenGL 4.1 has
@@ -100,7 +103,7 @@ cadence differently (see its section).
 | GPU, 24 fps SDR | 0.4 → 1.0 % | 3.8–4.4 → 9.1–10.6 % (capture running; not comparable across OSes) |
 | Memory | private bytes against the shipping player, sizes unmatched: in a window 76–182 MB lower at 1080p, −230…+45 MB at 2160p; screen-sized +164…+213 MB at 1080p, −54…+225 MB at 2160p | `phys_footprint`: 221–225 MB above the bare video path at 1080p, same session; against an unmatched earlier whole-player observation (~845 MB), about 90–140 MB lower |
 | GPU memory against the shipping player | +81…+172 MB in a window, about +500 MB screen-sized | not separated |
-| Audio | no drift over 60 s by mpv's counters; about +6 ms `audio-delay` inferred, not tested | audio clock minus captured picture +51.8…+53.0 ms (old path +9.1…+11.1); `audio-delay=+0.050` tested in this setup; 24 fps plays 0.1–0.125 % slow |
+| Audio | no drift over 60 s by mpv's counters; about +6 ms `audio-delay` inferred, not tested | audio clock minus captured picture +51.8…+53.0 ms (old path +9.1…+11.1); `audio-delay=+0.050` tested in this setup (+4.9…+5.8 ms left); at 24 fps audio held at mpv's −0.125 % correction clamp while the picture ran at 0.9983–0.9989× |
 | gpu-next through PR #18845 | works on D3D11 (CI build); colour differs from `gpu` with the same options | initialises, decodes and renders on GL 4.1; a scaler shader error once per file |
 
 On Windows the new path put more frames on their intended refresh in every
@@ -121,7 +124,9 @@ driver charging each unshared texture to the process; the working set stays
 flat. A ring of 2 and a render at the video's size, both on our side, bring
 a 1080p clip at screen size 100–146 MB below the shipping player in private
 bytes and to 58–76 MB above it in GPU memory. The cost is picture sharpness
-while subtitles show (see "Memory" for Windows). Whether a production player
+while subtitles show (see "Memory" for Windows). The recommended first step
+renders at the element's size while a subtitle track or an mpv OSD message is
+on, and subtitled playback then gives up this saving. Whether a production player
 keeps that saving with its real interface is not measured.
 
 ### Windows: the prototype, measured
@@ -400,9 +405,14 @@ dedicated GPU memory.
   - **With mpv playing**, the step is about 95 MB larger on both counters.
     That this is mpv's output-sized render targets is inferred.
   - **Possibly avoidable**, from the source and not tried, at 3840×2160:
-    - the 8-bit twin of each half-float slot in an HDR window, 64 MB;
+    - the 8-bit twin of each half-float slot in an HDR window, 64 MB.
+      On D3D12 on master (`886ebf94`, #33) the twin is created on a slot's
+      first SDR read and kept until the slot retires; the maintainer counted
+      63.75 MiB for the two 4K twins on an RTX 5070. Not re-measured by us;
     - the CPU placeholder image, 32 MB;
-    - one of the two copies of the frame, 64–128 MB;
+    - one of the two copies of the frame, 64–128 MB (the maintainer keeps
+      the slot-to-atlas copy by design: redraws need the frame after the
+      producer reuses its texture, #33);
     - a third swap-chain buffer, 64 MB;
     - on our side, a ring of 2 (below).
   - **Seen once each:**
@@ -454,8 +464,9 @@ above, not repeated.
 - **Cadence:** 99.2–100 % in 71 of 72 runs, with no difference between the
   configurations. The one outlier ran while another program was redrawing the
   desktop.
-- **The price is the picture.** Skathi scales with one bilinear tap and has no
-  better scaler; mpv's scaler in these runs is `lanczos`.
+- **The price is the picture.** In these runs Skathi scaled with one bilinear
+  tap, the only scaler on that build; mpv's scaler is `lanczos`. On master,
+  `image-rendering: auto` upscales with Catmull–Rom (below).
   - **Fine detail at 2×:** PSNR 27.8 dB and SSIM 0.972 against the
     output-sized render. mpv itself forced to bilinear gives 29.5 dB.
   - **Subtitles drawn by mpv:** rasterised at the video size and stretched,
@@ -473,7 +484,13 @@ above, not repeated.
     into the frame.** A product has three ways forward:
     - render at the element size while subtitles or the OSD show;
     - draw the subtitles outside the frame;
-    - wait for a better scaler in Skathi.
+    - a better scaler in Skathi, which helps detail but cannot restore
+      subtitles already rasterised at the video's size.
+
+    Skathi answered the last one in #34 (`684e7036`, master, for 0.6):
+    `<sk-surface>` now honours `image-rendering`. With `auto` it uses
+    Catmull–Rom on enlarged axes and clamps overshoot at edges, HDR
+    highlights included; shrinking stays bilinear. Not re-measured by us.
 
 #### Audio through WASAPI
 
@@ -782,6 +799,14 @@ difference.
 - Sparse presents on the link get no `presentedTime` in the native app either
   (131 of 132 were 0). That likely explains the frames without a time that
   Skathi reported at low frame rates.
+- Upstream answer (#32, `227dfd1d`, master, for 0.6): an opt-in
+  `lowLatencySurface` per window (`<SkWindow lowLatencySurface>` or
+  `"window": { "lowLatencySurface": true }` in `sk.config.json`, read when
+  the window opens). The window then paces with its own timer and presents
+  with display sync on; a seek after a pause can take a drawable at once.
+  The link stays the default; UI animations in such a window can look less
+  even on a variable-refresh display. Not measured by us yet: the maintainer asks for the paused-seek and
+  frame-step runs with the option off and on.
 
 #### CPU and GPU
 
@@ -859,9 +884,57 @@ speakers' and panel's own delays are not in it.
   configuration; a product default needs optical and acoustic measurements.
 - The prototype in `video-sync=audio` read −2.4…−3.9 ms, with baseline-like
   cadence (72–84 % at 24 fps).
-- The recipe plays **24 fps 0.1–0.125 % slow** (audio resampled). mpv reads
-  119.3–119.6 Hz from our swap reports despite `display-fps-override=120`;
-  that our report timing is the cause is an inference.
+- At **24 fps** the audio clock ran at 0.99877–0.99902× (audio resampled,
+  `audio-speed-correction` 0.998750). mpv's final estimate from our swap
+  reports was 119.3–119.6 Hz despite `display-fps-override=120`; the
+  display-sync interval stayed at the nominal 1/120 s.
+- **Why, from mpv's source and the same runs' logs** (a later offscreen
+  analysis; nothing re-run on the screen):
+  - The panel ran at 120.000 Hz (a fit of `shown_at` against refresh
+    counts: 119.9993–120.0007 Hz). The video ran at 0.9989, 0.9983 and
+    0.9988× (5.0053, 5.0084 and 5.0061 refreshes per 24 fps frame). In 55 s
+    the three runs had 28, 12 and 28 gaps of 6 or more refreshes between
+    presents, and 17, 2 and 12 gaps of 4; the 4-refresh gaps are probably mpv
+    dropping a vsync to catch up (inferred).
+  - `vo_libmpv` has no vsync timestamps. In display-resample, mpv counts
+    each `report_swap` as one nominal vsync, and a frame lasts a counted
+    number of reports. If the producer misses a refresh, the frame can stay
+    one physical refresh longer without advancing mpv's count, and mpv
+    cannot see it.
+  - When audio leads by more than half a vsync, mpv 0.41 lowers its audio
+    multiplier by the full 0.125 % (and raises it when audio lags), holds
+    that until the error crosses zero, then returns to a clamped regression
+    estimate. The reading of 0.998750 is that correction, not a measured
+    rate. The PR head replaces it with a 1 s low-pass and a proportional
+    controller.
+  - The gaps do not follow long draws (4.3–4.8 ms median before them). The
+    prototype starts an iteration only at 5 % into a refresh and only if
+    mpv's update has arrived. A draw iteration reaches its report about
+    4.7 ms after it starts, which leaves about 3.6 ms for mpv's next update.
+    A late turnaround in mpv then loses the whole refresh. **This is a
+    hypothesis.** Missed reports were not counted directly (no per-iteration
+    times), the run counted more iterations than refreshes (about 7968 against
+    ~7.8k), and mpv's estimate implies 0.3–0.6 % of recent refreshes without
+    a report, more than the 0.11–0.17 % video deficit. Neither mismatch is
+    reconciled.
+  - **Proposed fix, on our side** (in resample-local mode): report as soon as
+    `mpv_render_context_render` returns, before the fence and the present,
+    and start a late iteration up to about 3 ms past the phase point, if
+    render and fence still make Skathi's latch, instead of skipping the
+    refresh. A model of the display-sync code (arithmetic only, an invented
+    timing tail calibrated to the measured rate) gives 0.60 % lost
+    refreshes for the prototype's policy and 0.006 % with both changes; only
+    the comparison means anything. In a separate sweep of the model, raising
+    `video-sync-max-audio-change` left the video rate unchanged. Not tried on
+    the screen.
+  - **`audio-delay`**: present → `shown_at` was 44.6, 46.3, 44.7 and 45.9 ms
+    p50 in those runs, beside the excess of about +40 ms above (+51.8…+53.0
+    against +9.1…+11.1). Inferred, not tested: in display-resample only, set
+    `audio-delay` from a running median of `shown_at` minus the actual swap
+    report time (which moves if the report moves earlier), not a fixed 50 ms.
+    `shown_at` is the display link's target, not light from the panel;
+    acoustic and optical checks are still needed. `video-sync=audio` did not
+    show the excess.
 
 #### Frame events (#19)
 
@@ -923,10 +996,53 @@ public PR has moved on since and reports problems in other configurations.
   after × 80/203, which nothing applies today; unscaled, it clips at the
   headroom on screen.
 
-#### The Vulkan render API (research, not built)
+#### The Vulkan render API (built, offscreen)
 
 **Verdict: proceed** with a downstream gpu-next-only Vulkan backend on MoltenVK:
 app-owned device, RGBA16F IOSurface pool, one timeline semaphore/event per slot.
+
+**Built** on the Stage MB checkout of PR #18845, `aade20e8c` (the PR head has
+since moved), with libplacebo 7.398.0 and MoltenVK 1.4.2: 7 files, +578 −1, of which `include/mpv/render_vk.h` is 216
+lines with its documentation. The renderer itself needed no change: the
+existing `ra_pl` path already turns a `pl_tex` into a target.
+- **API**: the app passes its instance, devices, extensions, features and one
+  queue family (`MPV_RENDER_PARAM_VULKAN_INIT_PARAMS`). Each render call
+  (`MPV_RENDER_PARAM_VULKAN_FBO`) gets the image, its layouts, an optional
+  acquire timeline value and a required release value. Success guarantees
+  the release signal was submitted. `INVALID_PARAMETER` and `UNSUPPORTED`
+  touch nothing; after a failure past the acquire (`GENERIC`) the backend
+  tries to signal, but the app must not rely on it and retires the image
+  (`MPV_RENDER_PARAM_VULKAN_RETIRE`, also required before an image is
+  destroyed). The old renderer refuses the API.
+- **Measured offscreen** (a client that reads every frame back through
+  Metal, a ring of 3, no window):
+  - 240 of 240 frames read back and distinct through a resize and a retire;
+    at the end every slot's Vulkan, Metal and expected timeline values were
+    80. No frame was compared with an independent reference picture;
+  - VideoToolbox decodes straight into Vulkan. It matched software decoding
+    on every printed SDR frame (H.264) and on all 21 distinct HDR frames with
+    `hdr-compute-peak=no`; with peak detection on, HDR frames differed after
+    the first (temporal state, inferred);
+  - a PQ clip's 10 000-nit box reads 6.1055 with `target-trc=linear
+    target-peak=1240` (1240/203 = 6.108), so values above 1.0 reach the
+    IOSurface;
+  - an ASS subtitle box reads (1, 1, 1) at the centre; mpv's OSD uses the
+    same overlay path but was not drawn;
+  - mean CPU time in the render call 1.12 and 1.53 ms in the two 240-frame
+    runs; pipeline creation on first use 47–116 ms each in the logs; GPU
+    time not measured.
+- **Validation**: 0 errors from the backend. libplacebo needs
+  synchronization2 enabled on the device, or its fallback barriers fail
+  validation (9–10 errors). With VideoToolbox, about 30 "no memory bound"
+  errors on libplacebo's own imported decoder planes, which MoltenVK backs
+  from the Metal texture.
+- **Not tested**: seek, pause, skipped renders, a refused, delayed or dropped
+  Metal copy, failure injection, retiring with work in flight (the harness
+  waits on the CPU before reusing a slot), device loss, the queue-lock
+  callbacks, the `EXTERNAL` queue-family transfer, the
+  `VK_EXT_external_memory_metal` import, Skathi itself, memory.
+
+The research before it:
 
 - **Offscreen proof** (public MoltenVK 1.4.2 release, Vulkan 1.2 requested by
   the application, macOS 26.5.2): offscreen direct-IOSurface image import and
@@ -939,12 +1055,15 @@ app-owned device, RGBA16F IOSurface pool, one timeline semaphore/event per slot.
   image path was read in source and not run in this proof.
 - **KosmicKrisp (Mesa 26.3.1) is not usable** for this design (source read): no
   `VK_EXT_metal_objects`, no public shared event. RFC #18258 closed unmerged.
-- **Size, inferred**: 350–600 lines in 6–9 mpv files, 250–450 app-side, on top
+- **Size, inferred** (historical; the built patch is +578 −1 in 7 files):
+  350–600 lines in 6–9 mpv files, 250–450 app-side (still unverified), on top
   of PR #18845. **Risks**: cross-queue teardown (MoltenVK #2697 and #2859 are
   open reports of related risks, not diagnoses of this prototype), colour at
-  the compositor, VideoToolbox NV12/P010, footprint (a 2160p slot is ~63 MiB).
-- Queue-family ownership and image layouts are provisional until the ring
-  runs under validation.
+  the compositor, footprint (a 2160p slot is ~63 MiB). VideoToolbox
+  NV12/P010 into the IOSurface has since been checked offscreen (above).
+- Queue-family ownership stays provisional: the offscreen ring ran under
+  validation with `VK_QUEUE_FAMILY_IGNORED` and normal layouts only, and the
+  `EXTERNAL` path was not run.
 - **Which Skathi branch shows the frame** (M53, source with 3 lldb runs and 3
   pixel runs per mode, 0.5.2). The window's output mode decides it on every
   tick:
@@ -966,7 +1085,9 @@ second surface; device loss; acoustic output; 4K and 60 fps HDR cadence; steps o
 ### Skathi defects found, and their state
 
 Filed in github.com/argon-chat/skathi while building the prototypes. #1–#20
-are closed, most of them within hours. Of #21–#30, only #29 is still open. "Re-measured"
+are closed, most of them within hours. #21–#28 and #30 are closed. #29 and
+#31–#35 are still open, but each has a change on master within hours,
+documented for 0.6. "Re-measured"
 means our own runs confirmed the fix, on the build named; "landed" names the
 upstream commit, which is not always the build we tested.
 
@@ -997,8 +1118,13 @@ upstream commit, which is not always the build we tested.
 - **#26** (closed, ours) One frame in fifteen lost at one present per refresh on Windows. It is the driver's 224 cap on our machine; see "On Skathi 0.5.0". The maintainer found and fixed a separate cause, a frame latched after the UI callbacks (`20733eea`), and added `Superseded` logging.
 - **#27** A git dependency did not build without the devtools bundle. Fixed (`39ed898d`): a Cargo git checkout without the bundle now builds without devtools and prints a `cargo:warning`.
 - **#28** `sk check` missed `-webkit-mask-*` and `vertical-align` with a length. Fixed by `cdde8ac6`, confirmed on `c29ab351`.
-- **#29** (open) A custom property changed by `:hover` does not reach `var()` in other rules, and nothing is logged.
+- **#29** (open, fix on master) A custom property changed by `:hover` did not reach `var()` in other rules, and nothing was logged. On master (`a6e9289d`) it reaches the element, its descendants and inline SVG stops, including stops styled from a stylesheet. Not re-measured by us.
 - **#30** (not planned) `sk check` does not see a refused value that arrives through `var()`. This is by design: it checks declarations as written, and such values show up only in the runtime log.
+- **#31** (open, fix on master) `KeyboardEvent.code` was always empty and `repeat` always false, so shortcuts on physical keys could not be ported. On master (`2081d5c7`, consecutive X11 keyups `feb5b3ad`) desktop keydown/keyup carry `code`, `key` and `location`, and held keydowns set `repeat`; `keyCode` and `charCode` stay unavailable. Not re-checked with the player's shortcuts.
+- **#32** (open) On the tested 120 Hz XDR display, the window's `CAMetalDisplayLink` targets each frame 5 refreshes ahead. Answered with opt-in timer pacing, `lowLatencySurface` (`227dfd1d`); see "Latency" above. The maintainer asked for our paused-seek and frame-step runs with it off and on; not done.
+- **#33** (open, fix on master) Each half-float slot kept an unused 8-bit twin. On D3D12 on master (`886ebf94`) the twin is made on a slot's first SDR read and kept until it retires; the maintainer counted 63.75 MiB for the two 4K twins in an SDR test window on an RTX 5070, and checked HDR separately by readback. The slot-to-atlas copy stays by design. Not re-measured by us: an HDR-only run and an SDR → HDR switch are to do.
+- **#34** (open, change on master) `<sk-surface>` upscaled with one bilinear tap. On master (`684e7036`) `image-rendering` is honoured, and `auto` uses Catmull–Rom on enlarged axes. Not re-measured by us.
+- **#35** (open, filed for the interface port) The embedder had no handle to the main window and no run-time minimum size. Implemented on master in `6a9338be`, documented for 0.6: `appWindow` run-time min/max size, `setAspectRatio`, `setTrafficLightPosition`, fades on show and hide, an animated `setBounds()` and `visibleOnAllWorkspaces`; `HostContext` and `Handle` expose an unsafe raw handle (main thread only; on macOS the content `NSView`). Whether `visibleOnAllWorkspaces` gives the level above other apps' fullscreen Spaces, and the controls themselves, are not checked in the player.
 
 ## The shape of the design
 
@@ -1117,7 +1243,9 @@ on 2026-11-15 about forty commits split `vo_gpu_next` so the renderer
 (`gpu_next/video.c`) no longer owns the window and swapchain. The patch we would
 need, on top of the stack `docs/mpv-patches.md` describes:
 
-1. **A gpu-next render backend for Vulkan.** The client supplies a `VkImage`
+1. **A gpu-next render backend for Vulkan.** (Built since, offscreen, as a
+   +578 −1 patch on the PR; see "The Vulkan render API". The original
+   reasoning follows.) The client supplies a `VkImage`
    (plus its device, queue family and a timeline semaphore); libplacebo renders
    into it. The D3D11 backend's API (device at create, target per render) is the
    model to copy. Upstream state as of November 2026: PR #16818 (gpu-next render
@@ -1148,8 +1276,9 @@ need, on top of the stack `docs/mpv-patches.md` describes:
 
 Size estimate for (1)+(2): on the order of PR #16818 itself, 1–2 thousand lines.
 (Historical: that estimate assumed the renderer work PR #18845 now supplies.
-The current estimate, for a Vulkan backend on top of the PR, is 350–600 lines in
-mpv plus 250–450 app-side; see "The Vulkan render API".)
+The Vulkan backend on top of the PR came to +578 −1 in mpv, inside the
+350–600 estimated; the 250–450 app-side estimate is unverified. See "The
+Vulkan render API".)
 
 ## Skathi's frame contract
 
@@ -1460,8 +1589,9 @@ stage M1, with the player's bundled MoltenVK, read the device's version as
 - **No barrier was needed for correct pixels in this probe** (none, layout
   transitions only, and a queue-family release to `VK_QUEUE_FAMILY_EXTERNAL`
   all gave 0 bad pixels). That is a pixel check, not a synchronisation
-  contract: queue ownership and image layout stay provisional until the ring
-  runs under validation. The offscreen proof used `VK_QUEUE_FAMILY_IGNORED` with
+  contract. The later libmpv ring ran under validation with
+  `VK_QUEUE_FAMILY_IGNORED`; a release to `VK_QUEUE_FAMILY_EXTERNAL` is still
+  untested, so that ownership transfer stays provisional. The offscreen proof used `VK_QUEUE_FAMILY_IGNORED` with
   one family and the research proposes `GENERAL` as the hand-off layout.
 - Ring of 3 IOSurfaces into 4 consumer textures, every pixel of every copied
   frame checked on the GPU: 0 bad pixels at 120 Hz and unthrottled (~3300 fps),
@@ -1821,8 +1951,9 @@ every time the list is shown.
   software decoding (or to the sidecar).
 - Seeking in the preview core on long GOPs: hardware decode only helps if the
   core's own seek does not eat the gain.
-- macOS: until the Vulkan render API patch exists the preview core runs on the
-  OpenGL interim path, with gpu-next's compute shaders missing there.
+- macOS: the preview core stays on the OpenGL interim path, without gpu-next's
+  compute shaders, until it uses the Vulkan render API, which so far runs
+  only offscreen and is not connected to Skathi.
 - The read-back of the last presented frame: its cost at 4K, and that it is
   taken from a texture the producer still owns (before its `release`), not one
   Skathi may be reading.
@@ -1842,29 +1973,43 @@ remain substantive open points below. What is left:
     frontend it reports 0 errors and 67 warnings.
   - **Not covered by `sk check`:** values that arrive through `var()` are
     visible only in the runtime log (#30).
-  - **Still open upstream:** state rules that change custom properties
-    (#29).
+  - **Changed on master, not re-checked by us** (the issues are still
+    open): state rules that change custom properties (#29), physical keys
+    and repeat (#31), and the window controls and raw handle of #35.
 - **Rendering at the video's size, and the subtitles.** On Windows, a ring
   of 2 and a video-sized render bring a 1080p clip at screen size to 100–146 MB
   of private bytes below the shipping player and 58–76 MB of GPU memory above
-  it. The cost is Skathi's bilinear scaling and blurred mpv subtitles and OSD.
-  Open:
-  - when to switch to the element size;
-  - whether subtitles move out of the frame;
-  - what Skathi could drop on its side: the 8-bit twins, a second copy of the
-    frame, the CPU placeholder and a third swap-chain buffer, plus about
-    188 MB of half-float swap chain and scene target.
+  it. The cost was Skathi's bilinear scaling (Catmull–Rom on master since
+  #34, not re-measured) and blurred mpv subtitles and OSD. Recommended after
+  an offscreen analysis, not built:
+  - render at the element size while a subtitle track, the second subtitle
+    line or an mpv OSD message is on, switching on track state, never per
+    cue. In the offscreen Vulkan run, the first render call after a size
+    change took 17 ms of CPU the first time, then 2–3 ms; subtitled playback
+    gives up the video-sized saving;
+  - later, a second, element-sized overlay pass in the Vulkan render API,
+    which libplacebo can already draw (`pl_render_image` with no image);
+    proposed, about 150–250 lines, inferred. Its hard part is one transform
+    for zoom, pan, crop and rotation in both passes.
+
+  Open on Skathi's side after #33: recheck the CPU placeholder and the actual
+  swap-chain residency. The slot-to-atlas copy stays by design. The ~188 MB
+  is the three-buffer half-float swap-chain step together with the HDR
+  scene target, not in addition to it.
 
   The split is not confirmed with a per-allocation tool.
 - **Present-to-screen on macOS.** About 40 ms of it is `CAMetalDisplayLink`
-  targeting 5 refreshes ahead. Whether Skathi could present video without the
-  link (13.6 ms in a native app) is a question for upstream, not yet asked.
+  targeting 5 refreshes ahead. Skathi now has an opt-in `lowLatencySurface`
+  without the link (#32); its latency and cadence are not measured yet.
 - **gpu-next colour against `gpu`** with our options (the table above): which
   options give the intended values, on both platforms.
-- **The Vulkan render API on macOS**: researched and proven offscreen for one
-  frame, not built. See "The Vulkan render API" above for its risks.
-- **Sound against picture** measured with instruments, and whether a fixed
-  macOS `audio-delay` (+50 ms in the tested configuration) becomes a default.
+- **The Vulkan render API on macOS**: built and working offscreen; seek,
+  pause, skipped renders, failures and the connection to Skathi are not
+  tested. See "The Vulkan render API" above.
+- **Sound against picture**: the slow 24 fps playback has a proposed fix on
+  our side (report earlier, and start an iteration up to about 3 ms past the
+  phase point), not tried on the screen; the `audio-delay` from a live
+  median of report → `shown_at` is inferred. Both still need instruments.
 - **A Windows switch between SDR and HDR output while playing.**
 - **Feedback accuracy**: `Estimated` events on Windows without the opt-in, the
   macOS residues after 0.5.2, a real-mouse resize, multi-display setups.
@@ -1891,25 +2036,33 @@ Skathi, measured").
    start-up cost against the prototypes' minimal page.
 2. **A Windows libmpv build of our own** carrying PR #18845, with the colour
    options matched so that gpu-next gives the intended values.
-3. **The Vulkan render API patch for macOS**, in the order the research gives:
-   - a ring of slots under Vulkan and Metal validation layers, comparing the
-     two image-import paths (direct IOSurface and `VK_EXT_external_memory_metal`,
-     each on a pinned build), with a second write after each Metal release,
-     delayed completion, a failed submission, and queue drain before a
-     generation is retired;
-   - the backend on the PR, with a minimal offscreen client;
-   - VideoToolbox input;
-   - the connection to Skathi's fenced path, with paired producer and
-     compositor readbacks, HDR patches and an SDR control, so that the HDR
-     branch is known to be the one tested;
+3. **The Vulkan render API for macOS.** The backend, an offscreen client and
+   VideoToolbox input are done. Next:
+   - turn the client into a regression harness: seek, pause and step,
+     skipped renders and repeats, a refused Metal copy, Metal API
+     validation, delayed, dropped and refused copies, failure injection,
+     retiring with work in flight, the `EXTERNAL` queue-family path, and the
+     `VK_EXT_external_memory_metal` import against today's direct IOSurface
+     import;
+   - connect it to Skathi's fenced path in the macOS prototype in place of
+     GL, with paired producer and compositor readbacks, HDR patches and an
+     SDR control, and repeat the cadence, latency and colour runs;
+   - the subtitle overlay pass (see "Rendering at the video's size, and the
+     subtitles" under "Still open");
    - the bundle and licensing.
 4. **Memory and latency**:
    - use a ring of 2;
-   - render at the video's size while nothing sharp is drawn into the frame,
-     and decide how subtitles and the OSD are drawn;
-   - ask upstream about the allocations that look avoidable in an HDR window,
-     about a better scaler than bilinear, and about presenting video without
-     `CAMetalDisplayLink` on macOS.
+   - render at the video's size, and at the element's size while a subtitle
+     track, the second subtitle line or an mpv OSD message is on;
+   - re-measure on Skathi master: the HDR window's memory with twins made
+     only on SDR reads (#33, Windows: HDR-only and an SDR → HDR switch), the Catmull–Rom upscale against mpv's scaler
+     (#34), and `lowLatencySurface` on macOS with the option off and on
+     (#32, which the maintainer asked for);
+   - apply the audio fix in the macOS prototype, log update arrival, start,
+     report and draw or skip for every iteration, and accept it over 60 s at
+     24 fps with 5.000 ± 0.001 refreshes per frame against `shown_at`, about
+     zero mistimed frames, and audio speed correction averaging about 1.0 on
+     mpv 0.41 (within ±0.0002 on the PR build).
 5. Compare with today's player through the e2e harness (on the `host-boundary`
    branch: `bun run e2e --mpv-conf <file>`, per-step frame metrics,
    `bun run e2e compare`).
