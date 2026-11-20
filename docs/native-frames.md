@@ -407,8 +407,12 @@ dedicated GPU memory.
   - **Possibly avoidable**, from the source and not tried, at 3840×2160:
     - the 8-bit twin of each half-float slot in an HDR window, 64 MB.
       On D3D12 on master (`886ebf94`, #33) the twin is created on a slot's
-      first SDR read and kept until the slot retires; the maintainer counted
-      63.75 MiB for the two 4K twins on an RTX 5070. Not re-measured by us;
+      first SDR read and kept until the slot retires. Re-measured on
+      `8c912edc`: 62.0 MiB less GPU memory and 62 MB less private bytes
+      in an HDR window with 4K frames (15–16 MiB with 1080p frames), ring
+      of 3 or 2, element- or video-sized; no twin is created in HDR
+      (allocation trace). After an SDR → HDR switch through the element's
+      `dynamic-range-limit` one twin stays, +32.0 MiB, in 12 of 12;
     - the CPU placeholder image, 32 MB;
     - one of the two copies of the frame, 64–128 MB (the maintainer keeps
       the slot-to-atlas copy by design: redraws need the frame after the
@@ -490,7 +494,14 @@ above, not repeated.
     Skathi answered the last one in #34 (`684e7036`, master, for 0.6):
     `<sk-surface>` now honours `image-rendering`. With `auto` it uses
     Catmull–Rom on enlarged axes and clamps overshoot at edges, HDR
-    highlights included; shrinking stays bilinear. Not re-measured by us.
+    highlights included; shrinking stays bilinear. Re-measured on
+    `8c912edc`, same method and reference pictures, one run a variant:
+    fine detail 31.4 dB / SSIM 0.991 with `auto` (27.8 / 0.972 bilinear,
+    and 29.5 for mpv's own bilinear), the subtitle box 18.4 dB / 0.890
+    (17.0 / 0.850): text rasterised at the video's size stays soft.
+    `pixelated` gives 2×2 blocks; 1:1 stays bit-exact. In three HDR10
+    frames up to 12.48 scRGB, no `auto` sample fell outside the range of
+    its source neighbours, so no halo.
 
 #### Audio through WASAPI
 
@@ -588,7 +599,22 @@ loaded into the prototype on `c7a524d5`, n = 3 per cell.
 
 - The PR build's own `gpu` renderer matches the bundled build in all nine
   patches, so the library build is not the cause.
-- Which options would bring `gpu-next` to the `gpu` values was not tried.
+- **Matching options, found later** (on our own build, below, and the CI
+  artifact; three runs, identical): `target-contrast=inf` and
+  `tone-mapping=clip`, with `hdr-reference-white=203`, bring `gpu-next`
+  within 0.001 of `gpu` on all nine patches. Adding `gamut-mapping-mode=clip`
+  breaks the 1000-nit patch (4.93 instead of 4.16). Grey patches only, and
+  only the prototype's options, not the shipping player's.
+- **Our own libmpv with the PR.** The official LGPL libmpv for Windows is
+  built in a Linux container, which this machine could not run (no Docker
+  or WSL), and MSYS2's FFmpeg is a GPL build. mpv's native `win32` CI recipe
+  (clang and meson, dependencies as static subprojects) with
+  `-Dgpl=false -Dffmpeg:gpl=disabled` built `libmpv-2.dll` from the PR head
+  `a98335f5`. In the prototype it initialises gpu-next in 68–78 ms, decodes
+  with `d3d11va` and presented 188–191 frames in 8 s with 0 errors (4 runs).
+  It lacks Vulkan, subrandr, libarchive, JPEG XL and AV1 (aom) against the
+  CI artifact, links the Visual C++ runtime dynamically, and its
+  subprojects are not pinned: repeatable as a recipe, not bit for bit.
 - A reading, not established: libplacebo models an SDR display's black level
   and maps HDR10 with its own curve.
 
@@ -805,8 +831,27 @@ difference.
   the window opens). The window then paces with its own timer and presents
   with display sync on; a seek after a pause can take a drawable at once.
   The link stays the default; UI animations in such a window can look less
-  even on a variable-refresh display. Not measured by us yet: the maintainer asks for the paused-seek and
-  frame-step runs with the option off and on.
+  even on a variable-refresh display.
+- **Measured on master `a4469450`** (M54; 3 runs each, off and on
+  alternating, 90 paused commands per setting):
+  - present → captured frame p50 **33.4 ms off, 16.3 ms on**, against the
+    native control's 32.4 ms with the link and 13.3 ms without. Command →
+    captured frame for frame-step, seek and back-step: 90.7, 147.2 and
+    240.5 ms off; 73.6, 120.8 and 225.1 ms on. `shown_at` comes 12 ms after
+    the captured frame in both modes, with under 1 ms of spread;
+  - **playback cadence breaks with the option on**: frames held exactly the
+    intended refreshes 57–59 % at 24 fps and 57–63 % at 60 fps, against
+    86–97 % and 99 % off (the 86–87 % off runs most likely a capture
+    artefact). The misses are symmetric (4 and 6 refreshes at 24 fps), and
+    Skathi's own `shown_at` shows them, so its feedback is right. Inferred
+    from source: the window timer counts each interval from its last fire,
+    not from vblank, and drifts across the refresh;
+  - an animated bar stood still on 4.5–9.3 % of refreshes with the option
+    on, 0–0.1 % off. EDR engages the same way. On 11 of 30 forward steps
+    the new frame was `Superseded` by mpv's redraw, which carries the same
+    picture.
+  - Reported in #32 with two suggestions: a timer on the vblank grid, or the
+    link during continuous playback and the timer only for sparse presents.
 
 #### CPU and GPU
 
@@ -888,8 +933,24 @@ speakers' and panel's own delays are not in it.
   `audio-speed-correction` 0.998750). mpv's final estimate from our swap
   reports was 119.3–119.6 Hz despite `display-fps-override=120`; the
   display-sync interval stayed at the nominal 1/120 s.
-- **Why, from mpv's source and the same runs' logs** (a later offscreen
-  analysis; nothing re-run on the screen):
+- **Later measured (M55), and the first explanation below did not hold.**
+  With per-iteration logging, mpv answered each report in 12–18 µs, so its
+  turnaround was not the cause. Refreshes were lost after occasional stalls:
+  8–61 ms inside mpv's render call and 10–23 ms in the GPU fence wait, on a
+  Mac that was in use (that the load caused them is inferred; an idle Mac
+  was not measured). The proposed fix did not meet the target: lost
+  refreshes 0.21–0.44 % before and 0.09–0.92 % after, 5.0053–5.0069 against
+  5.0015–5.0213 refreshes per 24 fps frame, and the correction still at its
+  −0.125 % limit most of the time. The 0.3–0.6 % against 0.11–0.17 %
+  mismatch is explained: each lost refresh lengthens one frame, and mpv wins
+  back 50–76 % of them by shortening later ones. Counted directly,
+  iterations equal refreshes minus those lost. **`audio-delay` from a
+  running median** of `shown_at` minus the swap report worked as well as a
+  fixed 50 ms: it chose 46–48 ms, residual −0.5 to +5.8 ms (fixed: −3.5 to
+  +1.7 ms), and with `lowLatencySurface` on it followed the shorter path to
+  30 ms by itself (residual +0.6 and +4.2 ms).
+- **Why, from mpv's source and the same runs' logs** (the earlier offscreen
+  analysis, kept for its reasoning):
   - The panel ran at 120.000 Hz (a fit of `shown_at` against refresh
     counts: 119.9993–120.0007 Hz). The video ran at 0.9989, 0.9983 and
     0.9988× (5.0053, 5.0084 and 5.0061 refreshes per 24 fps frame). In 55 s
@@ -1085,9 +1146,9 @@ second surface; device loss; acoustic output; 4K and 60 fps HDR cadence; steps o
 ### Skathi defects found, and their state
 
 Filed in github.com/argon-chat/skathi while building the prototypes. #1–#20
-are closed, most of them within hours. #21–#28 and #30 are closed. #29 and
-#31–#35 are still open, but each has a change on master within hours,
-documented for 0.6. "Re-measured"
+are closed, most of them within hours. #21–#28, #30, #33 and #34 are closed.
+#29, #31, #32 and #35 are still open, but each has a change on master within
+hours, documented for 0.6. "Re-measured"
 means our own runs confirmed the fix, on the build named; "landed" names the
 upstream commit, which is not always the build we tested.
 
@@ -1110,7 +1171,7 @@ upstream commit, which is not always the build we tested.
 - **#17** A refused GPU frame's reason was promised in the log but not printed. Fixed (`71f66833`): each surface logs a warning once per reason. Verified in source only: in our device-loss runs presents were refused before paint, so the line never appeared.
 - **#18** On macOS the HDR clamp climbed the EDR ramp in 200 ms steps. Fixed (`12f7f88e`) for the clamp Skathi paints with, re-measured on `c602b5a4`. `content_headroom()` and `DisplayChanged` still move in coalesced steps, so a producer that tone-maps to it still steps. The ~110 ms hold when EDR starts from 1.0 is macOS's: a native app without Skathi shows it too (M53).
 - **#19** On macOS, frames shown at sparse presents or during a resize were reported `Superseded` or late. Fixed through `skathi-gpui` 0.5.2 (`c602b5a4`, `810843bd`, `77030d59`, `f2a79987`), re-measured on each in the scripted cases, with the residues listed above.
-- **#20** Closing a window logged `[ERROR]` lines. Fixed (`skathi-gpui` `186ed842`). Re-measured: no line after `Handle::close()` on 0.5.0. A posted `WM_CLOSE` there still logged one `Invalid window handle` line, down from 5–6. On master `c29ab351` neither path logs anything (10 runs each). A click on the close button was never measured.
+- **#20** Closing a window logged `[ERROR]` lines. Fixed (`skathi-gpui` `186ed842`). Re-measured: no line after `Handle::close()` on 0.5.0. A posted `WM_CLOSE` there still logged one `Invalid window handle` line, down from 5–6. On master `c29ab351` neither path logged anything (10 runs each) on 2026-11-19; a day later the `WM_CLOSE` line was back in 6 of 6 runs on `8c912edc` and in 4 of 4 on `c29ab351` itself, so the difference is not the build and was not found. `Handle::close()` stays clean. A click on the close button was never measured.
 - **#21, #22** `sk check` missed CSS the runtime drops or flags. Fixed for 0.6. In `6db5fc22` the runtime learnt `transition` with `var()`, state-made `::before`/`::after`, `min()`/`max()`/`clamp()` over percentages, stops from CSS, and `position: relative` paint order. In `cdde8ac6` `sk check` began running the host's own CSS code compiled to WebAssembly, so it reports what the runtime reports. What the renderer still lacks is a warning (`SK4006`), and what needs a 0.6 host is marked `SK4007`.
 - **#23** Inline `<svg>` lost CSS shape geometry and `var()` in stops. Fixed (`6db5fc22`), confirmed on macOS: 0 of 23 808 pixels differ from the attribute control.
 - **#24** A present accepted after the app's quit hook got no event and still returned `Ok`. Before the fix: 2 frames in each of 6 closes on macOS, and 1–3 frames in 17 of 20 on Windows. Fixed (`040bfb3c`): a present after quit now returns `SurfaceError::Closed`. Re-measured on master `c29ab351`, Windows: 0 frames without an event in 20 of 20 closes.
@@ -1121,9 +1182,9 @@ upstream commit, which is not always the build we tested.
 - **#29** (open, fix on master) A custom property changed by `:hover` did not reach `var()` in other rules, and nothing was logged. On master (`a6e9289d`) it reaches the element, its descendants and inline SVG stops, including stops styled from a stylesheet. Not re-measured by us.
 - **#30** (not planned) `sk check` does not see a refused value that arrives through `var()`. This is by design: it checks declarations as written, and such values show up only in the runtime log.
 - **#31** (open, fix on master) `KeyboardEvent.code` was always empty and `repeat` always false, so shortcuts on physical keys could not be ported. On master (`2081d5c7`, consecutive X11 keyups `feb5b3ad`) desktop keydown/keyup carry `code`, `key` and `location`, and held keydowns set `repeat`; `keyCode` and `charCode` stay unavailable. Not re-checked with the player's shortcuts.
-- **#32** (open) On the tested 120 Hz XDR display, the window's `CAMetalDisplayLink` targets each frame 5 refreshes ahead. Answered with opt-in timer pacing, `lowLatencySurface` (`227dfd1d`); see "Latency" above. The maintainer asked for our paused-seek and frame-step runs with it off and on; not done.
-- **#33** (open, fix on master) Each half-float slot kept an unused 8-bit twin. On D3D12 on master (`886ebf94`) the twin is made on a slot's first SDR read and kept until it retires; the maintainer counted 63.75 MiB for the two 4K twins in an SDR test window on an RTX 5070, and checked HDR separately by readback. The slot-to-atlas copy stays by design. Not re-measured by us: an HDR-only run and an SDR → HDR switch are to do.
-- **#34** (open, change on master) `<sk-surface>` upscaled with one bilinear tap. On master (`684e7036`) `image-rendering` is honoured, and `auto` uses Catmull–Rom on enlarged axes. Not re-measured by us.
+- **#32** (open) On the tested 120 Hz XDR display, the window's `CAMetalDisplayLink` targets each frame 5 refreshes ahead. Answered with opt-in timer pacing, `lowLatencySurface` (`227dfd1d`); see "Latency" above. Measured on `a4469450` (see "Latency"): present to screen 33.4 → 16.3 ms, but playback cadence falls to 57–63 %; reported back with two suggestions.
+- **#33** (open, fix on master) Each half-float slot kept an unused 8-bit twin. On D3D12 on master (`886ebf94`) the twin is made on a slot's first SDR read and kept until it retires; the maintainer counted 63.75 MiB for the two 4K twins in an SDR test window on an RTX 5070, and checked HDR separately by readback. The slot-to-atlas copy stays by design. Re-measured on `8c912edc`: 62.0 MiB less in an HDR window with 4K frames, one twin (+32 MiB) left after an SDR → HDR switch. Closed by us.
+- **#34** `<sk-surface>` upscaled with one bilinear tap. On master (`684e7036`) `image-rendering` is honoured, and `auto` uses Catmull–Rom on enlarged axes. Re-measured on `8c912edc` (31.4 dB against 27.8 on fine detail, no HDR halo); closed by us.
 - **#35** (open, filed for the interface port) The embedder had no handle to the main window and no run-time minimum size. Implemented on master in `6a9338be`, documented for 0.6: `appWindow` run-time min/max size, `setAspectRatio`, `setTrafficLightPosition`, fades on show and hide, an animated `setBounds()` and `visibleOnAllWorkspaces`; `HostContext` and `Handle` expose an unsafe raw handle (main thread only; on macOS the content `NSView`). Whether `visibleOnAllWorkspaces` gives the level above other apps' fullscreen Spaces, and the controls themselves, are not checked in the player.
 
 ## The shape of the design
@@ -1980,7 +2041,8 @@ remain substantive open points below. What is left:
   of 2 and a video-sized render bring a 1080p clip at screen size to 100–146 MB
   of private bytes below the shipping player and 58–76 MB of GPU memory above
   it. The cost was Skathi's bilinear scaling (Catmull–Rom on master since
-  #34, not re-measured) and blurred mpv subtitles and OSD. Recommended after
+  #34: fine detail 31.4 dB against 27.8) and blurred mpv subtitles and OSD,
+  which the new scaler barely helps (18.4 dB against 17.0). Recommended after
   an offscreen analysis, not built:
   - render at the element size while a subtitle track, the second subtitle
     line or an mpv OSD message is on, switching on track state, never per
@@ -1999,17 +2061,20 @@ remain substantive open points below. What is left:
 
   The split is not confirmed with a per-allocation tool.
 - **Present-to-screen on macOS.** About 40 ms of it is `CAMetalDisplayLink`
-  targeting 5 refreshes ahead. Skathi now has an opt-in `lowLatencySurface`
-  without the link (#32); its latency and cadence are not measured yet.
-- **gpu-next colour against `gpu`** with our options (the table above): which
-  options give the intended values, on both platforms.
+  targeting 5 refreshes ahead. Skathi's opt-in `lowLatencySurface` (#32)
+  halves it (33.4 → 16.3 ms) but breaks playback cadence (57–63 %); waiting
+  for upstream.
+- **gpu-next colour against `gpu`**: on Windows `target-contrast=inf` with
+  `tone-mapping=clip` matches on grey patches with the prototype's options;
+  the shipping player's own options, colour patches and macOS are open.
 - **The Vulkan render API on macOS**: built and working offscreen; seek,
   pause, skipped renders, failures and the connection to Skathi are not
   tested. See "The Vulkan render API" above.
-- **Sound against picture**: the slow 24 fps playback has a proposed fix on
-  our side (report earlier, and start an iteration up to about 3 ms past the
-  phase point), not tried on the screen; the `audio-delay` from a live
-  median of report → `shown_at` is inferred. Both still need instruments.
+- **Sound against picture**: the slow 24 fps playback comes from stalls in
+  the render call and the fence wait, not from mpv's turnaround; the
+  proposed fix did not help. Open: whether the stalls happen on an idle Mac,
+  and PR #18845's newer drift controller. `audio-delay` from a running median
+  of report → `shown_at` works on screen; light and sound are not measured.
 - **A Windows switch between SDR and HDR output while playing.**
 - **Feedback accuracy**: `Estimated` events on Windows without the opt-in, the
   macOS residues after 0.5.2, a real-mouse resize, multi-display setups.
@@ -2034,8 +2099,11 @@ Skathi, measured").
 1. **The real interface on Skathi**: `sk check` over today's frontend, a
    payload built from it with the Tauri calls stubbed, and its memory and
    start-up cost against the prototypes' minimal page.
-2. **A Windows libmpv build of our own** carrying PR #18845, with the colour
-   options matched so that gpu-next gives the intended values.
+2. **A Windows libmpv build of our own** carrying PR #18845: built from the
+   native recipe and working in the prototype; the gpu-next options that
+   match `gpu` are found for grey patches. Left: the official container
+   build (needs Docker or WSL), pinning the subprojects, and the shipping
+   player's options and colour patches.
 3. **The Vulkan render API for macOS.** The backend, an offscreen client and
    VideoToolbox input are done. Next:
    - turn the client into a regression harness: seek, pause and step,
@@ -2054,15 +2122,10 @@ Skathi, measured").
    - use a ring of 2;
    - render at the video's size, and at the element's size while a subtitle
      track, the second subtitle line or an mpv OSD message is on;
-   - re-measure on Skathi master: the HDR window's memory with twins made
-     only on SDR reads (#33, Windows: HDR-only and an SDR → HDR switch), the Catmull–Rom upscale against mpv's scaler
-     (#34), and `lowLatencySurface` on macOS with the option off and on
-     (#32, which the maintainer asked for);
-   - apply the audio fix in the macOS prototype, log update arrival, start,
-     report and draw or skip for every iteration, and accept it over 60 s at
-     24 fps with 5.000 ± 0.001 refreshes per frame against `shown_at`, about
-     zero mistimed frames, and audio speed correction averaging about 1.0 on
-     mpv 0.41 (within ±0.0002 on the PR build).
+   - `lowLatencySurface` again once upstream answers #32;
+   - the 24 fps audio: find the render-call and fence stalls (an idle Mac,
+     a trace of the render thread), try PR #18845's drift controller, and
+     take `audio-delay` from the running median.
 5. Compare with today's player through the e2e harness (on the `host-boundary`
    branch: `bun run e2e --mpv-conf <file>`, per-step frame metrics,
    `bun run e2e compare`).
