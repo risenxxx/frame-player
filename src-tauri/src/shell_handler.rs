@@ -149,8 +149,9 @@ mod imp {
     /// What the registration looks like, as a number. Raise it whenever what
     /// `register` writes changes, and every copy that owns a registration
     /// rewrites it at its next start. `1` was the installer's single `Video`
-    /// ProgId, which never wrote a marker.
-    pub const SCHEME: &str = "2";
+    /// ProgId, which never wrote a marker; `3` added the extensions of the
+    /// second half of issue #76 (`.rmvb`, `.asf`, `.m4b` and the rest).
+    pub const SCHEME: &str = "3";
 
     /// One value per executable that has registered itself, holding the
     /// [`SCHEME`] it wrote. Per executable because an installed copy and a
@@ -438,7 +439,10 @@ mod imp {
                     GiveBack::Removed => {}
                 }
                 let ext_path = classes(&format!(".{ext}"));
-                let Ok(key) = CURRENT_USER.create(&ext_path) else {
+                // Opened, not created: the list is this build's, and a copy
+                // registered by an older one never wrote the extensions added
+                // since — `create` would leave an empty key behind for each.
+                let Ok(key) = open_rw(&ext_path) else {
                     continue;
                 };
                 // Only when something was displaced. No backup means the

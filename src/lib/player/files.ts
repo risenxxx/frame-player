@@ -7,22 +7,30 @@
 import { invoke } from '@tauri-apps/api/core';
 import { command } from 'tauri-plugin-libmpv-api';
 
+import tauriConf from '../../../src-tauri/tauri.conf.json';
 import { IS_MAC } from '../platform';
 
-export const VIDEO_EXTENSIONS = [
-  'mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv', 'ts', 'm2ts', 'mts',
-  'mpg', 'mpeg', 'vob', 'ogv', 'm4v', '3gp', 'rm', 'rmvb', 'y4m',
-];
+/// **One list, the file associations'.** What the player registers itself for
+/// (Windows' shell registration and the macOS bundle are both written from
+/// `bundle.fileAssociations`) is also what a folder queue, a torrent's file
+/// list, a drop and the open dialog count as video or audio — kept twice, the
+/// two had drifted (`.rmvb` was queued from a folder but never associated,
+/// issue #76). The set is what FFmpeg actually demuxes, not every extension mpv
+/// will try.
+function associated(name: 'Video' | 'Audio'): string[] {
+  const assoc = tauriConf.bundle.fileAssociations.find((a) => a.name === name);
+  if (!assoc) throw new Error(`tauri.conf.json has no "${name}" file association`);
+  return assoc.ext;
+}
+
+export const VIDEO_EXTENSIONS = associated('Video');
 
 // Dropping one of these attaches a track to the current file instead of trying
 // to play it: an .srt handed to `loadfile` used to be opened as if it were a movie.
 export const SUBTITLE_EXTENSIONS = [
   'srt', 'ass', 'ssa', 'sub', 'idx', 'vtt', 'sup', 'smi', 'mks',
 ];
-export const AUDIO_EXTENSIONS = [
-  'mp3', 'aac', 'flac', 'wav', 'ogg', 'opus', 'm4a', 'ac3', 'eac3', 'dts',
-  'mka', 'wma', 'alac', 'aiff', 'aif', 'oga', 'wv', 'ape',
-];
+export const AUDIO_EXTENSIONS = associated('Audio');
 
 /// What the extension says: a sound file. The tracks decide in the end —
 /// `audio-screen.svelte.ts` waits for them — but the extension is known before

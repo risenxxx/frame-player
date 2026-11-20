@@ -56,7 +56,7 @@
     },
     "fileAssociations": [
       {
-        "ext": ["mp4", "m4v", "mkv", "webm", "avi", "mov", "wmv", "flv", "ts", "m2ts", "mts", "mpg", "mpeg", "vob", "ogv", "3gp"],
+        "ext": ["mp4", "m4v", "mkv", "mk3d", "webm", "avi", "divx", "mov", "wmv", "asf", "flv", "f4v", "ts", "m2ts", "mts", "m2t", "mpg", "mpeg", "m2v", "vob", "evo", "ogv", "ogm", "3gp", "3g2", "rm", "rmvb", "mxf", "dv", "wtv", "y4m"],
         "name": "Video",
         "description": "Video file",
         "role": "Viewer",
@@ -74,12 +74,19 @@
           "public.avchd-mpeg-2-transport-stream",
           "public.mpeg",
           "org.videolan.vob",
-          "org.xiph.ogv",
-          "public.3gpp"
+          "org.xiph.ogg-video",
+          "public.3gpp",
+          "public.3gpp2",
+          "com.microsoft.advanced-systems-format",
+          "public.mpeg-2-video",
+          "com.real.realmedia",
+          "com.real.realmedia-vbr",
+          "org.smpte.mxf",
+          "public.dv-movie"
         ]
       },
       {
-        "ext": ["mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma", "aif", "aiff", "mka", "ac3", "eac3", "dts", "wv", "ape"],
+        "ext": ["mp3", "m4a", "m4b", "aac", "flac", "wav", "w64", "ogg", "oga", "opus", "wma", "aif", "aiff", "mka", "ac3", "eac3", "dts", "wv", "ape", "mp2", "mpc", "tta", "tak", "amr", "au", "caf", "dsf", "dff", "ra", "weba"],
         "name": "Audio",
         "description": "Audio file",
         "role": "Viewer",
@@ -91,7 +98,18 @@
           "public.aac-audio",
           "org.xiph.flac",
           "com.microsoft.waveform-audio",
-          "public.aiff-audio"
+          "public.aiff-audio",
+          "com.apple.protected-mpeg-4-audio-b",
+          "public.mp2",
+          "public.ac3-audio",
+          "public.enhanced-ac3-audio",
+          "com.microsoft.windows-media-wma",
+          "org.xiph.ogg-audio",
+          "org.3gpp.adaptive-multi-rate-audio",
+          "public.au-audio",
+          "com.apple.coreaudio-format",
+          "com.real.realaudio",
+          "com.sony.wave64"
         ]
       }
     ],
