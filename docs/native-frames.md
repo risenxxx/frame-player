@@ -50,9 +50,9 @@ to disagree are marked superseded.
   imported from an IOSurface (`VkImportMetalIOSurfaceInfoEXT`) and a timeline
   semaphore exported as the `MTLSharedEvent` Skathi waits on; libplacebo
   renders through MoltenVK, i.e. Metal underneath. The backend is our patch
-  on a PR #18845 checkout (`aade20e8c`): 7 files, +578 −1. It runs offscreen,
-  VideoToolbox input and a PQ readback included (below); its connection to
-  Skathi is future work.
+  on a PR #18845 checkout (`aade20e8c`), now 9 files, +1014 −29. It passes
+  an offscreen regression harness and runs in the Skathi prototype at the
+  GL path's cadence and colour, without a CPU wait per frame (below).
   Route A, the OpenGL render API, works with today's 0.41 libmpv, which renders
   it with the old `gpu` renderer (0.41 ignores the renderer parameter);
   gpu-next on it needs PR #18845. That is the interim step only: OpenGL 4.1 has
@@ -599,12 +599,35 @@ loaded into the prototype on `c7a524d5`, n = 3 per cell.
 
 - The PR build's own `gpu` renderer matches the bundled build in all nine
   patches, so the library build is not the cause.
-- **Matching options, found later** (on our own build, below, and the CI
-  artifact; three runs, identical): `target-contrast=inf` and
-  `tone-mapping=clip`, with `hdr-reference-white=203`, bring `gpu-next`
-  within 0.001 of `gpu` on all nine patches. Adding `gamut-mapping-mode=clip`
-  breaks the 1000-nit patch (4.93 instead of 4.16). Grey patches only, and
-  only the prototype's options, not the shipping player's.
+- **Matching `gpu`** (later, on our own build and the CI artifact):
+  `target-contrast=inf` and `tone-mapping=clip`, with
+  `hdr-reference-white=203`, bring `gpu-next` within 0.001 of `gpu` on the
+  nine grey patches. **But `gpu` is the wrong target**: the shipping player
+  already draws with `vo=gpu-next` in its own window.
+- **Matching the shipping player's window** (Stage 24, 33 patches: grey,
+  BT.709 and BT.2020 colours at 75 and 100 %, SDR and HDR10; Desktop
+  Duplication in half float; the shipping DLL, the CI artifact and ours
+  agree within 0.012):
+  - **What that window does:** SDR and HDR alike go into an HDR10 swap
+    chain; SDR white sits at the desktop's SDR white (240 nits here),
+    SDR grey is a pure 2.4 power with no black lift, HDR is absolute with
+    peak detection on.
+  - Patches matching it: default options 6 of 33; the `gpu`-matching set
+    above 11 (HDR 18 % too bright, because it puts 203 nits on the
+    desktop's SDR white); `hdr-reference-white` = the desktop's SDR white,
+    `target-peak` = the display's peak, `target-contrast=inf`,
+    `hdr-compute-peak=yes` and `target-prim=bt.2020` give **27 in our
+    texture and 26 on screen**.
+  - Two steps of that set belong to the host, not mpv: a gain of
+    203 / SDR white and a BT.2020 → BT.709 matrix that keeps negative
+    values. The probe stood them in with a GLSL output hook.
+  - **What still differs:** Skathi clamps a surface to 0 … headroom (from
+    source), so three HDR patches outside BT.709, right in our texture,
+    lose their negative components on screen: no colour outside BT.709
+    reaches the screen through `<sk-surface>` today. The six SDR BT.2020
+    patches differ because the shipping window narrows them to the
+    display's gamut, which mpv does not know through the render API
+    (inferred).
 - **Our own libmpv with the PR.** The official LGPL libmpv for Windows is
   built in a Linux container, which this machine could not run (no Docker
   or WSL), and MSYS2's FFmpeg is a GPL build. mpv's native `win32` CI recipe
@@ -613,8 +636,17 @@ loaded into the prototype on `c7a524d5`, n = 3 per cell.
   `a98335f5`. In the prototype it initialises gpu-next in 68–78 ms, decodes
   with `d3d11va` and presented 188–191 frames in 8 s with 0 errors (4 runs).
   It lacks Vulkan, subrandr, libarchive, JPEG XL and AV1 (aom) against the
-  CI artifact, links the Visual C++ runtime dynamically, and its
-  subprojects are not pinned: repeatable as a recipe, not bit for bit.
+  CI artifact and links the Visual C++ runtime dynamically.
+  - **Reproducible** (Stage 24): 42 subprojects pinned in a lock file that
+    the build script enforces, `SOURCE_DATE_EPOCH` for SPIRV-Cross's
+    timestamp and mpv's build date off; two builds from fresh trees gave
+    the same DLL byte for byte (438 and 475 s).
+  - **What the player needs of the missing parts:** none of the five. AV1
+    decoding is dav1d and FFmpeg's own decoder, both present. One part not
+    in that list is needed: **libxml2**, without which FFmpeg has no DASH
+    demuxer; the shipping DLL opens an `.mpd` and ours did not. A variant
+    with it (+1.1 MB) opens it. libarchive did not configure; subrandr
+    (styled YouTube captions) needs nightly Rust.
 - A reading, not established: libplacebo models an SDR display's black level
   and maps HDR10 with its own curve.
 
@@ -852,6 +884,24 @@ difference.
     picture.
   - Reported in #32 with two suggestions: a timer on the vblank grid, or the
     link during continuous playback and the timer only for sparse presents.
+- **The hybrid, measured on master `b682a9e3`** (M56; upstream took the
+  second suggestion in `f531dd11` and `7a9f653a`: the first ready frame
+  after a pause takes a drawable at once, continuous playback and CSS
+  animation use the link, 125 ms of idleness re-arms the immediate path).
+  Same method, 3 runs each, 320×180 pt window never focused:
+  - paused present → captured frame p50: **9.3 / 9.8 / 9.2 ms on**
+    (step / seek / back-step) against 32.8 / 33.5 / 33.8 off, about 4 ms
+    below the native control without the link. The p90 on seeks is still
+    about 35 ms, so some new frames after a seek take the link (not traced);
+  - 60 fps held exactly 2 refreshes 99.3–99.9 % on, 98.9–99.6 % off;
+    24 fps held exactly 5 refreshes 86.7–90.4 % on, 89.8–95.4 % off. The
+    ranges overlap and both sets lost 170–250 capture rows, so no
+    difference is claimed from three runs;
+  - the CSS bar stood still on 0.04–0.16 % of refreshes on, 0–0.13 % off;
+    `Superseded` on forward steps 0 of 30 on, 2 of 30 off;
+  - the window's foreground state did not change frame-event kinds or
+    latencies here (unlike Windows, see #20).
+  - Confirmed in #32, which we closed.
 
 #### CPU and GPU
 
@@ -1057,7 +1107,7 @@ public PR has moved on since and reports problems in other configurations.
   after × 80/203, which nothing applies today; unscaled, it clips at the
   headroom on screen.
 
-#### The Vulkan render API (built, offscreen)
+#### The Vulkan render API (built, and running in the Skathi prototype)
 
 **Verdict: proceed** with a downstream gpu-next-only Vulkan backend on MoltenVK:
 app-owned device, RGBA16F IOSurface pool, one timeline semaphore/event per slot.
@@ -1097,11 +1147,56 @@ existing `ra_pl` path already turns a `pl_tex` into a target.
   validation (9–10 errors). With VideoToolbox, about 30 "no memory bound"
   errors on libplacebo's own imported decoder planes, which MoltenVK backs
   from the Metal texture.
-- **Not tested**: seek, pause, skipped renders, a refused, delayed or dropped
-  Metal copy, failure injection, retiring with work in flight (the harness
-  waits on the CPU before reusing a slot), device loss, the queue-lock
-  callbacks, the `EXTERNAL` queue-family transfer, the
-  `VK_EXT_external_memory_metal` import, Skathi itself, memory.
+- **Regression harness, offscreen** (later the same day): 18 named cases,
+  each in its own process, plain, under Vulkan validation and under Vulkan
+  plus Metal API validation. 17 of 18 pass with no Vulkan errors beyond the
+  known VideoToolbox ones and no Metal validation messages: seek, pause and
+  frame-step, redraw while paused, `SKIP_RENDERING`, repeats, refused,
+  delayed, dropped and stuck Metal copies, a failure after the acquire with
+  and without a release signal, retiring with GPU work in flight, and
+  `VK_QUEUE_FAMILY_EXTERNAL`.
+  - The 18th, the `VK_EXT_external_memory_metal` import, fails on MoltenVK
+    1.4.2: the IOSurface stays zero (a MoltenVK bug, fixed on its main
+    branch, not released). Built from main it matches today's
+    `VkImportMetalIOSurfaceInfoEXT` import pixel for pixel at the same cost,
+    so today's import stays.
+  - **A backend bug found and fixed**: retire returned before mpv's last
+    release value was visible (2 of 3 runs before; with the extra wait it
+    fires in 10 of 10, 1.3–7.8 ms after `pl_gpu_finish`; cause not isolated).
+  - **A contract gap closed**: with a Vulkan target `SKIP_RENDERING` waits
+    on nothing and signals nothing, so a skip is not a release; the header
+    says so.
+  - The patch is now 9 files, +1014 −29.
+- **Subtitle overlay pass, offscreen** (paused frames):
+  `MPV_RENDER_PARAM_VULKAN_OVERLAY_FBO` renders the video at its size and
+  subtitles and the OSD into an element-sized target. Premultiplied alpha
+  (a 50 % box reads rgb = a = 0.4978); the text line matches a single
+  element-sized render at 84 dB, against 16.7 dB for today's video-sized
+  render stretched; zoom, pan, crop and rotation agree across both passes
+  at 62–92 dB in 7 configurations; both passes take 0.51 ms of CPU against
+  1.61 ms for one element-sized pass, and 0.06 ms with nothing to draw.
+  Not checked: EDR overlay colour, OSD messages, PGS, an RGBA8 target,
+  playback.
+- **In the Skathi prototype, on screen** (the GL producer replaced by the
+  Vulkan ring and `present_shared_fenced(ready, ready + 1)`, no CPU wait;
+  each run paired with a GL run on the same libmpv and gpu-next; 3 runs
+  each, 320×180 pt window):
+  - frames held the intended refreshes: 24 fps 95.5–98.2 % (GL 97.0–99.2),
+    60 fps 98.8–99.2 % (GL 99.6–99.9), HDR10 24 fps in EDR 96.2–96.7 %
+    (GL 96.6–98.8). Within 1–3 points, a tendency rather than an
+    established regression;
+  - present → captured frame 33–36 ms, as GL; command → screen overlaps GL
+    in every row;
+  - the CPU fence wait per frame is gone (0 against 0.7–2.4 ms); the
+    render call takes about what GL's call and wait took together;
+  - colour identical to GL in the IOSurface and on screen, SDR and EDR
+    (PQ patches 4.95 / 2.67 / 1.18; captured maximum 5.12);
+  - all frame events `Presented Exact`, no `Busy`, no errors.
+  - A leak was fixed on the way: a ring slot's Vulkan objects leaked when
+    Skathi refused the IOSurface before the window's first draw.
+- **Not tested**: device loss, the queue-lock callbacks, GPU time per pass,
+  memory of the Vulkan ring in the window, the overlay pass inside Skathi,
+  KosmicKrisp.
 
 The research before it:
 
@@ -1141,14 +1236,66 @@ The research before it:
 
 Light on the panel; other displays, rates, brightness; a real-mouse resize; a
 second surface; device loss; acoustic output; 4K and 60 fps HDR cadence; steps on
-0.5.x; the shipping player itself in these runs; power; macOS before 26.
+0.5.x; power; macOS before 26.
+
+#### The real interface on Skathi, against the shipping player
+
+The player's own Svelte interface, ported onto Skathi with the Tauri calls
+stubbed, measured on master `b805f961` against Frame Player 1.48.1 (Tauri and
+WebKit, the installed version) and the prototype's minimal page; 3 runs each,
+480×320 pt window at the top right, clips without audio. Frame Player ran
+from an isolated home folder; its own files were checked unchanged
+afterwards.
+
+**What the port is and is not.** The interface is the player's code almost
+file for file (`sk check`: 0 errors, 66 warnings). Its video still goes
+through the prototype's GL route A: a ring of 3, a render at the window's
+size and Skathi's copy, so none of the savings measured on Windows (a ring
+of 2, the video-sized render) and none of the Vulkan work is in these
+numbers. Stubbed: seekbar previews (the FFmpeg module), the audio-output
+device, torrents, casting, watching together, the catalog's network side,
+updates and diagnostics; there is no macOS menu.
+
+**Footprint** (`phys_footprint` summed over the process tree, median of 3;
+for Frame Player that includes WebKit's content, GPU and network processes;
+the VideoToolbox decoder service, 48–51 MiB at 1080p and 314–338 MiB at
+2160p, is counted for all):
+
+| | Minimal page | Port on Skathi | Frame Player 1.48.1 |
+|---|---|---|---|
+| Idle, start screen | 74 MiB | **92 MiB** | **112 MiB** |
+| 1080p, controls hidden | 641 MiB | **696 MiB** | **581 MiB** |
+| 1080p, controls visible | — | **695 MiB** | **789 MiB** |
+| 2160p HDR, controls hidden | 1180 MiB | **1224 MiB** | **1333 MiB** (1049–1386) |
+| 2160p HDR, controls visible | — | **1223 MiB** | **1264 MiB** (1260–1535) |
+
+- **The controls cost nothing on Skathi** (same footprint and CPU). In
+  Frame Player showing them adds about 210 MiB to WebKit's GPU process and
+  about 6 points of CPU.
+- **With the controls hidden at 1080p the port is 115 MiB above Frame
+  Player**: that is the frame path above, the part the ring of 2, the
+  video-sized render and the overlay pass are meant to remove.
+- CPU while playing is level (30–39 % of a core in every column); idle, the
+  port uses 6.5 % against 4.8 %. GPU time is not comparable across the two
+  architectures.
+
+**Start-up** (ms from spawn): the port shows its start screen at 610–740
+against Frame Player's 475–519; the first 1080p video frame is level
+(928–961 against 893–1007); at 2160p HDR the port is about 70 ms ahead. The
+minimal page is about 450 ms faster than both: the cost is the interface's
+boot, not mpv.
+
+**Caveats:** a small window (video memory follows the window's size), an
+older Frame Player than the current release, three runs, and one idle port
+window left running through the batch (a separate process, not in the sums
+as far as the tools show; not re-checked).
 
 ### Skathi defects found, and their state
 
 Filed in github.com/argon-chat/skathi while building the prototypes. #1–#20
-are closed, most of them within hours. #21–#28, #30, #33 and #34 are closed.
-#29, #31, #32 and #35 are still open, but each has a change on master within
-hours, documented for 0.6. "Re-measured"
+are closed, most of them within hours. #21–#34 are closed (#25 and #30 as
+not planned, the others fixed and, from #29 on, confirmed by us on master).
+#35 is open. "Re-measured"
 means our own runs confirmed the fix, on the build named; "landed" names the
 upstream commit, which is not always the build we tested.
 
@@ -1171,7 +1318,7 @@ upstream commit, which is not always the build we tested.
 - **#17** A refused GPU frame's reason was promised in the log but not printed. Fixed (`71f66833`): each surface logs a warning once per reason. Verified in source only: in our device-loss runs presents were refused before paint, so the line never appeared.
 - **#18** On macOS the HDR clamp climbed the EDR ramp in 200 ms steps. Fixed (`12f7f88e`) for the clamp Skathi paints with, re-measured on `c602b5a4`. `content_headroom()` and `DisplayChanged` still move in coalesced steps, so a producer that tone-maps to it still steps. The ~110 ms hold when EDR starts from 1.0 is macOS's: a native app without Skathi shows it too (M53).
 - **#19** On macOS, frames shown at sparse presents or during a resize were reported `Superseded` or late. Fixed through `skathi-gpui` 0.5.2 (`c602b5a4`, `810843bd`, `77030d59`, `f2a79987`), re-measured on each in the scripted cases, with the residues listed above.
-- **#20** Closing a window logged `[ERROR]` lines. Fixed (`skathi-gpui` `186ed842`). Re-measured: no line after `Handle::close()` on 0.5.0. A posted `WM_CLOSE` there still logged one `Invalid window handle` line, down from 5–6. On master `c29ab351` neither path logged anything (10 runs each) on 2026-11-19; a day later the `WM_CLOSE` line was back in 6 of 6 runs on `8c912edc` and in 4 of 4 on `c29ab351` itself, so the difference is not the build and was not found. `Handle::close()` stays clean. A click on the close button was never measured.
+- **#20** Closing a window logged `[ERROR]` lines. Fixed (`skathi-gpui` `186ed842`). Re-measured: no line after `Handle::close()` on 0.5.0. A posted `WM_CLOSE` there still logged one `Invalid window handle` line, down from 5–6. The remaining `WM_CLOSE` line depends on focus: it appears when the window is the foreground window as `WM_CLOSE` arrives (15 of 15) and never otherwise (0 of 43), on `8c912edc` and on `c29ab351` alike; the earlier "0 of 10" runs never had the foreground (inferred from their shutdown times). A real click on the close button closes a foreground window, so expect the line in real use. Reported in #20 with the source reading (a deferred activation task running after the window is destroyed, not traced). Side finding: with `exact_frame_feedback` off, a foreground window's 60 fps frames come back mostly `Estimated` and a background one's all `Exact`, so earlier "option off" numbers, which did not record focus, are incomplete. `Handle::close()` stays clean. A click on the close button was never measured.
 - **#21, #22** `sk check` missed CSS the runtime drops or flags. Fixed for 0.6. In `6db5fc22` the runtime learnt `transition` with `var()`, state-made `::before`/`::after`, `min()`/`max()`/`clamp()` over percentages, stops from CSS, and `position: relative` paint order. In `cdde8ac6` `sk check` began running the host's own CSS code compiled to WebAssembly, so it reports what the runtime reports. What the renderer still lacks is a warning (`SK4006`), and what needs a 0.6 host is marked `SK4007`.
 - **#23** Inline `<svg>` lost CSS shape geometry and `var()` in stops. Fixed (`6db5fc22`), confirmed on macOS: 0 of 23 808 pixels differ from the attribute control.
 - **#24** A present accepted after the app's quit hook got no event and still returned `Ok`. Before the fix: 2 frames in each of 6 closes on macOS, and 1–3 frames in 17 of 20 on Windows. Fixed (`040bfb3c`): a present after quit now returns `SurfaceError::Closed`. Re-measured on master `c29ab351`, Windows: 0 frames without an event in 20 of 20 closes.
@@ -1179,13 +1326,13 @@ upstream commit, which is not always the build we tested.
 - **#26** (closed, ours) One frame in fifteen lost at one present per refresh on Windows. It is the driver's 224 cap on our machine; see "On Skathi 0.5.0". The maintainer found and fixed a separate cause, a frame latched after the UI callbacks (`20733eea`), and added `Superseded` logging.
 - **#27** A git dependency did not build without the devtools bundle. Fixed (`39ed898d`): a Cargo git checkout without the bundle now builds without devtools and prints a `cargo:warning`.
 - **#28** `sk check` missed `-webkit-mask-*` and `vertical-align` with a length. Fixed by `cdde8ac6`, confirmed on `c29ab351`.
-- **#29** (open, fix on master) A custom property changed by `:hover` did not reach `var()` in other rules, and nothing was logged. On master (`a6e9289d`) it reaches the element, its descendants and inline SVG stops, including stops styled from a stylesheet. Not re-measured by us.
+- **#29** A custom property changed by `:hover` did not reach `var()` in other rules, and nothing was logged. Fixed (`a6e9289d`): it reaches the element, its descendants and inline SVG stops. Confirmed on `03fb7ecf`, in the issue's example and in the ported player's catalog ring; closed.
 - **#30** (not planned) `sk check` does not see a refused value that arrives through `var()`. This is by design: it checks declarations as written, and such values show up only in the runtime log.
-- **#31** (open, fix on master) `KeyboardEvent.code` was always empty and `repeat` always false, so shortcuts on physical keys could not be ported. On master (`2081d5c7`, consecutive X11 keyups `feb5b3ad`) desktop keydown/keyup carry `code`, `key` and `location`, and held keydowns set `repeat`; `keyCode` and `charCode` stay unavailable. Not re-checked with the player's shortcuts.
-- **#32** (open) On the tested 120 Hz XDR display, the window's `CAMetalDisplayLink` targets each frame 5 refreshes ahead. Answered with opt-in timer pacing, `lowLatencySurface` (`227dfd1d`); see "Latency" above. Measured on `a4469450` (see "Latency"): present to screen 33.4 → 16.3 ms, but playback cadence falls to 57–63 %; reported back with two suggestions.
+- **#31** `KeyboardEvent.code` was always empty and `repeat` always false, so shortcuts on physical keys could not be ported. Fixed (`2081d5c7`, consecutive X11 keyups `feb5b3ad`): `code`, `key`, `location` and `repeat`; `keyCode` and `charCode` stay unavailable. Confirmed on `03fb7ecf` in the ported player (J/K/L, arrows with repeat, `,`/`.`, Shift+L, digits, the keypad, a Russian layout; typing in a field fires no shortcut); closed.
+- **#32** (open) On the tested 120 Hz XDR display, the window's `CAMetalDisplayLink` targets each frame 5 refreshes ahead. Answered with opt-in timer pacing, `lowLatencySurface` (`227dfd1d`); see "Latency" above. The first version (`a4469450`) took present to screen 33.4 → 16.3 ms but broke playback cadence (57–63 %); the hybrid that followed (`f531dd11`, `7a9f653a`) gives 9.3 ms paused with cadence and animation intact (see "Latency"). Confirmed on `b682a9e3`; closed.
 - **#33** (open, fix on master) Each half-float slot kept an unused 8-bit twin. On D3D12 on master (`886ebf94`) the twin is made on a slot's first SDR read and kept until it retires; the maintainer counted 63.75 MiB for the two 4K twins in an SDR test window on an RTX 5070, and checked HDR separately by readback. The slot-to-atlas copy stays by design. Re-measured on `8c912edc`: 62.0 MiB less in an HDR window with 4K frames, one twin (+32 MiB) left after an SDR → HDR switch. Closed by us.
 - **#34** `<sk-surface>` upscaled with one bilinear tap. On master (`684e7036`) `image-rendering` is honoured, and `auto` uses Catmull–Rom on enlarged axes. Re-measured on `8c912edc` (31.4 dB against 27.8 on fine detail, no HDR halo); closed by us.
-- **#35** (open, filed for the interface port) The embedder had no handle to the main window and no run-time minimum size. Implemented on master in `6a9338be`, documented for 0.6: `appWindow` run-time min/max size, `setAspectRatio`, `setTrafficLightPosition`, fades on show and hide, an animated `setBounds()` and `visibleOnAllWorkspaces`; `HostContext` and `Handle` expose an unsafe raw handle (main thread only; on macOS the content `NSView`). Whether `visibleOnAllWorkspaces` gives the level above other apps' fullscreen Spaces, and the controls themselves, are not checked in the player.
+- **#35** (open, filed for the interface port) The embedder had no handle to the main window and no run-time minimum size. Implemented on master in `6a9338be`, documented for 0.6: `appWindow` run-time min/max size, `setAspectRatio`, `setTrafficLightPosition`, fades on show and hide, an animated `setBounds()` and `visibleOnAllWorkspaces`; `HostContext` and `Handle` expose an unsafe raw handle (main thread only; on macOS the content `NSView`). Checked in the ported player on `03fb7ecf`: min/max size, aspect ratio, traffic-light position, fades and the animated `setBounds()` work, read back from the `NSWindow`; the mini player did not stay above another app's fullscreen Space. The follow-up (`b5fe7552`, `2e88b48b`, `f531dd11`) added `setWindowButtonsVisible`/`getWindowButtonsRect`, `setFullscreen(…, { transition: "fade" })`, pinch as a cancelable `wheel` with `ctrlKey` (Option kept in `altKey`) and a panel swap for the mini player. On `b682a9e3`, with synthetic events (no physical trackpad, no real clicks): the black fullscreen transition works both ways, pinch and Option+pinch split as documented, the button fade and the re-centring after a title-bar height change work. Broken: `getWindowButtonsRect()` returns the whole content area; showing the buttons after hiding them drops the centring; the mini player still leaves the screen over a foreign fullscreen Space, because no panel is created (inferred from source: the swap compares the window's class exactly, and AppKit on macOS 26.5.2 turns it into a KVO subclass). Reported; open.
 
 ## The shape of the design
 
@@ -2028,15 +2175,18 @@ pacing recipe, colour on macOS and through a gpu-next render-API texture.
 Allocation behaviour, accurate feedback across setups and the colour settings
 remain substantive open points below. What is left:
 
-- **The real interface on Skathi.** Its memory, its cost, and what of today's
-  Svelte interface runs unchanged. A separate check is under way.
-  - **`sk check` on master** now runs the runtime's own CSS code. On today's
-    frontend it reports 0 errors and 67 warnings.
-  - **Not covered by `sk check`:** values that arrive through `var()` are
-    visible only in the runtime log (#30).
-  - **Changed on master, not re-checked by us** (the issues are still
-    open): state rules that change custom properties (#29), physical keys
-    and repeat (#31), and the window controls and raw handle of #35.
+- **The real interface on Skathi.** Ported and measured (see "The real
+  interface on Skathi, against the shipping player"): `sk check` 0 errors
+  and 66 warnings; idle and with the controls visible it is below Frame
+  Player, with the controls hidden at 1080p 115 MiB above it, on the old
+  frame path. Open:
+  - the same measurement with the Vulkan ring of 2, the video-sized render
+    and the overlay pass, at full-screen size, and on Windows;
+  - the stubbed parts (seekbar previews first, they add a decoder), the
+    macOS menu;
+  - the mini player above a foreign fullscreen Space and the two
+    traffic-light defects (#35);
+  - values through `var()` are visible only in the runtime log (#30).
 - **Rendering at the video's size, and the subtitles.** On Windows, a ring
   of 2 and a video-sized render bring a 1080p clip at screen size to 100–146 MB
   of private bytes below the shipping player and 58–76 MB of GPU memory above
@@ -2060,23 +2210,24 @@ remain substantive open points below. What is left:
   scene target, not in addition to it.
 
   The split is not confirmed with a per-allocation tool.
-- **Present-to-screen on macOS.** About 40 ms of it is `CAMetalDisplayLink`
-  targeting 5 refreshes ahead. Skathi's opt-in `lowLatencySurface` (#32)
-  halves it (33.4 → 16.3 ms) but breaks playback cadence (57–63 %); waiting
-  for upstream.
-- **gpu-next colour against `gpu`**: on Windows `target-contrast=inf` with
-  `tone-mapping=clip` matches on grey patches with the prototype's options;
-  the shipping player's own options, colour patches and macOS are open.
-- **The Vulkan render API on macOS**: built and working offscreen; seek,
-  pause, skipped renders, failures and the connection to Skathi are not
-  tested. See "The Vulkan render API" above.
+- **Present-to-screen on macOS.** Paused frames: solved by the hybrid
+  `lowLatencySurface` (9.3 ms). During playback the display link's ~45 ms
+  stays, which only `audio-delay` has to cover.
+- **Colour against the shipping player**: on Windows an option set plus two
+  host steps matches 26–27 of 33 patches. Open: colour outside BT.709
+  through `<sk-surface>` (Skathi clamps to 0 … headroom), the display's
+  gamut, an SDR desktop, and the same comparison on macOS.
+- **The Vulkan render API on macOS**: runs in the Skathi prototype at GL's
+  cadence and colour. Open: device loss, the queue-lock callbacks, memory
+  in a window, the overlay pass inside Skathi, the bundle and licensing.
 - **Sound against picture**: the slow 24 fps playback comes from stalls in
   the render call and the fence wait, not from mpv's turnaround; the
   proposed fix did not help. Open: whether the stalls happen on an idle Mac,
   and PR #18845's newer drift controller. `audio-delay` from a running median
   of report → `shown_at` works on screen; light and sound are not measured.
 - **A Windows switch between SDR and HDR output while playing.**
-- **Feedback accuracy**: `Estimated` events on Windows without the opt-in, the
+- **Feedback accuracy**: `Estimated` events on Windows without the opt-in
+  (they follow the window's foreground state, see #20), the
   macOS residues after 0.5.2, a real-mouse resize, multi-display setups.
 - **Other hardware**: AMD and Intel GPUs, Windows 10, HDR off, other displays
   and refresh rates on the current Skathi, older macOS, anything across
@@ -2096,40 +2247,27 @@ remain substantive open points below. What is left:
 The two prototypes from the earlier list are done (see "The prototypes on
 Skathi, measured").
 
-1. **The real interface on Skathi**: `sk check` over today's frontend, a
-   payload built from it with the Tauri calls stubbed, and its memory and
-   start-up cost against the prototypes' minimal page.
-2. **A Windows libmpv build of our own** carrying PR #18845: built from the
-   native recipe and working in the prototype; the gpu-next options that
-   match `gpu` are found for grey patches. Left: the official container
-   build (needs Docker or WSL), pinning the subprojects, and the shipping
-   player's options and colour patches.
-3. **The Vulkan render API for macOS.** The backend, an offscreen client and
-   VideoToolbox input are done. Next:
-   - turn the client into a regression harness: seek, pause and step,
-     skipped renders and repeats, a refused Metal copy, Metal API
-     validation, delayed, dropped and refused copies, failure injection,
-     retiring with work in flight, the `EXTERNAL` queue-family path, and the
-     `VK_EXT_external_memory_metal` import against today's direct IOSurface
-     import;
-   - connect it to Skathi's fenced path in the macOS prototype in place of
-     GL, with paired producer and compositor readbacks, HDR patches and an
-     SDR control, and repeat the cadence, latency and colour runs;
-   - the subtitle overlay pass (see "Rendering at the video's size, and the
-     subtitles" under "Still open");
-   - the bundle and licensing.
-4. **Memory and latency**:
-   - use a ring of 2;
-   - render at the video's size, and at the element's size while a subtitle
-     track, the second subtitle line or an mpv OSD message is on;
-   - `lowLatencySurface` again once upstream answers #32;
-   - the 24 fps audio: find the render-call and fence stalls (an idle Mac,
-     a trace of the render thread), try PR #18845's drift controller, and
-     take `audio-delay` from the running median.
-5. Compare with today's player through the e2e harness (on the `host-boundary`
+1. **The port on the new frame path**: the Vulkan ring of 2, the
+   video-sized render and the overlay pass inside the ported interface on
+   macOS (and the D3D11 path on Windows), then the memory and start-up
+   comparison again at full-screen size, with seekbar previews no longer
+   stubbed.
+2. **The Windows libmpv**: built, pinned and reproducible. Left: whether to
+   carry libxml2 (DASH), the official container build (Docker or WSL), the
+   host's two colour steps in the real path, and an SDR desktop for the
+   colour table.
+3. **The Vulkan render API for macOS**: device loss, the queue-lock
+   callbacks, the overlay pass inside Skathi, memory in a window, and the
+   bundle and licensing.
+4. **Upstream**: #35's three defects; colour outside BT.709 through
+   `<sk-surface>` (not filed yet).
+5. **The 24 fps audio on macOS**: find the render-call and fence stalls (an
+   idle Mac, a trace of the render thread), try PR #18845's drift
+   controller, and take `audio-delay` from the running median.
+6. Compare with today's player through the e2e harness (on the `host-boundary`
    branch: `bun run e2e --mpv-conf <file>`, per-step frame metrics,
    `bun run e2e compare`).
-6. **Previews and posters through a second libmpv core**, in the order given
+7. **Previews and posters through a second libmpv core**, in the order given
    under "Previews and posters (planned)".
 
 ## Reproducing the probes
