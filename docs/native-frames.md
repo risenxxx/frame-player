@@ -622,14 +622,33 @@ loaded into the prototype on `c7a524d5`, n = 3 per cell.
   - Two steps of that set belong to the host, not mpv: a gain of
     203 / SDR white and a BT.2020 → BT.709 matrix that keeps negative
     values. The probe stood them in with a GLSL output hook.
-  - **What still differs:** Skathi clamps a surface to 0 … headroom (from
-    source), so three HDR patches outside BT.709, right in our texture,
-    lose their negative components on screen: no colour outside BT.709
-    reaches the screen through `<sk-surface>` on the builds we measured.
-    Filed as #36; a fix is on master (`9c7f52b6`), not re-measured by us. The six SDR BT.2020
-    patches differ because the shipping window narrows them to the
-    display's gamut, which mpv does not know through the render API
-    (inferred).
+  - **What differed:** up to `8c912edc` Skathi clamped a surface to
+    0 … headroom (from source), so three HDR patches outside BT.709, right
+    in our texture, lost their negative components on screen. Filed as
+    #36 and fixed in `9c7f52b6`.
+  - **Re-measured on master `64d2e42f`** (which contains `9c7f52b6`):
+    the negatives reach the desktop. The HDR10 BT.2020 red patch, scRGB:
+
+    | | R | G | B |
+    |---|---|---|---|
+    | our texture | 4.154 | −0.143 | −0.055 |
+    | desktop, `8c912edc` | 4.145 | 0.000 | 0.000 |
+    | desktop, `64d2e42f` | 4.145 | −0.143 | −0.055 |
+    | mpv's own gpu-next window | 4.169 | −0.142 | −0.036 |
+
+    The desktop now equals the texture on every channel of all 33 patches
+    (negatives within 0.0015, positives within 0.010). On screen **27 of
+    33** match mpv's own window (was 26), the texture still 27. In: the
+    HDR10 BT.2020 R100, G100 and G75 patches. Out: two SDR BT.2020 blue
+    patches that matched only because the clamp hid a negative our
+    texture has and the reference does not (−0.218 against −0.048). Three
+    rounds identical; `8c912edc` as a control reproduces 26.
+  - **What still differs** is ours: the six SDR BT.2020 patches, because
+    the shipping window narrows them to the display's gamut, which mpv
+    does not know through the render API (inferred). Not checked after
+    the fix: an 8-bit window or a switch from HDR to SDR, a tint or
+    opacity over the surface, an upscaled frame, D3D11 or wgpu, macOS, a
+    real film.
 - **Our own libmpv with the PR.** The official LGPL libmpv for Windows is
   built in a Linux container, which this machine could not run (no Docker
   or WSL), and MSYS2's FFmpeg is a GPL build. mpv's native `win32` CI recipe
@@ -702,6 +721,39 @@ the payload rebuilt by the same version:
     interleaved under the same disturbance gave the same range. On a quiet
     desktop master read 99.4 and 99.6 %.
   - **Not obtained:** a full repeat on a quiet desktop.
+
+#### The JIT against AOT in our own executable (master `64d2e42f`)
+
+The prototype as an embedder's own executable, the payload published four
+ways with the `sk-aot` 0.6.1 release binary, all without devtools; a ring
+of 2 and the video-sized render; private bytes in MB at 30 s, 3 runs a
+cell (the range), 192 clean runs. "Window / screen" are the two window
+sizes of the memory table above.
+
+| Build | Executable, MB | Idle window | 1080p SDR, window / screen | 2160p HDR10, window / screen |
+|---|---|---|---|---|
+| JIT (`sk publish`) | 95.7 | 515–519 | 533–535 / 582–585 | 890–891 / 1165–1168 |
+| AOT image, default memory profile | 96.7 + 2.6 image | **886–890** | 909–911 / 957–960 | 1263–1268 / 1542 |
+| AOT image, `SK_AOT_MEMORY_PROFILE=compact` | 96.7 + 2.6 | 560–563 | 578–581 / 620–626 | 930–934 / 1206–1213 |
+| AOT, no JIT and no WebAssembly, compact | 80.8 + 2.6 | 558–560 | 576–581 / 625–627 | 933–936 / 1208–1213 |
+| The same, features trimmed, size profile | 60.6 + 2.6 + 11.6 ICU pack | as the row above | | |
+
+- **The default AOT profile commits 367–378 MB that are never touched**:
+  a 256 MB block committed whole, 86 MB inside a 32 GiB reservation and a
+  58.5 MB block. The working set is 6–10 MB *lower* than the JIT's.
+  `compact` leaves 35–48 MB above the JIT. Without JIT and WebAssembly the
+  default profile gives the same numbers as the AOT image's.
+- **Removing the JIT changes no memory number**: the JIT build held about
+  1 MB of JIT code. It saves 15.9 MB of executable.
+- GPU memory is identical in every variant. Start-up medians are 556–568 ms
+  everywhere (JIT 565, AOT 557, compact 558).
+- The JS engine's share on the JIT build: 55–59 MB of private bytes (about
+  11 %), 7 MB of it allocated.
+- **For the player**: AOT only with `compact`, and then it costs 35–48 MB;
+  no JIT buys size, not memory. Filed as #39 (compact as the default for
+  application images, and four snags on the AOT page).
+- **Caveat**: the page is the prototype's minimal 249 KB page, not the real
+  interface; the port runs only on macOS.
 
 #### Not measured
 
@@ -1187,8 +1239,15 @@ existing `ra_pl` path already turns a `pl_tex` into a target.
     overwrite before the copy. Cause not isolated (MoltenVK's IOSurface
     writes seen from another Metal queue, or the harness's bookkeeping
     around the gate, inferred); Skathi's copy of `<sk-surface>` follows the
-    same pattern. The screen was locked through these runs, which may
-    change GPU timing (not checked).
+    same pattern. The screen was locked through these runs.
+  - **The lock is not the cause.** The same binaries, 30 interleaved
+    offscreen runs each with the screen unlocked: `delay` failed 3 times on
+    the new libmpv and 5 on the old (5 and 8 locked); `refuse` 3 and 5 (1
+    and 1 locked). Pooled, `delay` 8 of 60 unlocked against 13 of 60 locked
+    (Fisher p = 0.34), `refuse` 8 of 60 against 2 of 60 (p = 0.09). The
+    failures are of the same kind (`delay`: 58–59 distinct frames of 60).
+    The two variants that would isolate the stale read (no gate; the copy
+    on mpv's queue) were not run.
 - **Subtitle overlay pass, offscreen** (paused frames):
   `MPV_RENDER_PARAM_VULKAN_OVERLAY_FBO` renders the video at its size and
   subtitles and the OSD into an element-sized target. Premultiplied alpha
@@ -1458,8 +1517,10 @@ mode's run without):
   pass in the same 8-bit mode. mpv writing an 8-bit linear overlay gave
   41.0 dB: dark edges are quantised before sRGB encoding.
 - **After the subtitles end**, our overlay ring can be released, but Skathi
-  keeps the cleared surface's slots: 2 × 53.2 MiB in EDR, 2 × 27.0 in 8 bit.
-  `clear()` withdraws the frame only (from source).
+  kept the cleared surface's slots on `b4d4e190`: 2 × 53.2 MiB in EDR,
+  2 × 27.0 in 8 bit; `clear()` withdrew the frame only (from source).
+  Master releases them (#38, re-measured in "On screen on master
+  `64d2e42f`" below).
 - The band was a fixed bottom band; one that follows the subtitles would
   need mpv to return their bounding box and Skathi to present into part of
   an element atomically. Not asked: the full-size 8-bit overlay already
@@ -1474,8 +1535,10 @@ mode's run without):
   (drawables 133 against 79, Skathi's copies 25, our ring 16, mpv's +56, JS
   29, malloc). Frame Player's WebKit processes (content 69–123, GPU 21–230)
   are outside that comparison.
-- **Skathi's part** went to #38: the Metal slot pool never trims, `clear()`
-  keeps the slots, and the layer holds five drawables against three.
+- **Skathi's part** went to #38: the Metal slot pool never trimmed,
+  `clear()` kept the slots, and the layer holds five drawables against
+  three. The first two are fixed on master; the five drawables stay by
+  design.
 
 Not checked: HDR content with these switches, PGS and OSD messages through
 the 8-bit overlay, memory over hours.
@@ -1532,9 +1595,11 @@ Idle footprint, median of 3, MiB:
   its first 1–1.5 s, then settles at about 87. An empty 0.6.0 payload with
   no mpv peaks at 229 MiB and settles at 32; at the peak `vmmap` shows
   192.8 MiB of unmapped graphics memory resident. It is the same on route
-  A, so it is not Vulkan. Cause not identified; filed as #37.
+  A, so it is not Vulkan. Filed as #37; it is the system's, not Skathi's
+  (see "On screen on master `64d2e42f`" below).
 - **Windows** has more levers (an AOT image with `publishJit: false`,
-  `SK_AOT_MEMORY_PROFILE=compact`), none measured yet; see "Next steps".
+  `SK_AOT_MEMORY_PROFILE=compact`), measured since on the prototype: see
+  "The JIT against AOT in our own executable".
 
 #### On Skathi master after 0.6.0 (`89c511c1`, 0.7.0-dev)
 
@@ -1552,16 +1617,84 @@ Built only, with the screen locked: nothing was run in a window.
 - **Sizes** unchanged: the executables within 7 KB as built
   and 64 bytes stripped.
 
+#### On screen on master `64d2e42f`
+
+The port rebuilt on `64d2e42f` (`sk check` unchanged: 0 errors, 66
+warnings, every finding the same as on `89c511c1`), run with the screen
+unlocked (checked before each launch and at each reading), muted, never
+focused, from an isolated home folder. Small windows 480×320 pt at the
+top right; the memory runs in a window of the screen's size, as before.
+
+- **Smoke run**: the 1080p ASS clip plays with VideoToolbox, the pause
+  button and a seekbar click work (45.9 s for an expected 45.0), and
+  subtitles are drawn.
+- **The traffic lights' fades (#35): no button moved** in any sample of 3
+  launches, centred at (12, 17) and at an explicit (20, 11), through
+  150 ms fades and instant hides, read at +0, +60 and +300 ms; two launches
+  of the player's own idle fade kept them at (12, 17). The hit test, the
+  buttons' rectangle and the re-centring are right; `getWindowButtonsRect()`
+  follows the buttons one frame late (by design: it reads a per-frame
+  snapshot).
+- **The start-up peak (#37) is the system's.** Idle, 3 launches a cell:
+
+  | Payload | Peak | Graphics memory at the peak | Settled at 7 s |
+  |---|---|---|---|
+  | Empty, window visible | 231.0–231.7 MiB | 192.8 MiB: 24 objects of 8.00 MiB | 34–35 |
+  | Empty, window hidden | 228.1–229.2 | 192.8 | 31–32 |
+  | The port, window visible | 354.2–355.8 | 257.1: 32 objects | 90–91 |
+  | The port, window hidden | 348.4–349.3 | 257.1 | 87–88 |
+
+  Runtime against precompiled shaders changes it by at most 1.6 MiB, the
+  window's visibility by at most 3. It stays above 60 % of the peak for
+  1.0–1.2 s. A 26-line AppKit program without Skathi, a never-shown window
+  with a `CAMetalLayer` and three presents, peaks at 220–223 MiB with the
+  same 24 × 8.00 MiB and settles at 23; 213–214 MiB with 48×32 drawables
+  and 315–317 with 3456×2304,
+  12.5 MiB without a present, 10.2 MiB for Metal alone. So: a one-off
+  ~190 MiB for about a second after a process's first present to a
+  `CAMetalLayer`, independent of size. That it is per display or
+  compositor is inferred (the maintainer's virtual SDR display gave 38
+  MiB); other displays and refresh rates were not checked. Skathi's
+  embedding documentation now notes it (`ec3cc308`).
+- **Copies and drawables (#38)**, main process, `footprint -v` at 12 s,
+  screen-sized, cold thumbnail cache, MiB, medians:
+
+  | Case | `b4d4e190` | `64d2e42f` |
+  |---|---|---|
+  | 1080p, controls hidden | 993 | **992** |
+  | ASS subtitles on screen | 1293 | 1290 |
+  | Subtitles cleared | 1232, overlay 2 × 53.2 kept | **1123**, overlay 0 |
+  | Cleared, and our overlay ring dropped | 1121 | **1019** |
+
+  A cleared surface now holds no copy (−109 and −102 MiB). After the
+  overlay shrinks to a band no old-size copy is left in 6 of 6 launches
+  (1 of 3 kept one before, so suggestive, not proof). The 1080p picture
+  held 2 slots and a tile in all 15 launches. **Five drawables** in all 55
+  launches, `lowLatencySurface` off and on, as the maintainer keeps them.
+  **`lowLatencySurface` makes no memory difference**; its frame timing was
+  not measured here.
+- **Steady playback is unchanged**: 992 against 993 MiB with the same
+  chunks (drawables 265, our ring 32, copies 49, mpv's blocks 384, malloc
+  127, JS 28); the idle hidden start screen settles at 87.7 MiB against
+  86.9.
+- **A method trap**: the thumbnail cache lives in the port's own data
+  folder, not the payload's, so a warm cache puts about 45 MiB less into
+  malloc. Totals above are from cold runs.
+
+Not checked: a real pointer move, a physical trackpad and Reduce Motion
+(#35); other displays, Macs, macOS versions and memory pressure (#37); a
+burst of presents then idle (the trim itself), HDR content, repeated
+clear/present cycles and hours (#38); 2160p, the small window, CPU, GPU and
+start-up times on this build.
+
 ### Skathi defects found, and their state
 
 Filed in github.com/argon-chat/skathi while building the prototypes. #1–#20
 are closed, most of them within hours. #21–#34 are closed (#25 and #30 as
 not planned, the others fixed and, from #29 on, confirmed by us on master).
-#35–#38 are open. The maintainer answered all four on 2026-11-20 with
-fixes on master, after Skathi 0.6.0; **none of those fixes is verified by
-us at run time yet** (master `89c511c1` was only built and checked, see
-above), and each answer asks for a retest (see "Next steps"). "Re-measured"
-means our own runs confirmed the fix, on the build named; "landed" names the
+#35–#38, answered on 2026-11-20 with fixes on master after Skathi 0.6.0,
+were re-measured by us on master `64d2e42f` and are closed (#37 by us, its
+peak being the system's). #39 is open. "Re-measured" means our own runs confirmed the fix, on the build named; "landed" names the
 upstream commit, which is not always the build we tested.
 
 - **#1** `<sk-surface>` was inert without the cargo feature `video`. Fixed (`ae8dca2c`), re-measured on `1eacd896`.
@@ -1597,10 +1730,11 @@ upstream commit, which is not always the build we tested.
 - **#32** (open) On the tested 120 Hz XDR display, the window's `CAMetalDisplayLink` targets each frame 5 refreshes ahead. Answered with opt-in timer pacing, `lowLatencySurface` (`227dfd1d`); see "Latency" above. The first version (`a4469450`) took present to screen 33.4 → 16.3 ms but broke playback cadence (57–63 %); the hybrid that followed (`f531dd11`, `7a9f653a`) gives 9.3 ms paused with cadence and animation intact (see "Latency"). Confirmed on `b682a9e3`; closed.
 - **#33** Each half-float slot kept an unused 8-bit twin. On D3D12 on master (`886ebf94`) the twin is made on a slot's first SDR read and kept until it retires; the maintainer counted 63.75 MiB for the two 4K twins in an SDR test window on an RTX 5070, and checked HDR separately by readback. The slot-to-atlas copy stays by design. Re-measured on `8c912edc`: 62.0 MiB less in an HDR window with 4K frames, one twin (+32 MiB) left after an SDR → HDR switch. Closed by us.
 - **#34** `<sk-surface>` upscaled with one bilinear tap. On master (`684e7036`) `image-rendering` is honoured, and `auto` uses Catmull–Rom on enlarged axes. Re-measured on `8c912edc` (31.4 dB against 27.8 on fine detail, no HDR halo); closed by us.
-- **#35** (open, filed for the interface port) The embedder had no handle to the main window and no run-time minimum size. Implemented on master in `6a9338be`, documented for 0.6: `appWindow` run-time min/max size, `setAspectRatio`, `setTrafficLightPosition`, fades on show and hide, an animated `setBounds()` and `visibleOnAllWorkspaces`; `HostContext` and `Handle` expose an unsafe raw handle (main thread only; on macOS the content `NSView`). Checked in the ported player on `03fb7ecf`: min/max size, aspect ratio, traffic-light position, fades and the animated `setBounds()` work, read back from the `NSWindow`; the mini player did not stay above another app's fullscreen Space. The follow-up (`b5fe7552`, `2e88b48b`, `f531dd11`) added `setWindowButtonsVisible`/`getWindowButtonsRect`, `setFullscreen(…, { transition: "fade" })`, pinch as a cancelable `wheel` with `ctrlKey` (Option kept in `altKey`) and a panel swap for the mini player. On `b682a9e3`, with synthetic events (no physical trackpad, no real clicks): the black fullscreen transition works both ways, pinch and Option+pinch split as documented, the button fade and the re-centring after a title-bar height change work. Broken there: `getWindowButtonsRect()` returned the whole content area; showing the buttons after hiding them dropped the centring; the mini player left the screen over a foreign fullscreen Space, because no panel was created (inferred from source: the swap compared the window's class exactly, and AppKit on macOS 26.5.2 turns it into a KVO subclass). Re-measured on v0.6.0 (`ca6e4e08`, which carries the fixes of `b4d4e190` and the KVO fix; 3 runs, unlocked screen): the rectangle is right, `[12, 17, 60, 14]`, the union of AppKit's three button frames, and `null` while hidden; an instant hide and show keeps the centring and an explicit position; **a hide or show with a 150 ms fade still drops either to AppKit's (9, 9)**, which the player hits on its first idle hide; the mini player now becomes a panel that stays on a foreign fullscreen Space and takes an in-process click and key while the other app keeps its menu bar (one run per flag; Cmd+Tab not tried). Reported. The maintainer answered with `a5526ce7` (and a gpui change): the button frames are reapplied after each opacity or visibility change, tested on macOS 15 and 26.7.2. Not verified by us; open.
-- **#36** (open, fix on master) In a Windows HDR window a half-float `<sk-surface>` was clamped to 0 … headroom, so colours outside BT.709 (negative scRGB components) never reached the screen; found by the 33-patch colour comparison above. Fixed in `9c7f52b6` (with a gpui change): D3D11, D3D12, wgpu and Metal keep the sign of extended-sRGB channels through the HDR path, by the maintainer's GPU readbacks; SDR output still clips negatives. Asked: the 33 patches again on the RTX 5080, and whether the red patch's negative green and blue now reach the desktop. Not verified by us.
-- **#37** (open, answered) Memory for an embedder: an AOT or no-JIT route for our own executable, and the start-up graphics peak (above). Answers: on Windows `dc32c71e` exposes the AOT features to embedders (`sk publish --aot --payload-only --workload <exe>`; documented as "since 0.7"), and `bcd1f8b5` makes production and AOT bundles ASCII by default; `no-interpreter` is experimental and not for apps. macOS has no AOT until 0.7 (planned); until then `JSC_useJIT=false` and `JSC_useWebAssembly=false` in the environment are supported to rely on. The maintainer's peaks on other Macs were far lower, so the M3 Max's 229 MiB is open, and an empty-payload repeat is asked for. The ASCII bundle is confirmed by us on `89c511c1` (built and compared, not run in the host); the rest is not verified by us.
-- **#38** (open, answered) On macOS a surface's copies were never trimmed and outlived `clear()`, and the window held five drawables, not three (above). `a355114c` trims Metal's copy pool after a burst or a resize, and Metal and D3D12 release a cleared surface's slots after a 50 ms grace. The five drawables are kept by design: the maintainer reproduced them and keeps the display link's pacing. Asked: the playback, subtitle-clear and overlay-resize captures with `footprint -v`, `lowLatencySurface` off and on. Not verified by us.
+- **#35** (closed, filed for the interface port) The embedder had no handle to the main window and no run-time minimum size. Implemented on master in `6a9338be`, documented for 0.6: `appWindow` run-time min/max size, `setAspectRatio`, `setTrafficLightPosition`, fades on show and hide, an animated `setBounds()` and `visibleOnAllWorkspaces`; `HostContext` and `Handle` expose an unsafe raw handle (main thread only; on macOS the content `NSView`). Checked in the ported player on `03fb7ecf`: min/max size, aspect ratio, traffic-light position, fades and the animated `setBounds()` work, read back from the `NSWindow`; the mini player did not stay above another app's fullscreen Space. The follow-up (`b5fe7552`, `2e88b48b`, `f531dd11`) added `setWindowButtonsVisible`/`getWindowButtonsRect`, `setFullscreen(…, { transition: "fade" })`, pinch as a cancelable `wheel` with `ctrlKey` (Option kept in `altKey`) and a panel swap for the mini player. On `b682a9e3`, with synthetic events (no physical trackpad, no real clicks): the black fullscreen transition works both ways, pinch and Option+pinch split as documented, the button fade and the re-centring after a title-bar height change work. Broken there: `getWindowButtonsRect()` returned the whole content area; showing the buttons after hiding them dropped the centring; the mini player left the screen over a foreign fullscreen Space, because no panel was created (inferred from source: the swap compared the window's class exactly, and AppKit on macOS 26.5.2 turns it into a KVO subclass). Re-measured on v0.6.0 (`ca6e4e08`, which carries the fixes of `b4d4e190` and the KVO fix; 3 runs, unlocked screen): the rectangle is right, `[12, 17, 60, 14]`, the union of AppKit's three button frames, and `null` while hidden; an instant hide and show keeps the centring and an explicit position; **a hide or show with a 150 ms fade still drops either to AppKit's (9, 9)**, which the player hits on its first idle hide; the mini player now becomes a panel that stays on a foreign fullscreen Space and takes an in-process click and key while the other app keeps its menu bar (one run per flag; Cmd+Tab not tried). Reported. The maintainer answered with `a5526ce7` (and a gpui change): the button frames are reapplied after each opacity or visibility change. Re-measured on `64d2e42f` (3 launches, plus 2 of the player's own idle fade): no button moves through either fade, centred or at an explicit position (see "On screen on master `64d2e42f`"). Closed as fixed.
+- **#36** (closed) In a Windows HDR window a half-float `<sk-surface>` was clamped to 0 … headroom, so colours outside BT.709 (negative scRGB components) never reached the screen; found by the 33-patch colour comparison above. Fixed in `9c7f52b6` (with a gpui change): D3D11, D3D12, wgpu and Metal keep the sign of extended-sRGB channels through the HDR path; SDR output still clips negatives. Re-measured on `64d2e42f` on the RTX 5080: the red patch's negative green and blue reach the desktop, the desktop equals our texture on all 33 patches, and 27 of 33 match on screen (was 26); see "gpu-next through mpv PR #18845 on D3D11". Checked through D3D12 in an HDR window only.
+- **#37** (closed by us) Memory for an embedder: an AOT or no-JIT route for our own executable, and the start-up graphics peak (above). Answers: on Windows `dc32c71e` exposes the AOT features to embedders (`sk publish --aot --payload-only --workload <exe>`; documented as "since 0.7"), and `bcd1f8b5` makes production and AOT bundles ASCII by default; `no-interpreter` is experimental and not for apps. macOS has no AOT until 0.7 (planned); until then `JSC_useJIT=false` and `JSC_useWebAssembly=false` in the environment are supported to rely on. The ASCII bundle is confirmed by us on `89c511c1` (built and compared, not run in the host); the Windows AOT route on `64d2e42f` (see "The JIT against AOT in our own executable", and #39). **The peak is the system's**: on `64d2e42f` the empty payload peaks at 228–232 MiB, 24 × 8.00 MiB of graphics memory for about a second, and a 26-line AppKit program without Skathi reproduces it with three presents to a `CAMetalLayer` (see "On screen on master `64d2e42f`"). That it depends on the display is inferred, not checked. Skathi's embedding documentation notes it (`ec3cc308`).
+- **#38** (closed) On macOS a surface's copies were never trimmed and outlived `clear()`, and the window held five drawables, not three (above). `a355114c` trims Metal's copy pool after a burst or a resize, and Metal and D3D12 release a cleared surface's slots after a 50 ms grace. The five drawables are kept by design: the maintainer reproduced them and keeps the display link's pacing. Re-measured on `64d2e42f`: a cleared surface holds no copy (1232 → 1123 MiB, and 1121 → 1019 with our ring dropped), no old-size copy after a resize in 6 of 6, five drawables in all 55 launches, `lowLatencySurface` off and on. The trim after a burst itself was not exercised.
+- **#39** (open) Embedder AOT on Windows: the default memory profile commits 367–378 MB more than the JIT, none of it touched, so `compact` is asked for as the default for application images; with four snags on the AOT page (`setup.ps1` under PowerShell 5.1, `pwsh` for `sk-aot setup`, `--sk-host-info` having to be the first argument, the `icu-root` message). See "The JIT against AOT in our own executable".
 
 ## The shape of the design
 
@@ -2459,10 +2593,12 @@ remain substantive open points below. What is left:
   - the remaining stubs (the audio-output device, torrents, casting,
     watching together, the catalog's network side, updates and
     diagnostics), the macOS menu;
-  - the same port on Windows, and its memory under JIT, AOT and no JIT;
-  - the fade path of the traffic lights (#35), the start-up graphics peak
-    (#37), Skathi's copies and drawables (#38): answered upstream, not
-    re-measured;
+  - the same port on Windows. Its runtime is settled on the prototype:
+    AOT only with `compact` (35–48 MB above the JIT; the default profile
+    commits 367–378 MB more, #39), and no JIT buys executable size, not
+    memory. The real interface under AOT is not measured;
+  - the trim after a burst of presents, HDR content and hours (#38's fix,
+    re-measured only in steady playback, clear and resize);
   - values through `var()` are visible only in the runtime log (#30).
 - **Rendering at the video's size, and the subtitles.** On Windows, a ring
   of 2 and a video-sized render bring a 1080p clip at screen size to 100–146 MB
@@ -2495,14 +2631,17 @@ remain substantive open points below. What is left:
   `lowLatencySurface` (9.3 ms). During playback the display link's ~45 ms
   stays, which only `audio-delay` has to cover.
 - **Colour against the shipping player**: on Windows an option set plus two
-  host steps matches 26–27 of 33 patches. Open: colour outside BT.709
-  through `<sk-surface>` (#36, fixed on master, not re-measured), the
-  display's gamut, an SDR desktop, and the same comparison on macOS, where
-  the port's SDR picture in an EDR window came out lifted.
+  host steps matches 27 of 33 patches, in our texture and, since #36's fix
+  on master `64d2e42f`, on screen. Open: the display's gamut (the six SDR
+  BT.2020 patches), an SDR desktop, colour outside BT.709 in an 8-bit
+  window, under a tint or opacity and through an upscaled frame, and the
+  same comparison on macOS, where the port's SDR picture in an EDR window
+  came out lifted.
 - **The Vulkan render API on macOS**: runs in the Skathi prototype at GL's
   cadence and colour, at 1.4–1.6× its GPU time and 73–93 MiB more
   footprint, and under the ported interface with the overlay pass. Open:
-  the intermittent stale read in the harness's `delay` case, device loss, the queue-lock callbacks, a precompiled Metal kernel for the
+  the intermittent stale read in the harness's `delay` case (not the
+  locked screen: it fails unlocked too), device loss, the queue-lock callbacks, a precompiled Metal kernel for the
   un-premultiply pass, a build against the player's FFmpeg, the bundle and
   licensing.
 - **Sound against picture**: the slow 24 fps playback comes from stalls in
@@ -2532,54 +2671,32 @@ remain substantive open points below. What is left:
 The two prototypes from the earlier list are done (see "The prototypes on
 Skathi, measured").
 
-1. **Windows: the interface's memory under JIT, AOT and no JIT** (next on
-   the Windows machine). First the interface alone on Skathi's stock
-   workloads, the start screen with the native module faked, at one window
-   size, 3+ interleaved runs: `sk publish` (JIT), `sk publish --aot`, and
-   `--aot` with `"publishJit": false` (no JIT, no WebAssembly; the publish
-   itself is the definitive WebAssembly check), each AOT build also with
-   `SK_AOT_MEMORY_PROFILE=compact`, and the JIT build with
-   `JSC_useJIT=false` against the macOS result. Private working set,
-   commit, `ctl mem` where devtools exist, process start → first frame.
-   Then the real port on the Windows embedder with the D3D11 producer,
-   through the embedder route `dc32c71e` opened (#37).
-2. **The retests the maintainer asked for** (fixes on master, not verified
-   by us):
-   - #35: both fades in the player on macOS 26.5.2, centred and at an
-     explicit position, and whether any button moves (`a5526ce7`);
-   - #36: the 33 patches on the RTX 5080's HDR desktop with the original
-     capture and mpv reference, and whether the red patch's negative green
-     and blue reach the desktop (`9c7f52b6`);
-   - #37: the empty-payload start-up peak on the M3 Max's display, peak and
-     settled `footprint -v` and `vmmap -summary` at the same window size and
-     visibility;
-   - #38: the playback, subtitle-clear and overlay-resize captures with
-     `footprint -v`, `lowLatencySurface` off and on (`a355114c`).
-3. **The port on the new frame path, continued**: the 8-bit SDR picture and
+1. **The port on the new frame path, continued**: the 8-bit SDR picture and
    overlay switched on `video-params/gamma`, the overlay ring dropped while
    nothing is drawn, HDR content with those switches; why the EDR window
    lifted black; mpv's 7 extra blocks; the remaining stubs and the macOS
-   menu; then the same on Windows (the D3D11 path) after item 1.
-4. **The Windows libmpv**: built, pinned and reproducible, with libxml2 for
+   menu; then the same on Windows (the D3D11 path), published as an AOT
+   image with `SK_AOT_MEMORY_PROFILE=compact` through the embedder route
+   `dc32c71e` opened, and its memory against the JIT build there.
+2. **The Windows libmpv**: built, pinned and reproducible, with libxml2 for
    DASH (decided). Left: the host's two colour steps in the real path.
-5. **The Vulkan render API for macOS**: the stale read behind the
-   harness's intermittent `delay` failures (with the screen unlocked, a
-   variant without the gate and one with the copy on mpv's queue), since
+3. **The Vulkan render API for macOS**: the stale read behind the
+   harness's intermittent `delay` failures (a variant without the gate and
+   one with the copy on mpv's queue; the lock is ruled out), since
    Skathi's copy follows the same pattern; device loss, the queue-lock
    callbacks, a precompiled `.metallib` for the un-premultiply pass, a
    build against the player's FFmpeg, and the bundle and licensing.
-6. **Upstream**: #35's fade and colour outside BT.709 (#36) are answered
-   and wait for item 2; still open there: the M3 Max's start-up graphics
-   peak (#37) and the five drawables Skathi keeps by design (#38).
-7. **The 24 fps audio on macOS**: find the render-call and fence stalls (an
+4. **Upstream**: #39 (`compact` as the default for application images, and
+   the AOT page's snags) is open; #35–#38 are closed.
+5. **The 24 fps audio on macOS**: find the render-call and fence stalls (an
    idle Mac, a trace of the render thread), try PR #18845's drift
    controller, and take `audio-delay` from the running median.
-8. Compare with today's player through the e2e harness (on the `host-boundary`
+6. Compare with today's player through the e2e harness (on the `host-boundary`
    branch: `bun run e2e --mpv-conf <file>`, per-step frame metrics,
    `bun run e2e compare`).
-9. **Previews and posters through a second libmpv core**, in the order given
+7. **Previews and posters through a second libmpv core**, in the order given
    under "Previews and posters (planned)".
-10. **Near the end, two checks deferred on purpose**:
+8. **Near the end, two checks deferred on purpose**:
     - the colour table on an SDR Windows desktop (Windows HDR off, switched
       by hand), for viewers without HDR;
     - the official container build of libmpv (WSL) against our native one:
