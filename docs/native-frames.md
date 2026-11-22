@@ -41,14 +41,17 @@ to disagree are marked superseded.
   updating the patch.
 - **Windows: gpu-next on D3D11.** mpv renders with its D3D11 render API on our
   own device into shared `R16G16B16A16_FLOAT` textures (one fence per texture,
-  CPU wait for the slot), now with the gpu-next renderer selected. Skathi stays
-  on its D3D12 renderer and opens the textures there. This needs a Windows
+  CPU wait for the slot), now with the gpu-next renderer selected. On the
+  `<sk-surface>` route Skathi stays on its D3D12 renderer and opens the
+  textures there; on the native-layer route mpv renders into a swap chain of
+  ours instead (see "Not decided" below). This needs a Windows
   libmpv build of our own (the prebuilt one cannot carry the PR); the PR's CI
   artifacts are for testing only.
 - **macOS: a Vulkan render API, by a patch of ours.** On top of PR #18845, a
   `vulkan` backend for the render API: the client supplies a `VkImage`
   imported from an IOSurface (`VkImportMetalIOSurfaceInfoEXT`) and a timeline
-  semaphore exported as the `MTLSharedEvent` Skathi waits on; libplacebo
+  semaphore exported as an `MTLSharedEvent` (on the `<sk-surface>` route
+  Skathi waits on it; on the native-layer route our own present does); libplacebo
   renders through MoltenVK, i.e. Metal underneath. The backend is our patch
   on a PR #18845 checkout (`aade20e8c`), now 9 files, +1014 −29. It passes
   an offscreen regression harness and runs in the Skathi prototype at the
@@ -64,6 +67,15 @@ to disagree are marked superseded.
   would be tested on far less hardware than libplacebo's Vulkan and D3D11
   backends; its real gain would be platform features (MetalFX, DirectSR).
   To be reconsidered after version 2 is stable.
+- **Not decided: how the picture reaches the screen.** Everything above
+  assumes the `<sk-surface>` route (mpv renders into textures Skathi copies
+  and composes). A native video layer under a transparent page, mpv
+  rendering straight into a swap chain or `CAMetalLayer` of ours, has since
+  run as a prototype on both platforms on Skathi 0.7 without Skathi changes
+  and removes the copies, the ring and the overlay pass (see "A native video
+  layer under the page"). It is a candidate for version 2, not a decision:
+  it rests on workarounds Skathi does not support yet (#44). The render-API
+  decisions above hold on either route.
 
 ## The prototypes on Skathi, measured
 
@@ -71,8 +83,12 @@ Built and measured in November 2026, on Skathi 0.4.0 and then on its master
 up to 0.5.0 (with `skathi-gpui` 0.5.2), as each fix landed. Each platform got
 a standalone prototype: an `<sk-surface>` fed by today's libmpv through its
 render API, with a small test page over it. Neither prototype is the player.
-Their interface is a minimal page, and the real interface's cost is not
-measured. The prototypes are throwaway programs and are not in the repository.
+Their interface is a minimal page. The player's own interface was later
+ported onto Skathi on both platforms (the "port"), measured against the
+shipping player with every process counted and against native players, and
+tried with the picture in a native layer under the page instead of an
+`<sk-surface>`; those sections follow the two prototypes'. The prototypes and
+the port are throwaway programs and are not in the repository.
 
 The table compares two configurations, not Skathi alone:
 
@@ -127,8 +143,10 @@ a 1080p clip at screen size 100–146 MB below the shipping player in private
 bytes and to 58–76 MB above it in GPU memory. The cost is picture sharpness
 while subtitles show (see "Memory" for Windows). The recommended first step
 renders at the element's size while a subtitle track or an mpv OSD message is
-on, and subtitled playback then gives up this saving. Whether a production player
-keeps that saving with its real interface is not measured.
+on, and subtitled playback then gives up this saving. The ported interface
+keeps the ring of 2 and the video-sized picture, with subtitles in an overlay
+of their own; how it compares with the shipping player, every process
+counted, is under "The ported player against the shipping one".
 
 ### Windows: the prototype, measured
 
@@ -358,9 +376,12 @@ dedicated GPU memory.
     3840×2160 one.
   - No matched run was made.
 - **"Screen-sized" is not the shipping player's fullscreen mode.** Its window
-  was resized from outside, and its true fullscreen is not measured.
-- **The prototype's interface is a minimal test page.** The real interface
-  drawn by Skathi will add memory that is not measured.
+  was resized from outside, and its true fullscreen was not measured in this
+  batch (it was later, in the Windows matrix under "The ported player
+  against the shipping one").
+- **The prototype's interface is a minimal test page.** The real interface's
+  memory was not measured in this batch; see "The real interface on Skathi"
+  below and the Windows matrix.
 - **The shipping player's web view processes hold 388 to 447 MB private and
   649 to 664 MB working set, whatever plays.** Its first runs after a first
   start were up to 283 MB higher with the HDR clips. The cause was not looked
@@ -726,7 +747,8 @@ the payload rebuilt by the same version:
 
 The prototype as an embedder's own executable, the payload published four
 ways with the `sk-aot` 0.6.1 release binary, all without devtools; a ring
-of 2 and the video-sized render; private bytes in MB at 30 s, 3 runs a
+of 2 and the video-sized render; private bytes in MiB at 30 s (the report
+writes MiB as "MB"; so does this subsection), 3 runs a
 cell (the range), 192 clean runs. "Window / screen" are the two window
 sizes of the memory table above.
 
@@ -752,16 +774,100 @@ sizes of the memory table above.
 - **For the player**: AOT only with `compact`, and then it costs 35–48 MB;
   no JIT buys size, not memory. Filed as #39 (compact as the default for
   application images, and four snags on the AOT page).
-- **Caveat**: the page is the prototype's minimal 249 KB page, not the real
-  interface; the port runs only on macOS.
+- **Caveat**: the page is the prototype's minimal 249 KiB page. With the real
+  interface the picture changes (next subsection).
+
+#### The real interface on Skathi (master `2b08fd37`, 0.7.0)
+
+The player's Svelte interface, as ported for macOS (below), built for Windows
+unchanged (`sk check`: 0 errors, 66 warnings, the macOS count) and run as our
+own executable over the prototype's D3D11 producer: a ring of 2 at about the
+video's pixel count, `display-resample` with the per-refresh pacing. Of the
+interface's 131 commands 33 are answered natively, 8 window commands by
+`appWindow` and 90 by stubs (torrents, casting, the catalog, updates,
+diagnostics, the HDR status). The start screen, playback, seeking, frame
+stepping, seekbar previews, subtitles, the context menu, the settings sheet,
+resize, fullscreen and the mini player were driven by script, one pass each.
+All 36 measured runs exited clean with 0 `Busy`; one of them still logged an
+`Invalid window handle` line at close. Memory in this subsection is MiB
+(the report writes it "MB").
+
+- **Broken once, not isolated**: fullscreen → mini player → back left the
+  window screen-sized, neither fullscreen nor maximised, and its close
+  button did nothing (two `RefCell already borrowed` errors in the log), in
+  one pass; not repeated.
+- **Two traps.** In the first runs the display had had no input for 23
+  minutes, and the window, in the foreground, reported its page hidden; one
+  pixel of mouse movement brought it back. While hidden, with
+  `display-resample` and the producer pacing only on mpv's updates, mpv ran
+  ahead: a 30 s clip reached its end in under 2 s. The producer now starts
+  every turn at a fixed point of the refresh, hidden or not.
+- **Memory (JIT)**, against the test page with the same ring and recipe,
+  earlier the same day (two Skathi revisions and two payloads apart,
+  devtools compiled in, warm thumbnail and shader caches; "screen" here is
+  the interface's own fullscreen, there a caption-less window of the
+  screen's size): with the 1080p clip +52 to +57 MiB of private bytes in
+  the window and +51 to +65 screen-sized, with the 2160p clip +30 to +59;
+  working set +41 to +50 (+14 to +35 at 2160p); GPU memory +1 to +3. On the
+  start screen 388–392 MiB private and 186 MiB GPU, because libmpv, the
+  ring and a half-float window existed before any file. The ring was
+  deferred since (see the Windows matrix below); the window still switches
+  to half float at start.
+- **CPU** while playing is about twice the prototype's, 9.2–9.8 % of a core
+  (the conversion from cycles is inferred). The interface observes about
+  fifty mpv properties and resyncs its mirrors every second; which part
+  costs what was not measured.
+- **AOT.** The image is 7.1 MiB for a 1437 KiB bundle. It did not start
+  until the player's console capture (`console[level] = …`) was put in a
+  `try` (#40). With `compact`: +3 to +11 MiB of private bytes over the JIT
+  in the window cells (inside the JIT's own spread screen-sized) and 23–29
+  MiB less working set while playing. The default profile, run in the
+  window cells only: +340 to +345 MiB. With the real bundle the image
+  nearly pays for its fixed block, which the test page's did not.
+- **Subtitles and mpv's OSD in a layer of their own.** The D3D11 render API
+  has no overlay target, so a patch to our own libmpv adds one:
+  `MPV_RENDER_PARAM_D3D11_OVERLAY_FBO`, 290 lines in seven files, gpu-next
+  only. mpv lays subtitles and the OSD out for the element's size and draws
+  them into a second texture; one D3D11 pass of ours divides by alpha, and
+  the result is presented into a second `<sk-surface>` right before the
+  picture of the same render. 8-bit, a ring of 1, the bottom third of the
+  element unless text is drawn above it, freed 2 s after the last text, and
+  not used while the picture is the element's size. Measured with a 1080p
+  clip at screen size:
+  - **sharpness**, one generated SDR frame paused with one white SRT line,
+    one 2× scale, three captures of that frame (identical bit for bit): the
+    text against mpv's own window 35.3 dB (49.1 dB with
+    `target-contrast=inf` and `tone-mapping=clip`), against 14.1 dB with the
+    text in the scaled picture. Image subtitles, mpv's OSD text, a second
+    subtitle line and ASS with its own fonts were not checked;
+  - **sync**, a frame-coded clip with an ASS magenta box on six frames of
+    every twelve, three runs: text and picture changed on the same desktop
+    frame in all 240 changes. With the textures forced to be freed 100 ms
+    after each box, the box came one refresh (4.2 ms) late in 13–15 of 40
+    appearances; in use that is the first cue after 2 s without subtitles;
+  - **memory**: +60 MiB of GPU memory and +75 to +91 MiB of private bytes
+    while a subtitle shows; rendering the whole picture at the screen's
+    size instead costs +415 MiB of GPU memory and +350 MiB of private
+    bytes;
+  - after the subtitles clear, +22 MiB of GPU memory and +43 to +59 MiB of
+    private bytes stay: our textures are freed, and what stays is, from its
+    size, Skathi's copies of the last text (inferred), which neither
+    `clear()` nor a 16×16 transparent frame released. Not reported upstream.
+  - Stage to stage, without subtitles, the runs with the patched libmpv
+    (the pinned 0.42, gpu-next) read 9 MiB less GPU memory than the earlier
+    stage's with the shipping 0.41 and the `gpu` renderer at 1080p, and
+    about 100 MiB more with the 2160p HDR10 clip; the window policy
+    (always-on-top) and the payload changed between the stages too. The
+    later DLL swap under the old app (Windows matrix) measured the libmpv's
+    own share directly.
 
 #### Not measured
 
-- The shipping player:
-  - its true fullscreen (there is no way in without synthetic input);
-  - its CPU, GPU, power, cadence and latency with its web view.
-- The real interface drawn by Skathi: not built, so neither its memory nor its
-  cost is known.
+- The shipping player: its power and latency with its web view (its true
+  fullscreen, CPU, GPU time and cadence were measured since, in the Windows
+  matrix below).
+- The real interface on Skathi: its power and latency, an SDR desktop, and
+  everything behind the 90 stubs.
 - `exact_frame_feedback`: its CPU, GPU and power cost; the option at other
   refresh rates; the option with a ring of 2.
 - Sound against picture with instruments, and runs with a non-zero
@@ -985,7 +1091,9 @@ are not a clean measurement of the capture's cost.
 Stage MB, `phys_footprint` (on Apple Silicon graphics memory is system RAM, so
 this is not the Windows private-bytes metric) at 22 s, no capture, window
 960×541 pt (1920×1082 px) on both, 3 runs, ±1 MB. The prototype's interface is
-minimal: **the real interface's cost is not measured**.
+minimal: **the real interface's cost was not measured in this stage** (it
+was later: see "The real interface on Skathi, against the shipping player"
+and the macOS matrix).
 
 | | 1080p SDR | 1080p HDR10 | 2160p HDR10 |
 |---|---|---|---|
@@ -1475,6 +1583,12 @@ the per-allocation split the Windows section could only infer.
 
 - **The +388 MiB** is drawables +186, mpv's blocks +56, Skathi's copies
   +49, our ring +32, JS +29, malloc +17 and other GPU objects +15.
+- **These are main processes only, and Frame Player's 605 is not its
+  cost.** It leaves out its WebKit processes (about 96 MiB in this cell)
+  and the decoder service (51); the port's 993 leaves out its decoder
+  service (60). Counted whole, this cell is 755 MiB for Frame Player (see
+  "The ported player against the shipping one"). Every "against Frame
+  Player's 605" below in this subsection is a main-process comparison.
 - **The 8-MiB blocks are mpv's GPU memory, and both players pay for them.**
   They are not VideoToolbox (`hwdec=no` keeps 48), the thumbnails, Skathi's
   interface (the minimal page holds 48) or the window's size; they go with
@@ -1534,7 +1648,9 @@ mode's run without):
 - **What would remain**: about 215 MiB above Frame Player in one process
   (drawables 133 against 79, Skathi's copies 25, our ring 16, mpv's +56, JS
   29, malloc). Frame Player's WebKit processes (content 69–123, GPU 21–230)
-  are outside that comparison.
+  are outside that comparison; with every process counted, the port with
+  the lever set below and AOT came out 97 MiB above it in this cell (852
+  against 755, see the macOS matrix below).
 - **Skathi's part** went to #38: the Metal slot pool never trimmed,
   `clear()` kept the slots, and the layer holds five drawables against
   three. The first two are fixed on master; the five drawables stay by
@@ -1687,14 +1803,551 @@ burst of presents then idle (the trim itself), HDR content, repeated
 clear/present cycles and hours (#38); 2160p, the small window, CPU, GPU and
 start-up times on this build.
 
+#### Every memory lever, and AOT without the JIT (`64d2e42f`, `d153b34e`)
+
+Each lever alone and then together, on `64d2e42f` (master up to `9e8c81a1`
+changed nothing on the surface path), main process at 12 s, screen-sized
+window, cold storyboard, medians of 3, MiB:
+
+| Case | Before | Final set | Δ |
+|---|---|---|---|
+| 1080p SDR, controls hidden | 994 | **805** | −189 |
+| ASS subtitles on screen | 1294 | **939** | −355 |
+| After the subtitles clear | 1124 | **824** [793–830] | −300 |
+| 2160p PQ | 1643 | 1545 | −98 |
+
+- **What does it**: for SDR content an 8-bit picture, overlay and window
+  (`target-trc=srgb`, `target-peak=203`; HDR content unchanged), −173 at
+  1080p and −310 with subtitles (drawables 265 → 133, our ring 32 → 16,
+  Skathi's copies 49 → 25); an overlay ring of 1 (−76 with subtitles) and
+  released after 24 empty frames (−106 once they clear); a picture ring of
+  1 (−15); no JIT (−12); a release-size executable without devtools and
+  with precompiled shaders (−4). CSS `dynamic-range-limit: standard` in
+  place of the 8-bit switch saves 150, 23 less, because Skathi then keeps
+  8-bit twins and our ring stays half float.
+- **What does not**: none of the mpv and MoltenVK options tried reduced
+  mpv's screen-sized pool of 8-MiB blocks (384 MiB). The one exception is
+  in the small window, where mpv downscales: turning off its downscaling
+  corrections removed two blocks and the linear-light buffer (−27), a
+  quality change the shipping player does not make, and screen-sized it
+  saved nothing. A
+  subtitle band that follows the drawn rows saved 50–101 on bottom-only
+  subtitles but dropped a line that appears at the top for about 80 ms, so
+  it is not in the final set.
+- **Correctness**, on the test clips only: on the grey test clip, paused
+  in the small window, black 0.0 instead of 18.1 and the grey 66.0 against
+  Frame Player's 63.8 (the 8-bit path); on one paused subtitle frame the
+  text 54.5 dB against an element-sized pass; over a 5 s sample of 24 fps
+  playback on 120 Hz (2–5 launches) every frame shown and 0 drops by mpv's
+  counters, and no lever made cadence measurably worse. HDR with these switches: the PQ clip
+  goes half float before its first ring; an SDR file followed by an HDR
+  file in one process was not checked.
+- **What the final 805 still holds over Frame Player's main process (605)**:
+  drawables +54 (five against three), mpv's blocks +56, Skathi's copies 25,
+  JS 16, malloc +15, other graphics +15, our ring 8.
+
+**AOT without the JIT on macOS** (#37, master `d153b34e`).
+Four things had to change before the player's image ran: the
+`--payload-only` image is unsigned and the host refuses it (signed ad hoc by
+hand; Skathi signs it since `025ff87c`, not verified by us), the build needs
+`REDJS_AOT_BUILTIN_TABLE_DIR` in its environment, the console capture's
+assignment throws in an image (#40), and master did not build without the
+`audio` feature (#41). Measured, 3 launches a cell; the input timings are
+synthetic devtools input (30 hover moves, a drag, a right click) to the
+page's own DOM change, on a paused 1080p clip in the small window:
+
+| | JIT | JIT off by environment | AOT, no JIT |
+|---|---|---|---|
+| Idle, settled (visible window), MiB | 89.7 | 78.8 | **71.1** |
+| Idle, start-up peak (visible), MiB | 352.5 | 340.0 | **332.6** |
+| 1080p SDR, screen-sized, main process at 12 s, MiB | 809 | 797 | **789** |
+| pointermove → DOM, p50 / p95 | 0.33 / 0.91 ms | 0.36 / 1.07 ms | **0.22 / 0.38 ms** |
+| Seekbar click / context menu → DOM | 2.76 / 2.03 ms | 3.31 / 2.64 ms | **1.39 / 0.69 ms** |
+
+- **In steady playback** the difference is the JS heap (27 / 15 / 4 MiB);
+  graphics, mpv's blocks, malloc and the decoder are the same in the three.
+  **At idle** (visible window) JS, VM and JIT code go 24.9 → 3.5 MiB, malloc
+  35.7 → 34.6, and the rest 15.2 → 18.7 (the mapped image, inferred). The
+  empty payload peaks and settles the same under both engines: the peak is
+  the system's (#37).
+- The image is the fastest of the three on every handled input in these
+  runs; the interpreter alone is the slowest, by about 0.5 ms.
+- `SK_MEMORY=low` changes nothing measurable on macOS; the `default` AOT
+  memory profile adds 0.4 MiB here, because macOS charges a page when it is
+  written.
+- A second ~1.1 s hump of the same 32 × 8.00 MiB graphics objects comes in
+  visible AOT launches at about 2.2 s (separate in 7 of 9, merged with the
+  first in the other 2) and in interpreter launches at about 4.2 s; JIT,
+  hidden and empty-payload launches showed none within the 9.3 s observed.
+  The cause is not identified.
+- Not checked: the `.app` layout, a hardened-runtime signature, AOT with the
+  JIT kept.
+
+### The ported player against the shipping one
+
+Both ports against the shipping player on the same machine, as matrices of
+window size, content and controls, three launches a cell interleaved, every
+process each app owns counted, muted. The port keeps its own route
+(`<sk-surface>`, a ring at about the video's pixel count, subtitles in an
+overlay) and its own libmpv (0.42-dev with mpv PR #18845 and our patches);
+the shipping player keeps its own (0.41, `vo=gpu-next` behind the web view).
+Three things differ beyond the route and are part of every number below:
+
+- **The storyboard is built during the sample in both apps**: the thumbnail
+  cache was emptied before every launch, so every reading with a file
+  includes the seekbar storyboard being built (the same code in both); on
+  Windows the 2160p clips decode in software for the whole 30 s.
+- **Pacing**: on macOS both apps run `video-sync=audio`; on Windows the
+  shipping player uses `audio` and the port `display-resample`.
+- **The port stubs what it has not ported** (on Windows 90 commands:
+  torrents, casting, the catalog, updates and more), which the shipping
+  player starts for real.
+
+**How memory is counted, and why the two systems cannot be compared.** On
+macOS the figure is `footprint` summed over every process the app owns:
+Frame Player's main process, WebKit's WebContent, GPU and Networking
+processes and an audio helper; for both apps the VideoToolbox decoder
+service and any Metal compiler service started for them. Graphics memory on
+Apple Silicon is system memory charged to the process that owns it, so these
+totals include the GPU's share. On Windows private bytes, working set and
+dedicated GPU memory (PDH, per process) are three separate counters summed
+over the processes (13 for the shipping player: the player and twelve
+WebView2 processes; one for the port), in MiB. Dedicated GPU memory is not
+in private bytes, although on this driver the unshared D3D11/D3D12 textures
+tested were charged to private bytes as untouched commit (one control run
+per kind; see "Memory" under the Windows prototype). A macOS total and a
+Windows total are therefore different quantities. Earlier comparisons in
+this document against Frame Player's 605 MiB on macOS counted its main
+process only.
+
+#### macOS: Frame Player 1.48.1 against the port
+
+Skathi `d153b34e` with the final lever set above; the port as an AOT image
+without the JIT. The JIT-off-by-environment build is higher than AOT in all
+but two cells, by up to 50 MiB (the JS heap, plus more storyboard malloc in
+flight in the HDR cells); in the two, 1080p with the controls visible
+screen-sized and in fullscreen, AOT read 2 and 24 MiB more. Windows: small
+480×320 pt, a window of the screen's size, and native fullscreen (entered
+through each app's own key, sent from inside the process; for this the
+shipping app was a copy re-signed without the hardened runtime, checked
+equal to the original in one cell, screen-sized 1080p). The machine was in
+use; a browser renderer held 8–21 % GPU throughout. `footprint` at 12 s,
+MiB, median [min–max]:
+
+| Cell | Frame Player | Port | Δ |
+|---|---|---|---|
+| Idle, small window | 113 [112–116] | 72 [71–72] | −41 |
+| Idle, screen-sized | 211 [210–214] | 122 [122–122] | −89 |
+| 1080p24, small, controls hidden | 625 [623–627] | 677 [676–678] | +52 |
+| 1080p24, small, controls visible | 835 [831–838] | 679 [678–680] | −156 |
+| 1080p24, screen-sized, hidden | 755 [754–757] | 852 [850–852] | +97 |
+| 1080p24, screen-sized, visible | 1046 [1022–1047] | 856 [856–860] | −190 |
+| 1080p24, fullscreen, hidden | 769 [767–771] | 857 [857–867] | +88 |
+| 1080p, ASS subtitles on screen | 760 [754–762] | 969 [967–971] | +209 |
+| 1080p, paused | 456 [456–456] | 461 [461–461] | +5 |
+| 2160p24 SDR | 1211 [1208–1233] | 1422 [1422–1425] | +211 |
+| 2160p PQ, screen-sized, hidden | 1499 [1498–1500] | 1927 [1924–1977] | +428 |
+| 2160p PQ, screen-sized, visible | 1785 [1766–1793] | 1926 [1924–1969] | +141 |
+| 2160p PQ, fullscreen, hidden | 1512 [1508–1567] | 1975 [1968–1991] | +463 |
+
+- **The port is lower wherever WebKit is large**: every idle cell, and
+  every 1080p cell with the controls visible, where WebKit's GPU process
+  grows to 217–234 MiB. **It is higher wherever video plays with the
+  controls hidden**, most at 2160p PQ (+428 to +463).
+- **Where the extra memory is** (main process, screen-sized; the decoder
+  service apart):
+
+  | Chunk | 1080p, Frame Player / port | 2160p PQ, Frame Player / port | Whose |
+  |---|---|---|---|
+  | Window drawables | 79 (3, 10-bit) / 133 (5, 8-bit) | 79 / 265 (5, half float) | Skathi keeps five; half float for HDR |
+  | Skathi's copies | 0 / 25 | 0 / 160 | Skathi's `<sk-surface>` |
+  | Our rings | 0 / 8 | 0 / 53 | ours |
+  | mpv's 8-MiB blocks | 328 / 384 | 336 / 400 | the port's presentation path |
+  | Decoder service | 51 / 60 | 314 / 385 | our libmpv's FFmpeg build |
+  | WebKit processes | 96 / — | 95 / — | Frame Player |
+
+  A control, our libmpv swapped into the old app (video in mpv's own
+  window, as stock mpv has no `--wid` on macOS), holds the decoder
+  service's 60 / 385 exactly as the port does, and mpv's blocks at 328 /
+  336 as the old app does (measured). So the decoder difference goes with
+  the build and the blocks' difference with the port's presentation path;
+  that it is the render API's own targets is a hypothesis. With ASS
+  subtitles on screen our rings go 8 → 34 MiB (+26) and Skathi's copies
+  25 → 107 (+82); both return to the no-subtitle values once the subtitles
+  clear.
+- **CPU** (% of a core, 8–18 s) is level within the spread in the playing
+  cells, where the 2160p and ASS cells read 115–155 % in both apps because
+  the storyboard is being built. One exception: the medium window with
+  1080p and the controls visible, where the port was lower (Frame Player
+  36.7 [26.8–36.8], the port 24.9 [24.5–26.0]). Idle and paused the port
+  spends more: +0.6 (screen-sized idle) to +5.1 points (paused, 4.4 →
+  9.5 %) for AOT, up to +6.9 with the JIT off; inferred, not investigated:
+  the interface's once-a-second resync and Skathi's frame loop.
+- **GPU time** is higher: 8.7 → 13.2 % for 1080p at screen size, 9.9 →
+  14.1 with subtitles, and **about doubled in native fullscreen** (10.6–14.6
+  → 20–24 %), inferred to be Skathi's copies and drawables at the full
+  element size plus the half-float composition; not broken down. Level at
+  2160p PQ in a window.
+- **Start-up** to the first video frame at screen size: 933–982 ms against
+  1217–1411 (AOT); in the small window level. The fullscreen cells' start-up
+  is not comparable (the key and the transition fall inside the capture).
+- **Cadence**, window captures at 120 Hz: in the 24 fps cells with the
+  controls hidden 24.0–24.2 distinct frames a second in every column (60.0
+  in the 60 fps cell); the share of exact five-refresh gaps varies between
+  launches with no consistent winner. With the controls visible the capture
+  counts the bar's repaints too, so those cells measure the interface, not
+  the video.
+
+#### Windows: Frame Player 1.49.1 against the port
+
+The public portable release in a folder of its own against the port on
+Skathi `2b08fd37` (0.7.0), no devtools, as JIT and as an AOT image with
+`compact`. Both driven the same way from outside: the client area sized
+with `SetWindowPos`, real fullscreen by a key posted to the app's own
+window, pause through mpv's IPC. Reading at 30 s, CPU and GPU time over
+20–30 s; MiB, median [min–max] of 3 (one value where the three agree). The
+port's JIT column; AOT is within −12 to +22 MiB of private bytes of it,
+12–36 MiB lower in working set, 0–0.9 points lower in CPU.
+
+| Cell | Private bytes, old / port | Working set, old / port | GPU dedicated, old / port |
+|---|---|---|---|
+| Idle, screen-sized | 539 [538–545] / 561 [561–563] | 773 [772–776] / 225 | 270 [230–270] / 562 |
+| Idle, screen-sized, after the idle fix (JIT) | — / 376 [374–376] | — / 203 [202–203] | — / 299 |
+| 1080p24, screen-sized | 789 [783–793] / 665 [660–665] | 923 [923–927] / 353 [352–356] | 478 [477–478] / 532 |
+| 1080p60, screen-sized | 810 [809–813] / 670 [664–673] | 944 [943–946] / 358 [358–361] | 478 [477–478] / 532 |
+| 1080p, ASS on screen | 809 / 763 [757–763] | 944 [942–950] / 393 [391–393] | 478 / 593 |
+| 1080p, paused | 844 [841–865] / 652 [648–655] | 913 [910–940] / 356 [347–357] | 541 [541–543] / 533 |
+| 1080p, real fullscreen | 806 [801–812] / 669 [666–671] | 924 [923–930] / 356 [356–357] | 562 / 533 |
+| 2160p24 SDR, screen-sized | 1100 [1098–1131] / 1391 [1388–1427] | 1144 [1142–1175] / 632 [631–665] | 804 [804–817] / 1310 |
+| 2160p HDR10, screen-sized | 1226 [1223–1260] / 1526 [1520–1528] | 1255 [1245–1281] / 743 [739–744] | 1141 [1141–1154] / 1684 |
+| 2160p HDR10, 1920×1080 window | 1154 [1147–1171] / 1177 [1172–1183] | 1220 [1219–1248] / 740 [738–742] | 971 / 1134 |
+
+| Cell | CPU, % of a core, old / port | GPU time, %, old / port |
+|---|---|---|
+| Idle, screen-sized | 5.5 [5.4–5.5] / 0.6 | 0 / 0 |
+| 1080p24, screen-sized | 11.5 [11.4–11.5] / 9.7 [9.6–10.2] | 2.29 [2.28–2.30] / 3.59 [3.58–3.60] |
+| 1080p60, screen-sized | 18.3 [18.1–18.5] / 17.1 [17.0–17.5] | 5.69 [5.68–5.70] / 8.93 [8.92–8.93] |
+| 1080p, ASS on screen | 11.8 [11.6–11.9] / 9.8 | 2.31 [2.30–2.32] / 3.73 [3.72–3.73] |
+| 1080p, paused | 5.5 / 0.9 [0.8–0.9] | 0 / 0 |
+| 2160p HDR10, screen-sized | 14.1 [14.0–14.2] / 10.2 [10.0–10.3] | 6.51 [6.51–6.53] / 7.67 [7.65–7.68] |
+
+- **Better on the port**: working set in every cell (−39 to −74 %), CPU in
+  every cell (the old app spends 5.5 % of a core idle and paused), and the
+  first video frame (837 ms old, 687 JIT, 604 AOT). Private bytes are lower
+  in every cell with 1080p content and in the idle small, medium and
+  fullscreen windows; before the idle fix the idle screen-sized window was
+  22 MiB higher (561 against 539).
+- **Cadence**: in the 8 s sampled after 32 s, controls hidden, every video
+  frame was shown and none skipped by either app in all 114 launches (the
+  six control launches included), and mpv dropped none. Timing differs: the
+  old app's 99th-percentile gap is often a whole 240 Hz refresh long (45.8
+  to 46.3 ms for a 41.67 ms frame), the port's 42.0 to 45.5 ms; the port's
+  mpv reported 1 to 4 delayed renders in some cells, none visible as a
+  missing frame.
+- **Worse on the port**: dedicated GPU memory higher in 19 of 21 cells (over
+  the 10 % / 50 MiB threshold in 18): +54 MiB for 1080p at screen size, +453
+  to +591 MiB in the 2160p cells at 3840×2160 (screen-sized, fullscreen,
+  controls visible); GPU shared memory in all (+37 to +126 MiB); GPU time
+  in every playing cell, and the whole increase is the 3D engine (2.32 %
+  against 1.01 for 1080p24; video decode reads the same); private bytes in
+  the 2160p cells at 3840×2160 (+268 to +339 MiB, either build) and in two
+  smaller 2160p HDR10 windows (+52 to +74 MiB), within 31 MiB in the
+  others.
+- **Why** (texture sizes are arithmetic, which ones exist is read from the
+  source, the attribution of totals is inferred unless a control measured
+  it): the picture exists twice, once in our half-float ring and once in
+  Skathi's copies; the window composes in half float from mpv's first frame;
+  the overlay adds 61 MiB while subtitles show and 22 after; the libmpv is
+  +12 MiB (1080p) and +96 MiB (2160p HDR10) of GPU memory, measured by
+  putting the port's libmpv under the old app; and per shown frame the port
+  does a copy, an upscale in Skathi and a whole-window composition where
+  the old app's picture is a swap chain DWM takes directly. With a 2160p
+  clip at screen size this driver commits in the one process what the old
+  app spreads over the player and the web view's GPU process (inferred).
+- **The idle fix.** Without a file the port made its ring at the element's
+  size and mpv drew a black frame into it. Now the ring is made when the
+  video's size is known and dropped when the file is gone: idle at screen
+  size 562 → 299 MiB of GPU memory, 561 → 376 MiB private and 225 → 203
+  MiB working set (JIT), against the old app +29 MiB of GPU memory instead
+  of +293, and −142 in fullscreen. The window still switches to half float
+  at start, because Skathi follows a half-float `<sk-surface>`'s format,
+  not its frames (fixed upstream since in #46, not re-measured by us); playing cells were not re-measured with this build
+  (the ring is the same once a file is loaded, so unchanged is inferred).
+
+### Native players as a reference
+
+The matrices' cells and timeline for the players people use, to read the
+two Frame Players against. Not re-run for Frame Player or the port: their
+columns are the matrices' medians. Not every player could be put in every
+cell the same way: on macOS VLC's windowed control bar is always on and its
+fullscreen panel stayed up, IINA's screen-sized window is aspect-locked
+(1728×972 pt), and many fullscreen launches had to be repeated because the
+machine was in use and the fullscreen Space was left.
+
+**macOS** (MiB, all processes; CPU % of a core and the app's own GPU time,
+8–18 s; screen-sized window, controls hidden unless said):
+
+| | Frame Player | Port | AVKit stand-in | IINA 1.5 | mpv 0.41 | VLC 3.0 | Elmedia 8.24 |
+|---|---|---|---|---|---|---|---|
+| Idle | 211 | 122 | 17 (QuickTime 62) | 125 | 190 | 64 | — |
+| 1080p24 | 755 | 852 | 67 | 815 | 820 | 452 | 495 |
+| 2160p PQ | 1499 | 1927 | 240 | 1479 | 1489 | 743 | 942 |
+| 2160p PQ, fullscreen | 1512 | 1975 | 241 | 1513 | 1512 | 810 | — |
+| ASS on screen | 760 | 969 | — | 811 | 799 | 487 | — |
+| Paused | 456 | 461 | 69 | 643 | 481 | 468 | — |
+| CPU / GPU, 1080p24 | 26.2 / 8.7 | 27.4 / 13.2 | 3.5 / 0.0 | 15.5 / 6.4 | 17.0 / 7.7 | 11.1 / 1.9 | 28.6 / 2.4 |
+| GPU, fullscreen 1080p / PQ | 10.6 / 14.4 | 21.3 / 20.2 | 0.0 / 0.0 | 8.0 / 11.1 | 9.4 / 13.8 | 3.2 / 3.0 | — |
+| First frame, 1080p, ms | 962 | 1308 | 281 | 1057 | 487 | 1821 | — |
+| HDR on screen (max, 1.0 = SDR white), windowed / fullscreen | not checked | EDR (inferred) | 2.1 / 3.9 | 8.9 / 9.0 | 1.00 / 1.00 | 1.00 / 1.00 | 1.00 |
+
+- **QuickTime** opens a file paused and could not be started without
+  input, so a ~80-line AVKit player (one `AVPlayerView`, muted, autoplay)
+  stands in for its playback. **Its column is not like the others**:
+  AVFoundation hands frames to WindowServer, so the app's own GPU time is 0,
+  and the picture's surfaces beyond the decoder service's pool are not in
+  its footprint (charged to WindowServer, inferred). WindowServer's GPU time
+  read 18.3–19.1 % in its windowed cells against a 1.5 % no-player baseline
+  median (baseline range 0.9–17.8), so about 17–18 points; WindowServer's
+  memory needs root and was not read. Read the column as what the app is
+  charged, not what playback costs. WindowServer was not recorded at all
+  for Frame Player and the port. Elmedia ran after the others, not
+  interleaved, three cells only, and its 1080p window was narrower than
+  screen-sized.
+- **HDR** (the window's maximum in an HDR capture, 1.0 = SDR white): IINA
+  passes PQ through into EDR (8.9×), AVFoundation
+  shows EDR with Apple's own headroom handling (2.1 windowed, 3.9
+  fullscreen), and stock mpv, VLC and Elmedia tone-map to SDR (1.00). So
+  part of the cheaper HDR cells is not showing HDR at all. Frame Player and
+  the port were not peeked in this run.
+- **Reading**: the libmpv players form one class. Bare mpv, IINA and
+  Frame Player are within about 10 % of one another in the comparable
+  cells (Frame Player 755 against mpv's 820 at 1080p, 625 against 690 in
+  the small window), and **at 1080p, paused and idle the port is in that
+  class** (+32 to +37 MiB over IINA and mpv at 1080p, below mpv idle and
+  paused). **4K is its largest memory gap**: at 2160p PQ +438 to +463 MiB
+  (+30 %) over IINA and mpv, at 2160p SDR +101 over IINA and +254 over
+  mpv; with ASS on screen +158 to +170; all of it the chunks above.
+  Fullscreen GPU time (about 1.5–2.7× the libmpv players' medians) and idle
+  and paused CPU (+4–9 points) are worse too. The CPU over mpv and IINA at
+  1080p (~10 points) Frame Player has as well, so it is not the port's
+  route; its cause was not isolated. VLC is about half of any libmpv
+  player.
+
+**Windows** (MiB, all processes; 1080p24 and 2160p HDR10 at screen size;
+first frame with a warm disk cache):
+
+| | Frame Player 1.49.1 | Port (JIT) | Media Player | MPC-HC 2.8.5 | VLC 3.0.24 | mpv 0.42-dev |
+|---|---|---|---|---|---|---|
+| Private bytes, 1080p / HDR10 | 789 / 1226 | 665 / 1526 | 168 / 371 | 188 / 288 | 230 / 404 | 211 / 509 |
+| Working set, 1080p / HDR10 | 923 / 1255 | 353 / 743 | 216 / 336 | 118 / 199 | 192 / 345 | 136 / 237 |
+| GPU dedicated, 1080p / HDR10 | 478 / 1141 | 532 / 1684 | 558 / 710 | 184 / 799 | 247 / 999 | 268 / 1098 |
+| Idle: private / GPU | 539 / 270 | 561 / 562 (376 / 299) | 154 / 83 | 11 / 0 | 68 / 0 | 86 / 110 |
+| CPU, % of a core, 1080p / idle | 11.5 / 5.5 | 9.7 / 0.6 | 1.4 / 0.0 | 1.6 / 0.0 | 2.4 / 0.4 | 3.5 / 0.0 |
+| GPU time, 1080p (3D engine) | 2.29 (1.01) | 3.59 (2.32) | 1.37 (0.16) | 1.87 (0.60) | 1.63 (0.37) | 2.31 (1.03) |
+| First video frame, ms | 837 | 687 (AOT 604) | 1283 (from its activation) | 3492 | 1564 | 223 |
+| HDR10 clip, peak over the window × SDR white | 5.30 | 4.16 | 69.2 | 69.2 | 69.2 | 5.30 |
+
+- **Caveats**: Media Player's window belongs to a shared system host whose
+  processes are not counted, which flatters its numbers in every row; its
+  fullscreen cells were not run and its "paused" cell was playing. mpv is a
+  third-party build of 0.42-dev with its own OSC; kept always visible, the
+  OSC costs it 180 MiB more. All decode in hardware by the decode engine's
+  load, which reads the same for all. Both Frame Players build their
+  storyboard during every reading with a file; none of the native players
+  builds one. MPC-HC's 3.5 s to the first frame was the same in all three
+  launches and was not looked into.
+- **HDR**: the peak is read from a capture of the composed desktop, in
+  scRGB units of the SDR white level. Media Player, MPC-HC and VLC read
+  69.2, the saturated synthetic clip's full code values read as PQ:
+  consistent with handing this clip to the display untouched, not a
+  luminance anyone sees. mpv and Frame Player render to a 1000-nit HDR10
+  target, and the composed desktop's maximum over the window reads 5.30
+  (about 1270 nits); the port maps to the display's headroom in scRGB
+  (4.16). Which of them looks right on this display was not judged.
+- **Reading**: **both Frame Players are several times heavier than any
+  native player** in process memory and CPU. Against bare mpv with 1080p24,
+  the fairest floor: the port holds 3.2× its private bytes and spends 2.8×
+  its CPU, the shipping player 3.7× and 3.3× (at 2160p HDR10 the port's CPU
+  is 2.0× mpv's). Against the cheapest native player in each cell the port
+  is at 3.2–5.3× the private bytes while playing and 5.4–7.1× the CPU. The
+  whole-app difference over bare mpv is 450–600 MiB and 6–8 points of a
+  core; the interface runtime (WebView2, or Skathi's JavaScript) is the
+  likely main part, together with the storyboard both Frame Players build,
+  but it was not isolated. **The port is additionally heavier in GPU**: 2×
+  mpv's GPU memory and 1.6× its GPU time at 1080p, where Frame Player is at
+  mpv's GPU time (2.29 against 2.31) and its 3D engine (1.01 against 1.03).
+  In these warm-cache runs only mpv showed its first frame sooner than the
+  port.
+
+### A native video layer under the page (prototype)
+
+The `<sk-surface>` route's costs above are mostly the picture's own path:
+our ring, Skathi's copies, the window going half float for HDR, and on
+Windows the overlay. The shipping player avoids all of it by putting mpv's
+output under a transparent web view. Both platforms were tried the same way
+under Skathi's window, on Skathi 0.7 (macOS `dd8b4ccc`, the 0.7.0 release
+plus a build fix; Windows `2b08fd37`), first with a test pattern, then with
+the port's mpv. **This is a prototype**: it relies on handles Skathi
+exposes "at your own risk". The supported form was asked for in #43 and
+is now tracked upstream as #44 (a native layer under an element, treated
+as a bug), #45 (re-homing after device loss), #47 (headroom per window),
+#48 (a backdrop the page cannot change) and #49 (an embedder setting for
+the macOS drawable count); #46, the empty half-float surface, is fixed.
+
+- **macOS: works on unmodified Skathi.** The main window's `NSView` comes
+  from `HostContext` (#35); with `backdrop: "transparent"` the window and
+  gpui's `CAMetalLayer` are non-opaque. A layer-hosting `NSView` with our
+  own `CAMetalLayer`, inserted below gpui's view (where gpui puts its own
+  blur view), shows through the page. A sublayer or a borderless child
+  window work as well and cost the same. The page blends over it in
+  sRGB-encoded space with no fringe (the 50 % panel reads 0.544 where
+  0.539 is expected), and the layer follows resize and native fullscreen.
+- **Windows: works on unmodified Skathi through an owner window.** Skathi's
+  window is a D3D12 composition swap chain shown through DirectComposition,
+  with an empty "underlay" visual under the page that `<iframe>` uses (read
+  from the source). Our own composition target on that window is refused
+  (`DCOMPOSITION_ERROR_WINDOW_ALREADY_COMPOSED`; with `topmost` it lands
+  above the page), and a child window with its own swap chain lands above
+  the page too. What works: a top-level window of ours, made the owner of
+  Skathi's window and kept on its client area, hit-test transparent and
+  never activated. Skathi's own underlay also works, through a 22-line
+  local patch that hands it to the embedder, and costs the same to the
+  megabyte. The panel blends within 3 of 255 of the expected mix; the layer
+  follows resize, maximise and real fullscreen.
+- **HDR lives in the layer alone.** Skathi's window stayed 8-bit SDR in
+  every launch on both systems while the layer showed EDR (macOS: 2, 4 and
+  8× SDR white read back exactly) or HDR10/scRGB (Windows: 4.09 and 4.00×),
+  and the interface's white read 1.00, also drawn directly over the EDR
+  area.
+- **The port's mpv in the layer.** macOS: mpv's Vulkan render API renders
+  straight into the drawable's own IOSurface, imported into MoltenVK, and a
+  Metal command buffer presents it once mpv's release value arrives.
+  Windows: mpv's D3D11 render API renders into the back buffer of an HDR10
+  flip swap chain (`R10G10B10A2`, ST 2084/BT.2020, two buffers). Neither
+  has a ring of ours, a Skathi copy or an overlay pass: the picture is the
+  window's size and mpv draws the subtitles into it.
+
+All processes, screen-sized window, controls hidden, medians [min–max] of
+3 unless said. On macOS both routes come from the same executable and
+Skathi, run as one interleaved batch (JIT off by environment in both). On
+Windows only the layer route was run in this stage; its `<sk-surface>` and
+Frame Player columns are the Windows matrix's medians from the day before,
+and the native players' from their own stage. Windows memory in MiB.
+
+| | `<sk-surface>` | Native layer | Frame Player | IINA / mpv |
+|---|---|---|---|---|
+| macOS, 1080p SDR, MiB | 865 [865–923] | 873 [865–877] | 755 | 815 / 820 |
+| macOS, ASS on screen, MiB | 985 [972–1023] | **881** [876–891] | 760 | 811 / 799 |
+| macOS, 2160p PQ, MiB | 2008 [1925–2050] | **1719** [1718–1779] | 1499 | 1479 / 1489 |
+| macOS, app GPU time 1080p / ASS / PQ, % | 13.1 / 16.6 / 15.7 | **9.3 / 8.8 / 12.1** | 8.7 / 9.9 / 14.7 | 6.4 / 7.6 / 9.9 and 7.7 / 8.2 / 13.1 |
+| Windows, 1080p: private / GPU dedicated | 665 / 532 | 669 [668–696] / **487** | 789 / 478 | mpv 211 / 268 |
+| Windows, 1080p + ASS: GPU dedicated | 593 | **489** | 478 | mpv 269 |
+| Windows, 2160p HDR10: private / GPU dedicated | 1526 / 1684 | **1107** [1106–1109] / **1228** | 1226 / 1141 | mpv 509 / 1098 |
+| Windows, GPU time 1080p / ASS / HDR10, % | 3.59 / 3.73 / 7.67 | **2.52 / 2.54 / 6.23** | 2.29 / 2.31 / 6.51 | mpv 2.31 / 2.30 / 6.51 |
+| Windows, idle start screen: GPU dedicated | 562 (299 after the idle fix) | **140** (one launch) | 270 | mpv 110 |
+
+On macOS the `<sk-surface>` column agrees with the macOS matrix's
+JIT-off medians within 1–2 % in these three cells, so the move to 0.7 made
+no difference visible there; it is not a re-run of the matrix, and the
+decoder service at 2160p PQ read 409 MiB here against 385 there. An AOT
+build of the layer route is expected 10–50 MiB lower (inferred from the
+matrix, not measured).
+
+- **What it fixes**: the copies, the ring and the overlay pass, and with
+  them the half-float window. macOS closes about half the gap to IINA and
+  mpv at 2160p PQ (+490 → +230 MiB) and about 60 % of it with subtitles;
+  the app's own GPU time falls by 23–47 %, which puts it above both IINA
+  and mpv at 1080p (9.3 against 6.4 / 7.7) and with subtitles (8.8 against
+  7.6 / 8.2) and between them at PQ. Windows reaches Frame Player's GPU
+  memory at 1080p (487 against 478) and comes within 87 MiB of it at 2160p
+  HDR10; the DLL swap under the old app measured 96 MiB for the newer
+  libmpv there, so on this route that share is an estimate. GPU time falls
+  below Frame Player's at 2160p HDR10 (6.23 against 6.51) and stays a
+  quarter of a point above it at 1080p and with subtitles (2.52 and 2.54
+  against 2.29 and 2.31).
+- **What passed in the scripted checks**: on macOS cadence (24.0 distinct
+  frames a second in both routes, three launches a cell), frame stepping,
+  screenshots through mpv and native fullscreen (entered in process); on Windows cadence in the 8 s sample (193 of 193 frames shown in
+  all nine launches; mpv's drop counter rose by one in one launch without a
+  frame missing in the capture), frame stepping, a resize while paused and
+  real fullscreen (one launch).
+- **What it does not fix**: the interface runtime. CPU does not move
+  (Windows 9.4–9.8 % against 9.7–10.2; on macOS level within the noise of
+  the storyboard), and on Windows the route barely changed total private
+  bytes at 1080p (669 against 665); what the rest of that total is was not
+  broken down. The distance to native players in process memory and CPU
+  stays.
+- **What is left on macOS**: Skathi's window keeps a pool of five
+  screen-sized 8-bit drawables, 133 MiB, while playing and also when paused
+  (one paused run per route). Three instead of five would save about 53 MiB
+  at this size. A minimal page shows why five: Skathi holds three while
+  idle, even with our layer animating under it, and five once it repaints
+  every frame itself, so the five of #38 are a busy-window effect, and HDR
+  only doubled their size. Why the port's page repaints every frame with
+  the controls hidden was not checked. Paused, the layer route costs +64
+  MiB for its own three drawables (one run); a count of two or releasing
+  them on pause was not tried.
+- **A GPU-busy chunk** that is no one's in particular: a process holds a
+  block of unmapped driver memory while it keeps submitting GPU work and
+  gives it back within about a second of going idle (258 MiB with the test
+  pattern, 193 for a bare Metal app with the same layer, 268 for Skathi
+  animating its own spinner, 551 in the port at 2160p PQ). The libmpv
+  players hold the like while playing (mpv's falls from 430 to 154 MiB when
+  paused).
+- **Workarounds found on macOS**: MoltenVK cannot import a drawable
+  allocated lossless-compressed, so the layer needs `framebufferOnly` off
+  (the memory is the same; the bandwidth saving is lost); layer changes for
+  EDR made off the main thread never land, because nothing commits that
+  thread's implicit transaction; and the screen's current headroom stays
+  1.0 until EDR content is on screen, so the target peak has to come from
+  the potential headroom (16.0 on this panel, `target-peak` 3248). The PQ
+  clip's window maximum in the HDR capture, sRGB-encoded, then reads 3.29
+  on this route against 2.19 on the `<sk-surface>` route, which follows the
+  current headroom: two different tone-mapping targets, not a measure of
+  either's correctness (inferred).
+- **SDR on Windows** (one launch per condition, on this HDR desktop). mpv
+  puts SDR white at 203 nits in an HDR10 target, and this desktop's SDR
+  white is 240, so the clip's saturated bars first read 0.82 of the
+  interface's white. With `hdr-reference-white` set to the desktop's SDR
+  white level (as Skathi reads it for the display) they read 0.97, as in
+  the file; the HDR10 clip's peak is unchanged (5.13). The SDR clip's
+  window maximum went from 0.85 to 1.99 at the same time, along the test
+  pattern's sharp edges (scaler overshoot in an unclipped target, inferred).
+  An 8-bit path (`B8G8R8A8` sRGB, mpv's `target-trc=srgb`, HDR content
+  tone-mapped) is chosen when the display is not in HDR. In the code the
+  options are re-set when the mode, the white level or the peak changes,
+  and swap chains are remade when the display's mode changes; no live
+  transition was tested, and the 8-bit path was measured only forced on
+  this HDR desktop, not on a real SDR desktop. Mid-greys still differ by
+  path (120 here, Frame Player 121, the 8-bit layer 127, `<sk-surface>`
+  134), which is the rest of the colour option set, not applied here.
+- **Open**: resize synchronisation (macOS: the layer follows AppKit's own
+  layout and mpv renders the new size on its next frame, so the picture can
+  be one frame behind the interface, inferred and not checked; Windows: the
+  layer window moves on the render thread's next turn, up to 50 ms while
+  paused, not measured); the mini player's always-on-top panel; another
+  window getting between the two on Windows, and minimise and restore,
+  virtual desktops, Alt+Tab and the taskbar thumbnail there; the context
+  menu over the picture; WindowServer's and DWM's share of the work; the
+  AOT build; Skathi's own screenshots, which do not contain the picture (by
+  design, as with a web view).
+
 ### Skathi defects found, and their state
 
 Filed in github.com/argon-chat/skathi while building the prototypes. #1–#20
 are closed, most of them within hours. #21–#34 are closed (#25 and #30 as
 not planned, the others fixed and, from #29 on, confirmed by us on master).
 #35–#38, answered on 2026-11-20 with fixes on master after Skathi 0.6.0,
-were re-measured by us on master `64d2e42f` and are closed (#37 by us, its
-peak being the system's). #39 is open. "Re-measured" means our own runs confirmed the fix, on the build named; "landed" names the
+were re-measured by us on master `64d2e42f`; #35, #36 and #38 are closed,
+and #37 was reopened for AOT on macOS. #39–#42 were answered within hours
+and are closed. #43, the request for a supported native layer under the page,
+was filed on 2026-11-22; the maintainer confirmed its source readings and
+split it into #44–#49 (#46 fixed since, the rest open), with one item
+answered as by design. Skathi 0.7.0 has been released since
+(`cde894f5`). The native-layer prototype ran on macOS on master `dd8b4ccc`
+(the release plus a build fix) and on Windows on the port's pin `2b08fd37`
+(crates 0.7.0, before the release).
+"Re-measured" means our own runs confirmed the fix, on the build named; "landed" names the
 upstream commit, which is not always the build we tested.
 
 - **#1** `<sk-surface>` was inert without the cargo feature `video`. Fixed (`ae8dca2c`), re-measured on `1eacd896`.
@@ -1732,9 +2385,19 @@ upstream commit, which is not always the build we tested.
 - **#34** `<sk-surface>` upscaled with one bilinear tap. On master (`684e7036`) `image-rendering` is honoured, and `auto` uses Catmull–Rom on enlarged axes. Re-measured on `8c912edc` (31.4 dB against 27.8 on fine detail, no HDR halo); closed by us.
 - **#35** (closed, filed for the interface port) The embedder had no handle to the main window and no run-time minimum size. Implemented on master in `6a9338be`, documented for 0.6: `appWindow` run-time min/max size, `setAspectRatio`, `setTrafficLightPosition`, fades on show and hide, an animated `setBounds()` and `visibleOnAllWorkspaces`; `HostContext` and `Handle` expose an unsafe raw handle (main thread only; on macOS the content `NSView`). Checked in the ported player on `03fb7ecf`: min/max size, aspect ratio, traffic-light position, fades and the animated `setBounds()` work, read back from the `NSWindow`; the mini player did not stay above another app's fullscreen Space. The follow-up (`b5fe7552`, `2e88b48b`, `f531dd11`) added `setWindowButtonsVisible`/`getWindowButtonsRect`, `setFullscreen(…, { transition: "fade" })`, pinch as a cancelable `wheel` with `ctrlKey` (Option kept in `altKey`) and a panel swap for the mini player. On `b682a9e3`, with synthetic events (no physical trackpad, no real clicks): the black fullscreen transition works both ways, pinch and Option+pinch split as documented, the button fade and the re-centring after a title-bar height change work. Broken there: `getWindowButtonsRect()` returned the whole content area; showing the buttons after hiding them dropped the centring; the mini player left the screen over a foreign fullscreen Space, because no panel was created (inferred from source: the swap compared the window's class exactly, and AppKit on macOS 26.5.2 turns it into a KVO subclass). Re-measured on v0.6.0 (`ca6e4e08`, which carries the fixes of `b4d4e190` and the KVO fix; 3 runs, unlocked screen): the rectangle is right, `[12, 17, 60, 14]`, the union of AppKit's three button frames, and `null` while hidden; an instant hide and show keeps the centring and an explicit position; **a hide or show with a 150 ms fade still drops either to AppKit's (9, 9)**, which the player hits on its first idle hide; the mini player now becomes a panel that stays on a foreign fullscreen Space and takes an in-process click and key while the other app keeps its menu bar (one run per flag; Cmd+Tab not tried). Reported. The maintainer answered with `a5526ce7` (and a gpui change): the button frames are reapplied after each opacity or visibility change. Re-measured on `64d2e42f` (3 launches, plus 2 of the player's own idle fade): no button moves through either fade, centred or at an explicit position (see "On screen on master `64d2e42f`"). Closed as fixed.
 - **#36** (closed) In a Windows HDR window a half-float `<sk-surface>` was clamped to 0 … headroom, so colours outside BT.709 (negative scRGB components) never reached the screen; found by the 33-patch colour comparison above. Fixed in `9c7f52b6` (with a gpui change): D3D11, D3D12, wgpu and Metal keep the sign of extended-sRGB channels through the HDR path; SDR output still clips negatives. Re-measured on `64d2e42f` on the RTX 5080: the red patch's negative green and blue reach the desktop, the desktop equals our texture on all 33 patches, and 27 of 33 match on screen (was 26); see "gpu-next through mpv PR #18845 on D3D11". Checked through D3D12 in an HDR window only.
-- **#37** (closed by us) Memory for an embedder: an AOT or no-JIT route for our own executable, and the start-up graphics peak (above). Answers: on Windows `dc32c71e` exposes the AOT features to embedders (`sk publish --aot --payload-only --workload <exe>`; documented as "since 0.7"), and `bcd1f8b5` makes production and AOT bundles ASCII by default; `no-interpreter` is experimental and not for apps. macOS has no AOT until 0.7 (planned); until then `JSC_useJIT=false` and `JSC_useWebAssembly=false` in the environment are supported to rely on. The ASCII bundle is confirmed by us on `89c511c1` (built and compared, not run in the host); the Windows AOT route on `64d2e42f` (see "The JIT against AOT in our own executable", and #39). **The peak is the system's**: on `64d2e42f` the empty payload peaks at 228–232 MiB, 24 × 8.00 MiB of graphics memory for about a second, and a 26-line AppKit program without Skathi reproduces it with three presents to a `CAMetalLayer` (see "On screen on master `64d2e42f`"). That it depends on the display is inferred, not checked. Skathi's embedding documentation notes it (`ec3cc308`).
-- **#38** (closed) On macOS a surface's copies were never trimmed and outlived `clear()`, and the window held five drawables, not three (above). `a355114c` trims Metal's copy pool after a burst or a resize, and Metal and D3D12 release a cleared surface's slots after a 50 ms grace. The five drawables are kept by design: the maintainer reproduced them and keeps the display link's pacing. Re-measured on `64d2e42f`: a cleared surface holds no copy (1232 → 1123 MiB, and 1121 → 1019 with our ring dropped), no old-size copy after a resize in 6 of 6, five drawables in all 55 launches, `lowLatencySurface` off and on. The trim after a burst itself was not exercised.
-- **#39** (open) Embedder AOT on Windows: the default memory profile commits 367–378 MB more than the JIT, none of it touched, so `compact` is asked for as the default for application images; with four snags on the AOT page (`setup.ps1` under PowerShell 5.1, `pwsh` for `sk-aot setup`, `--sk-host-info` having to be the first argument, the `icu-root` message). See "The JIT against AOT in our own executable".
+- **#37** (open) Memory for an embedder: an AOT or no-JIT route for our own executable, and the start-up graphics peak (above). Answers: on Windows `dc32c71e` exposes the AOT features to embedders (`sk publish --aot --payload-only --workload <exe>`; documented as "since 0.7"), and `bcd1f8b5` makes production and AOT bundles ASCII by default; `no-interpreter` is experimental and not for apps. At the time macOS had no AOT (planned for 0.7), and `JSC_useJIT=false` and `JSC_useWebAssembly=false` in the environment were supported to rely on meanwhile. The ASCII bundle is confirmed by us on `89c511c1` (built and compared, not run in the host); the Windows AOT route on `64d2e42f` (see "The JIT against AOT in our own executable", and #39). **The peak is the system's**: on `64d2e42f` the empty payload peaks at 228–232 MiB, 24 × 8.00 MiB of graphics memory for about a second, and a 26-line AppKit program without Skathi reproduces it with three presents to a `CAMetalLayer` (see "On screen on master `64d2e42f`"). That it depends on the display is inferred, not checked. Skathi's embedding documentation notes it (`ec3cc308`). Reopened by us for macOS AOT, which has since landed on master for macOS arm64 (`cebac4f9`): measured on `d153b34e` (see "Every memory lever, and AOT without the JIT"), the player's idle footprint settles at 71.1 MiB against 89.7 with the JIT, inputs reach the DOM about twice as fast, and the empty payload's peak is unchanged. Of the snags reported with it, `--payload-only` now signs the image on a Mac (`025ff87c`); the maintainer could not run that on a Mac, and we have not verified it yet. Our plan is to keep the issue open until we have (Next steps).
+- **#38** (closed) On macOS a surface's copies were never trimmed and outlived `clear()`, and the window held five drawables, not three (above). `a355114c` trims Metal's copy pool after a burst or a resize, and Metal and D3D12 release a cleared surface's slots after a 50 ms grace. The five drawables are kept by design: the maintainer reproduced them and keeps the display link's pacing. Re-measured on `64d2e42f`: a cleared surface holds no copy (1232 → 1123 MiB, and 1121 → 1019 with our ring dropped), no old-size copy after a resize in 6 of 6, five drawables in all 55 launches, `lowLatencySurface` off and on. The trim after a burst itself was not exercised. Later, in the native-layer prototype, a minimal page held three drawables while idle and five once it repainted every frame: the five are a busy-window effect, kept also while paused (133 MiB at screen size in the port), and #49 answers it: no automatic trimming, an embedder setting for the count instead.
+- **#39** (closed) Embedder AOT on Windows: the default memory profile committed 367–378 MB more than the JIT, none of it touched; with four snags on the AOT page (`setup.ps1` under PowerShell 5.1, `pwsh` for `sk-aot setup`, `--sk-host-info` having to be the first argument, the `icu-root` message). Answered: application images use `compact` by default (`86194799`). The maintainer's reading of the engine source (not measured on a live process) puts the 256 MB block in the AOT structure rows, the 86 MB most likely in the allocator's metadata for its reserved range, and the 58.5 MB in a per-VM table that Windows commits whole and no option sizes; the guide now has a section on it (`696f15d2`). Of the snags (`2b08fd37`), the scripts changed: every `.ps1` requires PowerShell 7 and says so under 5.1, and `setup.ps1` unpacks with the system's `tar`; the other three are fixed in the documentation and an error message (`pwsh` for the Windows steps, `--sk-host-info` reaching `Builder::spawn`, the ICU data file travelling with the exe). Our Windows runs since set `compact` explicitly, so the new default itself was not re-measured there; on macOS the `default` profile measured 0.4 MiB above `compact`. See "The JIT against AOT in our own executable".
+- **#40** (closed) Assigning a `console` member throws in an AOT image, `sk check` reported nothing, and the window stayed empty; found with the player's console capture on both systems. The read-only `console` stays intentional, as for the other built-ins; the fixes add diagnostics: `sk check` reports the assignment as `SK1001`, including computed keys whose literals are known (`d388f23e`), and an entry that throws before it has mounted anything opens the host's error dialog with the exception, or only logs it under a test harness (`d8e601aa`). The intended form is a guard on `Runtime.isAot()`; the ports use a `try` for now. Not re-measured by us. That `globalThis.console = …` is silently ignored on macOS was not looked at upstream.
+- **#41** (closed) Master did not build without the `audio` feature: `mod memory` had taken the `#[cfg]` of `mod microphone`. Fixed (`2bb45650`); we built with a local fix until then.
+- **#42** (closed, found in the macOS port's title bar) `position: static` was laid out as `relative`, so a base rule's `left` still moved the box and the title-bar logo sat flush against the window's edge; and `flex-direction: inherit` was dropped. Neither was logged or reported by `sk check`. Fixed (`0277f7b5`): insets apply only to positioned boxes and `getComputedStyle().position` reads `static` back; `inherit` on a property that does not inherit is not resolved but reported, once at run time (`flex-direction: inherit was dropped`) and by `sk check` (`SK4002`), so the port keeps an explicit direction. Not re-measured by us; the port carries a two-line CSS workaround that is harmless in WebKit.
+- **#43** (open, filed 2026-11-22) A supported native layer under the page, from the prototype in "A native video layer under the page", as seven requests in one issue. The maintainer confirmed the source readings behind items 1, 3 and 7 and split the items into #44–#49; item 7 (a page with no framework mount painting nothing on 0.7) is by design: a built bundle's stylesheet is installed by `createApp().mount()` and `mountDocument()`, so a page that draws without a framework calls `mountDocument()` from `@skathi-native/runtime` and appends inside the root it is given. Not tried by us.
+- **#44** (open, treated as a bug) No supported native layer under an element: the `<iframe>` backend that places content under the page from the paint pass is a single slot, which is what forces the workarounds. Our comment there: we do not use `<iframe>`; what the player needs is the element's rectangle in the frame the page is laid out in, and a place under the page (on Windows Skathi's underlay; on macOS inside the content view, which the mini player's panel moves). No punch is needed, as the page is transparent where the video is.
+- **#45** (open) A notification when the Windows composition tree is rebuilt after device loss. The maintainer's reading: a layer registered through the same mechanism as `<iframe>` is re-homed on every paint, so no separate callback should be needed; kept open to confirm on a real device loss once #44 is done.
+- **#46** (closed) An empty half-float `<sk-surface>` switched the window to half float, which kept the port's idle start screen in scRGB (299 MiB of GPU memory against 140 on the layer route, one launch; the difference is not only the swap chain). Fixed (`9dcec055`): the window follows half-float surfaces that hold a frame, and `clear()` on the last one switches it back. Checked upstream by a unit test, not on a GPU; not re-measured by us.
+- **#47** (open, to be looked at) The display's headroom per window for an embedder: on macOS the current and the potential EDR headroom (the potential one lets HDR start before anything EDR is on screen), on Windows the HDR state, SDR white level and peak, with a change callback.
+- **#48** (open, "reasonable") A backdrop the page cannot change (page script can set `appWindow.backdrop` today), and a query for whether DirectComposition is active on Windows, without which there is no underlay.
+- **#49** (open) macOS drawables: no automatic trimming of the pool after a busy spell (the five of #38, 133 MiB at screen size in the layer route, held while paused). Instead an embedder setting for the drawable count, marked dangerous: what a lower count costs in frame pacing is the embedder's to measure.
 
 ## The shape of the design
 
@@ -2300,6 +2963,16 @@ differ from gpu-next's:
   a second colour space.
 - **With gpu-next, always set `hdr-reference-white` explicitly.** `auto` depends
   on mpv having a window on the display, which it will not.
+- **A native HDR10 layer (Windows, render API into an HDR10 swap chain's back
+  buffer; measured):** `target-trc=pq target-prim=bt.2020 target-peak=<display
+  peak> hdr-reference-white=<desktop SDR white>`; the code re-sets them when
+  the mode, the white level or the peak changes (no live change was
+  tested). Without the last option SDR white lands at 203 nits on a 240-nit
+  desktop (the saturated bars of the test clip read 0.82 of the interface's
+  white); with it, 0.97, as in the file (one launch each). On a display not in HDR, an 8-bit sRGB swap chain
+  with `target-trc=srgb target-prim=bt.709` and mpv's own tone mapping
+  (measured only forced, on an HDR desktop). See "A native video layer under
+  the page".
 - `DISPLAYCONFIG_SDR_WHITE_LEVEL` (via `DisplayConfigGetDeviceInfo`) read 3000 →
   240 nits; `MaxLuminance` 1000 → headroom 4.17.
 - The gpu-next numbers come from mpv rendering into its own window; through a
@@ -2313,10 +2986,19 @@ differ from gpu-next's:
 
 - **Windows:** the player sets only `vo=gpu-next`, `hwdec=auto-safe` and `wid`.
   With Windows HDR on, mpv switches its swapchain from `R10G10B10A2` + G22/P709
-  to `R10G10B10A2` + **G2084/P2020 (HDR10)** — for SDR content too — and passes
-  an HDR10 clip through at 1000 nits. `target-colorspace-hint=no` tone-maps to
+  to `R10G10B10A2` + **G2084/P2020 (HDR10)** — for SDR content too — and
+  renders an HDR10 clip to that swap chain's 1000-nit target.
+  `target-colorspace-hint=no` tone-maps to
   SDR at the SDR white level (target bt.709 / srgb / 240). `vo=gpu` does not
   follow the hint and stays 8-bit SDR (bt.709 / gamma2.2 / 203).
+  Read off the composed desktop in the Windows matrix (Frame Player 1.49.1):
+  the window's maximum with the 2160p HDR10 clip is 5.30× SDR white (about
+  1270 nits), as with bare mpv, against the renderer's 1000-nit target; with
+  an SDR clip it is 2.28 (measured), along the test pattern's sharp edges
+  (scaler overshoot in a target that does not clip, inferred). Media
+  Player, MPC-HC and VLC keep SDR at white, and their HDR10 readings are
+  consistent with handing that clip through untouched (see "Native players
+  as a reference").
 - **macOS: HDR is tone-mapped to SDR.** For a PQ BT.2020 clip, video-params are
   bt.2020 / pq / sig-peak 4.926 and the target is **bt.709 / gamma2.2 / 1**. The
   surface is picked once at start-up (`VK_FORMAT_A2R10G10B10_UNORM_PACK32 +
@@ -2406,7 +3088,13 @@ reasoning.
 - At `8ab3a3d`, `stats().shown` counted a frame when its atlas copy was
   queued, before draw and present — not a "shown" signal. Use `on_frame`.
 
-### The window has to be opaque on Windows
+### An opaque window on Windows (the `<sk-surface>` route only)
+
+An early-plan note, not a requirement any more: the native-layer prototype
+needs the window transparent, and Skathi's window presents through a
+composition swap chain whatever the backdrop, unless composition is
+disabled (read from the source on 0.7; see "A native video layer under the
+page").
 
 Exact timestamps come only from `CreateSwapChainForHwnd`, i.e. an opaque window.
 (Superseded in part: with `exact_frame_feedback(true)` every event was `Exact`
@@ -2417,7 +3105,9 @@ Ours is transparent only so that mpv's child window shows through the WebView;
 once Skathi draws the video, that reason goes. Before asking for an opaque
 window, check what else assumes transparency: the mini player, rounded corners,
 and the "nothing painted means desktop visible" rule in
-[rules/window.md](rules/window.md).
+[rules/window.md](rules/window.md). The native-layer route needs the
+opposite: `backdrop: "transparent"` on both systems, the layer under the page
+the way mpv's child window is under the web view today.
 
 ## Copies and the zero-copy question
 
@@ -2449,6 +3139,14 @@ later; it does not remove it. Options, cheapest first:
    the mapping moved into the draw shader, and tracking of which window frame
    last used the texture. Worth doing together with Skathi's HDR output, which
    has to replace the 8-bit atlas anyway.
+
+A route outside this list has been measured since: no `<sk-surface>` at all.
+With mpv rendering straight into a swap chain or `CAMetalLayer` of ours under
+a transparent page, there is no ring of ours and no Skathi copy, and the
+window stays 8-bit; what remains is the wait for mpv's release before the
+present (on macOS a Metal command buffer waits on the slot's event); the cost moves to keeping the layer in step with the
+page (see "A native video layer under the page"). The zero-copy work above
+matters only if the picture stays in an `<sk-surface>`.
 
 ## Other findings along the way
 
@@ -2577,49 +3275,94 @@ pacing recipe, colour on macOS and through a gpu-next render-API texture.
 Allocation behaviour, accurate feedback across setups and the colour settings
 remain substantive open points below. What is left:
 
-- **The real interface on Skathi.** Ported and measured on macOS, on route
-  A and on the Vulkan path with real seekbar previews (see "The real
-  interface on Skathi, against the shipping player" and the subsections
-  after it). Screen-sized at 1080p the Vulkan path is 225 MiB below route A
-  and still 333 MiB above Frame Player with the controls hidden (72 with
-  them visible); in one process 993 against 605 MiB, of which the
-  half-float drawables, mpv's extra GPU blocks, Skathi's copies, our ring
-  and the JS runtime are most. Open:
-  - the 8-bit SDR picture and overlay (measured in the port: 820 MiB, 943
-    with subtitles) in the player's design, and HDR content with them;
-  - why the EDR window lifted black for SDR video (the 8-bit path avoids
-    it, the cause is not isolated);
-  - mpv's 7 extra 8-MiB blocks in the port;
-  - the remaining stubs (the audio-output device, torrents, casting,
-    watching together, the catalog's network side, updates and
-    diagnostics), the macOS menu;
-  - the same port on Windows. Its runtime is settled on the prototype:
-    AOT only with `compact` (35–48 MB above the JIT; the default profile
-    commits 367–378 MB more, #39), and no JIT buys executable size, not
-    memory. The real interface under AOT is not measured;
-  - the trim after a burst of presents, HDR content and hours (#38's fix,
-    re-measured only in steady playback, clear and resize);
-  - values through `var()` are visible only in the runtime log (#30).
+- **Which route the picture takes: `<sk-surface>` or a native layer under
+  the page.** Measured on both systems with the ported interface. Against
+  the shipping player with every process counted, the `<sk-surface>` route
+  is, by metric:
+  - macOS memory: lower in every idle cell and every 1080p cell with the
+    controls visible; higher with video playing and the controls hidden
+    (+97 MiB at 1080p screen-sized, +428 to +463 at 2160p PQ) and, less, at
+    2160p PQ with the controls visible (+141);
+  - Windows: working set and CPU lower in every cell; GPU memory higher in
+    19 of 21 cells (+54 MiB at 1080p screen-sized, +543 with 2160p HDR10)
+    and lower only in 1080p real fullscreen and paused; GPU time higher in
+    every playing cell;
+  - macOS GPU time higher in the 1080p cells and about doubled in native
+    fullscreen, level at 2160p PQ in a window.
+
+  The native layer takes most of the memory and GPU cost back (macOS
+  2160p PQ 2008 → 1719 MiB, Windows 1684 → 1228 MiB of GPU memory) and
+  needs no overlay pass. Open before choosing it:
+  - a supported form of it in Skathi (#44, treated as a bug, and with it
+    #45, #47 and #48); today it rests on raw window handles, an owner
+    window on Windows and a view below gpui's on macOS;
+  - resize synchronisation between the layer and the page, on both systems
+    not measured;
+  - the mini player's always-on-top panel, another window between the two
+    on Windows, the context menu over the picture, AOT builds;
+  - on macOS Skathi's five screen-sized drawables (133 MiB), held also
+    while paused, now the largest avoidable item at 2160p PQ; Skathi will
+    not trim them itself but plans an embedder setting for the count
+    (#49), whose pacing cost at three or two is ours to measure;
+  - on Windows a real SDR desktop and a switch between SDR and HDR output
+    while playing; the 8-bit path ran only forced on an HDR desktop;
+  - HDR handling against the other players: the macOS layer takes its peak
+    from the potential headroom and comes out brighter than the
+    `<sk-surface>` route (3.29 against 2.19), IINA passes PQ through at 8.9×
+    SDR white, and Frame Player's own HDR on macOS was not read in the same
+    way; on Windows Frame Player and mpv map to a 1000-nit target, Media
+    Player, MPC-HC and VLC hand HDR10 through. What "right" means for the
+    player is not decided.
+- **The interface and its runtime.** Neither route touches what is not
+  the picture. On Windows both Frame Players are several times heavier than
+  native players in process memory and CPU (the port 665 MiB private and
+  9.7 % of a core at 1080p, bare mpv 211 and 3.5 %); on macOS idle and
+  paused CPU is 4–9 points above the libmpv players. How much of that is
+  the runtime, the interface's per-second work or the storyboard is not
+  isolated.
+- **The ports.** The remaining stubs (on Windows 90 commands: torrents,
+  casting, the catalog, updates, diagnostics, the HDR status), the macOS
+  menu; the console capture under AOT (#40's guard instead of our `try`);
+  mpv's 7 extra 8-MiB blocks on macOS, which follow the port's
+  presentation path (the render API's targets are a hypothesis);
+  the decoder service's +71 MiB at 2160p on macOS, which is our libmpv's
+  FFmpeg build; on Windows the window switching to half float at start
+  although no frame has been shown (fixed upstream in #46, not re-measured
+  by us); HDR content and an SDR → HDR file
+  sequence with the 8-bit switches on macOS; values through `var()` visible
+  only in the runtime log (#30); the trim after a burst of presents and
+  hours (#38).
+- **macOS AOT signing.** `--payload-only` now signs the image on a Mac
+  (`025ff87c`), not verified by us; the `.app` layout and a hardened-runtime
+  signature were not tried.
 - **Rendering at the video's size, and the subtitles.** On Windows, a ring
   of 2 and a video-sized render bring a 1080p clip at screen size to 100–146 MB
   of private bytes below the shipping player and 58–76 MB of GPU memory above
   it. The cost was Skathi's bilinear scaling (Catmull–Rom on master since
   #34: fine detail 31.4 dB against 27.8) and blurred mpv subtitles and OSD,
   which the new scaler barely helps (18.4 dB against 17.0). Recommended after
-  an offscreen analysis, not built:
-  - render at the element size while a subtitle track, the second subtitle
-    line or an mpv OSD message is on, switching on track state, never per
+  an offscreen analysis, before the ports (both alternatives were built and
+  tested since, as the parenthesis says):
+  - tested alternative 1, the element-sized fallback: render at the
+    element size while a subtitle track, the second subtitle line or an mpv
+    OSD message is on, switching on track state, never per
     cue. In the offscreen Vulkan run, the first render call after a size
     change took 17 ms of CPU the first time, then 2–3 ms; subtitled playback
     gives up the video-sized saving;
-  - later, a second, element-sized overlay pass in the Vulkan render API,
+  - tested alternative 2, the split overlay: a second, element-sized
+    overlay pass in the Vulkan render API,
     which libplacebo can already draw (`pl_render_image` with no image);
     proposed, about 150–250 lines, inferred. Its hard part is one transform
     for zoom, pan, crop and rotation in both passes. (Built since and
     measured in the macOS port: sharp subtitles and one transform, but in
     half float it cost 1426 MiB at screen size against 1242 for the
     element-sized fallback; with an 8-bit overlay and a ring of 1 it costs
-    +123 MiB. See "Where the port's memory goes".)
+    +123 MiB. See "Where the port's memory goes". On Windows the same shape
+    needed an overlay target in our own libmpv's D3D11 render API, a
+    290-line patch: +60 MiB of GPU memory while a subtitle shows, against
+    +415 MiB for the element-sized render. See "The real interface on Skathi"
+    under Windows.) On the native-layer route none of this is needed: the
+    picture is the window's size and mpv draws the subtitles into it.
 
   Open on Skathi's side after #33: recheck the CPU placeholder and the actual
   swap-chain residency. The slot-to-atlas copy stays by design. The ~188 MB
@@ -2635,8 +3378,11 @@ remain substantive open points below. What is left:
   on master `64d2e42f`, on screen. Open: the display's gamut (the six SDR
   BT.2020 patches), an SDR desktop, colour outside BT.709 in an 8-bit
   window, under a tint or opacity and through an upscaled frame, and the
-  same comparison on macOS, where the port's SDR picture in an EDR window
-  came out lifted.
+  same patch comparison on macOS. There the port's SDR picture in an EDR
+  window came out lifted (black 18.1); the 8-bit SDR path puts black at 0.0
+  and the grey 2 levels above Frame Player's. On the Windows native layer
+  the mid-greys still differ by path (120 to 134 against Frame Player's
+  121), with only the white level of the option set applied.
 - **The Vulkan render API on macOS**: runs in the Skathi prototype at GL's
   cadence and colour, at 1.4–1.6× its GPU time and 73–93 MiB more
   footprint, and under the ported interface with the overlay pass. Open:
@@ -2656,8 +3402,8 @@ remain substantive open points below. What is left:
 - **Other hardware**: AMD and Intel GPUs, Windows 10, HDR off, other displays
   and refresh rates on the current Skathi, older macOS, anything across
   processes.
-- **The shipping player's true fullscreen**, and its CPU, GPU and power with
-  the web view.
+- **The shipping player's power and latency** with the web view (its true
+  fullscreen, CPU, GPU time and cadence were measured in the two matrices).
 - **Whether VRR is enabled on a given Windows setup.** The monitor's EDID range
   was 48–240 Hz, with what looks like a FreeSync block; NVIDIA's setting is not
   readable without its API.
@@ -2668,35 +3414,56 @@ remain substantive open points below. What is left:
 
 ## Next steps
 
-The two prototypes from the earlier list are done (see "The prototypes on
-Skathi, measured").
+The two prototypes from the earlier list are done, and so are the port on
+both systems, the two matrices against the shipping player, the native
+players and the native-layer prototype (see "The prototypes on Skathi,
+measured" and the sections after them).
 
-1. **The port on the new frame path, continued**: the 8-bit SDR picture and
-   overlay switched on `video-params/gamma`, the overlay ring dropped while
-   nothing is drawn, HDR content with those switches; why the EDR window
-   lifted black; mpv's 7 extra blocks; the remaining stubs and the macOS
-   menu; then the same on Windows (the D3D11 path), published as an AOT
-   image with `SK_AOT_MEMORY_PROFILE=compact` through the embedder route
-   `dc32c71e` opened, and its memory against the JIT build there.
-2. **The Windows libmpv**: built, pinned and reproducible, with libxml2 for
-   DASH (decided). Left: the host's two colour steps in the real path.
-3. **The Vulkan render API for macOS**: the stale read behind the
+1. **Decide between `<sk-surface>` and a native layer under the page.**
+   Before deciding: Skathi's progress on #44 (and #45, #47, #48); resize
+   synchronisation measured
+   frame by frame on both systems; the mini player, the context menu over
+   the picture and another window between the two on Windows; the layer
+   route as an AOT build and through the rest of the matrix; on macOS
+   once #49's drawable-count setting lands, memory and pacing with three
+   and two drawables (133 MiB at five), and a count of two or a release on
+   pause for our own layer; on Windows a real
+   SDR desktop (switched by hand) and the SDR ↔ HDR switch while playing.
+2. **HDR handling, against the other players**: what the player should do
+   with PQ on each system (EDR with headroom like IINA and AVFoundation,
+   HDR10 passed through like Media Player, MPC-HC and VLC, or mapped to a
+   fixed target as mpv and today's player on Windows), with Frame Player's
+   own macOS output read the same way, and the macOS layer's peak taken from
+   the potential headroom compared with the `<sk-surface>` route's.
+3. **The ports, continued**: the 8-bit SDR switches with HDR content and an
+   SDR → HDR file sequence on macOS; the idle start screen on Windows with
+   #46's fix (back to about 140 MiB of GPU memory, as the maintainer asked);
+   pages without a framework mount through `mountDocument()` (#43, item 7);
+   the
+   console capture under AOT through `Runtime.isAot()` (#40); the remaining
+   stubs and the macOS menu; the interface's per-second work, the one cost
+   neither route touches.
+4. **The Windows libmpv**: built, pinned and reproducible, with libxml2 for
+   DASH (decided), now carrying the overlay target as well. Left: the host's
+   two colour steps in the real path, and whether the overlay patch is kept
+   (the native layer would not need it).
+5. **The Vulkan render API for macOS**: the stale read behind the
    harness's intermittent `delay` failures (a variant without the gate and
    one with the copy on mpv's queue; the lock is ruled out), since
    Skathi's copy follows the same pattern; device loss, the queue-lock
    callbacks, a precompiled `.metallib` for the un-premultiply pass, a
    build against the player's FFmpeg, and the bundle and licensing.
-4. **Upstream**: #39 (`compact` as the default for application images, and
-   the AOT page's snags) is open; #35–#38 are closed.
-5. **The 24 fps audio on macOS**: find the render-call and fence stalls (an
+6. **Upstream**: follow #44, #45, #47, #48 and #49; re-measure #46; verify the macOS AOT signing (`025ff87c`) in a `.app` and
+   with a hardened-runtime signature, after which we would close #37. #35, #36 and #38–#42 are closed.
+7. **The 24 fps audio on macOS**: find the render-call and fence stalls (an
    idle Mac, a trace of the render thread), try PR #18845's drift
    controller, and take `audio-delay` from the running median.
-6. Compare with today's player through the e2e harness (on the `host-boundary`
+8. Compare with today's player through the e2e harness (on the `host-boundary`
    branch: `bun run e2e --mpv-conf <file>`, per-step frame metrics,
    `bun run e2e compare`).
-7. **Previews and posters through a second libmpv core**, in the order given
+9. **Previews and posters through a second libmpv core**, in the order given
    under "Previews and posters (planned)".
-8. **Near the end, two checks deferred on purpose**:
+10. **Near the end, two checks deferred on purpose**:
     - the colour table on an SDR Windows desktop (Windows HDR off, switched
       by hand), for viewers without HDR;
     - the official container build of libmpv (WSL) against our native one:
