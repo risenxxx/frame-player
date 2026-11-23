@@ -39,7 +39,11 @@ The renderer is gpu-next through the render API on both platforms: D3D11 on
 Windows, and a Vulkan render API of our own on macOS. The reasons, the
 measurements and the synchronisation rules are in
 [native-frames.md](native-frames.md), "Decided for version 2". This file does
-not repeat them.
+not repeat them. Decided there since: on macOS the window takes its drawables
+through `NextDrawable`. Whether the picture reaches the screen through
+`<sk-surface>` or Skathi's `<sk-layer>` is still open there, and so is the
+lighter mpv render set (recommended, not decided). How version 2 ships first,
+as a beta beside version 1, is [v2-beta-release.md](v2-beta-release.md).
 
 ### V2-2. Installing and updating through Velopack (decided)
 
@@ -102,12 +106,18 @@ one. For signing:
 Still to run: an update of a bundle in `/Applications` from a standard
 (non-admin) account.
 
-**The update key.** Velopack checks each package against the SHA-1 and SHA-256
-in the release feed, which it fetches over HTTPS. It verifies no signature.
+**The update key.** Velopack checks each downloaded package's size, then its
+SHA-256 from the release feed, falling back to SHA-1 only when the feed has no
+SHA-256 (`manager.rs` in the 1.2.161 crate). It fetches the feed over HTTPS and
+verifies no signature.
 Today's Tauri updater checks a minisign signature, so moving as-is is a step
 down: whoever controls the bucket or the CDN would control every installed
 player. Version 2 signs the feed with an ed25519 key and verifies it before
-Velopack reads it. Like today's key, it exists only as a CI secret.
+Velopack reads it. The private key is a CI secret **and** has an encrypted
+offline backup. Today's key exists only as a CI secret, and losing it would
+strand every installed player; version 2 does not repeat that. The same key
+signs the version 1 beta offer and the beta's status file
+([v2-beta-release.md](v2-beta-release.md)).
 
 **Windows signing** is unchanged and still missing. Setup is unsigned, so
 SmartScreen says "Unknown publisher" however good the splash looks. The
@@ -119,14 +129,25 @@ candidates:
 `vpk pack` signs Setup, `Update.exe` and our binaries through a signing
 command we give it.
 
-**Moving version 1 installations.** The last Tauri release is a bridge:
+**Moving version 1 installations.** The last Tauri release is a bridge. It runs
+one staged, restartable cutover with a journal, described step by step in
+[v2-beta-release.md](v2-beta-release.md), "The cutover". The order matters,
+because version 1's uninstaller deletes `.portable`, can unregister the shell
+handler, and removes `.data` when its "delete app data" box is set
+(`installer-hooks.nsh`, `NSIS_HOOK_PREUNINSTALL`):
 
-- it downloads Velopack's Setup, runs it silently, and removes the NSIS
-  installation through its own uninstaller;
-- a copy installed into a folder the viewer chose is reinstalled into that same
-  folder with `--installto`, not moved to `%LocalAppData%`;
-- a portable copy is replaced by the version 2 portable zip in place, keeping
-  `.portable` and `.data/`;
+- preflight: classify the copy, validate the target, and download and verify
+  (SHA-256 from signed metadata) both version 2 and version 1's own installer,
+  for rollback;
+- move `.data`, `.portable` and any user files out of the uninstaller's reach;
+- retire NSIS **before** anything is installed in its place. A default
+  installation goes to Velopack's `%LocalAppData%\FramePlayer`, and a copy in a
+  folder the viewer chose goes to a sibling `FramePlayer` on the same drive,
+  so NSIS's folder is never reused. A portable copy is reinstalled in its own
+  folder, which is empty by then;
+- install version 2 and put the moved files back;
+- move the file associations only after version 2 has started and confirmed
+  its data;
 - settings move through V2-3's migration, run from Skathi's `prepare_data_dir`.
 
 **Distribution.** A winget manifest from CI (`wingetcreate`). The Homebrew tap
