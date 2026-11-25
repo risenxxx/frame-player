@@ -19,8 +19,10 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-lib_dir="$repo_root/src-tauri/lib"
-cli="$repo_root/src-tauri/ffmpeg-macos/bin/ffmpeg"
+# Version 1's set by default; version 2's build (build-macos-libs.sh --v2)
+# points both at src-skathi/.
+lib_dir="${MACOS_LIB_DIR:-$repo_root/src-tauri/lib}"
+cli="${MACOS_FFMPEG_CLI:-$repo_root/src-tauri/ffmpeg-macos/bin/ffmpeg}"
 fail=0
 
 say() { printf '  %s %s\n' "$1" "$2"; }

@@ -1,0 +1,454 @@
+diff --git a/include/mpv/render.h b/include/mpv/render.h
+index d55135a2c6..806ed97661 100644
+--- a/include/mpv/render.h
++++ b/include/mpv/render.h
+@@ -463,6 +463,15 @@ typedef enum mpv_render_param_type {
+      * Ignored with MPV_RENDER_API_TYPE_SW.
+      */
+     MPV_RENDER_PARAM_RENDERER = 23,
++    /**
++     * Not in upstream mpv. A second D3D11 target that takes the subtitles and
++     * the OSD of this render, which are then left out of the picture drawn to
++     * MPV_RENDER_PARAM_D3D11_FBO. Valid for mpv_render_context_render(), with
++     * the gpu-next renderer only (the gpu renderer ignores it and leaves the
++     * struct untouched).
++     * Type: mpv_d3d11_overlay_fbo*
++     */
++    MPV_RENDER_PARAM_D3D11_OVERLAY_FBO = 0x4650,
+ } mpv_render_param_type;
+ 
+ /**
+diff --git a/include/mpv/render_d3d11.h b/include/mpv/render_d3d11.h
+index 7fa4c12ce4..84784ede58 100644
+--- a/include/mpv/render_d3d11.h
++++ b/include/mpv/render_d3d11.h
+@@ -111,6 +111,63 @@ typedef struct mpv_d3d11_fbo {
+     void *tex;
+ } mpv_d3d11_fbo;
+ 
++/**
++ * For MPV_RENDER_PARAM_D3D11_OVERLAY_FBO (not in upstream mpv).
++ *
++ * The picture goes to MPV_RENDER_PARAM_D3D11_FBO without subtitles and OSD;
++ * they are laid out for layout_w x layout_h pixels, with the margins of the
++ * picture's layout scaled to that size, and drawn into tex, which shows the
++ * layout from (offset_x, offset_y) on. A picture target smaller than the
++ * element it is shown in can so be paired with text at the element's size.
++ * Subtitles blended into the video (blend-subtitles) stay in the picture.
++ */
++typedef struct mpv_d3d11_overlay_fbo {
++    /**
++     * sizeof(mpv_d3d11_overlay_fbo), for later fields.
++     */
++    size_t struct_size;
++    /**
++     * The texture to draw into, with the requirements of mpv_d3d11_fbo.tex and
++     * an alpha channel. When something is drawn the whole texture is first
++     * cleared to transparent; the result has premultiplied alpha and sRGB
++     * encoded values (BT.709 primaries), whatever the picture's target is.
++     *
++     * NULL: nothing is drawn, the picture still comes without subtitles and
++     * OSD, and rendered says whether there was something to draw (3) or not
++     * (0). layout_w and layout_h are required then. A producer can so keep no
++     * texture while there are no subtitles.
++     *
++     * Type: ID3D11Texture2D*
++     */
++    void *tex;
++    /**
++     * The size subtitles and OSD are laid out for; 0 means the texture's.
++     */
++    int layout_w, layout_h;
++    /**
++     * Where the texture's top left corner is in that layout.
++     */
++    int offset_x, offset_y;
++    /**
++     * Set to 1 to draw even when nothing changed since the last render with
++     * this parameter (a new texture, or one something else wrote to).
++     */
++    int force;
++    /**
++     * Out. 0: there is nothing to draw, the texture was not touched. 1: drawn.
++     * 2: the same as the last time it was drawn, the texture was not touched.
++     * 3: there is something to draw and tex is NULL.
++     * Set the field to -1 before the call to tell a libmpv that ignores the
++     * parameter from one that had nothing to draw.
++     */
++    int rendered;
++    /**
++     * Out, when rendered is not 0: x0, y0, x1, y1 of everything drawn, in
++     * layout pixels, including what fell outside the texture.
++     */
++    int bbox[4];
++} mpv_d3d11_overlay_fbo;
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/video/out/d3d11/libmpv_d3d11.c b/video/out/d3d11/libmpv_d3d11.c
+index fb539e5b63..154e1c9322 100644
+--- a/video/out/d3d11/libmpv_d3d11.c
++++ b/video/out/d3d11/libmpv_d3d11.c
+@@ -23,6 +23,7 @@
+ 
+ struct priv {
+     struct ra_tex *wrapped_tex;
++    struct ra_tex *wrapped_overlay;
+ };
+ 
+ static int init(struct libmpv_gpu_context *ctx, mpv_render_param *params)
+@@ -72,12 +73,46 @@ static int wrap_fbo(struct libmpv_gpu_context *ctx, mpv_render_param *params,
+     return 0;
+ }
+ 
++static int wrap_overlay(struct libmpv_gpu_context *ctx, mpv_render_param *params,
++                        struct ra_tex **out, void **par)
++{
++    struct priv *p = ctx->priv;
++
++    *out = NULL;
++    *par = NULL;
++    mpv_d3d11_overlay_fbo *fbo =
++        get_mpv_render_param(params, MPV_RENDER_PARAM_D3D11_OVERLAY_FBO, NULL);
++    if (!fbo)
++        return 0;
++    if (fbo->struct_size < sizeof(*fbo))
++        return MPV_ERROR_INVALID_PARAMETER;
++    *par = fbo;
++    // No texture: the OSD is left out of the picture and only reported.
++    if (!fbo->tex)
++        return 0;
++
++    ra_tex_free(ctx->ra_ctx->ra, &p->wrapped_overlay);
++    p->wrapped_overlay = ra_d3d11_wrap_tex(ctx->ra_ctx->ra, (ID3D11Resource *)fbo->tex);
++    if (!p->wrapped_overlay)
++        return MPV_ERROR_UNSUPPORTED;
++
++    if (!p->wrapped_overlay->params.render_dst) {
++        MP_ERR(ctx, "Overlay texture was not created with D3D11_BIND_RENDER_TARGET\n");
++        ra_tex_free(ctx->ra_ctx->ra, &p->wrapped_overlay);
++        return MPV_ERROR_INVALID_PARAMETER;
++    }
++
++    *out = p->wrapped_overlay;
++    return 0;
++}
++
+ static void done_frame(struct libmpv_gpu_context *ctx, bool ds)
+ {
+     struct priv *p = ctx->priv;
+ 
+     ra_d3d11_flush(ctx->ra_ctx->ra);
+     ra_tex_free(ctx->ra_ctx->ra, &p->wrapped_tex);
++    ra_tex_free(ctx->ra_ctx->ra, &p->wrapped_overlay);
+ }
+ 
+ static void destroy(struct libmpv_gpu_context *ctx)
+@@ -86,6 +121,7 @@ static void destroy(struct libmpv_gpu_context *ctx)
+ 
+     if (ctx->ra_ctx && ctx->ra_ctx->ra) {
+         ra_tex_free(ctx->ra_ctx->ra, &p->wrapped_tex);
++        ra_tex_free(ctx->ra_ctx->ra, &p->wrapped_overlay);
+         // ra_d3d11 frees its own struct from inside its destroy callback.
+         ctx->ra_ctx->ra->fns->destroy(ctx->ra_ctx->ra);
+         ctx->ra_ctx->ra = NULL;
+@@ -96,6 +132,7 @@ const struct libmpv_gpu_context_fns libmpv_gpu_context_d3d11 = {
+     .api_name   = MPV_RENDER_API_TYPE_D3D11,
+     .init       = init,
+     .wrap_fbo   = wrap_fbo,
++    .wrap_overlay = wrap_overlay,
+     .done_frame = done_frame,
+     .destroy    = destroy,
+ };
+diff --git a/video/out/gpu/libmpv_gpu.h b/video/out/gpu/libmpv_gpu.h
+index dafe6f0d6b..3063198d95 100644
+--- a/video/out/gpu/libmpv_gpu.h
++++ b/video/out/gpu/libmpv_gpu.h
+@@ -29,6 +29,11 @@ struct libmpv_gpu_context_fns {
+     // This does not need to care about generic attributes, like flipping.
+     int (*wrap_fbo)(struct libmpv_gpu_context *ctx, mpv_render_param *params,
+                     struct ra_tex **out);
++    // Optional. Wrap the texture of the backend's overlay parameter, if the
++    // params have one: *out is NULL without it. *par is the API user's struct.
++    // The object is valid until the next wrap_overlay() or done_frame().
++    int (*wrap_overlay)(struct libmpv_gpu_context *ctx, mpv_render_param *params,
++                        struct ra_tex **out, void **par);
+     // Signal that the ra_tex object obtained with wrap_fbo is no longer used.
+     // For certain backends, this might also be used to signal the end of
+     // rendering (like OpenGL doing weird crap).
+diff --git a/video/out/gpu_next/libmpv_gpu_next.c b/video/out/gpu_next/libmpv_gpu_next.c
+index 6914278bd4..4dc43c4126 100644
+--- a/video/out/gpu_next/libmpv_gpu_next.c
++++ b/video/out/gpu_next/libmpv_gpu_next.c
+@@ -15,8 +15,12 @@
+  * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#include "config.h"
+ #include "context.h"
+ #include "video.h"
++#if HAVE_D3D11
++#include "mpv/render_d3d11.h"
++#endif
+ #include "misc/bstr.h"
+ #include "video/hwdec.h"
+ #include "video/mp_image.h"
+@@ -162,6 +166,40 @@ static int render(struct render_backend *ctx, mpv_render_param *params,
+         return MPV_ERROR_UNSUPPORTED;
+     }
+ 
++    // Subtitles and OSD into a target of their own (D3D11 only).
++    struct mppl_video_overlay_target overlay = {0};
++    void *overlay_par = NULL;
++    if (p->context->fns->wrap_overlay) {
++        struct ra_tex *otex;
++        err = p->context->fns->wrap_overlay(p->context, params, &otex, &overlay_par);
++        if (err >= 0 && otex) {
++            overlay.fbo = gpu_ctx_wrap_ra_tex(gpu, ra, otex);
++            if (!overlay.fbo)
++                err = MPV_ERROR_UNSUPPORTED;
++        }
++        if (err < 0) {
++            gpu_ctx_unwrap_ra_tex(gpu, ra, &fbo);
++            p->context->fns->done_frame(p->context, frame->display_synced);
++            return err;
++        }
++    }
++#if HAVE_D3D11
++    mpv_d3d11_overlay_fbo *opar = overlay_par;
++    if (opar && !overlay.fbo && (opar->layout_w <= 0 || opar->layout_h <= 0)) {
++        gpu_ctx_unwrap_ra_tex(gpu, ra, &fbo);
++        p->context->fns->done_frame(p->context, frame->display_synced);
++        return MPV_ERROR_INVALID_PARAMETER;
++    }
++    if (opar) {
++        overlay.layout_w = opar->layout_w > 0 ? opar->layout_w : overlay.fbo->params.w;
++        overlay.layout_h = opar->layout_h > 0 ? opar->layout_h : overlay.fbo->params.h;
++        overlay.offset_x = opar->offset_x;
++        overlay.offset_y = opar->offset_y;
++        overlay.force = opar->force;
++        mppl_video_set_overlay_target(p->renderer, &overlay);
++    }
++#endif
++
+     int depth = GET_MPV_RENDER_PARAM(params, MPV_RENDER_PARAM_DEPTH, int, 0);
+     int fbo_depth = fbo->params.format->component_depth[0];
+     struct pl_swapchain_frame target = {
+@@ -183,6 +221,15 @@ static int render(struct render_backend *ctx, mpv_render_param *params,
+     struct mp_image_params target_params;
+     mppl_video_render_frame(p->renderer, frame, &target, depth, NULL, &target_params);
+ 
++#if HAVE_D3D11
++    if (opar) {
++        mppl_video_set_overlay_target(p->renderer, NULL);
++        opar->rendered = overlay.rendered;
++        memcpy(opar->bbox, overlay.bbox, sizeof(opar->bbox));
++        if (overlay.fbo)
++            gpu_ctx_unwrap_ra_tex(gpu, ra, &overlay.fbo);
++    }
++#endif
+     gpu_ctx_unwrap_ra_tex(gpu, ra, &fbo);
+     p->context->fns->done_frame(p->context, frame->display_synced);
+ 
+diff --git a/video/out/gpu_next/video.c b/video/out/gpu_next/video.c
+index 9d3826f624..0daac1447a 100644
+--- a/video/out/gpu_next/video.c
++++ b/video/out/gpu_next/video.c
+@@ -63,6 +63,7 @@ struct overlay_state {
+     struct osd_entry entries[MAX_OSD_PARTS];
+     struct pl_overlay *overlays;
+     int num_overlays;
++    uint64_t signature; // of what the last update_overlays() produced
+ };
+ 
+ struct scaler_params {
+@@ -133,6 +134,8 @@ struct mppl_video {
+     struct mp_rect src, dst;
+     struct mp_osd_res osd_res;
+     struct overlay_state osd_state;
++    struct mppl_video_overlay_target *overlay_target;
++    uint64_t overlay_signature;
+ 
+     uint64_t last_id;
+     uint64_t osd_sync;
+@@ -528,11 +531,15 @@ static void update_overlays(struct mppl_video *p, struct mp_osd_res res,
+     struct sub_bitmap_list *subs = osd_render(p->osd, res, pts, flags, mp_draw_sub_formats);
+ 
+     state->num_overlays = 0;
++    state->signature = 0xcbf29ce484222325ull;
+ 
+     for (int n = 0; n < subs->num_items; n++) {
+         const struct sub_bitmaps *item = subs->items[n];
+         if (!item->num_parts || !item->packed)
+             continue;
++        const uint64_t sig[3] = { item->render_index, item->change_id, item->num_parts };
++        for (int i = 0; i < 3; i++)
++            state->signature = (state->signature ^ sig[i]) * 0x100000001b3ull;
+         struct osd_entry *entry = &state->entries[item->render_index];
+         if (!upload_overlay_tex(p, entry, item))
+             break;
+@@ -1552,6 +1559,97 @@ bool mppl_video_get_hdr_metadata(struct mppl_video *p, struct pl_hdr_metadata *o
+     return pl_renderer_get_hdr_metadata(p->rr, out);
+ }
+ 
++void mppl_video_set_overlay_target(struct mppl_video *p,
++                                   struct mppl_video_overlay_target *target)
++{
++    p->overlay_target = target;
++}
++
++// The OSD of this frame for the overlay target: laid out for its layout size
++// with the margins of the picture's layout scaled to it, and moved so that
++// the texture's corner is the origin. Fills in bbox, and rendered with 0
++// (nothing to draw), 2 (what the texture already holds) or 1 (to be drawn).
++static void update_overlay_target(struct mppl_video *p, struct vo_frame *frame,
++                                  const struct pl_swapchain_frame *swframe,
++                                  int flags, struct pl_frame *out)
++{
++    struct mppl_video_overlay_target *ot = p->overlay_target;
++    float sx = ot->layout_w / (float)swframe->fbo->params.w;
++    float sy = ot->layout_h / (float)swframe->fbo->params.h;
++    struct mp_osd_res res = p->osd_res;
++    res.w = ot->layout_w;
++    res.h = ot->layout_h;
++    res.ml = lrintf(res.ml * sx);
++    res.mr = lrintf(res.mr * sx);
++    res.mt = lrintf(res.mt * sy);
++    res.mb = lrintf(res.mb * sy);
++
++    float ref_luma = get_ref_luma(p);
++    if (ot->fbo) {
++        int depth = ot->fbo->params.format->component_depth[0];
++        pl_frame_from_swapchain(out, &(struct pl_swapchain_frame) {
++            .fbo = ot->fbo,
++            .color_repr = {
++                .sys = PL_COLOR_SYSTEM_RGB,
++                .levels = PL_COLOR_LEVELS_FULL,
++                .alpha = PL_ALPHA_PREMULTIPLIED,
++                .bits = { .sample_depth = depth, .color_depth = depth },
++            },
++            .color_space = pl_color_space_srgb,
++        });
++        // What update_overlays() gives SDR overlays: no mapping between the two.
++        if (ref_luma)
++            out->color.hdr.max_luma = ref_luma;
++    }
++
++    update_overlays(p, res, flags, PL_OVERLAY_COORDS_DST_FRAME, &p->osd_state,
++                    out, frame->current,
++                    frame->current ? frame->current->params.stereo3d : 0, ref_luma);
++
++    int bbox[4] = { INT_MAX, INT_MAX, INT_MIN, INT_MIN };
++    int parts = 0;
++    for (int n = 0; n < out->num_overlays; n++) {
++        const struct pl_overlay *ol = &out->overlays[n];
++        for (int i = 0; i < ol->num_parts; i++) {
++            struct pl_overlay_part *part = (struct pl_overlay_part *)&ol->parts[i];
++            bbox[0] = MPMIN(bbox[0], (int)floorf(part->dst.x0));
++            bbox[1] = MPMIN(bbox[1], (int)floorf(part->dst.y0));
++            bbox[2] = MPMAX(bbox[2], (int)ceilf(part->dst.x1));
++            bbox[3] = MPMAX(bbox[3], (int)ceilf(part->dst.y1));
++            part->dst.x0 -= ot->offset_x;
++            part->dst.x1 -= ot->offset_x;
++            part->dst.y0 -= ot->offset_y;
++            part->dst.y1 -= ot->offset_y;
++            parts++;
++        }
++    }
++    if (!parts) {
++        out->num_overlays = 0;
++        ot->rendered = 0;
++        memset(ot->bbox, 0, sizeof(ot->bbox));
++        p->overlay_signature = 0;
++        return;
++    }
++    memcpy(ot->bbox, bbox, sizeof(bbox));
++    if (!ot->fbo) {
++        // Something to draw and nothing to draw it into.
++        ot->rendered = 3;
++        p->overlay_signature = 0;
++        return;
++    }
++
++    uint64_t sig = p->osd_state.signature;
++    const uint64_t more[] = {
++        res.w, res.h, res.ml, res.mr, res.mt, res.mb, ot->offset_x, ot->offset_y,
++        ot->fbo->params.w, ot->fbo->params.h, (uint64_t)(ref_luma * 16),
++    };
++    for (int i = 0; i < MP_ARRAY_SIZE(more); i++)
++        sig = (sig ^ more[i]) * 0x100000001b3ull;
++    sig |= 1; // never 0, which stands for "nothing drawn"
++    ot->rendered = (!ot->force && sig == p->overlay_signature) ? 2 : 1;
++    p->overlay_signature = sig;
++}
++
+ void mppl_video_skip_frame(struct mppl_video *p, struct vo_frame *frame)
+ {
+     struct frame_params fpar = get_frame_params(p, frame);
+@@ -1643,10 +1741,15 @@ bool mppl_video_render_frame(struct mppl_video *p, struct vo_frame *frame,
+ #endif
+     }
+     stats_time_start(p->stats, "osd-update");
+-    update_overlays(p, p->osd_res,
+-                    (frame->current && opts->blend_subs) ? OSD_DRAW_OSD_ONLY : 0,
+-                    PL_OVERLAY_COORDS_DST_FRAME, &p->osd_state, &target, frame->current,
+-                    frame->current ? frame->current->params.stereo3d : 0, get_ref_luma(p));
++    int osd_flags = (frame->current && opts->blend_subs) ? OSD_DRAW_OSD_ONLY : 0;
++    struct pl_frame overlay_frame = {0};
++    if (p->overlay_target) {
++        update_overlay_target(p, frame, swframe, osd_flags, &overlay_frame);
++    } else {
++        update_overlays(p, p->osd_res, osd_flags,
++                        PL_OVERLAY_COORDS_DST_FRAME, &p->osd_state, &target, frame->current,
++                        frame->current ? frame->current->params.stereo3d : 0, get_ref_luma(p));
++    }
+     stats_time_end(p->stats, "osd-update");
+     apply_crop(&target, p->dst, swframe->fbo->params.w, swframe->fbo->params.h);
+     update_tm_viz(&pars->color_map_params, &target);
+@@ -1756,6 +1859,18 @@ bool mppl_video_render_frame(struct mppl_video *p, struct vo_frame *frame,
+         goto done;
+     }
+ 
++    // The OSD alone, over transparent black.
++    if (p->overlay_target && p->overlay_target->rendered == 1) {
++        struct pl_render_params oparams = pl_render_fast_params;
++        oparams.border = PL_CLEAR_COLOR;
++        oparams.background_transparency = 1.0;
++        if (!pl_render_image(p->rr, NULL, &overlay_frame, &oparams)) {
++            MP_ERR(p, "Failed rendering the overlay target!\n");
++            p->overlay_target->rendered = 0;
++            p->overlay_signature = 0;
++        }
++    }
++
+     struct pl_frame ref_frame;
+     pl_frames_infer_mix(p->rr, &mix, &target, &ref_frame);
+ 
+diff --git a/video/out/gpu_next/video.h b/video/out/gpu_next/video.h
+index 2dd9b4135a..edd9660e35 100644
+--- a/video/out/gpu_next/video.h
++++ b/video/out/gpu_next/video.h
+@@ -70,6 +70,22 @@ void mppl_video_begin_frame(struct mppl_video *p, struct vo_frame *frame,
+ enum mppl_video_hint mppl_video_get_target_hint(struct mppl_video *p, struct vo_frame *frame,
+                                                 struct pl_color_space *out_hint);
+ void mppl_video_skip_frame(struct mppl_video *p, struct vo_frame *frame);
++
++// A target of their own for the OSD and the subtitles that are not blended
++// into the video (libmpv's render API). See mpv_d3d11_overlay_fbo.
++struct mppl_video_overlay_target {
++    pl_tex fbo;
++    int layout_w, layout_h;     // the size the OSD is laid out for
++    int offset_x, offset_y;     // the texture's top left corner in the layout
++    bool force;                 // draw even when nothing changed
++    // out
++    int rendered;               // 0: nothing to draw, 1: drawn, 2: unchanged
++    int bbox[4];                // of everything drawn, in layout pixels
++};
++// The target of the next mppl_video_render_frame() calls, or NULL: the OSD
++// goes into the frame's target again.
++void mppl_video_set_overlay_target(struct mppl_video *p,
++                                   struct mppl_video_overlay_target *target);
+ bool mppl_video_render_frame(struct mppl_video *p, struct vo_frame *frame,
+                              const struct pl_swapchain_frame *swframe, int fb_depth,
+                              const struct pl_color_space *hint,

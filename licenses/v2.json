@@ -1,0 +1,88 @@
+{
+  "$comment": "Version 2's notices (src-skathi/THIRD-PARTY-NOTICES.md, rendered by `node scripts/gen-notices.mjs`). `projects` is what version 2 ships besides its Rust crates and JavaScript packages: an entry with `from` takes version 1's entry of that id in manifest.json (license, text, links, libs) and may replace its `note`; an entry without it is complete here. On macOS every dylib in src-skathi/lib must be covered by some entry's `libs`, as for version 1. `patches` describes every file in src-skathi/patches/, and the gate fails when the two disagree. `buildEdits` are changes the build makes to somebody else's build files. `elections` names the license taken where a crate offers a choice that includes a GPL one, so that the notices state the one used. The crate and package snapshots are licenses/v2-rust-crates.json and licenses/v2-js-deps.json, refreshed with `node scripts/gen-notices.mjs --refresh-v2`.",
+  "projects": [
+    {
+      "from": "mpv",
+      "note": "Built with -Dgpl=false, which is what makes it LGPL rather than GPL-2.0-or-later, from the head of mpv pull request #18845 with one patch of ours per platform (listed above). macOS: scripts/build-macos-libs.sh --v2, a dynamic library beside its dependencies. Windows: see \"Windows\" above."
+    },
+    {
+      "from": "ffmpeg",
+      "note": "Built without --enable-gpl, --enable-nonfree or --enable-version3. macOS: by scripts/build-macos-libs.sh --v2, the same version and configuration as version 1's. Windows: version 1's FFmpeg DLLs for the thumbnail decoder, and a second copy linked statically into libmpv-2.dll (see \"Windows\" above)."
+    },
+    { "from": "libass" },
+    { "from": "freetype" },
+    { "from": "harfbuzz" },
+    { "from": "fribidi" },
+    {
+      "from": "libplacebo",
+      "note": "Built from commit f2e04cb1840ef1f1586b71050bff40b04cbd8d91 (macOS), newer than any release, with the one change to its build file listed above."
+    },
+    {
+      "id": "glslang",
+      "name": "glslang",
+      "license": "BSD-3-Clause AND BSD-2-Clause AND MIT AND Apache-2.0 AND GPL-3.0-or-later WITH Bison-exception-2.2",
+      "text": "glslang",
+      "url": "https://github.com/KhronosGroup/glslang",
+      "source": "https://github.com/KhronosGroup/glslang",
+      "libs": ["libglslang", "libglslang-default-resource-limits"],
+      "platforms": ["macos"],
+      "note": "libplacebo compiles its shaders with it. The one GPL-3.0 part is the parser Bison generated, which the Bison exception (2.2) lets be distributed under any terms when it is part of a larger work that is not itself a parser generator, so it puts no GPL obligation on what links it."
+    },
+    { "from": "lcms2" },
+    { "from": "uchardet" },
+    { "from": "luajit" },
+    { "from": "dav1d" },
+    { "from": "libunibreak" },
+    { "from": "molten-vk" },
+    { "from": "vulkan-loader" },
+    {
+      "id": "vcruntime",
+      "name": "Microsoft Visual C++ runtime",
+      "license": "LicenseRef-MSVC-Redistributable",
+      "text": "msvc-redist",
+      "url": "https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files",
+      "source": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+      "libs": ["msvcp140", "vcruntime140", "vcruntime140_1"],
+      "platforms": ["windows"],
+      "note": "msvcp140.dll, vcruntime140.dll and vcruntime140_1.dll from Visual Studio's redistributable folder, beside libmpv-2.dll, which links the runtime dynamically. Distributable under the Visual Studio license terms; not open source."
+    },
+    { "from": "libxml2", "platforms": ["windows"], "note": "Linked statically into libmpv-2.dll on Windows (FFmpeg's DASH demuxer)." },
+    { "from": "rubik" },
+    { "from": "artcnn" },
+    { "from": "anime4k" }
+  ],
+  "elections": {
+    "self_cell": "Apache-2.0"
+  },
+  "patches": [
+    {
+      "file": "mpv-vulkan-render-api.diff",
+      "project": "mpv",
+      "platform": "macOS",
+      "base": "mpv pull request #18845 at aade20e8cd7cbe43e39f4ffc4e00da8e044119c1",
+      "build": "scripts/build-macos-libs.sh --v2 applies it",
+      "summary": "Adds MPV_RENDER_API_TYPE_VULKAN to the render API (include/mpv/render_vk.h, video/out/vulkan/libmpv_vk.c): mpv renders with the gpu-next renderer into Vulkan images the host application owns, on MoltenVK. It also adds an overlay target, so that subtitles and the OSD can be drawn apart from the picture, and a picture layout in which the whole of the element's layout is scaled to the picture image."
+    },
+    {
+      "file": "mpv-d3d11-overlay.diff",
+      "project": "mpv",
+      "platform": "Windows",
+      "base": "mpv pull request #18845 at a98335f5 (v0.42.0-111-ga98335f57)",
+      "build": "applied by hand before the build described under \"Windows\"; no script in this repository applies it yet",
+      "summary": "Adds MPV_RENDER_PARAM_D3D11_OVERLAY_FBO to the D3D11 render API (include/mpv/render_d3d11.h): subtitles and the OSD are drawn, for a size the host application names, into a second texture and left out of the picture."
+    }
+  ],
+  "buildEdits": [
+    {
+      "project": "libplacebo",
+      "file": "src/glsl/meson.build",
+      "build": "scripts/build-macos-libs-v2.sh",
+      "summary": "One line of the build file: the lookup of the glslang library is given the same search directories (`dirs: vulkan_lib_dirs`) as its other glslang libraries, so that it finds the glslang built beside it. No source code is changed."
+    }
+  ],
+  "windows": [
+    "On Windows, mpv and the libraries it uses are one file, `libmpv-2.dll`, beside the executable. It is built from mpv pull request #18845 at commit a98335f5 (`v0.42.0-111-ga98335f57`) with `src-skathi/patches/mpv-d3d11-overlay.diff` applied, by mpv's own Windows CI recipe at that commit (clang and meson, every dependency as a static meson subproject, among them FFmpeg, libplacebo, libass, FreeType, HarfBuzz, FriBidi, dav1d and libxml2), configured with `-Dgpl=false -Dffmpeg:gpl=disabled`. **There is no script in this repository that builds this DLL yet**; the commit, the patch and the options above are the complete recipe.",
+    "The libraries inside `libmpv-2.dll` are linked statically into it, and the DLL as a whole is an LGPL-2.1-or-later library (mpv built with `-Dgpl=false`). To use a modified version of any of them, rebuild `libmpv-2.dll` from the sources above with your change and put it in place of the shipped one, beside the executable; the application loads whatever `libmpv-2.dll` is there, or the file the `MPV_DLL` environment variable names. The application talks to it only through mpv's public C API (`client.h`, `render.h`, `render_d3d11.h` with the patch above), so a rebuilt DLL needs no change to the application.",
+    "The FFmpeg DLLs beside it (`avcodec`, `avformat`, `avutil`, `swscale`, `swresample`, `avfilter`, `avdevice`) are version 1's, loaded by the thumbnail decoder, and may be replaced the same way."
+  ]
+}

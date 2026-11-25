@@ -1,0 +1,1242 @@
+diff --git a/include/mpv/render_vk.h b/include/mpv/render_vk.h
+new file mode 100644
+index 000000000..bb4691dfa
+--- /dev/null
++++ b/include/mpv/render_vk.h
+@@ -0,0 +1,290 @@
++/* Copyright (C) 2026 the mpv developers
++ *
++ * Permission to use, copy, modify, and/or distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++#ifndef MPV_CLIENT_API_RENDER_VK_H_
++#define MPV_CLIENT_API_RENDER_VK_H_
++
++#include <stdint.h>
++#include <vulkan/vulkan_core.h>
++
++#include "render.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/**
++ * Vulkan backend (DOWNSTREAM DRAFT, parameter IDs not reserved upstream)
++ * ----------------------------------------------------------------------
++ *
++ * The API user owns the Vulkan instance, the device, the queues, the target
++ * images and the semaphores. mpv borrows them; it never creates or destroys
++ * any of them. Only the gpu-next renderer supports this API:
++ * MPV_RENDER_PARAM_RENDERER must be omitted or "gpu-next"; "gpu" fails with
++ * MPV_ERROR_NOT_IMPLEMENTED.
++ *
++ * Creation
++ * --------
++ *
++ *   MPV_RENDER_PARAM_API_TYPE         = MPV_RENDER_API_TYPE_VULKAN
++ *   MPV_RENDER_PARAM_VULKAN_INIT_PARAMS = mpv_vulkan_init_params*
++ *
++ * The device must be Vulkan 1.2 or newer and must have been created with the
++ * timelineSemaphore and hostQueryReset features enabled.
++ * Enable synchronization2 (core in 1.3, or VK_KHR_synchronization2) as
++ * well: without it libplacebo's legacy barrier path records barriers with
++ * srcStageMask = 0, which the validation layers reject. Everything the
++ * device was created with (extensions, the feature chain) must be described
++ * in mpv_vulkan_init_params, because the renderer chooses its code paths from
++ * it. The objects must stay alive until mpv_render_context_free() returns.
++ *
++ * Rendering
++ * ---------
++ *
++ * mpv_render_context_render() takes MPV_RENDER_PARAM_VULKAN_FBO, which names
++ * one 2D, single-sampled, single-layer color image and how to synchronize
++ * with it:
++ *
++ *   1. mpv waits on (acquire_semaphore, acquire_value) on the GPU before it
++ *      touches the image; with no acquire semaphore the image must be ready
++ *      when the call is made. `layout` is the image's layout once the wait is
++ *      satisfied (VK_IMAGE_LAYOUT_UNDEFINED discards the contents).
++ *   2. mpv records and submits its rendering.
++ *   3. mpv submits a transition to `final_layout` and a signal of
++ *      (release_semaphore, release_value). When the call returns successfully
++ *      that signal has been submitted to the queue, so the API user may wait
++ *      on it from another queue or API. The image belongs to the API user
++ *      again from that point on the GPU timeline.
++ *
++ * Both semaphores must be timeline semaphores (they may be the same one, with
++ * release_value > acquire_value). mpv does not wait on the CPU for the GPU.
++ *
++ * Errors: if mpv_render_context_render() fails with
++ * MPV_ERROR_INVALID_PARAMETER or MPV_ERROR_UNSUPPORTED, mpv did not touch the
++ * image and submitted nothing (the acquire value has not been consumed).
++ * MPV_ERROR_GENERIC means rendering failed after the image was acquired; mpv
++ * still tried to submit the release signal, and the API user must not rely on
++ * it: retire the image (below) before reusing or destroying it. After a lost
++ * device the render context must be destroyed.
++ *
++ * MPV_RENDER_PARAM_SKIP_RENDERING: mpv ignores MPV_RENDER_PARAM_VULKAN_FBO
++ * (and MPV_RENDER_PARAM_VULKAN_OVERLAY_FBO) entirely. Nothing is waited on,
++ * nothing is signalled, the acquire value is not consumed and the image's
++ * contents and layout are unchanged; the call returns 0. A skip is not a
++ * release: never wait for release_value after one.
++ *
++ * Image identity and retirement
++ * -----------------------------
++ *
++ * mpv keeps a small cache of wrappers keyed by the VkImage handle and its
++ * description, so rendering into a ring of images does not re-wrap each one
++ * every frame. A Vulkan handle can be reused by the driver after the image is
++ * destroyed, so before destroying (or re-creating) a target image the API
++ * user must retire it:
++ *
++ *   mpv_render_context_set_parameter(ctx, (mpv_render_param){
++ *       MPV_RENDER_PARAM_VULKAN_RETIRE, &(VkImage){image} });
++ *
++ * Retiring waits until the GPU has finished all work mpv submitted and until
++ * the last release value mpv submitted for each retired image is visible
++ * (vkGetSemaphoreCounterValue) - a CPU wait; do it outside the frame loop -
++ * then forgets the image. Work of the API user's own consumers (a Metal copy
++ * waiting on the release value) is not covered: wait for it separately before
++ * freeing the image. Call it from
++ * the thread that renders, never concurrently with
++ * mpv_render_context_render(). A NULL data
++ * pointer, or VK_NULL_HANDLE, retires every image. After it returns, mpv holds
++ * no reference to the image or to any semaphore that was passed with it, so
++ * both may be destroyed once the API user's own consumers are done.
++ *
++ * Threading
++ * ---------
++ *
++ * The general rules of render.h apply. mpv submits to the queue given in the
++ * init params from the render thread and, with hardware decoding, uploads
++ * from other threads. If the API user submits to the same VkQueue, it must
++ * provide lock_queue/unlock_queue; otherwise mpv locks the queue internally
++ * and the API user must not touch it.
++ */
++
++#define MPV_RENDER_API_TYPE_VULKAN "vulkan"
++
++/**
++ * Parameter IDs of this draft. They are deliberately far away from the
++ * upstream range so that a later upstream assignment cannot collide.
++ */
++enum {
++    /**
++     * Required for mpv_render_context_create() with MPV_RENDER_API_TYPE_VULKAN.
++     * Type: mpv_vulkan_init_params*
++     */
++    MPV_RENDER_PARAM_VULKAN_INIT_PARAMS = 0x7601,
++    /**
++     * The target of one mpv_render_context_render() call.
++     * Type: mpv_vulkan_fbo*
++     */
++    MPV_RENDER_PARAM_VULKAN_FBO = 0x7602,
++    /**
++     * For mpv_render_context_set_parameter(): wait for mpv's GPU work and
++     * forget one image (or every image with NULL / VK_NULL_HANDLE).
++     * Type: VkImage* (may be NULL)
++     */
++    MPV_RENDER_PARAM_VULKAN_RETIRE = 0x7603,
++    /**
++     * Optional, with MPV_RENDER_PARAM_VULKAN_FBO: a second, element-sized
++     * target for subtitles and the OSD. See mpv_vulkan_overlay_fbo.
++     * Type: mpv_vulkan_overlay_fbo* (mpv writes its output fields)
++     */
++    MPV_RENDER_PARAM_VULKAN_OVERLAY_FBO = 0x7604,
++};
++
++typedef struct mpv_vulkan_init_params {
++    /** Size of this struct, for versioning. Set to sizeof(mpv_vulkan_init_params). */
++    size_t struct_size;
++
++    VkInstance instance;
++    /** The vkGetInstanceProcAddr the instance was created through (required). */
++    PFN_vkGetInstanceProcAddr get_instance_proc_addr;
++    VkPhysicalDevice physical_device;
++    VkDevice device;
++    /**
++     * The API version the instance and device were created for (at least
++     * VK_API_VERSION_1_2). mpv uses no functionality above it.
++     */
++    uint32_t api_version;
++
++    /** All device extensions the device was created with. */
++    const char *const *extensions;
++    int num_extensions;
++    /**
++     * The feature chain the device was created with (VkPhysicalDeviceFeatures2
++     * and its pNext structs). Must include timelineSemaphore and
++     * hostQueryReset.
++     */
++    const VkPhysicalDeviceFeatures2 *features;
++
++    /** A queue family with graphics (and ideally compute) support. */
++    uint32_t queue_family_index;
++    /** How many queues of that family the device was created with (>= 1). */
++    uint32_t queue_count;
++
++    /**
++     * Optional. If the API user submits to the same queues, mpv calls these
++     * around each of its own queue operations. Both or neither must be set.
++     */
++    void (*lock_queue)(void *ctx, uint32_t queue_family, uint32_t queue_index);
++    void (*unlock_queue)(void *ctx, uint32_t queue_family, uint32_t queue_index);
++    void *queue_ctx;
++} mpv_vulkan_init_params;
++
++typedef struct mpv_vulkan_fbo {
++    /** Size of this struct, for versioning. Set to sizeof(mpv_vulkan_fbo). */
++    size_t struct_size;
++
++    /**
++     * A 2D image with one mip level, one layer and one sample, created on the
++     * device from the init params with VK_SHARING_MODE_EXCLUSIVE and
++     * VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT (TRANSFER_DST and SAMPLED help some
++     * code paths). Any format libplacebo can render to; RGBA16F keeps values
++     * above 1.0 for HDR.
++     */
++    VkImage image;
++    int w, h;
++    VkFormat format;
++    /** The usage flags the image was created with. */
++    VkImageUsageFlags usage;
++
++    /** Layout when the acquire wait is satisfied; UNDEFINED discards contents. */
++    VkImageLayout layout;
++    /** Layout the image is left in when the release signal fires. */
++    VkImageLayout final_layout;
++    /**
++     * Queue family ownership transfer. VK_QUEUE_FAMILY_IGNORED (the usual
++     * value) does none; VK_QUEUE_FAMILY_EXTERNAL acquires from and releases to
++     * an external API, which then has to perform the matching transfers.
++     */
++    uint32_t queue_family;
++
++    /** Optional timeline semaphore mpv waits on before using the image. */
++    VkSemaphore acquire_semaphore;
++    uint64_t acquire_value;
++    /** Required timeline semaphore mpv signals when it is done with the image. */
++    VkSemaphore release_semaphore;
++    uint64_t release_value;
++} mpv_vulkan_fbo;
++
++/**
++ * Overlay target (MPV_RENDER_PARAM_VULKAN_OVERLAY_FBO)
++ * ---------------------------------------------------
++ *
++ * Splits a frame into a picture and an overlay, so that the picture can be
++ * rendered at the video's size while subtitles and the OSD stay sharp at the
++ * size of the element that shows them.
++ *
++ * With this parameter, mpv lays the frame out for an element of
++ * target.w x target.h (zoom, pan, crop, rotation, letterboxing, subtitle
++ * placement: all as if that were the render size). Then:
++ *
++ *   1. The picture pass renders the visible part of the video (source_rect)
++ *      into the whole MPV_RENDER_PARAM_VULKAN_FBO image, whatever its size,
++ *      and draws no OSD or subtitles into it (blend-subtitles still blends
++ *      into the picture). Its release is signalled as usual.
++ *   2. The overlay pass draws the OSD and subtitles into `target`, cleared to
++ *      transparent black. The result is premultiplied alpha, in the same
++ *      colour space as the picture target (same target-trc/prim/peak), so
++ *      "picture placed at video_rect, then overlay over the whole element"
++ *      (out = overlay + (1 - overlay.a) * picture) reproduces a single pass
++ *      as long as both are blended in that same space.
++ *   3. If there is nothing to draw, `rendered` is 0 and `target` was not
++ *      touched: no acquire was consumed, no release is signalled, and the
++ *      contents are whatever they were. Hide the overlay layer then.
++ *
++ * Both targets follow the rules of mpv_vulkan_fbo; they must be different
++ * images. The overlay release is submitted after the picture's. On an error
++ * return, `rendered` says whether the overlay target was acquired (the
++ * MPV_ERROR_GENERIC rules apply to whichever was).
++ */
++typedef struct mpv_vulkan_overlay_fbo {
++    /** Size of this struct, for versioning. Set to sizeof(mpv_vulkan_overlay_fbo). */
++    size_t struct_size;
++    /** The element-sized target, with its own synchronization. */
++    mpv_vulkan_fbo target;
++
++    /** Out: 1 if `target` was acquired, drawn and released; 0 if untouched. */
++    int rendered;
++    /** Out: where the picture target belongs in the element, in element
++     *  pixels: x0, y0, x1, y1 (clipped to the element). */
++    int video_rect[4];
++    /** Out: the part of the video that the picture target holds, in video
++     *  pixels: x0, y0, x1, y1 (useful to choose the picture target's size). */
++    int source_rect[4];
++    /** In: how the picture pass lays out the MPV_RENDER_PARAM_VULKAN_FBO image.
++     *  MPV_VULKAN_PICTURE_SOURCE (0): the visible part of the video fills the
++     *  whole image (place it at video_rect). MPV_VULKAN_PICTURE_ELEMENT (1): the
++     *  image is the whole element scaled to the image's size, letterbox
++     *  included, with zoom, pan, crop and rotation applied exactly as in the
++     *  overlay: show it stretched over the element. One layout, one transform
++     *  for both images. */
++    int picture_layout;
++} mpv_vulkan_overlay_fbo;
++
++#define MPV_VULKAN_PICTURE_SOURCE 0
++#define MPV_VULKAN_PICTURE_ELEMENT 1
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff --git a/meson.build b/meson.build
+index 74644ca6d..cbe7881a7 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1359,6 +1359,7 @@ if features['vulkan']
+                      'video/out/vulkan/context.c',
+                      'video/out/vulkan/utils.c',
+                      'video/filter/vf_gpu_vulkan.c')
++    sources += files('video/out/vulkan/libmpv_vk.c')
+ endif
+ 
+ if features['vulkan'] and features['android']
+@@ -1854,6 +1855,7 @@ if get_option('libmpv')
+ 
+     headers = ['include/mpv/client.h', 'include/mpv/render.h',
+                'include/mpv/render_d3d11.h', 'include/mpv/render_gl.h',
++               'include/mpv/render_vk.h',
+                'include/mpv/stream_cb.h']
+     install_headers(headers, subdir: 'mpv')
+ 
+diff --git a/video/out/gpu/libmpv_gpu.c b/video/out/gpu/libmpv_gpu.c
+index ab979fb1f..8f54d00e9 100644
+--- a/video/out/gpu/libmpv_gpu.c
++++ b/video/out/gpu/libmpv_gpu.c
+@@ -11,6 +11,9 @@ static const struct libmpv_gpu_context_fns *context_backends[] = {
+ #endif
+ #if HAVE_GL
+     &libmpv_gpu_context_gl,
++#endif
++#if HAVE_VULKAN
++    &libmpv_gpu_context_vulkan,
+ #endif
+     NULL
+ };
+@@ -114,6 +117,8 @@ static int init(struct render_backend *ctx, mpv_render_param *params)
+     int err = libmpv_gpu_context_create(ctx->global, ctx->log, params, &p->context);
+     if (err < 0)
+         return err;
++    if (p->context->fns->gpu_next_only)
++        return MPV_ERROR_NOT_IMPLEMENTED;
+ 
+     p->renderer = gl_video_init(p->context->ra_ctx->ra, ctx->log, ctx->global);
+ 
+diff --git a/video/out/gpu/libmpv_gpu.h b/video/out/gpu/libmpv_gpu.h
+index dafe6f0d6..e46dbedd0 100644
+--- a/video/out/gpu/libmpv_gpu.h
++++ b/video/out/gpu/libmpv_gpu.h
+@@ -2,6 +2,8 @@
+ 
+ #include "video/out/libmpv.h"
+ 
++struct mp_rect;
++
+ struct ra_tex;
+ 
+ struct libmpv_gpu_context {
+@@ -18,6 +20,8 @@ struct libmpv_gpu_context {
+ struct libmpv_gpu_context_fns {
+     // The libmpv API type name, see MPV_RENDER_PARAM_API_TYPE.
+     const char *api_name;
++    // Only the gpu-next renderer can use this context.
++    bool gpu_next_only;
+     // Pretty much works like render_backend_fns.init, except that the
+     // API type is already checked by the caller.
+     // Successful init must set ctx->ra.
+@@ -33,6 +37,31 @@ struct libmpv_gpu_context_fns {
+     // For certain backends, this might also be used to signal the end of
+     // rendering (like OpenGL doing weird crap).
+     void (*done_frame)(struct libmpv_gpu_context *ctx, bool ds);
++    // Optional. Report the size of the target in the params without acquiring
++    // it. If NULL, wrap_fbo() is used, which must then have no side effects.
++    int (*get_target_size)(struct libmpv_gpu_context *ctx,
++                           mpv_render_param *params, int *out_w, int *out_h);
++    // Optional, used instead of done_frame() where present. ok tells whether
++    // rendering succeeded. Returns a libmpv error code: the image could not be
++    // handed back, the device failed, or ok was false.
++    int (*finish_frame)(struct libmpv_gpu_context *ctx, bool ds, bool ok);
++    // Optional. Context-specific mpv_render_context_set_parameter() values.
++    int (*set_parameter)(struct libmpv_gpu_context *ctx, mpv_render_param param);
++    // Optional: a separate, element-sized overlay target (gpu-next only).
++    // overlay_size() returns 0 and the size when the params carry one, 1
++    // when they do not, a libmpv error when it is malformed.
++    int (*overlay_size)(struct libmpv_gpu_context *ctx, mpv_render_param *params,
++                        int *out_w, int *out_h);
++    // Acquire the overlay target (only called when there is something to
++    // draw), and hand it back like finish_frame().
++    int (*wrap_overlay)(struct libmpv_gpu_context *ctx, mpv_render_param *params,
++                        struct ra_tex **out);
++    int (*finish_overlay)(struct libmpv_gpu_context *ctx, bool ok);
++    // Report what happened to the overlay target, and where the video
++    // target's picture goes in the element.
++    void (*overlay_result)(struct libmpv_gpu_context *ctx, mpv_render_param *params,
++                           bool rendered, const struct mp_rect *src,
++                           const struct mp_rect *dst);
+     // Free all data in ctx->priv.
+     void (*destroy)(struct libmpv_gpu_context *ctx);
+ };
+@@ -46,3 +75,4 @@ void libmpv_gpu_context_destroy(struct libmpv_gpu_context **pctx);
+ 
+ extern const struct libmpv_gpu_context_fns libmpv_gpu_context_gl;
+ extern const struct libmpv_gpu_context_fns libmpv_gpu_context_d3d11;
++extern const struct libmpv_gpu_context_fns libmpv_gpu_context_vulkan;
+diff --git a/video/out/gpu_next/context.c b/video/out/gpu_next/context.c
+index 1232b4885..fcd2d4b53 100644
+--- a/video/out/gpu_next/context.c
++++ b/video/out/gpu_next/context.c
+@@ -66,6 +66,14 @@ static bool create_gpu(struct gpu_ctx *ctx, bool probing)
+     if (!ctx->pllog)
+         return false;
+ 
++    // A libplacebo GPU that somebody else created and owns (the render API's
++    // Vulkan context): borrow it. gpu_ctx_destroy() leaves it alone, because
++    // it is neither GL nor D3D11.
++    if (ra_pl_get(ctx->ra_ctx->ra)) {
++        ctx->gpu = ra_pl_get(ctx->ra_ctx->ra);
++        return true;
++    }
++
+     mppl_log_set_probing(ctx->pllog, probing);
+ 
+ #if HAVE_D3D11 && defined(PL_HAVE_D3D11)
+diff --git a/video/out/gpu_next/libmpv_gpu_next.c b/video/out/gpu_next/libmpv_gpu_next.c
+index 6914278bd..b6dedfc86 100644
+--- a/video/out/gpu_next/libmpv_gpu_next.c
++++ b/video/out/gpu_next/libmpv_gpu_next.c
+@@ -83,6 +83,8 @@ static int set_parameter(struct render_backend *ctx, mpv_render_param param)
+         return 0;
+     }
+     default:
++        if (p->context->fns->set_parameter)
++            return p->context->fns->set_parameter(p->context, param);
+         return MPV_ERROR_NOT_IMPLEMENTED;
+     }
+ }
+@@ -135,6 +137,9 @@ static int get_target_size(struct render_backend *ctx, mpv_render_param *params,
+ {
+     struct priv *p = ctx->priv;
+ 
++    if (p->context->fns->get_target_size)
++        return p->context->fns->get_target_size(p->context, params, out_w, out_h);
++
+     struct ra_tex *tex;
+     int err = p->context->fns->wrap_fbo(p->context, params, &tex);
+     if (err < 0)
+@@ -151,6 +156,15 @@ static int render(struct render_backend *ctx, mpv_render_param *params,
+     struct ra *ra = p->context->ra_ctx->ra;
+     pl_gpu gpu = p->gpu_ctx->gpu;
+ 
++    const struct libmpv_gpu_context_fns *fns = p->context->fns;
++    int ovl_w = 0, ovl_h = 0;
++    int ovl = fns->overlay_size ? fns->overlay_size(p->context, params, &ovl_w, &ovl_h) : 1;
++    if (ovl < 0)
++        return ovl;
++    // 1: no overlay target; 0: overlay, picture = source rect; 2: overlay,
++    // picture = the element scaled to the picture target.
++    bool overlay = ovl == 0 || ovl == 2;
++
+     struct ra_tex *tex;
+     int err = p->context->fns->wrap_fbo(p->context, params, &tex);
+     if (err < 0)
+@@ -158,6 +172,8 @@ static int render(struct render_backend *ctx, mpv_render_param *params,
+ 
+     pl_tex fbo = gpu_ctx_wrap_ra_tex(gpu, ra, tex);
+     if (!fbo) {
++        if (p->context->fns->finish_frame)
++            return p->context->fns->finish_frame(p->context, frame->display_synced, false);
+         p->context->fns->done_frame(p->context, frame->display_synced);
+         return MPV_ERROR_UNSUPPORTED;
+     }
+@@ -180,13 +196,52 @@ static int render(struct render_backend *ctx, mpv_render_param *params,
+ 
+     // There is no display to take a color space from and none to hint one to.
+     mppl_video_begin_frame(p->renderer, frame, (struct pl_color_space){0}, 0);
++    mppl_video_set_overlay_mode(p->renderer, overlay ? (ovl == 2 ? 2 : 1) : 0);
+     struct mp_image_params target_params;
+-    mppl_video_render_frame(p->renderer, frame, &target, depth, NULL, &target_params);
++    bool ok = mppl_video_render_frame(p->renderer, frame, &target, depth,
++                                      NULL, &target_params);
+ 
+     gpu_ctx_unwrap_ra_tex(gpu, ra, &fbo);
+-    p->context->fns->done_frame(p->context, frame->display_synced);
++    if (!p->context->fns->finish_frame) {
++        p->context->fns->done_frame(p->context, frame->display_synced);
++        return 0;
++    }
++    err = p->context->fns->finish_frame(p->context, frame->display_synced, ok);
++    if (!overlay)
++        return err;
+ 
+-    return 0;
++    // The second pass: subtitles and the OSD at the element's size. With no
++    // parts the overlay target is not touched at all.
++    bool rendered = false;
++    if (err >= 0 && mppl_video_prepare_overlay(p->renderer, frame) > 0) {
++        struct ra_tex *otex;
++        int oerr = fns->wrap_overlay(p->context, params, &otex);
++        if (oerr < 0) {
++            err = oerr;
++        } else {
++            pl_tex ofbo = gpu_ctx_wrap_ra_tex(gpu, ra, otex);
++            bool ook = false;
++            if (ofbo) {
++                struct pl_swapchain_frame otarget = target;
++                otarget.fbo = ofbo;
++                int odepth = ofbo->params.format->component_depth[0];
++                otarget.color_repr.bits = (struct pl_bit_encoding){
++                    .sample_depth = odepth,
++                    .color_depth = odepth,
++                };
++                ook = mppl_video_render_overlay(p->renderer, frame, &otarget);
++                gpu_ctx_unwrap_ra_tex(gpu, ra, &ofbo);
++            }
++            oerr = fns->finish_overlay(p->context, ook);
++            rendered = oerr >= 0;
++            if (oerr < 0)
++                err = oerr;
++        }
++    }
++    struct mp_rect src, dst;
++    mppl_video_get_rects(p->renderer, &src, &dst);
++    fns->overlay_result(p->context, params, rendered, &src, &dst);
++    return err;
+ }
+ 
+ static struct mp_image *get_image(struct render_backend *ctx, int imgfmt,
+diff --git a/video/out/gpu_next/video.c b/video/out/gpu_next/video.c
+index 9d3826f62..caab1a5f3 100644
+--- a/video/out/gpu_next/video.c
++++ b/video/out/gpu_next/video.c
+@@ -125,6 +125,11 @@ struct mppl_video {
+     pl_log pllog;
+     pl_gpu gpu;
+     pl_renderer rr;
++    // Overlay mode (the render API's separate overlay target): the video
++    // pass fills its whole target and draws no OSD; the OSD and subtitles go
++    // to an element-sized target through their own renderer.
++    int overlay_mode; // 0 off, 1 picture = source rect, 2 picture = scaled element
++    pl_renderer rr_overlay;
+     pl_queue queue;
+     pl_fmt osd_fmt[SUBBITMAP_COUNT];
+     pl_tex *sub_tex;
+@@ -1567,32 +1572,20 @@ void mppl_video_skip_frame(struct mppl_video *p, struct vo_frame *frame)
+     }
+ }
+ 
+-// Render a frame to a target. hint is the color space requested for the
+-// target when hinting is in use, NULL otherwise.
+-bool mppl_video_render_frame(struct mppl_video *p, struct vo_frame *frame,
+-                             const struct pl_swapchain_frame *swframe, int fb_depth,
+-                             const struct pl_color_space *hint,
+-                             struct mp_image_params *target_params)
++// The target frame and its colour space, shared by the video pass and the
++// overlay pass so that both are encoded (and blended) the same way.
++static void setup_target(struct mppl_video *p, struct vo_frame *frame,
++                         const struct pl_swapchain_frame *swframe,
++                         const struct pl_color_space *hint, struct pl_frame *out)
+ {
+-    p->fb_depth = fb_depth;
+-    pl_options pars = p->pars;
+-    pl_gpu gpu = p->gpu;
+     const struct gl_video_opts *opts = p->opts_cache->opts;
+-    struct frame_params fpar = get_frame_params(p, frame);
+-    struct pl_render_params params = fpar.params;
+-    bool can_interpolate = fpar.can_interpolate;
+-    double pts_offset = fpar.pts_offset;
+-
+     bool target_unknown;
+     float target_ref_luma;
+     struct pl_color_space target_csp = get_target_csp(p, &target_unknown, &target_ref_luma);
+ 
+-    bool valid = false;
+-    p->is_interpolated = false;
+-
+     // Calculate target
+-    struct pl_frame target;
+-    pl_frame_from_swapchain(&target, swframe);
++    pl_frame_from_swapchain(out, swframe);
++    struct pl_frame target = *out;
+     bool strict_sw_params = hint && p->next_opts->target_hint_strict;
+     apply_target_options(p, &target, hint ? hint->hdr.min_luma : target_csp.hdr.min_luma,
+                          strict_sw_params, target_ref_luma, &target_csp);
+@@ -1642,13 +1635,67 @@ bool mppl_video_render_frame(struct mppl_video *p, struct vo_frame *frame,
+             target.color.transfer = PL_COLOR_TRC_SRGB;
+ #endif
+     }
+-    stats_time_start(p->stats, "osd-update");
+-    update_overlays(p, p->osd_res,
+-                    (frame->current && opts->blend_subs) ? OSD_DRAW_OSD_ONLY : 0,
+-                    PL_OVERLAY_COORDS_DST_FRAME, &p->osd_state, &target, frame->current,
+-                    frame->current ? frame->current->params.stereo3d : 0, get_ref_luma(p));
+-    stats_time_end(p->stats, "osd-update");
+-    apply_crop(&target, p->dst, swframe->fbo->params.w, swframe->fbo->params.h);
++    *out = target;
++}
++
++// Render a frame to a target. hint is the color space requested for the
++// target when hinting is in use, NULL otherwise.
++bool mppl_video_render_frame(struct mppl_video *p, struct vo_frame *frame,
++                             const struct pl_swapchain_frame *swframe, int fb_depth,
++                             const struct pl_color_space *hint,
++                             struct mp_image_params *target_params)
++{
++    p->fb_depth = fb_depth;
++    pl_options pars = p->pars;
++    pl_gpu gpu = p->gpu;
++    const struct gl_video_opts *opts = p->opts_cache->opts;
++    struct frame_params fpar = get_frame_params(p, frame);
++    struct pl_render_params params = fpar.params;
++    bool can_interpolate = fpar.can_interpolate;
++    double pts_offset = fpar.pts_offset;
++
++    bool valid = false;
++    p->is_interpolated = false;
++
++    // Calculate target
++    struct pl_frame target;
++    setup_target(p, frame, swframe, hint, &target);
++
++    if (p->overlay_mode) {
++        // The OSD goes to the overlay target; the picture fills this one.
++        target.num_overlays = 0;
++        int fw = swframe->fbo->params.w, fh = swframe->fbo->params.h;
++        if (p->overlay_mode == 2 && p->osd_res.w > 0 && p->osd_res.h > 0) {
++            // The element's layout, scaled to this target: the same dst rect
++            // (zoom, pan, crop, rotation, letterbox) as the overlay, so both
++            // images line up when each is stretched over the element.
++            double sx = (double)fw / p->osd_res.w, sy = (double)fh / p->osd_res.h;
++            target.crop = (struct pl_rect2df) {
++                .x0 = p->dst.x0 * sx, .y0 = p->dst.y0 * sy,
++                .x1 = p->dst.x1 * sx, .y1 = p->dst.y1 * sy,
++            };
++            pl_rect2df_rotate(&target.crop, -target.rotation);
++            if (target.crop.x1 < target.crop.x0) {
++                target.crop.x0 = fw - target.crop.x0;
++                target.crop.x1 = fw - target.crop.x1;
++            }
++            if (target.crop.y1 < target.crop.y0) {
++                target.crop.y0 = fh - target.crop.y0;
++                target.crop.y1 = fh - target.crop.y1;
++            }
++        } else {
++            struct mp_rect all = { 0, 0, fw, fh };
++            apply_crop(&target, all, fw, fh);
++        }
++    } else {
++        stats_time_start(p->stats, "osd-update");
++        update_overlays(p, p->osd_res,
++                        (frame->current && opts->blend_subs) ? OSD_DRAW_OSD_ONLY : 0,
++                        PL_OVERLAY_COORDS_DST_FRAME, &p->osd_state, &target, frame->current,
++                        frame->current ? frame->current->params.stereo3d : 0, get_ref_luma(p));
++        stats_time_end(p->stats, "osd-update");
++        apply_crop(&target, p->dst, swframe->fbo->params.w, swframe->fbo->params.h);
++    }
+     update_tm_viz(&pars->color_map_params, &target);
+ 
+     struct pl_frame_mix mix = {0};
+@@ -1781,6 +1828,68 @@ done:
+     return valid;
+ }
+ 
++void mppl_video_set_overlay_mode(struct mppl_video *p, int on)
++{
++    if (p->overlay_mode != on)
++        p->osd_sync++;
++    p->overlay_mode = on;
++}
++
++void mppl_video_get_rects(struct mppl_video *p, struct mp_rect *src, struct mp_rect *dst)
++{
++    *src = p->src;
++    *dst = p->dst;
++}
++
++// Rasterise the OSD and subtitles for the overlay target (osd_res, the
++// element) and return how many overlays there are. Nothing is drawn yet.
++int mppl_video_prepare_overlay(struct mppl_video *p, struct vo_frame *frame)
++{
++    const struct gl_video_opts *opts = p->opts_cache->opts;
++    struct pl_frame dummy = {0};
++    stats_time_start(p->stats, "osd-update");
++    update_overlays(p, p->osd_res,
++                    (frame->current && opts->blend_subs) ? OSD_DRAW_OSD_ONLY : 0,
++                    PL_OVERLAY_COORDS_DST_FRAME, &p->osd_state, &dummy, frame->current,
++                    frame->current ? frame->current->params.stereo3d : 0, get_ref_luma(p));
++    stats_time_end(p->stats, "osd-update");
++    return dummy.num_overlays;
++}
++
++// Draw the overlays prepared by mppl_video_prepare_overlay() into an
++// element-sized target, cleared to transparent black. The result is
++// premultiplied (libplacebo's overlay blend: rgb = src*a + dst*(1-a),
++// a = a + dst_a*(1-a)), in the same colour space as the video target.
++bool mppl_video_render_overlay(struct mppl_video *p, struct vo_frame *frame,
++                               const struct pl_swapchain_frame *swframe)
++{
++    pl_gpu gpu = p->gpu;
++    if (!p->rr_overlay)
++        p->rr_overlay = pl_renderer_create(p->pllog, gpu);
++    struct pl_frame target;
++    setup_target(p, frame, swframe, NULL, &target);
++    target.overlays = p->osd_state.overlays;
++    target.num_overlays = p->osd_state.num_overlays;
++    struct mp_rect all = { 0, 0, swframe->fbo->params.w, swframe->fbo->params.h };
++    apply_crop(&target, all, swframe->fbo->params.w, swframe->fbo->params.h);
++
++    struct frame_params fpar = get_frame_params(p, frame);
++    struct pl_render_params params = fpar.params;
++    params.border = PL_CLEAR_COLOR;
++    params.background_color[0] = params.background_color[1] = params.background_color[2] = 0;
++    params.background_transparency = 1.0;
++    params.blend_params = NULL;
++    stats_time_start(p->stats, "osd-render");
++    bool ok = pl_render_image(p->rr_overlay, NULL, &target, &params);
++    stats_time_end(p->stats, "osd-render");
++    if (!ok) {
++        MP_ERR(p, "Failed rendering the overlay target!\n");
++        pl_tex_clear(gpu, swframe->fbo, (float[4]){ 0.0, 0.0, 0.0, 0.0 });
++    }
++    pl_gpu_flush(gpu);
++    return ok;
++}
++
+ bool mppl_video_check_format(struct mppl_video *p, int format)
+ {
+     if (ra_hwdec_get(&p->hwdec_ctx, format))
+@@ -2386,6 +2495,7 @@ void mppl_video_uninit(struct mppl_video *p)
+ 
+     pl_icc_close(&p->icc_profile);
+     pl_renderer_destroy(&p->rr);
++    pl_renderer_destroy(&p->rr_overlay);
+ 
+     for (int i = 0; i < VO_PASS_PERF_MAX; ++i) {
+         pl_shader_info_deref(&p->perf_fresh.info[i].shader);
+diff --git a/video/out/gpu_next/video.h b/video/out/gpu_next/video.h
+index 2dd9b4135..e9fc29391 100644
+--- a/video/out/gpu_next/video.h
++++ b/video/out/gpu_next/video.h
+@@ -75,6 +75,11 @@ bool mppl_video_render_frame(struct mppl_video *p, struct vo_frame *frame,
+                              const struct pl_color_space *hint,
+                              struct mp_image_params *target_params);
+ bool mppl_video_get_hdr_metadata(struct mppl_video *p, struct pl_hdr_metadata *out);
++void mppl_video_set_overlay_mode(struct mppl_video *p, int mode);
++void mppl_video_get_rects(struct mppl_video *p, struct mp_rect *src, struct mp_rect *dst);
++int mppl_video_prepare_overlay(struct mppl_video *p, struct vo_frame *frame);
++bool mppl_video_render_overlay(struct mppl_video *p, struct vo_frame *frame,
++                               const struct pl_swapchain_frame *swframe);
+ enum pl_color_levels mppl_video_get_output_levels(struct mppl_video *p);
+ void mppl_video_set_paused(struct mppl_video *p, bool paused);
+ bool mppl_video_showing_interpolated_frame(struct mppl_video *p);
+diff --git a/video/out/vulkan/libmpv_vk.c b/video/out/vulkan/libmpv_vk.c
+new file mode 100644
+index 000000000..f30095a3e
+--- /dev/null
++++ b/video/out/vulkan/libmpv_vk.c
+@@ -0,0 +1,491 @@
++/*
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// The render API on a Vulkan device owned by the API user (gpu-next only).
++// The device is imported into libplacebo; targets are the API user's VkImages,
++// wrapped once and kept in a small cache; acquire and release are timeline
++// semaphore waits and signals that libplacebo submits with its own work.
++
++#include <stdlib.h>
++
++#include <libplacebo/vulkan.h>
++
++#include "common/common.h"
++#include "common/msg.h"
++#include "osdep/timer.h"
++#include "mpv/render_vk.h"
++#include "video/out/gpu/libmpv_gpu.h"
++#include "video/out/gpu/context.h"
++#include "video/out/gpu/ra.h"
++#include "video/out/placebo/ra_pl.h"
++#include "video/out/placebo/utils.h"
++
++#define MAX_TARGETS 8
++
++struct target {
++    VkImage image;
++    int w, h;
++    VkFormat format;
++    VkImageUsageFlags usage;
++    pl_tex tex;
++    uint64_t last_used;
++    // The last release signal submitted for this image (0: none).
++    VkSemaphore release_sem;
++    uint64_t release_value;
++};
++
++struct priv {
++    pl_log pllog;
++    pl_vulkan vk;
++    VkDevice device;
++    PFN_vkWaitSemaphores WaitSemaphores;
++    PFN_vkGetSemaphoreCounterValue GetSemaphoreCounterValue;
++    struct target targets[MAX_TARGETS];
++    uint64_t frame_count;
++
++    // State of the frame between wrap_fbo() and finish_frame().
++    struct target *cur;
++    struct ra_tex cur_ratex;
++    mpv_vulkan_fbo cur_fbo;
++    // The same for the overlay target, between wrap_overlay() and
++    // finish_overlay().
++    struct target *cur_ovl;
++    struct ra_tex cur_ovl_ratex;
++    mpv_vulkan_fbo cur_ovl_fbo;
++};
++
++static void forget_target(struct libmpv_gpu_context *ctx, struct target *t)
++{
++    struct priv *p = ctx->priv;
++    if (t->tex)
++        pl_tex_destroy(p->vk->gpu, &t->tex);
++    *t = (struct target){0};
++}
++
++static int init(struct libmpv_gpu_context *ctx, mpv_render_param *params)
++{
++    struct priv *p = ctx->priv = talloc_zero(NULL, struct priv);
++
++    mpv_vulkan_init_params *ip =
++        get_mpv_render_param(params, MPV_RENDER_PARAM_VULKAN_INIT_PARAMS, NULL);
++    if (!ip || ip->struct_size < sizeof(*ip) || !ip->instance ||
++        !ip->get_instance_proc_addr || !ip->physical_device || !ip->device ||
++        !ip->features || ip->queue_count < 1 ||
++        !ip->lock_queue != !ip->unlock_queue)
++    {
++        MP_ERR(ctx, "Missing or incomplete MPV_RENDER_PARAM_VULKAN_INIT_PARAMS.\n");
++        return MPV_ERROR_INVALID_PARAMETER;
++    }
++
++    p->pllog = mppl_log_create(p, ctx->log);
++    if (!p->pllog)
++        return MPV_ERROR_GENERIC;
++
++    p->vk = pl_vulkan_import(p->pllog, pl_vulkan_import_params(
++        .instance = ip->instance,
++        .get_proc_addr = ip->get_instance_proc_addr,
++        .phys_device = ip->physical_device,
++        .device = ip->device,
++        .extensions = ip->extensions,
++        .num_extensions = ip->num_extensions,
++        .queue_graphics = {
++            .index = ip->queue_family_index,
++            .count = (int)ip->queue_count,
++        },
++        .features = ip->features,
++        .lock_queue = ip->lock_queue,
++        .unlock_queue = ip->unlock_queue,
++        .queue_ctx = ip->queue_ctx,
++        .max_api_version = ip->api_version,
++    ));
++    if (!p->vk) {
++        MP_ERR(ctx, "Failed to import the Vulkan device into libplacebo.\n");
++        return MPV_ERROR_UNSUPPORTED;
++    }
++
++    // Retirement waits for the release signals themselves (see
++    // wait_released()); resolve the two entry points it needs.
++    PFN_vkGetDeviceProcAddr gdpa = (PFN_vkGetDeviceProcAddr)
++        ip->get_instance_proc_addr(ip->instance, "vkGetDeviceProcAddr");
++    if (gdpa) {
++        p->WaitSemaphores = (PFN_vkWaitSemaphores)gdpa(ip->device, "vkWaitSemaphores");
++        p->GetSemaphoreCounterValue = (PFN_vkGetSemaphoreCounterValue)
++            gdpa(ip->device, "vkGetSemaphoreCounterValue");
++    }
++    if (!p->WaitSemaphores || !p->GetSemaphoreCounterValue) {
++        MP_ERR(ctx, "The device has no timeline semaphore entry points.\n");
++        return MPV_ERROR_UNSUPPORTED;
++    }
++    p->device = ip->device;
++
++    struct ra_ctx *ra_ctx = talloc_zero(p, struct ra_ctx);
++    ra_ctx->log = ctx->log;
++    ra_ctx->global = ctx->global;
++    ra_ctx->ra = ra_create_pl(p->vk->gpu, ctx->log);
++    if (!ra_ctx->ra)
++        return MPV_ERROR_UNSUPPORTED;
++
++    ctx->ra_ctx = ra_ctx;
++    return 0;
++}
++
++static bool fbo_valid(const mpv_vulkan_fbo *fbo)
++{
++    return fbo && fbo->struct_size >= sizeof(*fbo) && fbo->image &&
++           fbo->w >= 1 && fbo->h >= 1;
++}
++
++static bool sync_valid(struct libmpv_gpu_context *ctx, const mpv_vulkan_fbo *fbo)
++{
++    if (!fbo->release_semaphore) {
++        MP_ERR(ctx, "mpv_vulkan_fbo.release_semaphore is required.\n");
++        return false;
++    }
++    if (fbo->acquire_semaphore == fbo->release_semaphore &&
++        fbo->release_value <= fbo->acquire_value)
++    {
++        MP_ERR(ctx, "release_value must be above acquire_value.\n");
++        return false;
++    }
++    return true;
++}
++
++static int overlay_size(struct libmpv_gpu_context *ctx, mpv_render_param *params,
++                        int *out_w, int *out_h)
++{
++    mpv_vulkan_overlay_fbo *ov =
++        get_mpv_render_param(params, MPV_RENDER_PARAM_VULKAN_OVERLAY_FBO, NULL);
++    if (!ov)
++        return 1;
++    if (ov->struct_size < sizeof(*ov) || !fbo_valid(&ov->target) ||
++        !sync_valid(ctx, &ov->target))
++        return MPV_ERROR_INVALID_PARAMETER;
++    *out_w = ov->target.w;
++    *out_h = ov->target.h;
++    return ov->picture_layout == MPV_VULKAN_PICTURE_ELEMENT ? 2 : 0;
++}
++
++// With an overlay target, mpv lays the picture out for the element (the
++// overlay's size); the video target only receives the visible picture.
++static int get_target_size(struct libmpv_gpu_context *ctx,
++                           mpv_render_param *params, int *out_w, int *out_h)
++{
++    mpv_vulkan_fbo *fbo = get_mpv_render_param(params, MPV_RENDER_PARAM_VULKAN_FBO, NULL);
++    if (!fbo_valid(fbo))
++        return MPV_ERROR_INVALID_PARAMETER;
++    int err = overlay_size(ctx, params, out_w, out_h);
++    if (err < 0)
++        return err;
++    if (err != 1) // an overlay target: the layout is the element's
++        return 0;
++    *out_w = fbo->w;
++    *out_h = fbo->h;
++    return 0;
++}
++
++static struct target *find_target(struct libmpv_gpu_context *ctx,
++                                  const mpv_vulkan_fbo *fbo)
++{
++    struct priv *p = ctx->priv;
++    struct target *free_slot = NULL, *oldest = NULL;
++
++    for (int n = 0; n < MAX_TARGETS; n++) {
++        struct target *t = &p->targets[n];
++        if (!t->tex) {
++            free_slot = free_slot ? free_slot : t;
++            continue;
++        }
++        if (t->image == fbo->image) {
++            if (t->w == fbo->w && t->h == fbo->h && t->format == fbo->format &&
++                t->usage == fbo->usage)
++                return t;
++            // Same handle with a different description: the API user
++            // re-created the image without retiring it. The old one may still
++            // be in flight, so wait for it before letting it go.
++            MP_WARN(ctx, "Vulkan target re-described without retiring it.\n");
++            pl_gpu_finish(p->vk->gpu);
++            forget_target(ctx, t);
++            free_slot = t;
++            break;
++        }
++        if (!oldest || t->last_used < oldest->last_used)
++            oldest = t;
++    }
++
++    struct target *t = free_slot;
++    if (!t) {
++        // More distinct images than the cache holds. Evicting is safe but
++        // costs a wait: the API user is cycling more images than expected.
++        MP_VERBOSE(ctx, "Vulkan target cache full, evicting one.\n");
++        pl_gpu_finish(p->vk->gpu);
++        forget_target(ctx, oldest);
++        t = oldest;
++    }
++
++    pl_tex tex = pl_vulkan_wrap(p->vk->gpu, pl_vulkan_wrap_params(
++        .image = fbo->image,
++        .width = fbo->w,
++        .height = fbo->h,
++        .format = fbo->format,
++        .usage = fbo->usage,
++    ));
++    if (!tex) {
++        MP_ERR(ctx, "Failed to wrap the Vulkan target image.\n");
++        return NULL;
++    }
++    if (!tex->params.renderable) {
++        MP_ERR(ctx, "The Vulkan target is not renderable (usage or format).\n");
++        pl_tex_destroy(p->vk->gpu, &tex);
++        return NULL;
++    }
++    *t = (struct target){
++        .image = fbo->image,
++        .w = fbo->w,
++        .h = fbo->h,
++        .format = fbo->format,
++        .usage = fbo->usage,
++        .tex = tex,
++    };
++    return t;
++}
++
++// Look the image up (or wrap it) and release it to libplacebo with the API
++// user's acquire wait. From here on the image is libplacebo's until
++// hold_target() hands it back.
++static int acquire_target(struct libmpv_gpu_context *ctx, const mpv_vulkan_fbo *fbo,
++                          struct target **out_t, struct ra_tex *out_ratex)
++{
++    struct priv *p = ctx->priv;
++    if (!sync_valid(ctx, fbo))
++        return MPV_ERROR_INVALID_PARAMETER;
++    struct target *t = find_target(ctx, fbo);
++    if (!t)
++        return MPV_ERROR_UNSUPPORTED;
++    if (!mppl_wrap_tex(ctx->ra_ctx->ra, t->tex, out_ratex)) {
++        MP_ERR(ctx, "The Vulkan target format has no mpv equivalent.\n");
++        forget_target(ctx, t);
++        return MPV_ERROR_UNSUPPORTED;
++    }
++    pl_vulkan_release_ex(p->vk->gpu, pl_vulkan_release_params(
++        .tex = t->tex,
++        .layout = fbo->layout,
++        .qf = fbo->queue_family,
++        .semaphore = {
++            .sem = fbo->acquire_semaphore,
++            .value = fbo->acquire_value,
++        },
++    ));
++    t->last_used = ++p->frame_count;
++    *out_t = t;
++    return 0;
++}
++
++static int wrap_fbo(struct libmpv_gpu_context *ctx, mpv_render_param *params,
++                    struct ra_tex **out)
++{
++    struct priv *p = ctx->priv;
++    mpv_vulkan_fbo *fbo = get_mpv_render_param(params, MPV_RENDER_PARAM_VULKAN_FBO, NULL);
++    if (!fbo_valid(fbo))
++        return MPV_ERROR_INVALID_PARAMETER;
++    assert(!p->cur);
++    struct target *t;
++    int err = acquire_target(ctx, fbo, &t, &p->cur_ratex);
++    if (err < 0)
++        return err;
++    p->cur = t;
++    p->cur_fbo = *fbo;
++    *out = &p->cur_ratex;
++    return 0;
++}
++
++static int wrap_overlay(struct libmpv_gpu_context *ctx, mpv_render_param *params,
++                        struct ra_tex **out)
++{
++    struct priv *p = ctx->priv;
++    mpv_vulkan_overlay_fbo *ov =
++        get_mpv_render_param(params, MPV_RENDER_PARAM_VULKAN_OVERLAY_FBO, NULL);
++    assert(ov && !p->cur_ovl);
++    struct target *t;
++    int err = acquire_target(ctx, &ov->target, &t, &p->cur_ovl_ratex);
++    if (err < 0)
++        return err;
++    p->cur_ovl = t;
++    p->cur_ovl_fbo = ov->target;
++    *out = &p->cur_ovl_ratex;
++    return 0;
++}
++
++// Hand an acquired image back: transition, release signal, error check.
++static int hold_target(struct libmpv_gpu_context *ctx, struct target *t,
++                       const mpv_vulkan_fbo *fbo, bool ok)
++{
++    struct priv *p = ctx->priv;
++    bool held = pl_vulkan_hold_ex(p->vk->gpu, pl_vulkan_hold_params(
++        .tex = t->tex,
++        .layout = fbo->final_layout,
++        .qf = fbo->queue_family,
++        .semaphore = {
++            .sem = fbo->release_semaphore,
++            .value = fbo->release_value,
++        },
++    ));
++    if (held) {
++        t->release_sem = fbo->release_semaphore;
++        t->release_value = fbo->release_value;
++    } else {
++        MP_ERR(ctx, "Failed to hand the Vulkan target back.\n");
++    }
++    if (pl_gpu_is_failed(p->vk->gpu)) {
++        MP_ERR(ctx, "The Vulkan device is lost.\n");
++        return MPV_ERROR_GENERIC;
++    }
++    return held && ok ? 0 : MPV_ERROR_GENERIC;
++}
++
++static int finish_frame(struct libmpv_gpu_context *ctx, bool ds, bool ok)
++{
++    struct priv *p = ctx->priv;
++    struct target *t = p->cur;
++    if (!t)
++        return MPV_ERROR_GENERIC;
++    p->cur = NULL;
++    return hold_target(ctx, t, &p->cur_fbo, ok);
++}
++
++static int finish_overlay(struct libmpv_gpu_context *ctx, bool ok)
++{
++    struct priv *p = ctx->priv;
++    struct target *t = p->cur_ovl;
++    if (!t)
++        return MPV_ERROR_GENERIC;
++    p->cur_ovl = NULL;
++    return hold_target(ctx, t, &p->cur_ovl_fbo, ok);
++}
++
++static void overlay_result(struct libmpv_gpu_context *ctx, mpv_render_param *params,
++                           bool rendered, const struct mp_rect *src,
++                           const struct mp_rect *dst)
++{
++    mpv_vulkan_overlay_fbo *ov =
++        get_mpv_render_param(params, MPV_RENDER_PARAM_VULKAN_OVERLAY_FBO, NULL);
++    if (!ov)
++        return;
++    ov->rendered = rendered;
++    ov->video_rect[0] = dst->x0;
++    ov->video_rect[1] = dst->y0;
++    ov->video_rect[2] = dst->x1;
++    ov->video_rect[3] = dst->y1;
++    ov->source_rect[0] = src->x0;
++    ov->source_rect[1] = src->y0;
++    ov->source_rect[2] = src->x1;
++    ov->source_rect[3] = src->y1;
++}
++
++static void done_frame(struct libmpv_gpu_context *ctx, bool ds)
++{
++    finish_frame(ctx, ds, true);
++}
++
++// After pl_gpu_finish(), wait until the last release signal of every target
++// being retired is visible. Measured on MoltenVK 1.4.2: pl_gpu_finish() can
++// return while a release value submitted with mpv's last frame is not yet
++// visible through vkGetSemaphoreCounterValue (1-4 ms later). An API user
++// that frees or reuses the image right after retirement must be able to rely
++// on the release having happened.
++static void wait_released(struct libmpv_gpu_context *ctx, VkImage image)
++{
++    struct priv *p = ctx->priv;
++    for (int n = 0; n < MAX_TARGETS; n++) {
++        struct target *t = &p->targets[n];
++        if (!t->tex || !t->release_sem || (image && t->image != image))
++            continue;
++        uint64_t v = 0;
++        if (p->GetSemaphoreCounterValue(p->device, t->release_sem, &v) == VK_SUCCESS &&
++            v >= t->release_value)
++            continue;
++        int64_t start = mp_time_ns();
++        VkSemaphoreWaitInfo wi = {
++            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
++            .semaphoreCount = 1,
++            .pSemaphores = &t->release_sem,
++            .pValues = &t->release_value,
++        };
++        // Bounded: the signal was submitted after mpv's own work, so it can
++        // only be missing if the device is lost.
++        VkResult res = p->WaitSemaphores(p->device, &wi, UINT64_C(2000000000));
++        MP_VERBOSE(ctx, "Retire: release %llu of an image came %.2f ms after "
++                   "the GPU went idle (%s).\n", (unsigned long long)t->release_value,
++                   (mp_time_ns() - start) / 1e6, res == VK_SUCCESS ? "ok" : "timeout");
++    }
++}
++
++static int set_parameter(struct libmpv_gpu_context *ctx, mpv_render_param param)
++{
++    struct priv *p = ctx->priv;
++
++    switch ((int)param.type) {
++    case MPV_RENDER_PARAM_VULKAN_RETIRE: {
++        VkImage image = param.data ? *(VkImage *)param.data : VK_NULL_HANDLE;
++        pl_gpu_finish(p->vk->gpu);
++        wait_released(ctx, image);
++        for (int n = 0; n < MAX_TARGETS; n++) {
++            struct target *t = &p->targets[n];
++            if (t->tex && (!image || t->image == image))
++                forget_target(ctx, t);
++        }
++        return 0;
++    }
++    default:
++        return MPV_ERROR_NOT_IMPLEMENTED;
++    }
++}
++
++static void destroy(struct libmpv_gpu_context *ctx)
++{
++    struct priv *p = ctx->priv;
++    if (!p)
++        return;
++
++    if (p->vk) {
++        pl_gpu_finish(p->vk->gpu);
++        for (int n = 0; n < MAX_TARGETS; n++)
++            forget_target(ctx, &p->targets[n]);
++    }
++    if (ctx->ra_ctx && ctx->ra_ctx->ra) {
++        ctx->ra_ctx->ra->fns->destroy(ctx->ra_ctx->ra);
++        ctx->ra_ctx->ra = NULL;
++    }
++    // Leaves the API user's device intact.
++    pl_vulkan_destroy(&p->vk);
++    pl_log_destroy(&p->pllog);
++}
++
++const struct libmpv_gpu_context_fns libmpv_gpu_context_vulkan = {
++    .api_name        = MPV_RENDER_API_TYPE_VULKAN,
++    .gpu_next_only   = true,
++    .init            = init,
++    .get_target_size = get_target_size,
++    .wrap_fbo        = wrap_fbo,
++    .done_frame      = done_frame,
++    .finish_frame    = finish_frame,
++    .set_parameter   = set_parameter,
++    .overlay_size    = overlay_size,
++    .wrap_overlay    = wrap_overlay,
++    .finish_overlay  = finish_overlay,
++    .overlay_result  = overlay_result,
++    .destroy         = destroy,
++};

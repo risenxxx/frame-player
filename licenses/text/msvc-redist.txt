@@ -1,0 +1,12 @@
+Microsoft Visual C++ Redistributable (msvcp140.dll, vcruntime140.dll,
+vcruntime140_1.dll)
+
+These files are Microsoft's, not open source, and are redistributed with the
+application under the "Distributable Code" terms of the Microsoft Visual Studio
+license, which permit an application to carry them. The terms and the list of
+files that may be redistributed are published by Microsoft:
+
+  https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
+  https://visualstudio.microsoft.com/license-terms/
+
+Copyright (c) Microsoft Corporation. All rights reserved.

@@ -28,6 +28,14 @@
 # Requires: Xcode Command Line Tools, Homebrew, nasm (for FFmpeg's asm).
 set -euo pipefail
 
+# `--v2` builds version 2's set instead (src-skathi/: mpv's Vulkan render API,
+# libplacebo, the Vulkan loader and MoltenVK, everything from pinned sources),
+# into src-skathi/ rather than src-tauri/. It is a script of its own so that
+# nothing below this line changes for version 1.
+if [ "${1:-}" = "--v2" ]; then
+  exec "$(dirname "${BASH_SOURCE[0]}")/build-macos-libs-v2.sh"
+fi
+
 MPV_VERSION="0.41.0"
 # Pinned to the patch level, not the series: `8.1` is a real tarball too, and
 # taking it would mean two runs of this script producing different libraries

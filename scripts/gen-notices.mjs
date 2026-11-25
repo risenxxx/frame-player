@@ -443,6 +443,7 @@ function render() {
 
   w('---');
   w();
+  const ownStart = out.length;
   w("## Frame Player's own license");
   w();
   w('Copyright (C) 2026 Evgenii Zakharov');
@@ -462,27 +463,351 @@ function render() {
   w(read(join(root, 'LICENSE')).replace(/\s+$/, ''));
   w('```');
   w();
+  render.ownSection = out.slice(ownStart).join('\n');
 
+  return `${out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
+}
+
+// ---------------------------------------------------------------------------
+// Version 2 (src-skathi/): its own notices, src-skathi/THIRD-PARTY-NOTICES.md,
+// which src-skathi/scripts/stage.mjs ships in place of the file above. Version
+// 2 is a different program to license: other crates (Skathi, Velopack, the
+// Metal and Vulkan bindings), its own JavaScript bundle, a libmpv built from a
+// pull request with patches of ours, glslang, and on Windows one statically
+// linked libmpv-2.dll. Version 1's notices are untouched by any of it.
+//
+// The inputs are licenses/v2.json (what ships besides crates and packages,
+// and the modifications), licenses/v2-rust-crates.json and
+// licenses/v2-js-deps.json (snapshots, `--refresh-v2`), and the texts in
+// licenses/. When src-skathi/lib is present its dylibs must all be covered, as
+// version 1's are.
+
+const OUT_V2 = join(root, 'src-skathi', 'THIRD-PARTY-NOTICES.md');
+
+function refreshV2() {
+  console.log('==> cargo metadata (src-skathi, macOS and Windows)');
+  const byKey = new Map();
+  for (const target of ['aarch64-apple-darwin', 'x86_64-pc-windows-msvc']) {
+    const meta = JSON.parse(
+      execFileSync('cargo', ['metadata', '--format-version', '1', '--filter-platform', target], {
+        cwd: join(root, 'src-skathi'),
+        encoding: 'utf8',
+        maxBuffer: 1 << 28,
+      }),
+    );
+    const pkgs = new Map(meta.packages.map((p) => [p.id, p]));
+    const nodes = new Map(meta.resolve.nodes.map((n) => [n.id, n]));
+    const seen = new Set();
+    const stack = [meta.resolve.root];
+    while (stack.length) {
+      const id = stack.pop();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      for (const d of nodes.get(id)?.deps ?? []) {
+        if (d.dep_kinds.some((k) => k.kind === null || k.kind === 'build')) stack.push(d.pkg);
+      }
+    }
+    seen.delete(meta.resolve.root);
+    for (const id of seen) {
+      const p = pkgs.get(id);
+      // Our own path crates (the tauri shim) are this repository's code.
+      if (p.source === null) continue;
+      const key = `${p.name}@${p.version}`;
+      const plat = target.includes('apple') ? 'macOS' : 'Windows';
+      const prev = byKey.get(key);
+      if (prev) {
+        if (!prev.platforms.includes(plat)) prev.platforms.push(plat);
+        continue;
+      }
+      byKey.set(key, {
+        name: p.name,
+        version: p.version,
+        license: p.license ?? null,
+        repository: p.repository ?? null,
+        platforms: [plat],
+      });
+    }
+  }
+  const crates = [...byKey.values()]
+    .map((c) => ({ ...c, platforms: c.platforms.length === 2 ? undefined : c.platforms[0] }))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
+  const unlicensed = crates.filter((c) => !c.license);
+  if (unlicensed.length) {
+    console.error(`crates with no license field: ${unlicensed.map((c) => c.name).join(', ')}`);
+    process.exit(1);
+  }
+  writeFileSync(join(dir, 'v2-rust-crates.json'), `${JSON.stringify(crates, null, 2)}\n`);
+  console.log(`    ${crates.length} crates`);
+
+  console.log('==> npm (src-skathi/app)');
+  // What the payload bundles: the app's runtime dependencies (Skathi's runtime,
+  // Svelte, the Tauri API the stub answers). The CLI is a build tool.
+  const app = join(root, 'src-skathi', 'app');
+  const pkg = readJson(join(app, 'package.json'));
+  const js = Object.keys(pkg.dependencies ?? {})
+    .map((name) => {
+      const p = join(app, 'node_modules', name, 'package.json');
+      if (!existsSync(p)) {
+        console.error(`src-skathi/app/node_modules/${name} is not installed — run bun install there first`);
+        process.exit(1);
+      }
+      const m = readJson(p);
+      const repo = typeof m.repository === 'string' ? m.repository : (m.repository?.url ?? null);
+      return { name, version: m.version, license: m.license ?? null, repository: repo };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+  writeFileSync(join(dir, 'v2-js-deps.json'), `${JSON.stringify(js, null, 2)}\n`);
+  console.log(`    ${js.length} packages`);
+}
+
+function renderV2() {
+  const v1 = new Map(readJson(join(dir, 'manifest.json')).projects.map((p) => [p.id, p]));
+  const spec = readJson(join(dir, 'v2.json'));
+  const projects = spec.projects.map((e) => {
+    if (!e.from) return e;
+    const base = v1.get(e.from);
+    if (!base) {
+      console.error(`licenses/v2.json: no project "${e.from}" in manifest.json`);
+      process.exit(1);
+    }
+    const { from, ...over } = e;
+    const merged = { ...base, ...over };
+    if (!('platforms' in over)) delete merged.platforms;
+    if (base.platforms && !('platforms' in over)) merged.platforms = base.platforms;
+    return merged;
+  });
+  const elect = spec.elections ?? {};
+  const crates = readJson(join(dir, 'v2-rust-crates.json')).map((c) =>
+    elect[c.name] ? { ...c, license: elect[c.name], offered: c.license } : c,
+  );
+  const js = readJson(join(dir, 'v2-js-deps.json'));
+
+  // The macOS set on disk, when there is one.
+  const libDir = join(root, 'src-skathi', 'lib');
+  if (existsSync(libDir)) {
+    const names = projects.flatMap((p) => p.libs ?? []);
+    const files = readdirSync(libDir).filter((f) => /\.(dylib|dll)$/i.test(f));
+    const missing = files.filter((f) => !names.some((n) => matches(f, n)));
+    if (missing.length) {
+      console.error(`\nlicenses/v2.json does not cover ${missing.length} file(s) in src-skathi/lib:\n`);
+      for (const f of missing) console.error(`  ${f}`);
+      process.exit(1);
+    }
+    console.log(`v2 closure: ${files.length} shipped libraries, all covered`);
+  }
+  // Every patch described, every description a patch.
+  const patchDir = join(root, 'src-skathi', 'patches');
+  const onDisk = readdirSync(patchDir).filter((f) => /\.(diff|patch)$/.test(f));
+  const described = spec.patches.map((x) => x.file);
+  const off = [
+    ...onDisk.filter((f) => !described.includes(f)).map((f) => `${f} — in src-skathi/patches/, described nowhere`),
+    ...described.filter((f) => !onDisk.includes(f)).map((f) => `${f} — described, not in src-skathi/patches/`),
+  ];
+  if (off.length) {
+    console.error(`\nlicenses/v2.json and src-skathi/patches/ disagree:\n\n  ${off.join('\n  ')}\n`);
+    process.exit(1);
+  }
+  console.log(`v2 patches: ${onDisk.length}, all described`);
+  const filesOf = (file) => {
+    const files = [];
+    for (const line of read(join(patchDir, file)).split('\n')) {
+      const m = /^\+\+\+ b\/(\S+)/.exec(line);
+      if (m && !files.includes(m[1])) files.push(m[1]);
+    }
+    return files;
+  };
+
+  const text = (name) => {
+    const p = join(dir, 'text', `${name}.txt`);
+    if (!existsSync(p)) {
+      console.error(`licenses/text/${name}.txt is missing`);
+      process.exit(1);
+    }
+    return read(p).replace(/\s+$/, '');
+  };
+  const mpl = [...crates, ...js].filter((c) => spdxIds(c.license).some((id) => id.startsWith('MPL-')));
+
+  const out = [];
+  const w = (s = '') => out.push(s);
+  w('# Third-party notices — Frame Player version 2');
+  w();
+  w('Frame Player is free software under the GNU General Public License, version');
+  w('3 or later — its own license text is at the end of this file. This is the');
+  w('notice for version 2 (the interface on Skathi): every third-party component it');
+  w('ships, the license each is used under, and those licenses in full.');
+  w();
+  w('mpv, FFmpeg, libplacebo, GNU FriBidi and the libraries linked into them are');
+  w('covered by the GNU Lesser General Public License, which is compatible with the');
+  w('GPL this application uses. On macOS they are **separate shared libraries** in');
+  w('`Contents/Frameworks`, loaded at run time rather than linked into the');
+  w('executable, so you may replace any of them with your own build. On Windows see');
+  w('[Windows](#windows) below.');
+  w();
+  w('**Source code.** Every component below is unmodified upstream code except mpv');
+  w('and libplacebo, whose changes are listed next. The "Source" link for each goes');
+  w('to the project that publishes it. `scripts/build-macos-libs.sh --v2` in Frame');
+  w("Player's repository, <https://github.com/risenxxx/frame-player>, fetches and builds");
+  w('the macOS set and records the exact versions, checksums and configure flags.');
+  w();
+  w('**Modifications to mpv.** mpv is built from the head of its pull request #18845,');
+  w('with one patch of ours per platform, published in `src-skathi/patches/` of the');
+  w('repository:');
+  w();
+  for (const x of spec.patches) {
+    w(`- \`${x.file}\` (${x.platform}), against ${x.base}; ${x.build}. ${x.summary} Files changed: ${filesOf(x.file)
+      .map((f) => `\`${f}\``)
+      .join(', ')}.`);
+  }
+  w();
+  for (const e of spec.buildEdits) {
+    w(`**Modifications to ${e.project}.** \`${e.file}\`, by \`${e.build}\`: ${e.summary}`);
+    w();
+  }
+  w('**GPL.** FFmpeg and mpv are built with their GPL parts off (`--disable-gpl`,');
+  w('`-Dgpl=false`), and no component is licensed under the GNU General Public');
+  w('License alone. One file of glslang (macOS) is: the parser Bison generated, under');
+  w('`GPL-3.0-or-later WITH Bison-exception-2.2`. The exception lets that file be');
+  w('distributed under any terms as part of a larger work that is not a parser');
+  w('generator, so it places no GPL obligation on what links it.');
+  w();
+  w('---');
+  w();
+  w('## Contents');
+  w();
+  w(`- [Native components](#native-components) (${projects.length})`);
+  w('- [Windows](#windows)');
+  w(`- [Rust crates](#rust-crates) (${crates.length})`);
+  w(`- [JavaScript packages](#javascript-packages) (${js.length})`);
+  w('- [Source of the MPL-2.0 components](#source-of-the-mpl-20-components)');
+  w('- [License texts](#license-texts)');
+  w("- [Frame Player's own license](#frame-players-own-license)");
+  w();
+  w('---');
+  w();
+  w('## Native components');
+  w();
+  w('| Component | License | Source |');
+  w('|---|---|---|');
+  for (const p of projects) {
+    const plat = p.platforms?.length === 1 ? ` (${p.platforms[0] === 'macos' ? 'macOS' : 'Windows'} only)` : '';
+    w(`| ${p.name}${plat} | ${p.license} | [${p.source.replace(/^https?:\/\//, '')}](${p.source}) |`);
+  }
+  w();
+  w('Notes on individual components:');
+  w();
+  for (const p of projects.filter((p) => p.note)) w(`- **${p.name}** — ${p.note}`);
+  w();
+  w('---');
+  w();
+  w('## Windows');
+  w();
+  for (const para of spec.windows) {
+    w(para);
+    w();
+  }
+  w('---');
+  w();
+  w('## Rust crates');
+  w();
+  w('Compiled into the application executable, on both systems unless the table says');
+  w("otherwise. Development and test dependencies are not listed: they do not reach a");
+  w("user's machine.");
+  w();
+  w('| Crate | Version | License |');
+  w('|---|---|---|');
+  for (const c of crates) {
+    const lic = c.offered ? `${c.license} (chosen from ${c.offered})` : c.license;
+    w(`| ${c.name}${c.platforms ? ` (${c.platforms} only)` : ''} | ${c.version} | ${lic} |`);
+  }
+  w();
+  w('---');
+  w();
+  w('## JavaScript packages');
+  w();
+  w('Bundled into the interface (`app.skpk`).');
+  w();
+  w('| Package | Version | License |');
+  w('|---|---|---|');
+  for (const p of js) w(`| ${p.name} | ${p.version} | ${p.license} |`);
+  w();
+  w('---');
+  w();
+  w('## Source of the MPL-2.0 components');
+  w();
+  w('These components are covered by the Mozilla Public License 2.0 and are used');
+  w('unmodified. Their Source Code Form is available from the repositories below, and');
+  w('for the crates also from crates.io at the version listed above.');
+  w();
+  for (const c of mpl) w(`- ${c.name} ${c.version} — ${c.repository ? `<${c.repository.replace(/^git\+/, '').replace(/\.git$/, '')}>` : `<https://crates.io/crates/${c.name}/${c.version}>`}`);
+  w();
+  w('---');
+  w();
+  w('## License texts');
+  w();
+  for (const p of projects) {
+    w(`### ${p.name}`);
+    w();
+    w(`${p.license} — <${p.url}>`);
+    w();
+    w('```');
+    w(text(p.text));
+    w('```');
+    w();
+  }
+  const ids = new Set();
+  for (const c of [...crates, ...js]) for (const id of spdxIds(c.license)) ids.add(id);
+  w('### Rust and JavaScript dependencies');
+  w();
+  w('The packages listed above declare the licenses below. Texts are the canonical');
+  w("SPDX ones; copyright is held by each package's own authors, as recorded in that");
+  w("package's repository.");
+  w();
+  for (const id of [...ids].sort()) {
+    const p = join(dir, 'spdx', `${id}.txt`);
+    if (!existsSync(p)) {
+      console.error(`licenses/spdx/${id}.txt is missing — a version 2 dependency declares it`);
+      process.exit(1);
+    }
+    w(`#### ${id}`);
+    w();
+    w('```');
+    w(read(p).replace(/\s+$/, ''));
+    w('```');
+    w();
+  }
+  w('---');
+  w();
+  // The same section as version 1's, from the same LICENSE.
+  const own = render.ownSection;
+  w(own);
   return `${out.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
 }
 
 const argv = process.argv.slice(2);
 if (argv.includes('--refresh')) refresh();
+if (argv.includes('--refresh-v2')) refreshV2();
 
 const rendered = render();
+const renderedV2 = renderV2();
 const digest = (s) => createHash('sha256').update(s).digest('hex').slice(0, 12);
 
 if (argv.includes('--check')) {
-  const current = existsSync(OUT) ? read(OUT) : '';
-  if (current !== rendered) {
-    console.error(
-      `\nTHIRD-PARTY-NOTICES.md is stale (committed ${digest(current)}, ` +
-        `rendered ${digest(rendered)}).\nRun: bun run notices\n`,
-    );
-    process.exit(1);
+  let stale = false;
+  for (const [file, want, name] of [
+    [OUT, rendered, 'THIRD-PARTY-NOTICES.md'],
+    [OUT_V2, renderedV2, 'src-skathi/THIRD-PARTY-NOTICES.md'],
+  ]) {
+    const current = existsSync(file) ? read(file) : '';
+    if (current !== want) {
+      console.error(`\n${name} is stale (committed ${digest(current)}, rendered ${digest(want)}).\nRun: bun run notices\n`);
+      stale = true;
+    }
   }
-  console.log(`notices: up to date (${digest(rendered)})`);
+  if (stale) process.exit(1);
+  console.log(`notices: up to date (${digest(rendered)}; version 2 ${digest(renderedV2)})`);
 } else {
   writeFileSync(OUT, rendered);
+  writeFileSync(OUT_V2, renderedV2);
   console.log(`wrote THIRD-PARTY-NOTICES.md (${rendered.length.toLocaleString('en-US')} bytes)`);
+  console.log(`wrote src-skathi/THIRD-PARTY-NOTICES.md (${renderedV2.length.toLocaleString('en-US')} bytes)`);
 }
