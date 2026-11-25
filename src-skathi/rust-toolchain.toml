@@ -1,0 +1,6 @@
+[toolchain]
+channel = "1.100.0"
+# sk check's CSS checker (scripts/css-engine.ts). fetch-skathi.mjs builds that checker inside cargo's checkout of
+# Skathi, where Skathi's own rust-toolchain.toml applies (1.97.1 at the pinned commit), so that toolchain is
+# still needed beside this one.
+targets = ["wasm32-unknown-unknown"]

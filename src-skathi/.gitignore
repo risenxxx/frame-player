@@ -1,0 +1,11 @@
+# Built or fetched, never committed (the root .gitignore is left as main has it, so merges stay clean).
+/target/
+/resources/
+/app/.skathi/
+/app/dist/
+/app/public/
+/app/node_modules/
+# Local runs: data directories and logs.
+/runs/
+/lib/
+/ffmpeg-macos/

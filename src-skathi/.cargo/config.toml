@@ -1,0 +1,6 @@
+# JavaScriptCore is linked against the static C runtime on Windows, so the exe must be too.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# FFMPEG_DIR and LIBCLANG_PATH (ffmpeg-the-third's bindings) are per platform and per machine, so the
+# build scripts set them (scripts/build-macos.sh; README for Windows) rather than this file.

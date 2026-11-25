@@ -1,0 +1,128 @@
+[package]
+name = "frameplayer-v2"
+version = "2.0.0-dev"
+edition = "2021"
+publish = false
+description = "Frame Player version 2: the interface on Skathi, mpv through its render API"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "frameplayer"
+path = "src/main.rs"
+
+[dependencies]
+# The pin is read by scripts/fetch-skathi.mjs too, so the JS packages come from the same commit.
+# `prod`: the production runtime. `storages`: localStorage. `clipboard`: navigator.clipboard.
+# Devtools need a bundle a git dependency cannot build, so they are off unless asked for (README).
+skathi = { git = "https://github.com/argon-chat/skathi", rev = "5cada8fa5bb406cfbdcb509c9d5de1621399806c", default-features = false, features = ["prod", "storages", "clipboard"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libloading = "0.8"
+raw-window-handle = "0.6"
+# The seekbar storyboard (src/thumbs.rs): the crate and version v1 builds it with, linked against
+# v1's FFmpeg SDK through FFMPEG_DIR (.cargo/config.toml, scripts/).
+ffmpeg-the-third = "5.0.0"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+# The beta's installer and updater (src/{macos,windows}/velo.rs), pinned to the vpk that packs it.
+velopack = "=1.2.161"
+log = "0.4"
+# Cast discovery (src/cast, src/dlna): version 1's own discovery files, compiled as they are, and the
+# crates they use, at version 1's versions. `tauri` is a shim (shim-tauri): only `async_runtime` is used.
+tauri = { package = "fp-tauri-shim", path = "shim-tauri" }
+tokio = { version = "1", features = ["net", "rt", "macros", "sync", "time"] }
+futures-util = { version = "0.3", default-features = false }
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+mdns-sd = "0.20"
+if-addrs = "0.13"
+socket2 = "0.6"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = "0.3.2"
+objc2-metal = "0.3.2"
+objc2-quartz-core = "0.3.2"
+objc2-core-foundation = "0.3.2"
+objc2-core-graphics = "0.3.2"
+libc = "0.2"
+# The Vulkan render API's producer (src/macos/vk.rs).
+ash = { version = "0.38", default-features = false, features = ["loaded", "std"] }
+
+[target.'cfg(windows)'.dependencies]
+skathi = { git = "https://github.com/argon-chat/skathi", rev = "5cada8fa5bb406cfbdcb509c9d5de1621399806c", default-features = false, features = ["native-dx12"] }
+windows-numerics = "0.3"
+windows-sys = { version = "0.61.2", features = ["Win32_System_Power"] }
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_DirectComposition",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Console",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+[features]
+default = ["no-devtools"]
+no-devtools = ["skathi/no-devtools"]
+# A developer build: `--no-default-features --features devtools` with SK_DEVTOOLS_BUNDLE set to a
+# devtools bundle built from the same Skathi commit (README).
+devtools = ["skathi/types"]
+# Compile Skathi's Metal shaders at start rather than at build time (a Mac without the Metal toolchain).
+rtshaders = ["skathi/runtime-shaders"]
+# The macOS memory levers measured as the final combination: FPUI_LEAN on unless FPUI_LEAN=0.
+lean = []
+# `frameplayer --thumb-selftest OUT_DIR FILE…`: the thumbnail commands timed on real files, no
+# window (thumbs.rs `selftest`). A developer's tool, never in a package.
+selftest = []
+
+[build-dependencies]
+cc = "1"
+embed-resource = "3"
+
+# Replicated from Skathi's workspace root: [patch] applies only from the root of a build.
+# skathi-taffy is the commit of Skathi's vendor/taffy submodule at the pinned Skathi commit.
+[patch.crates-io]
+async-task = { git = "https://github.com/smol-rs/async-task", rev = "41fd3359c75e221bd8b187a8ee361aa309c1714c" }
+skathi-taffy = { git = "https://github.com/argon-chat/taffy", rev = "be270ebe00f92dbc29b421b8fbcb975944d84d7e" }
+
+[profile.release]
+debug = 1
+
+# Skathi's "binary size" profile, with the render path's crates kept at opt-level 3.
+[profile.release-size]
+inherits = "release"
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+debug = false
+strip = "symbols"
+
+[profile.release-size.package]
+frameplayer-v2.opt-level = 3
+sk-app.opt-level = 3
+sk-runtime.opt-level = 3
+sk-tree.opt-level = 3
+sk-css.opt-level = 3
+sk-elements.opt-level = 3
+sk-effects.opt-level = 3
+skathi-gpui.opt-level = 3
+skathi-taffy.opt-level = 3
+image.opt-level = 3

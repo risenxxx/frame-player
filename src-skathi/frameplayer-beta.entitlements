@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+  Version 2's bundle, signed with the hardened runtime (what vpk pack signs it with; vpk wants the .entitlements extension).
+  LuaJIT in libmpv maps executable memory the ordinary way, which this key covers
+  (version 1's src-tauri/entitlements.plist measured why it is this key and not
+  allow-jit). JavaScriptCore maps its JIT with MAP_JIT, and this key covers that
+  too: a hardened-runtime bundle had the same 5 MB resident "JS JIT generated
+  code" region with and without allow-jit (measured with vmmap), so allow-jit is
+  left out.
+  -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+</dict>
+</plist>

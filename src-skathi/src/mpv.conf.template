@@ -1,0 +1,21 @@
+# Frame Player — low-level mpv options.
+# Applied at player startup ON TOP of its defaults; mpv.conf syntax:
+#   option=value
+# lines starting with # are comments. Full list: https://mpv.io/manual/stable/#options
+#
+# You may override vo/hwdec and other options the player sets itself,
+# but at your own risk — some of them are critical for video embedding.
+#
+# ---- Examples ----
+#
+# True HDR output on an HDR display (Windows HDR must be enabled):
+#target-colorspace-hint=auto
+#
+# HDR -> SDR tone-mapping curve (default: spline):
+#tone-mapping=bt.2446a
+#
+# Bitstream Dolby/DTS to an AV receiver (the AVR decodes; player volume control stops working):
+#audio-spdif=ac3,eac3,truehd
+#
+# Software decoding instead of hardware:
+#hwdec=no

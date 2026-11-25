@@ -1,0 +1,27 @@
+{
+  "name": "frameplayer",
+  "productName": "Frame Player Beta",
+  "version": "2.0.0",
+  "platforms": ["macos", "windows"],
+  "publishDevtools": false,
+  "publicDir": "public",
+  "textRendering": "optimized",
+  "window": {
+    "title": "Frame Player",
+    "width": 1100,
+    "height": 660,
+    "minWidth": 480,
+    "minHeight": 320,
+    "titleBarStyle": "hidden",
+    "backdrop": "none",
+    "titleBarHeight": 48,
+    "titleBarFallback": false
+  },
+  "windows": {
+    "exeName": "FramePlayerBeta",
+    "icon": "../../src-tauri/icons/icon.png"
+  },
+  "macos": {
+    "bundleId": "app.frameplayer.beta"
+  }
+}

@@ -1,0 +1,12 @@
+# Stands in for `tauri` where version 1's own files are compiled into version 2 unchanged (`#[path]`):
+# they reach for `tauri::async_runtime::{spawn, JoinHandle}` and nothing else of it. Named `tauri` in
+# ../Cargo.toml so those paths resolve; it is one tokio runtime, made on first use.
+[package]
+name = "fp-tauri-shim"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-3.0-or-later"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread"] }

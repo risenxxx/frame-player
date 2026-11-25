@@ -1,0 +1,3 @@
+// The exe's icon (version 1's icon.ico, found through the include path build.rs gives), for
+// Explorer, the Start-menu shortcut and the taskbar. Skathi's gpui.rc carries only the manifest.
+1 ICON "icon.ico"
