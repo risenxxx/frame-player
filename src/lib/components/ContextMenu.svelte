@@ -765,9 +765,9 @@
   }
 
   /* Mantine style: the item is a flex row, the chevron pushed to the right by
-     space-between and centered on the line. `margin-left: auto` would not work
-     here at all — .menu-item is display: block (the neighbouring .hint gets by
-     with float, but float gives an icon a crooked baseline).
+     space-between and centered on the line. `margin-left: auto` alone would
+     not work — .menu-item is display: block unless a rule lays it out
+     otherwise (as the one for a row with a key hint does, further down).
      The selector must use two classes: the rule `.menu-item { display: block }`
      is declared LOWER in the file, and at equal specificity it would win — flex
      silently did not apply, the chevron stayed right after the text and sat on
@@ -834,8 +834,20 @@
     z-index: -1;
   }
 
+  /* A row with a key hint is two columns: the label takes the free space and
+     the hint sits at the end. Top-aligned, as the float this replaced sat: the
+     label's line and the 12px hint start at the same top edge.
+     A grid rather than a flex row, though either draws the same in a browser:
+     Skathi gives the whitespace text between two flex rows a line of its own
+     (an `{#if}` between rows leaves such text), which opened a 19px gap in the
+     Frame submenu and cut its last row off; between grid rows it does not. */
+  .menu-item:has(> .hint) {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+  }
+
   .menu-item .hint {
-    float: right;
     color: #77777f;
     font-size: 12px;
   }

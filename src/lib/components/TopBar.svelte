@@ -404,9 +404,17 @@
      moves to the right corner and flips: caption first, then the mark. */
   .brand.brand-right {
     position: static;
+    /* Skathi lays out `static` as `relative`, so the base rule's `left: 18px`
+       would still push the brand 18px past the window's edge there. */
+    left: auto;
     height: auto;
     flex-direction: row-reverse;
     padding-right: 18px;
+  }
+  /* Skathi drops `flex-direction: inherit` (it computes `row`), so without this
+     the mark and the name swap sides once `.home` exists (a file open). */
+  .brand.brand-right .home {
+    flex-direction: row-reverse;
   }
 
   /* Only the mark and the name take the pointer; the rest of `.brand` lets a

@@ -27,6 +27,8 @@ import { flushPosition } from './history.svelte';
 import { player } from './player.svelte';
 import { seek } from './seek.svelte';
 import { mini, shapeState, toggleMini, windowPrefs } from './window-prefs.svelte';
+import { windowTransition } from './window-transition';
+import { FullscreenRequests } from './fullscreen-request';
 
 // Title bar height, and the width of the macOS traffic lights within it.
 //
@@ -181,10 +183,17 @@ class Chrome {
   /// them.
   settling = $state(false);
 
+  /// The bars were sent away for a fullscreen change and stay away until the
+  /// viewer does something that raises them (`pokeUi`), in or out of
+  /// fullscreen and whatever the "hide the controls" setting says. Only ever
+  /// set when the host asks for it (`windowTransition.hushChrome`); this app's
+  /// own transitions leave the bars alone.
+  hushed = $state(false);
+
   /// The bars are away: the pointer rested and the setting allows it, a
-  /// picture slider is being worked, or the window is moving under them.
-  /// Everything that fades reads this.
-  idle = $derived(this.tuning || this.unsteady || (this.mayHide && this.pointerIdle));
+  /// picture slider is being worked, the window is moving under them, or a
+  /// fullscreen change sent them away. Everything that fades reads this.
+  idle = $derived(this.tuning || this.unsteady || this.hushed || (this.mayHide && this.pointerIdle));
 }
 
 export const chrome = new Chrome();
@@ -304,10 +313,16 @@ function cursorEffect() {
     const mode = windowPrefs.cursorHide;
     // `tuning` and `unsteady` hide the bars under a pointer that is busy
     // dragging, so they are taken back out here: that cursor must stay.
+    // `hushed` where the setting would never hide the bars (a window, with
+    // "only in fullscreen") is not a rest of the pointer either: it keeps it.
     const rested =
       mode === 'always'
         ? chrome.pointerIdle
-        : mode === 'controls' && chrome.idle && !chrome.tuning && !chrome.unsteady;
+        : mode === 'controls' &&
+          chrome.idle &&
+          !chrome.tuning &&
+          !chrome.unsteady &&
+          !(chrome.hushed && !chrome.mayHide);
     if (!rested || chrome.pointerInTitlebar) {
       // Showing it again is never delayed: that half is a response to the
       // pointer moving, and any lag there is felt immediately.
@@ -468,6 +483,15 @@ export async function toggleFullscreen() {
   // Leaving mini on the way in: `toggleMini` does the same in reverse, and
   // without it fullscreen would restore to a thumbnail in the corner.
   if (mini.on) await toggleMini();
+  if (windowTransition.requests) {
+    if (fullscreenRequests.current()) {
+      await exitFullscreen();
+      return;
+    }
+    hushForTransition();
+    await fullscreenRequests.request(true);
+    return;
+  }
   if (chrome.fullscreen) {
     await exitFullscreen();
     return;
@@ -481,10 +505,46 @@ export async function toggleFullscreen() {
 }
 
 export async function exitFullscreen() {
+  if (windowTransition.requests) {
+    if (!fullscreenRequests.current()) return;
+    hushForTransition();
+    await fullscreenRequests.request(false);
+    return;
+  }
   if (!chrome.fullscreen) return;
   await maskFullscreenTransition();
   chrome.fullscreen = false;
   await getCurrentWindow().setFullscreen(false);
+}
+
+/// The fullscreen state asked for last, decided before anything waits
+/// (fullscreen-request.ts): a second press during the veil, or during the
+/// transition itself, is decided against it rather than the mirror. Only for a
+/// host that asks for it (`windowTransition.requests`); this app's own window
+/// takes the paths above unchanged.
+const fullscreenRequests = new FullscreenRequests({
+  mirror: () => chrome.fullscreen,
+  setMirror: (on) => (chrome.fullscreen = on),
+  // A host that queues the requests itself (`windowTransition.queued`) gets
+  // them in the same tick, without the page's veil.
+  prepare: () => (windowTransition.queued ? null : maskFullscreenTransition()),
+  send: async (on) => {
+    // macOS: the native side takes the title-bar toolbar off before the
+    // transition starts, not inside it — see `window_enter_fullscreen`.
+    if (on && IS_MAC && (await invoke<boolean>('window_enter_fullscreen').catch(() => false))) return;
+    await getCurrentWindow().setFullscreen(on);
+  },
+});
+
+/// While a fullscreen request has not been answered, the window's own state is
+/// not news: `boot.ts` leaves the mirror alone on a resize then.
+export function fullscreenPending(): boolean {
+  return windowTransition.requests && fullscreenRequests.pending();
+}
+
+/// The state a toggle is decided against (the title bar's double click).
+export function fullscreenWanted(): boolean {
+  return windowTransition.requests ? fullscreenRequests.current() : chrome.fullscreen;
 }
 
 /// Seek popup: "24:01 / 53:34" plus a thin progress bar. The position is
@@ -521,7 +581,30 @@ function reconcileHover(e: MouseEvent) {
   if (chip !== chrome.chipHover) chrome.chipHover = chip;
 }
 
+/// Until when a poke is not activity (`hushForTransition`).
+let hushUntil = 0;
+
+/**
+ * The bars go before a fullscreen change and stay away after it, when the host
+ * asks for that (`windowTransition`). Synchronous, so that it is in before the
+ * key or click that started the change raises the bars itself — and that poke,
+ * like the pointer report the window's move under a resting pointer produces,
+ * falls inside `graceMs` and is not taken for activity.
+ */
+function hushForTransition() {
+  if (!windowTransition.hushChrome) return;
+  windowTransition.begin?.();
+  chrome.hushed = true;
+  chrome.uiVisible = false;
+  clearTimeout(hideTimer);
+  hushUntil = performance.now() + windowTransition.graceMs;
+}
+
 export function pokeUi(e?: MouseEvent) {
+  if (chrome.hushed) {
+    if (performance.now() < hushUntil) return;
+    chrome.hushed = false;
+  }
   if (e) {
     // A boolean, not a coordinate: it only changes when the border is
     // crossed, otherwise reactivity would churn on every mouse move.
@@ -588,7 +671,7 @@ export function onTitlebarMouseDown(e: MouseEvent) {
   if (e.detail !== 1 && e.detail !== 2) return;
   e.preventDefault();
   if (e.detail === 2) {
-    if (chrome.fullscreen) void exitFullscreen();
+    if (fullscreenWanted()) void exitFullscreen();
     else if (player.hasFile && !chrome.isMaximized) void toggleFullscreen();
     else void getCurrentWindow().toggleMaximize();
   } else if (!chrome.fullscreen) {

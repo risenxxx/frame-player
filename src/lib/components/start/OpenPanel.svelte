@@ -35,8 +35,11 @@
           <path d="M10 13.5a4.6 4.6 0 0 0 6.9.5l2.7-2.7a4.6 4.6 0 0 0-6.5-6.5L11.5 6.4"/>
           <path d="M14 10.5a4.6 4.6 0 0 0-6.9-.5l-2.7 2.7a4.6 4.6 0 0 0 6.5 6.5l1.6-1.6"/>
         </g>
-      </svg>
-      {t('start.link')}
+        <!-- The label follows the tag with no space. A browser drops the
+             space at the start of a flex item's text; Skathi keeps it, and
+             the 4px it adds to this button and the catalog one wrapped the
+             start screen's three buttons onto two rows. -->
+      </svg>{t('start.link')}
     </button>
     <!-- The third way in, and deliberately the same weight as the link rather
          than a lesser one: all three answer "how do I get something playing",

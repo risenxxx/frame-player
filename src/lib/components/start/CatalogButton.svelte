@@ -14,9 +14,11 @@
 <button class="btn-outline btn-catalog" onclick={onOpenCatalog}>
   <!-- The gradient hairline, drawn as a stroke rather than painted as
        the difference between two rectangles — see the rule below for
-       what that difference cost on Windows. The rect is deliberately
-       bare: its geometry has to be written in `calc()`, which an
-       attribute cannot carry, so all of it lives in the stylesheet.
+       what that difference cost on Windows. The rect's geometry has to
+       be written in `calc()`, which an attribute cannot carry, so it
+       lives in the stylesheet. The paint server is the one attribute:
+       a browser draws it the same either way, and Skathi does not take
+       a `url(#…)` paint from a CSS rule (it draws `currentColor`).
        The stops take their colours from custom properties, which is
        what lets `:hover` brighten the ring without a second gradient to
        keep in step. -->
@@ -38,7 +40,7 @@
         <stop offset="1" style="stop-color: var(--ring-c)" />
       </linearGradient>
     </defs>
-    <rect />
+    <rect stroke="url(#fp-catalog-ring)" />
   </svg>
   <!-- A magnifier at the same 24-unit box and 2px stroke as the chain
        beside it. The handle stops short of the corner on purpose: run
@@ -49,8 +51,8 @@
       <circle cx="10.5" cy="10.5" r="6.5" />
       <path d="M15.4 15.4 19.5 19.5" />
     </g>
-  </svg>
-  {t('start.catalog')}
+    <!-- The label follows the tag with no space: see OpenPanel's link button. -->
+  </svg>{t('start.catalog')}
 </button>
 
 <style>
@@ -207,7 +209,6 @@
     height: calc(100% - 1px);
     rx: 7.5px;
     fill: none;
-    stroke: url(#fp-catalog-ring);
     stroke-width: 1px;
   }
 

@@ -102,9 +102,15 @@
 
   /* The key beside the label, as in the context menu — its rule is scoped
      there, so the class is borrowed and the look has to be written again
-     rather than inherited across the component boundary. */
+     rather than inherited across the component boundary (and why it is a grid
+     and not a flex row is written there too). */
+  .menu-item:has(> .hint) {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+  }
+
   .menu-item .hint {
-    float: right;
     color: #77777f;
     font-size: 12px;
   }

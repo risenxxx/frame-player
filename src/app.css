@@ -1168,8 +1168,7 @@ input[type='range'].bipolar {
   min-width: 0;
 }
 
-/* A column of timestamps, so the digits have to line up. (`float: right` from
-   .menu-item .hint does nothing here — the row is a flex container.) */
+/* A column of timestamps, so the digits have to line up. */
 .chapter-item .hint {
   font-variant-numeric: tabular-nums;
 }

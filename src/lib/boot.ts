@@ -18,7 +18,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { command, destroy } from 'tauri-plugin-libmpv-api';
 import { runMenuAction } from './app-menu';
 import { playerHooks } from './bridge.svelte';
-import { chrome, pokeUi, scheduleVeilRelease } from './chrome.svelte';
+import { chrome, fullscreenPending, pokeUi, scheduleVeilRelease } from './chrome.svelte';
 import { flushPosition, loadHistoryPrefs, loadRecent, maybeRecordPosition } from './history.svelte';
 import { locale } from './i18n.svelte';
 import { refreshLeveling } from './leveling.svelte';
@@ -249,7 +249,11 @@ export async function boot() {
       // fullscreen can also change from outside — keep the mirror honest
       void win
         .isFullscreen()
-        .then((f) => (chrome.fullscreen = f))
+        .then((f) => {
+          // Not while a request of the page's own is on its way: mid-transition the
+          // window answers the state on screen, not the one asked for.
+          if (!fullscreenPending()) chrome.fullscreen = f;
+        })
         .catch(() => {});
       // adaptive veil release: a little after the last resize event
       // (~2 frames, which is what mpv's child window needs to catch up)

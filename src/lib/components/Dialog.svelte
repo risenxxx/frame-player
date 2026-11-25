@@ -356,7 +356,10 @@
     left: 0;
     right: 0;
     height: var(--top-cover);
-    background: inherit;
+    /* `.settings-top`'s own fill, written out rather than `inherit`: Skathi
+       resolves `inherit` only for properties that inherit, so the cover drew
+       nothing there and rows scrolled through it. The block has no other fill. */
+    background: #101016;
     /* This state only ever changes because the viewer scrolled, which is what
        earns it a transition — see the note in ScrollFade for the mirror image
        of that rule. */

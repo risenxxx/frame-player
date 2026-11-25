@@ -29,7 +29,8 @@ export default defineConfig({
     conditions: ['browser'],
   },
   test: {
-    include: ['src/**/*.test.ts'],
+    // The Skathi port's own pure modules (src-skathi/app/src/sk-port) run here too.
+    include: ['src/**/*.test.ts', 'src-skathi/app/src/**/*.test.ts'],
     environment: 'node',
     setupFiles: ['src/lib/test-setup.ts'],
   },
