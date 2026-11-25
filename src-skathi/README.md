@@ -94,8 +94,11 @@ Devtools: `cargo build --release --no-default-features --features devtools` with
    `libmpv-2.dll`), then `node src-skathi/scripts/fetch-skathi.mjs`. The script packs
    Skathi's packages itself (it writes the ustar archives in JavaScript), so no particular
    `tar` is needed.
-2. `bun install --frozen-lockfile` and `bun run payload` in `src-skathi/app/` (its
-   `tsconfig.json` stands alone; nothing at the root has to be built first).
+2. `bun install --frozen-lockfile` and `bunx svelte-kit sync` at the repository root, then
+   `bun install --frozen-lockfile` and `bun run payload` in `src-skathi/app/`. The app's own
+   `tsconfig.json` stands alone, but the shared `../src` it bundles resolves the root's,
+   which extends `.svelte-kit/tsconfig.json`; without the sync the payload stops with
+   "Tsconfig not found".
 3. `cargo build --release` in `src-skathi/` with `FFMPEG_DIR` and `LIBCLANG_PATH` set to
    version 1's `src-tauri/ffmpeg` and `src-tauri/tools`, and clang-cl on `PATH` for Skathi's
    C++ parts. The release exe is a GUI-subsystem program with version 1's icon
@@ -103,11 +106,12 @@ Devtools: `cargo build --release --no-default-features --features devtools` with
 4. Run it. A build reads the payload from the tree it was built in
    (`app/dist/release/.sk/app.skpk`); a copy of the exe anywhere else needs `app.skpk`
    beside it (which also makes it count as an installed copy) or `FPUI_PAYLOAD`. libmpv is
-   `libmpv-2.dll` beside the exe, or the file `MPV_DLL` names:
+   `libmpv-2.dll` beside the exe, or the file `MPV_DLL` names. The exe also links version 1's
+   FFmpeg DLLs (`src-tauri/ffmpeg/bin/*.dll`), which have to be beside it or on `PATH`, or it
+   does not start (`0xC0000135`, a DLL not found):
    - **Stock libmpv:** version 1's `src-tauri/lib/libmpv-2.dll` from step 1 (with the
      `vulkan-1.dll` beside it) has mpv's D3D11 render API and runs the default route; it
-     lacks our overlay target, so the host draws subtitles and the OSD into the picture (it
-     says so on stderr), and its renderer is `gpu`, not `gpu-next`.
+     lacks our overlay target, so subtitles and the OSD stay in the picture.
    - **Patched libmpv:** mpv PR #18845 at `a98335f5` with `patches/mpv-d3d11-overlay.diff`,
      built with mpv's own Windows CI recipe and `-Dgpl=false -Dffmpeg:gpl=disabled`. It
      links the MSVC runtime dynamically, so `msvcp140.dll`, `vcruntime140.dll` and
