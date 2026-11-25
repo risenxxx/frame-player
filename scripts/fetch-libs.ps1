@@ -154,8 +154,13 @@ Write-Host 'Downloading the Vulkan loader (LunarG Vulkan Runtime)...'
 # just the same, and LunarG publishes an ARM64 runtime under a platform of its
 # own ('warm'), with the loader at the root of the archive rather than under an
 # architecture directory.
+# Pinned, not 'latest': LunarG's 'latest' alias follows the newest SDK, and
+# the runtime archive is not always published for it (1.4.363.1 answered 404
+# on both platforms), which failed every fresh fetch. Moving the pin is one
+# line; the cache key follows this file, so CI fetches again when it moves.
+$vkVersion = '1.4.363.0'
 $vkZip = Join-Path $tmp 'vulkan-rt.zip'
-Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/latest/$($names.vulkan)/vulkan-runtime-components.zip" -OutFile $vkZip
+Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$vkVersion/$($names.vulkan)/vulkan-runtime-components.zip" -OutFile $vkZip
 $vkDir = Join-Path $tmp 'vulkan-rt'
 New-Item -ItemType Directory -Force $vkDir | Out-Null
 & "$env:SystemRoot\System32\tar.exe" -xf $vkZip -C $vkDir
