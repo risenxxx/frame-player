@@ -74,7 +74,7 @@ env:
   # lints of its own, and with `-D warnings` that turns a quiet Thursday into a
   # red check on code nobody touched. Bumping this is a commit that fixes what
   # the new lints find (`cargo +<version> clippy` locally shows it first).
-  RUST_TOOLCHAIN: '1.99.1'
+  RUST_TOOLCHAIN: '1.100.0'
 
 jobs:
   windows:
