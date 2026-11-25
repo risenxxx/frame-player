@@ -9,13 +9,21 @@
       "from": "ffmpeg",
       "note": "Built without --enable-gpl, --enable-nonfree or --enable-version3. macOS: by scripts/build-macos-libs.sh --v2, the same version and configuration as version 1's. Windows: version 1's FFmpeg DLLs for the thumbnail decoder, and a second copy linked statically into libmpv-2.dll (see \"Windows\" above)."
     },
-    { "from": "libass" },
-    { "from": "freetype" },
-    { "from": "harfbuzz" },
-    { "from": "fribidi" },
+    {
+      "from": "libass"
+    },
+    {
+      "from": "freetype"
+    },
+    {
+      "from": "harfbuzz"
+    },
+    {
+      "from": "fribidi"
+    },
     {
       "from": "libplacebo",
-      "note": "Built from commit f2e04cb1840ef1f1586b71050bff40b04cbd8d91 (macOS), newer than any release, with the one change to its build file listed above."
+      "note": "macOS: built from commit f2e04cb1840ef1f1586b71050bff40b04cbd8d91, newer than any release, with the one change to its build file listed above. Windows: commit 89b04663135b7ee309ef58d1f8997550e98fd9bf, unmodified, linked statically into libmpv-2.dll."
     },
     {
       "id": "glslang",
@@ -24,17 +32,37 @@
       "text": "glslang",
       "url": "https://github.com/KhronosGroup/glslang",
       "source": "https://github.com/KhronosGroup/glslang",
-      "libs": ["libglslang", "libglslang-default-resource-limits"],
-      "platforms": ["macos"],
-      "note": "libplacebo compiles its shaders with it. The one GPL-3.0 part is the parser Bison generated, which the Bison exception (2.2) lets be distributed under any terms when it is part of a larger work that is not itself a parser generator, so it puts no GPL obligation on what links it."
+      "libs": [
+        "libglslang",
+        "libglslang-default-resource-limits"
+      ],
+      "note": "libplacebo compiles its shaders with it: macOS, a dynamic library; Windows, linked statically into libmpv-2.dll as part of shaderc. The one GPL-3.0 part is the parser Bison generated, which the Bison exception (2.2) lets be distributed under any terms when it is part of a larger work that is not itself a parser generator, so it puts no GPL obligation on what links it."
     },
-    { "from": "lcms2" },
-    { "from": "uchardet" },
-    { "from": "luajit" },
-    { "from": "dav1d" },
-    { "from": "libunibreak" },
-    { "from": "molten-vk" },
-    { "from": "vulkan-loader" },
+    {
+      "from": "lcms2"
+    },
+    {
+      "from": "uchardet"
+    },
+    {
+      "from": "luajit"
+    },
+    {
+      "from": "dav1d"
+    },
+    {
+      "from": "libunibreak"
+    },
+    {
+      "from": "molten-vk"
+    },
+    {
+      "from": "vulkan-loader",
+      "platforms": [
+        "macos"
+      ],
+      "note": "macOS: the app's own libvulkan.1.dylib, which loads MoltenVK. Version 2's Windows libmpv-2.dll is built without Vulkan and no loader ships there."
+    },
     {
       "id": "vcruntime",
       "name": "Microsoft Visual C++ runtime",
@@ -42,14 +70,268 @@
       "text": "msvc-redist",
       "url": "https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files",
       "source": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
-      "libs": ["msvcp140", "vcruntime140", "vcruntime140_1"],
-      "platforms": ["windows"],
+      "libs": [
+        "msvcp140",
+        "vcruntime140",
+        "vcruntime140_1"
+      ],
+      "platforms": [
+        "windows"
+      ],
       "note": "msvcp140.dll, vcruntime140.dll and vcruntime140_1.dll from Visual Studio's redistributable folder, beside libmpv-2.dll, which links the runtime dynamically. Distributable under the Visual Studio license terms; not open source."
     },
-    { "from": "libxml2", "platforms": ["windows"], "note": "Linked statically into libmpv-2.dll on Windows (FFmpeg's DASH demuxer)." },
-    { "from": "rubik" },
-    { "from": "artcnn" },
-    { "from": "anime4k" }
+    {
+      "from": "libxml2",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows (FFmpeg's DASH demuxer)."
+    },
+    {
+      "from": "shaderc",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows: mpv's D3D11 renderer compiles its shaders with it. Carries glslang, SPIRV-Tools and SPIRV-Headers, listed separately."
+    },
+    {
+      "id": "spirv-tools",
+      "name": "SPIRV-Tools",
+      "license": "Apache-2.0",
+      "text": "spirv-tools",
+      "url": "https://github.com/KhronosGroup/SPIRV-Tools",
+      "source": "https://github.com/KhronosGroup/SPIRV-Tools",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of shaderc."
+    },
+    {
+      "id": "spirv-headers",
+      "name": "SPIRV-Headers",
+      "license": "MIT",
+      "text": "spirv-headers",
+      "url": "https://github.com/KhronosGroup/SPIRV-Headers",
+      "source": "https://github.com/KhronosGroup/SPIRV-Headers",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, the grammar tables SPIRV-Tools and glslang are built from."
+    },
+    {
+      "from": "spirv-cross",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows: translates mpv's shaders to HLSL for D3D11."
+    },
+    {
+      "from": "mujs",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows: mpv's JavaScript scripting."
+    },
+    {
+      "from": "curl",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, with Windows' own TLS (Schannel)."
+    },
+    {
+      "id": "libssh2",
+      "name": "libssh2",
+      "license": "BSD-3-Clause",
+      "text": "libssh2",
+      "url": "https://libssh2.org/",
+      "source": "https://github.com/libssh2/libssh2",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of libcurl."
+    },
+    {
+      "id": "nghttp2",
+      "name": "nghttp2",
+      "license": "MIT",
+      "text": "nghttp2",
+      "url": "https://nghttp2.org/",
+      "source": "https://github.com/nghttp2/nghttp2",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of libcurl."
+    },
+    {
+      "id": "libpsl",
+      "name": "libpsl",
+      "license": "MIT",
+      "text": "libpsl",
+      "url": "https://rockdaboot.github.io/libpsl/",
+      "source": "https://github.com/rockdaboot/libpsl",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of libcurl; it uses the ICU that comes with Windows."
+    },
+    {
+      "id": "zstd",
+      "name": "Zstandard",
+      "license": "BSD-3-Clause",
+      "text": "zstd",
+      "url": "https://facebook.github.io/zstd/",
+      "source": "https://github.com/facebook/zstd",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of libcurl. Dual-licensed BSD-3-Clause or GPL-2.0-only; the BSD license is the option taken."
+    },
+    {
+      "from": "brotli",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of libcurl and FreeType."
+    },
+    {
+      "id": "fontconfig",
+      "name": "Fontconfig",
+      "license": "MIT-style (see the text)",
+      "text": "fontconfig",
+      "url": "https://www.freedesktop.org/wiki/Software/fontconfig/",
+      "source": "https://gitlab.freedesktop.org/fontconfig/fontconfig",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of libass."
+    },
+    {
+      "id": "expat",
+      "name": "Expat",
+      "license": "MIT",
+      "text": "expat",
+      "url": "https://libexpat.github.io/",
+      "source": "https://github.com/libexpat/libexpat",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of Fontconfig."
+    },
+    {
+      "id": "proxy-libintl",
+      "name": "proxy-libintl",
+      "license": "LGPL-2.0-or-later",
+      "text": "proxy-libintl",
+      "url": "https://github.com/frida/proxy-libintl",
+      "source": "https://github.com/frida/proxy-libintl",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows: Fontconfig's gettext calls, which load a gettext DLL at run time if one exists (none ships)."
+    },
+    {
+      "from": "zlib",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows."
+    },
+    {
+      "id": "bzip2",
+      "name": "bzip2",
+      "license": "bzip2-1.0.6",
+      "text": "bzip2",
+      "url": "https://sourceware.org/bzip2/",
+      "source": "https://sourceware.org/git/bzip2.git",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of FFmpeg and FreeType."
+    },
+    {
+      "id": "liblzma",
+      "name": "liblzma (XZ Utils)",
+      "license": "LicenseRef-Public-Domain",
+      "text": "liblzma",
+      "url": "https://tukaani.org/xz/",
+      "source": "https://github.com/tukaani-project/xz",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of FFmpeg. Version 5.2.12, whose liblzma is in the public domain."
+    },
+    {
+      "from": "libpng",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of FreeType."
+    },
+    {
+      "from": "jpeg-turbo",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows: mpv's JPEG screenshots."
+    },
+    {
+      "id": "win-iconv",
+      "name": "win-iconv",
+      "license": "LicenseRef-Public-Domain",
+      "text": "win-iconv",
+      "url": "https://github.com/win-iconv/win-iconv",
+      "source": "https://github.com/win-iconv/win-iconv",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows: iconv for mpv and libass."
+    },
+    {
+      "id": "dlfcn-win32",
+      "name": "dlfcn-win32",
+      "license": "MIT",
+      "text": "dlfcn-win32",
+      "url": "https://github.com/dlfcn-win32/dlfcn-win32",
+      "source": "https://github.com/dlfcn-win32/dlfcn-win32",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows."
+    },
+    {
+      "id": "xxhash",
+      "name": "xxHash",
+      "license": "BSD-2-Clause",
+      "text": "xxhash",
+      "url": "https://xxhash.com/",
+      "source": "https://github.com/Cyan4973/xxHash",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows, as part of libplacebo."
+    },
+    {
+      "id": "nv-codec-headers",
+      "name": "nv-codec-headers",
+      "license": "MIT",
+      "text": "nv-codec-headers",
+      "url": "https://github.com/FFmpeg/nv-codec-headers",
+      "source": "https://github.com/FFmpeg/nv-codec-headers",
+      "platforms": [
+        "windows"
+      ],
+      "note": "Linked statically into libmpv-2.dll on Windows: the loader FFmpeg and mpv use to reach NVIDIA's driver at run time (no NVIDIA code ships)."
+    },
+    {
+      "from": "rubik"
+    },
+    {
+      "from": "artcnn"
+    },
+    {
+      "from": "anime4k"
+    }
   ],
   "elections": {
     "self_cell": "Apache-2.0"
@@ -81,7 +363,7 @@
     }
   ],
   "windows": [
-    "On Windows, mpv and the libraries it uses are one file, `libmpv-2.dll`, beside the executable. It is built from mpv pull request #18845 at commit a98335f5 (`v0.42.0-111-ga98335f57`) with `src-skathi/patches/mpv-d3d11-overlay.diff` applied, by mpv's own Windows CI recipe at that commit (clang and meson, every dependency as a static meson subproject, among them FFmpeg, libplacebo, libass, FreeType, HarfBuzz, FriBidi, dav1d and libxml2), configured with `-Dgpl=false -Dffmpeg:gpl=disabled`. **There is no script in this repository that builds this DLL yet**; the commit, the patch and the options above are the complete recipe.",
+    "On Windows, mpv and the libraries it uses are one file, `libmpv-2.dll`, beside the executable. It is built from mpv pull request #18845 at commit a98335f5 (`v0.42.0-111-ga98335f57`) with `src-skathi/patches/mpv-d3d11-overlay.diff` applied, by mpv's own Windows CI recipe at that commit (clang and meson, every dependency as a static meson subproject, every one of them in the table above under \"Native components\" that is not marked macOS only), configured with `-Dgpl=false -Dffmpeg:gpl=disabled`. **There is no script in this repository that builds this DLL yet**; the commit, the patch and the options above are the complete recipe.",
     "The libraries inside `libmpv-2.dll` are linked statically into it, and the DLL as a whole is an LGPL-2.1-or-later library (mpv built with `-Dgpl=false`). To use a modified version of any of them, rebuild `libmpv-2.dll` from the sources above with your change and put it in place of the shipped one, beside the executable; the application loads whatever `libmpv-2.dll` is there, or the file the `MPV_DLL` environment variable names. The application talks to it only through mpv's public C API (`client.h`, `render.h`, `render_d3d11.h` with the patch above), so a rebuilt DLL needs no change to the application.",
     "The FFmpeg DLLs beside it (`avcodec`, `avformat`, `avutil`, `swscale`, `swresample`, `avfilter`, `avdevice`) are version 1's, loaded by the thumbnail decoder, and may be replaced the same way."
   ]
